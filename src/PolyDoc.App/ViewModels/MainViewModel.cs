@@ -66,10 +66,10 @@ public partial class MainViewModel : ObservableObject
 
     public void RefreshMemoryUsage()
     {
-        // 프로세스 작업 집합 기준 — 사용자가 체감하는 "이 앱이 차지하는 메모리".
-        // PolyDocument 단독 메모리는 측정이 까다로우므로 현실적인 근사치로 프로세스 메모리를 노출.
-        var bytes = Environment.WorkingSet;
-        MemoryUsage = $"{bytes / 1024.0 / 1024.0:F1} MB";
+        // "이 문서가 차지하는 데이터 크기" — 앱 전체 메모리가 아니라 본문 콘텐츠 기준.
+        // 본문이 비어 있거나 문서를 새로 만든 직후에는 자연스럽게 0 가까이 떨어진다.
+        var bytes = DocumentMeasurement.EstimateBytes(_document);
+        MemoryUsage = DocumentMeasurement.FormatBytes(bytes);
     }
 
     public string WindowTitle
@@ -149,12 +149,25 @@ public partial class MainViewModel : ObservableObject
             using var fs = File.OpenRead(path);
             var doc = reader.Read(fs);
             LoadDocument(doc, path);
-            StatusMessage = $"열기 완료 — {Path.GetFileName(path)}";
+            StatusMessage = BuildOpenStatusMessage(path, doc);
         }
         catch (Exception ex)
         {
             ReportError("문서를 여는 중 오류가 발생했습니다.", ex);
         }
+    }
+
+    private static string BuildOpenStatusMessage(string path, PolyDocument doc)
+    {
+        var name = Path.GetFileName(path);
+        // HWPX reader 가 metadata.Custom 에 진단을 박았으면 본문 인식이 0건일 때 사용자에게 경고.
+        if (doc.Metadata.Custom.TryGetValue("hwpx.paragraphCount", out var pCount)
+            && int.TryParse(pCount, out var pc) && pc == 0)
+        {
+            doc.Metadata.Custom.TryGetValue("hwpx.sectionFilesFound", out var sCount);
+            return $"열기 완료 — {name} (HWPX 본문 인식 0건, 섹션 파일 {sCount ?? "?"}개. 한컴 변종 가능 — 진단 정보를 메인테이너에게 공유 부탁)";
+        }
+        return $"열기 완료 — {name}";
     }
 
     [RelayCommand]

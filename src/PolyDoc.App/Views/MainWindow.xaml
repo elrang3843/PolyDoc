@@ -86,47 +86,61 @@
             </MenuItem>
         </Menu>
 
-        <!-- 상태 바 — 좌측: 상태 메시지 / 우측 끝부터: NumLock · CapsLock · Insert 모드 · 메모리 · 파일 경로. -->
+        <!-- 상태 바 — 좌측: 상태 메시지 (가변 너비) / 우측: 파일경로·메모리·Insert·Caps·Num 고정 그룹.
+             ItemsPanel 을 DockPanel 로 교체하고 상태 메시지만 Left dock, 나머지는 Right dock 으로 우측에 모은다.
+             자식 순서대로 우측에서부터 stacking 되므로 XAML 작성 순서 = 시각상 좌→우. -->
         <StatusBar DockPanel.Dock="Bottom" Background="{StaticResource SurfaceAlt}">
-            <StatusBarItem>
-                <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource OnSurfaceMuted}" />
-            </StatusBarItem>
-            <Separator />
-            <StatusBarItem>
-                <TextBlock Text="{Binding CurrentFilePath}"
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <DockPanel HorizontalAlignment="Stretch" LastChildFill="True" />
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
+
+            <!-- 우측 그룹: NumLock 이 가장 우측 -->
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding NumLockText}"
                            Foreground="{StaticResource OnSurfaceMuted}"
-                           TextTrimming="CharacterEllipsis"
-                           MaxWidth="600" />
+                           ToolTip="Num Lock"
+                           MinWidth="40" TextAlignment="Center"
+                           FontFamily="Consolas, D2Coding" />
             </StatusBarItem>
-            <Separator />
-            <StatusBarItem>
-                <TextBlock Text="{Binding MemoryUsage}"
-                           Foreground="{StaticResource OnSurfaceMuted}"
-                           ToolTip="이 앱이 사용 중인 메모리(작업 집합)"
-                           MinWidth="80" TextAlignment="Right" />
-            </StatusBarItem>
-            <Separator />
-            <StatusBarItem>
-                <TextBlock Text="{Binding InsertModeText}"
-                           Foreground="{StaticResource OnSurfaceMuted}"
-                           ToolTip="Insert 키로 삽입/수정 토글"
-                           MinWidth="40" TextAlignment="Center" />
-            </StatusBarItem>
-            <Separator />
-            <StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
                 <TextBlock Text="{Binding CapsLockText}"
                            Foreground="{StaticResource OnSurfaceMuted}"
                            ToolTip="Caps Lock"
                            MinWidth="40" TextAlignment="Center"
                            FontFamily="Consolas, D2Coding" />
             </StatusBarItem>
-            <Separator />
-            <StatusBarItem>
-                <TextBlock Text="{Binding NumLockText}"
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding InsertModeText}"
                            Foreground="{StaticResource OnSurfaceMuted}"
-                           ToolTip="Num Lock"
-                           MinWidth="40" TextAlignment="Center"
-                           FontFamily="Consolas, D2Coding" />
+                           ToolTip="Insert 키로 삽입/수정 토글"
+                           MinWidth="40" TextAlignment="Center" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding MemoryUsage}"
+                           Foreground="{StaticResource OnSurfaceMuted}"
+                           ToolTip="이 문서의 데이터 크기 (텍스트 + 이미지 + opaque)"
+                           MinWidth="80" TextAlignment="Right" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding CurrentFilePath}"
+                           Foreground="{StaticResource OnSurfaceMuted}"
+                           ToolTip="{Binding CurrentFilePath}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="600" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+
+            <!-- 좌측 — 가변 너비. LastChildFill=True 로 남은 가로 공간을 모두 차지. -->
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Foreground="{StaticResource OnSurfaceMuted}"
+                           TextTrimming="CharacterEllipsis" />
             </StatusBarItem>
         </StatusBar>
 

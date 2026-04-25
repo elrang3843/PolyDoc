@@ -53,14 +53,41 @@ public sealed class HwpxReader : IDocumentReader
             }
 
             var document = new PolyDocument { Metadata = metadata };
+            int totalParagraphs = 0;
+            int totalTextRuns = 0;
             foreach (var path in sectionPaths)
             {
-                document.Sections.Add(ReadSection(archive, path));
+                var section = ReadSection(archive, path);
+                document.Sections.Add(section);
+                foreach (var block in section.Blocks)
+                {
+                    if (block is Paragraph p)
+                    {
+                        totalParagraphs++;
+                        foreach (var run in p.Runs)
+                        {
+                            if (!string.IsNullOrEmpty(run.Text))
+                            {
+                                totalTextRuns++;
+                            }
+                        }
+                    }
+                }
             }
             if (document.Sections.Count == 0)
             {
                 document.Sections.Add(new Section());
             }
+
+            // 진단 정보 — MainViewModel 이 "본문 0건" 같은 경고 메시지를 띄울 수 있게 metadata 에 박는다.
+            document.Metadata.Custom["hwpx.sectionFilesFound"] = sectionPaths.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            document.Metadata.Custom["hwpx.paragraphCount"] = totalParagraphs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            document.Metadata.Custom["hwpx.nonEmptyRunCount"] = totalTextRuns.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (sectionPaths.Count > 0)
+            {
+                document.Metadata.Custom["hwpx.firstSectionPath"] = sectionPaths[0];
+            }
+
             return document;
         }
         finally
@@ -70,16 +97,16 @@ public sealed class HwpxReader : IDocumentReader
     }
 
     /// <summary>
-    /// content.hpf 가 못 풀렸거나 spine 이 비었을 때, ZIP 안의 'Contents/section*.xml' 들을
-    /// 인덱스 순으로 모아 fallback 으로 사용한다.
+    /// content.hpf 가 못 풀렸거나 spine 이 비었을 때, ZIP 안의 section 파일을 직접 스캔.
+    /// 한컴 변종에 대비해 폴더 위치 무관하게 파일명에 "section" 이 들어간 모든 .xml 을 잡는다
+    /// (대소문자 무시).
     /// </summary>
     private static IEnumerable<string> FallbackSectionPaths(ZipArchive archive)
     {
         return archive.Entries
             .Select(e => e.FullName)
-            .Where(p => p.StartsWith(HwpxPaths.ContentDir, StringComparison.OrdinalIgnoreCase)
-                     && System.IO.Path.GetFileName(p).StartsWith("section", StringComparison.OrdinalIgnoreCase)
-                     && p.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+            .Where(p => p.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                     && System.IO.Path.GetFileName(p).Contains("section", StringComparison.OrdinalIgnoreCase))
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase);
     }
 

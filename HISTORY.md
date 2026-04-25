@@ -45,7 +45,9 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
-- **Added** — `MainWindow` 상태 표시줄 우측에 4칸 추가: **메모리 사용량(MB) · 삽입/수정 모드 · CapsLock · NumLock**. 1초 간격 `DispatcherTimer` 가 메모리(`Environment.WorkingSet`)와 키 토글 상태(`Keyboard.IsKeyToggled`) 갱신. Insert 키 누름 시 모드 토글, CapsLock/NumLock 키 입력 시 다음 dispatcher cycle 에서 재계산. 파일 경로는 우측 끝 대신 그 4칸 왼쪽으로 이동(`MaxWidth=600 + ellipsis`)되어 길어도 다른 칸을 가리지 않는다.
+- **Added** — `PolyDoc.Core/DocumentMeasurement` — PolyDocument 가 차지하는 데이터 크기(텍스트 byte + ImageBlock.Data + OpaqueBlock 바이트/XML, 표는 셀 재귀)를 근사 계산하는 헬퍼. 단위 자동 (B / KB / MB / GB).
+- **Added** — `MainWindow` 상태 표시줄 우측에 5칸 그룹: **파일 경로 · 문서 메모리 · 삽입/수정 · CapsLock · NumLock**. ItemsPanel 을 `DockPanel(LastChildFill=True)` 로 교체해 좌측 상태 메시지가 가변 너비를 차지하고 우측 5칸은 한 묶음으로 우측에 고정. 상태 메시지 길이가 변해도 우측 칸 위치가 흔들리지 않는다. 메모리 표시는 **앱 전체 워킹셋이 아닌 문서 콘텐츠 크기** 만 보여주도록 변경 (`DocumentMeasurement.EstimateBytes` 사용) — 새 만들기 직후엔 자연스럽게 0 가까이 떨어지고, HWPX 처럼 본문 인식이 0건이면 작은 값으로 표시되어 진단 신호가 됨.
+- **Added** — HWPX reader 진단 정보 — 읽은 section 파일 수 / 인식된 paragraph 수 / 비어있지 않은 run 수 / 첫 section 경로를 `DocumentMetadata.Custom["hwpx.*"]` 에 박는다. 본문 인식이 0건이면 MainViewModel 의 상태 메시지에 "HWPX 본문 인식 0건, 섹션 파일 N개. 한컴 변종 가능 — 진단 정보를 메인테이너에게 공유 부탁" 안내. FallbackSectionPaths 검색 범위를 `Contents/section*.xml` → 폴더 무관 + 파일명 contains "section" + 대소문자 무시로 확장.
 - **Changed** — `HwpxReader` 를 한컴 오피스가 만든 hwpx 변종에 robust 하게 매칭하도록 보강. `content.hpf` 와 `container.xml` 모두 LocalName 기반(namespace 무시) descendants 검색. section 파일은 manifest의 id 또는 href 파일명이 "section" 접두인 것으로 fallback. 그래도 못 찾으면 ZIP 의 `Contents/section*.xml` 직접 스캔. paragraph/run/text 모두 깊이 어디든 `Descendants` 로 흡수, `<hp:tab>` / `<hp:lineBreak>` 추가 인식. 자체 라운드트립 6/6 + 스모크 6/6 그대로 그린.
 - **Added** — Phase C C3·C4 HWPX 1급 시민 codec 1차 — `src/PolyDoc.Codecs.Hwpx`. KS X 6101 사양 기반 자체 구현 (BCL + System.Xml.Linq + System.IO.Compression, 외부 의존 0).
   - 패키지 구조: `mimetype`(STORED, "application/hwp+zip") + `META-INF/container.xml` + `Contents/content.hpf` (OPF) + `Contents/header.xml` + `Contents/section{N}.xml` + `version.xml`.
