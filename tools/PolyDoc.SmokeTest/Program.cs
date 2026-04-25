@@ -1,4 +1,5 @@
 using System.Text;
+using PolyDoc.Codecs.Docx;
 using PolyDoc.Codecs.Markdown;
 using PolyDoc.Codecs.Text;
 using PolyDoc.Core;
@@ -14,6 +15,7 @@ harness.Run("Plain text round-trip", PlainTextRoundTrip);
 harness.Run("Markdown round-trip (headers + emphasis + lists)", MarkdownRoundTrip);
 harness.Run("IWPF round-trip (manifest + integrity)", IwpfRoundTrip);
 harness.Run("IWPF tampering detection", IwpfTamperingDetection);
+harness.Run("DOCX round-trip (headings + emphasis)", DocxRoundTrip);
 
 return harness.Finish();
 
@@ -128,6 +130,40 @@ static void IwpfTamperingDetection()
         caught = true;
     }
     SmokeHarness.True(caught, "tampered package was rejected");
+}
+
+static void DocxRoundTrip()
+{
+    var doc = new PolyDocument();
+    doc.Metadata.Title = "DOCX 스모크";
+    doc.Metadata.Author = "Noh JinMoon";
+    var section = new Section();
+    doc.Sections.Add(section);
+
+    var heading = new Paragraph { Style = { Outline = OutlineLevel.H1 } };
+    heading.AddText("DOCX 1급 시민");
+    section.Blocks.Add(heading);
+
+    var body = new Paragraph();
+    body.AddText("OpenXml 기반 ");
+    body.AddText("DOCX", new RunStyle { Bold = true });
+    body.AddText(" 라운드트립을 검증합니다.");
+    section.Blocks.Add(body);
+
+    using var ms = new MemoryStream();
+    new DocxWriter().Write(doc, ms);
+    SmokeHarness.True(ms.Length > 1000, $"DOCX size > 1 KB (got {ms.Length})");
+
+    ms.Position = 0;
+    var read = new DocxReader().Read(ms);
+
+    SmokeHarness.Equal("DOCX 스모크", read.Metadata.Title!, "DOCX metadata.title");
+    SmokeHarness.Equal("Noh JinMoon", read.Metadata.Author!, "DOCX metadata.author");
+
+    var paragraphs = read.EnumerateParagraphs().ToList();
+    SmokeHarness.Equal(2, paragraphs.Count, "DOCX paragraph count");
+    SmokeHarness.Equal(OutlineLevel.H1, paragraphs[0].Style.Outline, "DOCX heading outline");
+    SmokeHarness.True(paragraphs[1].Runs.Any(r => r.Style.Bold && r.Text == "DOCX"), "DOCX bold run preserved");
 }
 
 static byte[] TamperDocumentJson(byte[] original)

@@ -45,6 +45,11 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — Phase C (1/N) DOCX 1급 시민 codec — `src/PolyDoc.Codecs.Docx`. DocumentFormat.OpenXml 3.5.1 기반 reader/writer. 단락 / Heading1~6 / 정렬(좌·중·우·양쪽·균등) / 굵게·기울임·밑줄·취소선·위첨자·아래첨자 / 폰트 패밀리·크기 / 색상 / 기본 리스트 / Title·Author 코어 속성 라운드트립. xUnit 라운드트립 6건 + 스모크 1건 그린.
+- **Added** — `tests/PolyDoc.Codecs.Docx.Tests` xUnit 라운드트립 테스트 6건.
+- **Added** — `Directory.Packages.props` 에 DocumentFormat.OpenXml 3.5.1 (MIT) 등록.
+- **Changed** — `PolyDoc.Codecs.Markdown` 의 reader 를 BCL 직접 파서에서 **Markdig 0.42.0** (BSD-2-Clause) 으로 교체. 풀 CommonMark 파싱 — 단락 / 헤더 / 리스트 / 강조에 더해 인라인 코드(monospace 힌트), 코드블록(fenced/indented), 인용(현재는 단락으로 격하), 링크(밑줄 표시) 처리. 라운드트립 호환성 유지. xUnit 11건(기존 6 + 신규 5) 그린.
+- **Changed** — `PolyDoc.App` 의 `DocumentFormat` 서비스가 DOCX 를 **외부 컨버터 위탁 목록에서 제거**하고 직접 처리 대상으로 등록. 이제 메인 앱에서 `.docx` 를 native 로 읽고 쓴다. 외부 컨버터 위탁은 HWP / HWPX / DOC / HTML / HTM 만 남는다.
 - **Added** — 핸텍 공식 회사 로고/아이콘 자산: `assets/Handtech_1024.png` (1024×1024 PNG), `assets/Handtech.ico` (멀티 사이즈 Windows ICO).
 - **Added** — `src/PolyDoc.App` WPF 앱 첫 사이클 (Phase B1~B4 골격). `net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0. 메인 윈도우(파일/편집/입력/서식/도구/도움말 메뉴), TextBox 본문 편집기, 상태 바, About 다이얼로그(로고·핸텍·노진문·버전 표시). 파일 메뉴는 IWPF/MD/TXT 직접 처리, 외부 포맷은 Phase D 안내 메시지. Ctrl+N/O/S, Ctrl+Shift+S 단축키. 한국어 UI(.resx 분리는 다음 사이클로 이연).
 - **Added** — Light 기본 테마 (`src/PolyDoc.App/Themes/Light.xaml`) — 핸텍 브랜드 블루 기반.
@@ -68,8 +73,8 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 - **Docs** — `WORK_PLAN.md` 신설. 다단계 작업 계획서, 환경 사실관계, 기술 스택, Phase A~H 진행표, 사용자 게이트 G0~G5, 다음 세션 인수인계 체크리스트.
 - **Docs** — `NOTICE` 신설. Apache 2.0 저작권 고지(© 2026 HANDTECH — Noh JinMoon) + 향후 의존성 attribution 사전 기록.
 
-### Known Limitations
-- 본 개발 환경에서 NuGet.org(`api.nuget.org`)이 503 으로 차단되어 xUnit / Markdig 등 패키지 복원 불가. xUnit 테스트와 Markdig 도입은 Windows 환경(또는 NuGet 접근 가능한 환경)에서 검증·전환 필요. **사용자 게이트 G2** 에서 `dotnet test` 정상 동작 확인 예정.
+### Resolved Limitations
+- NuGet.org 차단(503)이 풀려 본 개발 환경에서도 xUnit / Markdig / OpenXml SDK 복원이 정상 동작. Phase A 의 xUnit 25건이 첫 실행에서 그린, Phase C 진입과 Markdig 교체가 가능해짐.
 
 ---
 

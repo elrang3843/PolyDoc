@@ -20,13 +20,11 @@
 | GUI/Display | 없음 — WPF UI 빌드·실행·스크린샷 불가 |
 | 타겟 OS | Windows 10/11 x64 |
 | Git remote | `elrang3843/PolyDoc` |
-| **NuGet.org** | **503 으로 차단** — `api.nuget.org` 응답 안 함 (curl/dotnet restore 모두). BCL 만 사용하는 src 프로젝트는 복원/빌드 정상. xUnit/Markdig 같은 외부 패키지는 본 환경에서 복원 불가 |
+| **NuGet.org** | **정상** (이전 503 차단 풀림). xUnit·Markdig·OpenXml SDK 등 외부 패키지 복원 가능 |
 
 **핵심 제약**:
 - WPF 앱(`Microsoft.NET.Sdk.WindowsDesktop`)은 Windows 에서만 빌드 가능.
-- 이 환경에서는 **순수 라이브러리·코덱** 만 검증 가능. UI 검증은 사용자 책임.
-- xUnit 테스트는 **코드는 작성하되 본 환경에서 실행 불가**. Windows(또는 NuGet 가능 환경)에서 `dotnet restore && dotnet test` 로 검증한다.
-- Markdig 같은 외부 의존이 필요한 코덱은 NuGet 회복 시점에 도입한다 (현재는 BCL 서브셋 구현으로 대체).
+- 이 환경에서는 **WPF 외 모든 라이브러리·코덱·xUnit 테스트** 검증 가능. UI 시각 검증만 사용자 책임.
 
 ---
 
@@ -99,11 +97,12 @@ PolyDoc/
 - ☐ B5 **G2** — Windows 머신에서 첫 `dotnet build` / `dotnet run` 결과 보고. 메뉴 동작·About 표시·IWPF/MD/TXT 열고 저장 검증
 
 ### Phase C — DOCX/HWPX 1급 시민 (M2-M3)
-- ☐ C1 DOCX reader (OpenXml)
-- ☐ C2 DOCX writer + 라운드트립 테스트
-- ☐ C3 HWPX reader (KS X 6101)
+- ✅ C1 DOCX reader (OpenXml SDK 3.5.1) — 단락·헤더·정렬·강조·폰트·색상·리스트
+- ✅ C2 DOCX writer + xUnit 라운드트립 6건 + 스모크 1건
+- ◑ C2b Markdown reader 를 Markdig 로 교체 (CommonMark 풀 파싱)
+- ☐ C3 HWPX reader (KS X 6101) — 자체 구현 시작
 - ☐ C4 HWPX writer + 라운드트립 테스트
-- ☐ G3: 사용자가 Word/한컴에서 결과 시각 검증
+- ☐ G3: 사용자가 Word/한컴에서 결과 시각 검증 — Phase C 후반에 도달
 
 ### Phase D — 외부 CLI 컨버터 분리
 - ☐ D1 PolyDoc.Cli.Docx 분리
@@ -155,28 +154,36 @@ PolyDoc/
 
 ---
 
-## 현재 인수인계 (Phase B 첫 사이클 종료 시점)
+## 현재 인수인계 (Phase C 진입 사이클 종료 시점)
 
 ### 완료
-- Phase A: src 4 + tests 4 + tools/SmokeTest. G1 통과.
-- Phase B 첫 사이클: PolyDoc.App WPF (메인 윈도우, 메뉴 6단, About, Light 테마). 핸텍 로고/아이콘 통합.
+- Phase A: src 4 + tests 4 + tools/SmokeTest. **G1 통과 확인** (사용자 보고: build/test/smoke 모두 OK).
+- Phase B 첫 사이클: PolyDoc.App WPF (메인 윈도우, 메뉴 6단, About, Light 테마). 핸텍 로고/아이콘 통합. **G2 통과 확인** (사용자 보고: build/run/UI 모두 OK).
+- Phase C C1·C2: DOCX reader/writer + 라운드트립 테스트 6건 + 스모크. DOCX 가 외부 컨버터 위탁에서 직접 처리 대상으로 승격.
+- Phase C C2b: Markdown reader 를 Markdig 0.42.0 로 교체. CommonMark 풀 파싱 + 추가 테스트 5건.
 
-### 사용자(노진문) 작업이 필요한 항목 — G2 직전
-- [ ] Windows 머신에서 최신 브랜치 pull
-- [ ] `dotnet restore PolyDoc.slnx` — CommunityToolkit.Mvvm 8.4.0 자동 복원
-- [ ] `dotnet build PolyDoc.slnx` — `PolyDoc.App` 까지 포함해 0 error
-- [ ] `dotnet run --project src/PolyDoc.App` — 메인 윈도우가 뜨는지
-- [ ] **메뉴 검증**: 파일 → 새 파일 / 불러오기(IWPF·MD·TXT) / 저장 / 다른 이름으로 저장 동작
-- [ ] **단축키 검증**: Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S
-- [ ] **About 검증**: 도움말 → PolyDoc 정보 — 핸텍 로고·노진문·버전 1.0.0-test.1 표시
-- [ ] **외부 포맷 보호**: HWP/HWPX/DOC/DOCX 열기 시도 시 "외부 컨버터 필요" 안내가 뜨는지
-- [ ] 작업창 타이틀 바: 편집 후 `*` 표시, 저장 후 사라지는지
-- [ ] (가능하다면) 메뉴 동작·About 다이얼로그 스크린샷 첨부
+### 현재 테스트 현황 (Linux 환경)
+| 프로젝트 | 테스트 수 | 상태 |
+|---|---|---|
+| PolyDoc.Core.Tests | 9 | ✅ |
+| PolyDoc.Iwpf.Tests | 5 | ✅ |
+| PolyDoc.Codecs.Text.Tests | 5 | ✅ |
+| PolyDoc.Codecs.Markdown.Tests | 11 | ✅ |
+| PolyDoc.Codecs.Docx.Tests | 6 | ✅ |
+| **합계** | **36** | **All green** |
+| PolyDoc.SmokeTest 콘솔 | 5 | ✅ |
 
-### 알려진 위험 (Linux 에서 빌드 검증 불가)
-- WPF 빌드는 Windows 전용 SDK 가 필요하므로 본 환경에서 컴파일 검증 못 함. XAML 의 binding path, namespace, pack URI 가 첫 시도에 정확해야 함. **빌드 에러가 나면 출력 그대로 보내주면 다음 응답에서 즉시 패치**.
-- `pack://application:,,,/Assets/Handtech_1024.png` 는 csproj 의 `<Resource Link="Assets\Handtech_1024.png">` 와 일치시켰지만, MSBuild 가 Link 메타를 정확히 처리하는지는 Windows 빌드에서 첫 검증.
-- Directory.Build.props 의 `TreatWarningsAsErrors=true` 가 WPF 코드젠 경고와 충돌하면 빌드 실패 가능. 발생 시 App 프로젝트 한정으로 완화 검토.
+### 사용자(노진문) 작업이 필요한 항목 — Phase C 진입 사이클 검증
+- [ ] Windows 에서 `git pull` 후 `dotnet restore` (DocumentFormat.OpenXml 3.5.1 / Markdig 0.42.0 자동 복원)
+- [ ] `dotnet build PolyDoc.slnx` — App 까지 포함해 0 error
+- [ ] `dotnet test PolyDoc.slnx` — **xUnit 36건 모두 그린**
+- [ ] (선택) `dotnet run --project src/PolyDoc.App` — `.docx` 파일을 직접 열고 본문이 표시되는지
+- [ ] (선택) PolyDoc 에서 `.docx` 로 저장 → Microsoft Word 에서 열어 보이는지 (G3 의 일부, 시각 검증)
+
+### 다음 단계 후보
+- **C3·C4 HWPX codec** — KS X 6101 기반 자체 구현. 다음 세션 메인 작업.
+- **B 사이클 폴리싱** — i18n .resx (한/영), 테마 다중화, 드래그&드롭, 찾기·바꾸기.
+- **D 단계 진입** — HWP/DOC/HTML 외부 컨버터 (LibreOffice headless) IPC 연결.
 
 ### 다음 사이클 (G2 통과 후)
 1. **i18n 분리** — `Properties/Resources.resx` (ko-KR 기본) + `Resources.en.resx`. XAML 에 `{x:Static p:Resources.MenuFile}` 바인딩.

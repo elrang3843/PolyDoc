@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using PolyDoc.Codecs.Docx;
 using PolyDoc.Codecs.Markdown;
 using PolyDoc.Codecs.Text;
 using PolyDoc.Core;
@@ -20,6 +21,7 @@ public static class DocumentFormat
             "iwpf" => new IwpfReader(),
             "md" or "markdown" => new MarkdownReader(),
             "txt" => new PlainTextReader(),
+            "docx" => new DocxReader(),
             _ => null,
         };
     }
@@ -31,6 +33,7 @@ public static class DocumentFormat
             "iwpf" => new IwpfWriter(),
             "md" or "markdown" => new MarkdownWriter(),
             "txt" => new PlainTextWriter(),
+            "docx" => new DocxWriter(),
             _ => null,
         };
     }
@@ -39,11 +42,16 @@ public static class DocumentFormat
         => PickReader(path) is not null;
 
     /// <summary>"외부 컨버터 위탁" 대상 — Phase D 에서 외부 CLI 호출로 연결.</summary>
+    /// <remarks>
+    /// Phase C 에서 DOCX 는 OpenXml SDK 로 직접 처리하므로 목록에서 제외.
+    /// HWPX 는 Phase C 후반에 자체 구현으로 처리될 예정 (KS X 6101).
+    /// 레거시 바이너리(HWP/DOC)와 HTML 만 외부 컨버터 위탁이 유지된다.
+    /// </remarks>
     public static bool RequiresExternalConverter(string path)
     {
         return GetExtensionId(path) switch
         {
-            "hwp" or "hwpx" or "doc" or "docx" or "html" or "htm" => true,
+            "hwp" or "hwpx" or "doc" or "html" or "htm" => true,
             _ => false,
         };
     }

@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Markdig" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
   <PropertyGroup>

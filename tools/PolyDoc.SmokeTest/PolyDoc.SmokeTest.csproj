@@ -5,6 +5,7 @@
     <ProjectReference Include="..\..\src\PolyDoc.Iwpf\PolyDoc.Iwpf.csproj" />
     <ProjectReference Include="..\..\src\PolyDoc.Codecs.Text\PolyDoc.Codecs.Text.csproj" />
     <ProjectReference Include="..\..\src\PolyDoc.Codecs.Markdown\PolyDoc.Codecs.Markdown.csproj" />
+    <ProjectReference Include="..\..\src\PolyDoc.Codecs.Docx\PolyDoc.Codecs.Docx.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

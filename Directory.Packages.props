@@ -8,6 +8,9 @@
     <!-- UI / MVVM -->
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 
+    <!-- Office formats -->
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
+
     <!-- Markdown -->
     <PackageVersion Include="Markdig" Version="0.42.0" />
 
