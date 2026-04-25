@@ -80,7 +80,7 @@ PolyDoc/
 체크박스: ☐ 미진행 / ◑ 진행중 / ✅ 완료
 
 ### Phase A — Core 라이브러리 (Linux 전수 가능)
-- ✅ A1 솔루션 스캐폴딩 (PolyDoc.slnx, .NET 10, CPM, 4 src + 4 tests + tools/SmokeTest)
+- ✅ A1 솔루션 스캐폴딩 (PolyDoc.sln, .NET 10, CPM, 4 src + 4 tests + tools/SmokeTest)
 - ✅ A2 PolyDoc.Core (공통 문서 모델)
 - ✅ A3 PolyDoc.Iwpf (reader/writer, ZIP+JSON, SHA-256 검증, 위변조 거부)
 - ✅ A4 PolyDoc.Codecs.Text (TXT in/out, BOM 감지)
@@ -177,8 +177,8 @@ PolyDoc/
 
 ### 사용자(노진문) 작업이 필요한 항목 — RichTextBox 업그레이드 검증 (G2.5)
 - [ ] Windows 에서 `git pull` 후 `dotnet restore`
-- [ ] `dotnet build PolyDoc.slnx` — App + 새 PolyDoc.App.Tests 까지 포함해 0 error
-- [ ] `dotnet test PolyDoc.slnx` — 기존 36건 + 신규 9건 = **xUnit 45건 모두 그린**
+- [ ] `dotnet build PolyDoc.sln` — App + 새 PolyDoc.App.Tests 까지 포함해 0 error
+- [ ] `dotnet test PolyDoc.sln` — 기존 36건 + 신규 9건 = **xUnit 45건 모두 그린**
 - [ ] `dotnet run --project src/PolyDoc.App`
 - [ ] **시각 검증**: Word 에서 만든 `.docx` (제목·본문·굵게·색·정렬 섞인) 를 열어 → 화면에 서식이 그대로 보여야 함
 - [ ] **편집 후 저장**: 본문 일부 수정 → 저장 → 다시 Word 에서 열어 서식 보존 확인 (G3 일부)

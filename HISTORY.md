@@ -61,7 +61,7 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 - **Added** — `src/PolyDoc.App` WPF 앱 첫 사이클 (Phase B1~B4 골격). `net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0. 메인 윈도우(파일/편집/입력/서식/도구/도움말 메뉴), TextBox 본문 편집기, 상태 바, About 다이얼로그(로고·핸텍·노진문·버전 표시). 파일 메뉴는 IWPF/MD/TXT 직접 처리, 외부 포맷은 Phase D 안내 메시지. Ctrl+N/O/S, Ctrl+Shift+S 단축키. 한국어 UI(.resx 분리는 다음 사이클로 이연).
 - **Added** — Light 기본 테마 (`src/PolyDoc.App/Themes/Light.xaml`) — 핸텍 브랜드 블루 기반.
 - **Added** — `Directory.Packages.props` 에 CommunityToolkit.Mvvm 8.4.0 등록.
-- **Internal** — Phase A 솔루션 골격: `PolyDoc.slnx` + `src/PolyDoc.Core` + `src/PolyDoc.Iwpf` + `src/PolyDoc.Codecs.Text` + `src/PolyDoc.Codecs.Markdown` + 대응 `tests/*` xUnit 프로젝트 + `tools/PolyDoc.SmokeTest` 콘솔 러너. .NET 10 + Central Package Management.
+- **Internal** — Phase A 솔루션 골격: `PolyDoc.sln` + `src/PolyDoc.Core` + `src/PolyDoc.Iwpf` + `src/PolyDoc.Codecs.Text` + `src/PolyDoc.Codecs.Markdown` + 대응 `tests/*` xUnit 프로젝트 + `tools/PolyDoc.SmokeTest` 콘솔 러너. .NET 10 + Central Package Management.
 - **Added** — `PolyDoc.Core` 공통 문서 모델 1차: `PolyDocument`, `DocumentMetadata`, `Section`/`PageSettings`, `Block`/`NodeStatus`, `Paragraph`/`ParagraphStyle`/`Alignment`/`OutlineLevel`/`ListMarker`/`ListKind`, `Run`/`RunStyle`/`Color`, `StyleSheet`, `Provenance`/`SourceAnchor`, `IDocumentReader`/`IDocumentWriter`/`IDocumentCodec`. 한글 조판용 `WidthPercent`(장평) / `LetterSpacingPx`(자간) 포함.
 - **Added** — `PolyDoc.Iwpf` 1차 codec (writer/reader). ZIP+JSON 패키지(`manifest.json`, `content/document.json`, `content/styles.json`, 선택적 `provenance/source-map.json`). 매니페스트 SHA-256 해시 검증, packageType 검사, 위변조 거부.
 - **Added** — `PolyDoc.Codecs.Text` (TXT in/out, BOM 자동 감지).
@@ -82,6 +82,9 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 
 ### Resolved Limitations
 - NuGet.org 차단(503)이 풀려 본 개발 환경에서도 xUnit / Markdig / OpenXml SDK 복원이 정상 동작. Phase A 의 xUnit 25건이 첫 실행에서 그린, Phase C 진입과 Markdig 교체가 가능해짐.
+
+### Fixed
+- **Internal** — 솔루션 파일을 `.slnx` (.NET 9~ XML 신형) 에서 `.sln` (전통 형식) 으로 교체. 사용자 Windows Visual Studio 빌드에서 `PolyDoc.Codecs.Docx` 프로젝트가 `.slnx` 의존성 그래프에서 누락되어 빌드 큐에 들어가지 않는 회귀가 발생 (다른 12개 프로젝트는 정상). `.sln` 형식은 모든 도구(VS, MSBuild, dotnet CLI, Rider)에서 안정적으로 인식되므로 호환성 우선.
 
 ---
 
