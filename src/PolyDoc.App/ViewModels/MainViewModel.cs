@@ -95,9 +95,10 @@ public partial class MainViewModel : ObservableObject
 
         if (DocumentFormat.RequiresExternalConverter(path) && !DocumentFormat.IsSupportedNatively(path))
         {
+            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
             MessageBox.Show(
-                "이 형식은 외부 컨버터 모듈이 필요합니다 (Phase D 이후 지원).\n" +
-                "현재는 IWPF, Markdown, TXT 만 직접 열 수 있습니다.",
+                $"이 형식 (.{ext}) 은 외부 컨버터 모듈이 필요합니다 (Phase D 이후 지원).\n\n" +
+                "현재 PolyDoc 이 직접 열 수 있는 형식: IWPF, DOCX, Markdown, TXT.",
                 "지원되지 않는 형식",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -150,11 +151,12 @@ public partial class MainViewModel : ObservableObject
         if (dlg.ShowDialog() != true) return;
 
         // 외부 포맷 저장 시 한 번 더 확인.
-        if (DocumentFormat.RequiresExternalConverter(dlg.FileName))
+        if (DocumentFormat.RequiresExternalConverter(dlg.FileName) && !DocumentFormat.IsSupportedNatively(dlg.FileName))
         {
-            var ok = MessageBox.Show(
-                "선택하신 형식은 외부 컨버터를 통한 변환이 필요합니다 (Phase D 이후 지원).\n" +
-                "지금은 PolyDoc 내장 형식(IWPF/MD/TXT)으로 저장해 주세요.",
+            var ext = Path.GetExtension(dlg.FileName).TrimStart('.').ToLowerInvariant();
+            MessageBox.Show(
+                $"선택하신 형식 (.{ext}) 은 외부 컨버터를 통한 변환이 필요합니다 (Phase D 이후 지원).\n\n" +
+                "지금은 PolyDoc 이 직접 처리하는 형식(IWPF, DOCX, Markdown, TXT)으로 저장해 주세요.",
                 "외부 컨버터 필요",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;

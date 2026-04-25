@@ -57,22 +57,28 @@ public static class DocumentFormat
     }
 
     public const string OpenFilter =
-        "모든 지원 문서|*.iwpf;*.md;*.markdown;*.txt;*.hwp;*.hwpx;*.doc;*.docx;*.html;*.htm|" +
+        // 직접 처리 (Phase A·C)
+        "PolyDoc 직접 지원 (IWPF·DOCX·MD·TXT)|*.iwpf;*.docx;*.md;*.markdown;*.txt|" +
         "PolyDoc 문서 (*.iwpf)|*.iwpf|" +
+        "Word DOCX (*.docx)|*.docx|" +
         "Markdown (*.md;*.markdown)|*.md;*.markdown|" +
         "텍스트 (*.txt)|*.txt|" +
-        "한글 (*.hwp;*.hwpx)|*.hwp;*.hwpx|" +
-        "Word (*.doc;*.docx)|*.doc;*.docx|" +
-        "HTML (*.html;*.htm)|*.html;*.htm|" +
+        // 외부 컨버터 위탁 (Phase D 이후)
+        "한글 HWPX (*.hwpx) — 외부 컨버터 필요|*.hwpx|" +
+        "한글 HWP (*.hwp) — 외부 컨버터 필요|*.hwp|" +
+        "Word 레거시 (*.doc) — 외부 컨버터 필요|*.doc|" +
+        "HTML (*.html;*.htm) — 외부 컨버터 필요|*.html;*.htm|" +
         "모든 파일 (*.*)|*.*";
 
     public const string SaveFilter =
+        // 직접 처리 (Phase A·C)
         "PolyDoc 문서 (*.iwpf)|*.iwpf|" +
+        "Word DOCX (*.docx)|*.docx|" +
         "Markdown (*.md)|*.md|" +
         "텍스트 (*.txt)|*.txt|" +
-        "HWPX (*.hwpx)|*.hwpx|" +
-        "DOCX (*.docx)|*.docx|" +
-        "HTML (*.html)|*.html";
+        // 외부 컨버터 위탁 (Phase D 이후)
+        "한글 HWPX (*.hwpx) — 외부 컨버터 필요|*.hwpx|" +
+        "HTML (*.html) — 외부 컨버터 필요|*.html";
 
     private static string GetExtensionId(string path)
         => Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
