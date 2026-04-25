@@ -106,7 +106,7 @@ PolyDoc/
 - ✅ C3 HWPX reader (KS X 6101) — 자체 구현 1차 (단락·런·정렬·강조·헤더 H1~H6)
 - ✅ C4 HWPX writer + 라운드트립 테스트 (xUnit 6건 + 스모크 1건)
 - ✅ C4.5 한컴 hwpx 변종 호환 — ZIP entry path 정규화, BOM-aware StreamReader, OPF spine .xml 필터, header.xml 의 charPr/paraPr/style ID → PolyDoc 모델 매핑
-- ☐ C5 HWPX 표·이미지·OpaqueBlock 매핑 (`<hp:tbl>` → Table, BinData/ → ImageBlock) — 다음 사이클
+- ✅ C5 HWPX 표·이미지 양방향 (`<hp:tbl>` ↔ Table, `<hp:pic>`+BinData ↔ ImageBlock, SHA-256 dedupe). OpaqueBlock 은 다음 사이클
 - ☐ C6 HWPX writer 의 한컴 호환 향상 — header.xml 에 사용자별 RunStyle/ParagraphStyle 마다 동적 charPr/paraPr 생성, hp:linesegarray 보강
 - ☐ G3 (DOCX 측): 사용자가 Word 에서 시각 검증 — 통과 (직접 처리·라운드트립 정상 보고)
 - ◑ G3 (HWPX 측 reader): 한컴 hwpx 4건 본문·서식 정상 표시 — 통과 (사용자 보고 OK)
@@ -178,8 +178,8 @@ PolyDoc/
 | PolyDoc.Codecs.Text.Tests | 5 | ✅ |
 | PolyDoc.Codecs.Markdown.Tests | 11 | ✅ |
 | PolyDoc.Codecs.Docx.Tests | 9 | ✅ |
-| PolyDoc.Codecs.Hwpx.Tests | 6 | ✅ |
-| **합계** | **49** | **All green** |
+| PolyDoc.Codecs.Hwpx.Tests | 9 | ✅ |
+| **합계** | **52** | **All green** |
 | PolyDoc.SmokeTest 콘솔 | 6 | ✅ |
 
 ### 사용자(노진문) 작업이 필요한 항목 — RichTextBox 업그레이드 검증 (G2.5)

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
 using PolyDoc.Core;
@@ -46,16 +47,59 @@ public sealed class HwpxWriter : IDocumentWriter
         WriteVersionXml(archive);
         WriteHeaderXml(archive);
 
+        var ctx = new WriteContext(archive);
+
         for (int i = 0; i < document.Sections.Count; i++)
         {
-            WriteSectionXml(archive, i, document.Sections[i]);
+            WriteSectionXml(archive, i, document.Sections[i], ctx);
         }
 
         // 빈 섹션이면 적어도 하나는 넣어 매니페스트 일관성 유지.
         if (document.Sections.Count == 0)
         {
-            WriteSectionXml(archive, 0, new Section());
+            WriteSectionXml(archive, 0, new Section(), ctx);
         }
+    }
+
+    private sealed class WriteContext
+    {
+        private int _nextImageId = 1;
+        private readonly Dictionary<string, string> _imageIdByHash = new(StringComparer.Ordinal);
+
+        public WriteContext(ZipArchive archive) { Archive = archive; }
+        public ZipArchive Archive { get; }
+
+        /// <summary>이미지 binary 를 BinData/ 에 dedupe 후 그 binaryItemIDRef("imageN") 반환.</summary>
+        public string AddImage(byte[] data, string mediaType)
+        {
+            Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+            SHA256.HashData(data, hash);
+            var hashKey = Convert.ToHexStringLower(hash);
+            if (_imageIdByHash.TryGetValue(hashKey, out var existing))
+            {
+                return existing;
+            }
+            var id = $"image{_nextImageId++}";
+            var ext = ExtensionForMediaType(mediaType);
+            var path = $"{HwpxPaths.BinDataDir}{id}{ext}";
+            var entry = Archive.CreateEntry(path, CompressionLevel.Optimal);
+            using var stream = entry.Open();
+            stream.Write(data, 0, data.Length);
+            _imageIdByHash[hashKey] = id;
+            return id;
+        }
+
+        private static string ExtensionForMediaType(string mediaType) => mediaType switch
+        {
+            "image/png" => ".png",
+            "image/jpeg" => ".jpg",
+            "image/gif" => ".gif",
+            "image/bmp" => ".bmp",
+            "image/tiff" => ".tif",
+            "image/svg+xml" => ".svg",
+            "image/webp" => ".webp",
+            _ => ".bin",
+        };
     }
 
     private static void WriteRawText(ZipArchive archive, string path, string content, CompressionLevel level)
@@ -263,7 +307,7 @@ public sealed class HwpxWriter : IDocumentWriter
         return charPr;
     }
 
-    private void WriteSectionXml(ZipArchive archive, int sectionIndex, Section section)
+    private void WriteSectionXml(ZipArchive archive, int sectionIndex, Section section, WriteContext ctx)
     {
         var sec = new XElement(Hs + "sec",
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHs, Hs.NamespaceName),
@@ -278,16 +322,162 @@ public sealed class HwpxWriter : IDocumentWriter
         {
             foreach (var block in section.Blocks)
             {
-                if (block is Paragraph p)
-                {
-                    sec.Add(BuildParagraph(p));
-                }
-                // Phase C 의 Table/ImageBlock/OpaqueBlock 은 다음 사이클에서 HWPX 매핑 추가.
+                AppendBlock(sec, block, ctx);
             }
         }
 
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", null), sec);
         WriteXml(archive, HwpxPaths.SectionXml(sectionIndex), doc);
+    }
+
+    private void AppendBlock(XElement target, Block block, WriteContext ctx)
+    {
+        switch (block)
+        {
+            case Paragraph p:
+                target.Add(BuildParagraph(p));
+                break;
+            case Table t:
+                // hp:tbl 은 보통 hp:p > hp:run 안에 인라인으로 들어가므로 별도 wrapping paragraph 에 둔다.
+                target.Add(BuildTableHostingParagraph(t, ctx));
+                break;
+            case ImageBlock img:
+                target.Add(BuildImageHostingParagraph(img, ctx));
+                break;
+            case OpaqueBlock op:
+                target.Add(BuildParagraph(Paragraph.Of(op.DisplayLabel)));
+                break;
+        }
+    }
+
+    private XElement BuildTableHostingParagraph(Table table, WriteContext ctx)
+    {
+        var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
+        run.Add(BuildTable(table, ctx));
+        return new XElement(Hp + "p",
+            new XAttribute("paraPrIDRef", "0"),
+            new XAttribute("styleIDRef", "0"),
+            run);
+    }
+
+    private XElement BuildTable(Table table, WriteContext ctx)
+    {
+        // 행/열 수 계산 — 모델의 sparse 표현에서 colCnt 를 정확히 산출.
+        int rowCount = table.Rows.Count;
+        int colCount = table.Columns.Count;
+        if (colCount == 0 && table.Rows.Count > 0)
+        {
+            colCount = table.Rows.Max(r => r.Cells.Sum(c => Math.Max(c.ColumnSpan, 1)));
+        }
+
+        var wtbl = new XElement(Hp + "tbl",
+            new XAttribute("rowCnt", rowCount.ToString()),
+            new XAttribute("colCnt", colCount.ToString()),
+            new XAttribute("cellSpacing", "0"),
+            new XAttribute("borderFillIDRef", "0"));
+
+        // 1차 사이클: 위치/마진은 최소 정의.
+        wtbl.Add(new XElement(Hp + "sz",
+            new XAttribute("width", "0"), new XAttribute("widthRelTo", "ABSOLUTE"),
+            new XAttribute("height", "0"), new XAttribute("heightRelTo", "ABSOLUTE"),
+            new XAttribute("protect", "0")));
+        wtbl.Add(new XElement(Hp + "outMargin",
+            new XAttribute("left", "0"), new XAttribute("right", "0"),
+            new XAttribute("top", "0"), new XAttribute("bottom", "0")));
+        wtbl.Add(new XElement(Hp + "inMargin",
+            new XAttribute("left", "0"), new XAttribute("right", "0"),
+            new XAttribute("top", "0"), new XAttribute("bottom", "0")));
+
+        for (int r = 0; r < table.Rows.Count; r++)
+        {
+            var row = table.Rows[r];
+            var wrow = new XElement(Hp + "tr");
+            int c = 0;
+            foreach (var cell in row.Cells)
+            {
+                var wcell = new XElement(Hp + "tc",
+                    new XAttribute("name", string.Empty),
+                    new XAttribute("header", "0"),
+                    new XAttribute("hasMargin", "0"),
+                    new XAttribute("protect", "0"),
+                    new XAttribute("editable", "0"),
+                    new XAttribute("dirty", "0"),
+                    new XAttribute("borderFillIDRef", "0"));
+
+                var subList = new XElement(Hp + "subList");
+                if (cell.Blocks.Count == 0)
+                {
+                    subList.Add(BuildEmptyParagraph());
+                }
+                else
+                {
+                    foreach (var inner in cell.Blocks)
+                    {
+                        AppendBlock(subList, inner, ctx);
+                    }
+                }
+                wcell.Add(subList);
+                wcell.Add(new XElement(Hp + "cellAddr",
+                    new XAttribute("colAddr", c.ToString()),
+                    new XAttribute("rowAddr", r.ToString())));
+                wcell.Add(new XElement(Hp + "cellSpan",
+                    new XAttribute("colSpan", Math.Max(cell.ColumnSpan, 1).ToString()),
+                    new XAttribute("rowSpan", Math.Max(cell.RowSpan, 1).ToString())));
+                var widthHwp = (long)Math.Round(cell.WidthMm / (25.4 / 7200.0));
+                wcell.Add(new XElement(Hp + "cellSz",
+                    new XAttribute("width", widthHwp.ToString()),
+                    new XAttribute("height", "0")));
+                wcell.Add(new XElement(Hp + "cellMargin",
+                    new XAttribute("left", "0"), new XAttribute("right", "0"),
+                    new XAttribute("top", "0"), new XAttribute("bottom", "0")));
+
+                wrow.Add(wcell);
+                c += Math.Max(cell.ColumnSpan, 1);
+            }
+            wtbl.Add(wrow);
+        }
+        return wtbl;
+    }
+
+    private XElement BuildImageHostingParagraph(ImageBlock image, WriteContext ctx)
+    {
+        var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
+        if (image.Data.Length > 0)
+        {
+            run.Add(BuildPicture(image, ctx));
+        }
+        return new XElement(Hp + "p",
+            new XAttribute("paraPrIDRef", "0"),
+            new XAttribute("styleIDRef", "0"),
+            run);
+    }
+
+    private XElement BuildPicture(ImageBlock image, WriteContext ctx)
+    {
+        var binId = ctx.AddImage(image.Data, image.MediaType);
+
+        long widthHwp = (long)Math.Round((image.WidthMm > 0 ? image.WidthMm : 80) / (25.4 / 7200.0));
+        long heightHwp = (long)Math.Round((image.HeightMm > 0 ? image.HeightMm : 60) / (25.4 / 7200.0));
+
+        return new XElement(Hp + "pic",
+            new XElement(Hp + "offset", new XAttribute("x", "0"), new XAttribute("y", "0")),
+            new XElement(Hp + "orgSz", new XAttribute("width", widthHwp.ToString()), new XAttribute("height", heightHwp.ToString())),
+            new XElement(Hp + "curSz", new XAttribute("width", widthHwp.ToString()), new XAttribute("height", heightHwp.ToString())),
+            new XElement(Hp + "flip", new XAttribute("horizontal", "0"), new XAttribute("vertical", "0")),
+            new XElement(Hp + "rotationInfo",
+                new XAttribute("angle", "0"), new XAttribute("centerX", "0"), new XAttribute("centerY", "0")),
+            new XElement(Hp + "imgClip",
+                new XAttribute("left", "0"), new XAttribute("top", "0"),
+                new XAttribute("right", "0"), new XAttribute("bottom", "0")),
+            new XElement(Hp + "inMargin",
+                new XAttribute("left", "0"), new XAttribute("right", "0"),
+                new XAttribute("top", "0"), new XAttribute("bottom", "0")),
+            new XElement(Hp + "img",
+                new XAttribute("binaryItemIDRef", binId),
+                new XAttribute("bright", "0"),
+                new XAttribute("contrast", "0"),
+                new XAttribute("effect", "REAL_PIC"),
+                new XAttribute("alpha", "0")));
     }
 
     private XElement BuildEmptyParagraph()

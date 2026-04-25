@@ -66,6 +66,8 @@ public sealed class HwpxReader : IDocumentReader
             var headerDoc = LoadXml(archive, headerPath, parseErrors);
             var header = HwpxHeaderReader.Parse(headerDoc);
 
+            var ctx = new ReadContext(archive, header, parseErrors);
+
             var document = new PolyDocument { Metadata = metadata };
             int totalParagraphs = 0;
             int totalTextRuns = 0;
@@ -76,7 +78,7 @@ public sealed class HwpxReader : IDocumentReader
             {
                 var path = sectionPaths[i];
                 var sectionDoc = LoadXml(archive, path, parseErrors);
-                var section = ReadSectionFromDoc(sectionDoc, header);
+                var section = ReadSectionFromDoc(sectionDoc, ctx);
                 document.Sections.Add(section);
 
                 if (i == 0 && sectionDoc?.Root is { } root)
@@ -318,10 +320,42 @@ public sealed class HwpxReader : IDocumentReader
         return dir + relative;
     }
 
-    private static Section ReadSection(ZipArchive archive, string path)
-        => ReadSectionFromDoc(LoadXml(archive, path), new HwpxHeader());
+    private sealed class ReadContext
+    {
+        public ReadContext(ZipArchive archive, HwpxHeader header, List<string> parseErrors)
+        {
+            Archive = archive;
+            Header = header;
+            ParseErrors = parseErrors;
+            BinDataIndex = BuildBinDataIndex(archive);
+        }
 
-    private static Section ReadSectionFromDoc(XDocument? doc, HwpxHeader header)
+        public ZipArchive Archive { get; }
+        public HwpxHeader Header { get; }
+        public List<string> ParseErrors { get; }
+        /// <summary>BinData 안의 파일들을 'basename(확장자 제외)' → FullName 으로 사전화.</summary>
+        public Dictionary<string, string> BinDataIndex { get; }
+
+        private static Dictionary<string, string> BuildBinDataIndex(ZipArchive archive)
+        {
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in archive.Entries)
+            {
+                if (entry.FullName.StartsWith(HwpxPaths.BinDataDir, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(System.IO.Path.GetFileName(entry.FullName)))
+                {
+                    var stem = System.IO.Path.GetFileNameWithoutExtension(entry.FullName);
+                    if (!dict.ContainsKey(stem))
+                    {
+                        dict[stem] = entry.FullName;
+                    }
+                }
+            }
+            return dict;
+        }
+    }
+
+    private static Section ReadSectionFromDoc(XDocument? doc, ReadContext ctx)
     {
         var section = new Section();
         if (doc?.Root is null)
@@ -329,17 +363,200 @@ public sealed class HwpxReader : IDocumentReader
             return section;
         }
 
-        // 한컴 오피스가 만든 HWPX 는 sec 안에 추가 wrapper(예: subList) 를 둘 수도 있어
-        // root 직속이 아닌 깊이의 hp:p 도 찾아야 한다. 표 안의 셀 paragraph 까지 모두 평탄화로
-        // 흡수해 사용자가 본문 텍스트는 잃지 않도록 한다 (1차 사이클의 의도적 단순화).
+        // 한컴 hwpx 는 root 안에 wrapper 를 둘 수도 있고 표 안에 셀 paragraph 가 중첩되므로
+        // 1) 모든 hp:tbl 안의 paragraph/pic 을 마킹해 평탄 순회에서 제외하고
+        // 2) descendants 평탄 순회로 hp:p / hp:tbl / hp:pic 을 본문 block 으로 추출.
+        // 표 안 paragraph 는 ReadTable 이 셀에 모은다.
+        var insideTable = new HashSet<XElement>();
+        foreach (var tbl in doc.Root.Descendants().Where(e => e.Name.LocalName == "tbl"))
+        {
+            foreach (var d in tbl.Descendants())
+            {
+                insideTable.Add(d);
+            }
+        }
+
+        var seenPics = new HashSet<XElement>();
         foreach (var elem in doc.Root.Descendants())
         {
-            if (elem.Name.LocalName == "p")
+            if (insideTable.Contains(elem))
             {
-                section.Blocks.Add(ReadParagraph(elem, header));
+                continue;
+            }
+            switch (elem.Name.LocalName)
+            {
+                case "p":
+                    section.Blocks.Add(ReadParagraph(elem, ctx.Header));
+                    // paragraph 안에 인라인 그림이 있을 수 있어 별도 ImageBlock 으로 추출.
+                    foreach (var pic in elem.Descendants().Where(d => d.Name.LocalName == "pic"))
+                    {
+                        if (seenPics.Add(pic) && TryReadPicture(pic, ctx, out var img))
+                        {
+                            section.Blocks.Add(img);
+                        }
+                    }
+                    break;
+                case "tbl":
+                    section.Blocks.Add(ReadTable(elem, ctx));
+                    break;
+                case "pic":
+                    if (seenPics.Add(elem) && TryReadPicture(elem, ctx, out var pictureBlock))
+                    {
+                        section.Blocks.Add(pictureBlock);
+                    }
+                    break;
             }
         }
         return section;
+    }
+
+    private static Table ReadTable(XElement wtbl, ReadContext ctx)
+    {
+        var table = new Table();
+
+        // colCnt 속성으로 컬럼 수만 추정 (너비는 셀 단위로 주어지는 경우가 많음).
+        if (TryParseInt(wtbl.Attribute("colCnt")?.Value) is { } colCount && colCount > 0)
+        {
+            for (int c = 0; c < colCount; c++)
+            {
+                table.Columns.Add(new TableColumn());
+            }
+        }
+
+        foreach (var row in wtbl.Elements().Where(e => e.Name.LocalName == "tr"))
+        {
+            var tableRow = new TableRow();
+
+            foreach (var cell in row.Elements().Where(e => e.Name.LocalName == "tc"))
+            {
+                var tableCell = new TableCell();
+
+                // cellSpan 의 colSpan/rowSpan
+                var span = cell.Elements().FirstOrDefault(e => e.Name.LocalName == "cellSpan");
+                if (span is not null)
+                {
+                    if (TryParseInt(span.Attribute("colSpan")?.Value) is { } cs && cs > 0)
+                        tableCell.ColumnSpan = cs;
+                    if (TryParseInt(span.Attribute("rowSpan")?.Value) is { } rs && rs > 0)
+                        tableCell.RowSpan = rs;
+                }
+
+                // cellSz 의 width (hwpunit) → mm
+                var sz = cell.Elements().FirstOrDefault(e => e.Name.LocalName == "cellSz");
+                if (sz is not null
+                    && double.TryParse(sz.Attribute("width")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var widthHwp))
+                {
+                    tableCell.WidthMm = widthHwp * (25.4 / 7200.0);
+                }
+
+                // 셀 본문 — subList 안의 hp:p 들을 셀에 모은다 (인라인 그림은 같은 셀에 ImageBlock 으로).
+                var seenInCell = new HashSet<XElement>();
+                foreach (var d in cell.Descendants())
+                {
+                    switch (d.Name.LocalName)
+                    {
+                        case "p":
+                            tableCell.Blocks.Add(ReadParagraph(d, ctx.Header));
+                            foreach (var pic in d.Descendants().Where(x => x.Name.LocalName == "pic"))
+                            {
+                                if (seenInCell.Add(pic) && TryReadPicture(pic, ctx, out var img))
+                                {
+                                    tableCell.Blocks.Add(img);
+                                }
+                            }
+                            break;
+                        case "tbl":
+                            // 중첩 표
+                            tableCell.Blocks.Add(ReadTable(d, ctx));
+                            break;
+                    }
+                }
+
+                if (tableCell.Blocks.Count == 0)
+                {
+                    tableCell.Blocks.Add(Paragraph.Of(string.Empty));
+                }
+                tableRow.Cells.Add(tableCell);
+            }
+            table.Rows.Add(tableRow);
+        }
+        return table;
+    }
+
+    private static bool TryReadPicture(XElement pic, ReadContext ctx, out ImageBlock image)
+    {
+        image = null!;
+
+        // <hp:pic> 안의 <hp:img binaryItemIDRef="..."> 를 찾는다.
+        var img = pic.Descendants().FirstOrDefault(e => e.Name.LocalName == "img");
+        var binId = img?.Attribute("binaryItemIDRef")?.Value;
+        if (string.IsNullOrEmpty(binId))
+        {
+            return false;
+        }
+
+        // BinData 인덱스에서 같은 stem 을 가진 entry 매칭.
+        if (!ctx.BinDataIndex.TryGetValue(binId!, out var entryPath))
+        {
+            // 'image1' 형태 외에 'BinData/image1.png' 같은 풀 경로가 들어올 수도 있어 직접 시도.
+            var direct = ctx.Archive.GetEntry(binId!);
+            if (direct is null)
+            {
+                return false;
+            }
+            entryPath = direct.FullName;
+        }
+
+        var entry = ctx.Archive.GetEntry(entryPath);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        byte[] bytes;
+        using (var stream = entry.Open())
+        using (var ms = new MemoryStream())
+        {
+            stream.CopyTo(ms);
+            bytes = ms.ToArray();
+        }
+
+        // curSz 의 width/height (hwpunit) → mm
+        double widthMm = 0;
+        double heightMm = 0;
+        var curSz = pic.Descendants().FirstOrDefault(e => e.Name.LocalName == "curSz");
+        if (curSz is not null)
+        {
+            if (double.TryParse(curSz.Attribute("width")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var w))
+                widthMm = w * (25.4 / 7200.0);
+            if (double.TryParse(curSz.Attribute("height")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h))
+                heightMm = h * (25.4 / 7200.0);
+        }
+
+        image = new ImageBlock
+        {
+            MediaType = GuessMediaType(entry.FullName),
+            Data = bytes,
+            WidthMm = widthMm,
+            HeightMm = heightMm,
+        };
+        return true;
+    }
+
+    private static string GuessMediaType(string path)
+    {
+        var ext = System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        return ext switch
+        {
+            "png" => "image/png",
+            "jpg" or "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "bmp" => "image/bmp",
+            "tif" or "tiff" => "image/tiff",
+            "svg" => "image/svg+xml",
+            "webp" => "image/webp",
+            _ => "application/octet-stream",
+        };
     }
 
     private static Paragraph ReadParagraph(XElement wp, HwpxHeader header)

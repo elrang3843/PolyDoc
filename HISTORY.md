@@ -45,6 +45,7 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — HWPX 표 / 이미지 양방향. Reader: `<hp:tbl>` → Table (rows·cells·cellSpan·cellSz, 중첩 표), `<hp:pic>` 의 `<hp:img binaryItemIDRef>` → ImageBlock (BinData/{stem}.* 파일 매칭, 바이트 추출, curSz 의 hwpunit → mm). 표 안 paragraph 는 본문 평탄화에서 제외하고 셀 본문에 모음. Writer: Table → `<hp:tbl>` (sz/outMargin/inMargin 최소 valid 정의 + tr/tc/cellAddr/cellSpan/cellSz/cellMargin), ImageBlock → `<hp:pic><hp:img>` 와 BinData/{imageN}.{ext} 추가. SHA-256 dedupe 로 같은 이미지는 한 번만 저장. xUnit 라운드트립 6 → 9건 (Table 구조, 이미지 바이트 동일성, BinData dedupe 추가). 자체 라운드트립 + 스모크 전부 그린 유지.
 - **Added** — HWPX 한컴 서식 회수 — `HwpxHeader` / `HwpxHeaderReader` 신설. header.xml 의 `fontfaces` / `charPr` / `paraPr` / `style` 정의를 PolyDoc 모델로 매핑해 한컴이 만든 hwpx 의 임의 ID(0~5 약속과 다른) 도 본문 서식이 살아남는다.
   - charPr: height(0.01pt 단위) / textColor / shadeColor / `<bold>` / `<italic>` / `<underline>` / `<strikeout>` / `<sup·subscript>` / `<fontRef hangul/latin/hanja...>` → `RunStyle`.
   - paraPr: `<align horizontal>` / `<margin left/right/intent/prev/next>` (hwpunit → mm) / `<lineSpacing PERCENT>` → `ParagraphStyle`.

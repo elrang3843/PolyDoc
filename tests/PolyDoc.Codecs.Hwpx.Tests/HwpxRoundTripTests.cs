@@ -130,6 +130,94 @@ public class HwpxRoundTripTests
         Assert.Throws<InvalidDataException>(() => new HwpxReader().Read(ms));
     }
 
+    [Fact]
+    public void RoundTrip_PreservesTableStructure()
+    {
+        var table = new Table();
+        table.Columns.Add(new TableColumn { WidthMm = 30 });
+        table.Columns.Add(new TableColumn { WidthMm = 60 });
+
+        var headerRow = new TableRow();
+        headerRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("이름") } });
+        headerRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("값") } });
+        table.Rows.Add(headerRow);
+
+        var dataRow = new TableRow();
+        dataRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("월") } });
+        dataRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("31일") } });
+        table.Rows.Add(dataRow);
+
+        var doc = new PolyDocument();
+        var section = new Section();
+        section.Blocks.Add(table);
+        doc.Sections.Add(section);
+
+        var roundTripped = WriteThenRead(doc);
+        var t = roundTripped.Sections[0].Blocks.OfType<Table>().Single();
+
+        Assert.Equal(2, t.Rows.Count);
+        Assert.Equal(2, t.Rows[0].Cells.Count);
+        Assert.Equal("이름", ((Paragraph)t.Rows[0].Cells[0].Blocks[0]).GetPlainText());
+        Assert.Equal("값", ((Paragraph)t.Rows[0].Cells[1].Blocks[0]).GetPlainText());
+        Assert.Equal("월", ((Paragraph)t.Rows[1].Cells[0].Blocks[0]).GetPlainText());
+        Assert.Equal("31일", ((Paragraph)t.Rows[1].Cells[1].Blocks[0]).GetPlainText());
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesImageBytes()
+    {
+        // 1×1 투명 PNG 의 최소 바이트열.
+        byte[] tinyPng = new byte[]
+        {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+            0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        };
+
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        section.Blocks.Add(new ImageBlock
+        {
+            MediaType = "image/png",
+            Data = tinyPng,
+            WidthMm = 50,
+            HeightMm = 30,
+        });
+
+        var roundTripped = WriteThenRead(doc);
+        var image = roundTripped.Sections[0].Blocks.OfType<ImageBlock>().Single();
+
+        Assert.Equal(tinyPng, image.Data);
+        Assert.Equal("image/png", image.MediaType);
+        Assert.Equal(50, image.WidthMm, precision: 0);
+        Assert.Equal(30, image.HeightMm, precision: 0);
+    }
+
+    [Fact]
+    public void RoundTrip_DedupesIdenticalImagesIntoSingleBinDataPart()
+    {
+        var bytes = new byte[] { 1, 2, 3, 4, 5 };
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        section.Blocks.Add(new ImageBlock { MediaType = "image/png", Data = bytes });
+        section.Blocks.Add(new ImageBlock { MediaType = "image/png", Data = (byte[])bytes.Clone() });
+
+        var packageBytes = WriteToBytes(doc);
+
+        using var ms = new MemoryStream(packageBytes);
+        using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+        var binDataEntries = archive.Entries.Count(e => e.FullName.StartsWith("BinData/", StringComparison.Ordinal));
+        Assert.Equal(1, binDataEntries);
+    }
+
     private static byte[] WriteToBytes(PolyDocument doc)
     {
         using var ms = new MemoryStream();
