@@ -1,0 +1,61 @@
+PolyDoc
+Copyright (c) 2026 HANDTECH (핸텍) — Noh JinMoon (노진문)
+
+This product includes software developed by HANDTECH (핸텍) and its
+contributors. The official maintainer is Noh JinMoon (노진문, GitHub:
+@elrang3843).
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may
+not use this product except in compliance with the License. You may obtain
+a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+Third-Party Software Notices
+================================================================================
+
+This product depends on third-party libraries listed below. Each is
+distributed under its own license, which is reproduced or referenced in the
+respective project's source distribution. The presence of a library in this
+list does not imply that PolyDoc is endorsed by its authors.
+
+The full third-party notice file (THIRD_PARTY_NOTICES.md) will be generated
+automatically as dependencies are added during development. The following
+list reflects the dependencies planned for the 1.0.0 release.
+
+  * .NET 10 Runtime / SDK
+      Copyright (c) .NET Foundation and Contributors
+      License: MIT — https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+
+  * CommunityToolkit.Mvvm
+      Copyright (c) .NET Foundation
+      License: MIT — https://github.com/CommunityToolkit/dotnet/blob/main/License.md
+
+  * DocumentFormat.OpenXml
+      Copyright (c) Microsoft Corporation and Contributors
+      License: MIT — https://github.com/dotnet/Open-XML-SDK/blob/main/LICENSE
+
+  * Markdig
+      Copyright (c) Alexandre Mutel
+      License: BSD-2-Clause — https://github.com/xoofx/markdig/blob/master/license.txt
+
+  * AngleSharp
+      Copyright (c) AngleSharp
+      License: MIT — https://github.com/AngleSharp/AngleSharp/blob/devel/LICENSE
+
+  * xUnit
+      Copyright (c) .NET Foundation and Contributors
+      License: Apache 2.0 — https://github.com/xunit/xunit/blob/main/LICENSE
+
+  * LibreOffice (invoked as external process for HWP/DOC ingest)
+      Copyright (c) The Document Foundation
+      License: MPL-2.0 — https://www.libreoffice.org/about-us/licenses/
+
+================================================================================
+
+Trademarks
+----------
+"HANDTECH" and "핸텍" are trademarks of their respective owner. All other
+trademarks (Microsoft Word, DOCX, Hancom, HWP/HWPX, etc.) belong to their
+respective holders and are used here for identification purposes only.

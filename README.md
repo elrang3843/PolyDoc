@@ -1,12 +1,25 @@
-# PolyDoc
+<p align="center">
+  <img src="https://github.com/elrang3843.png?size=160" alt="HANDTECH" width="120" height="120" />
+</p>
 
-> **HWP, HWPX, DOC, DOCX, HTML/HTM, MD, TXT** 문서를 한 곳에서 읽고 편집하고
-> 자체 무손실 포맷 **IWPF**로 보관하는 데스크톱 워드프로세서.
+<h1 align="center">PolyDoc</h1>
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Platform: Windows 10+](https://img.shields.io/badge/Platform-Windows%2010%2B-0078D6.svg)](#시스템-요구사항)
-[![Status: Pre-alpha](https://img.shields.io/badge/Status-Pre--alpha-orange.svg)](#프로젝트-상태)
-[![Language: C# / WPF](https://img.shields.io/badge/Lang-C%23%20%2F%20WPF-512BD4.svg)](#기술-스택)
+<p align="center">
+  <b>HWP · HWPX · DOC · DOCX · HTML/HTM · MD · TXT</b> 문서를 한 곳에서 읽고 편집하고<br/>
+  자체 무손실 포맷 <b>IWPF</b> 로 보관하는 데스크톱 워드프로세서.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0"/></a>
+  <a href="#시스템-요구사항"><img src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078D6.svg" alt="Platform: Windows 10+"/></a>
+  <a href="#프로젝트-상태"><img src="https://img.shields.io/badge/Status-Pre--alpha-orange.svg" alt="Status: Pre-alpha"/></a>
+  <a href="#소스에서-빌드하기"><img src="https://img.shields.io/badge/Lang-C%23%20%2F%20WPF-512BD4.svg" alt="Language: C# / WPF"/></a>
+  <a href="#소스에서-빌드하기"><img src="https://img.shields.io/badge/.NET-10.0-512BD4.svg" alt=".NET 10"/></a>
+</p>
+
+<p align="center">
+  Made by <b>핸텍 (HANDTECH)</b> · 저작권자 <b>노진문 (Noh JinMoon)</b>
+</p>
 
 ---
 
@@ -321,11 +334,39 @@ PolyDoc은 초기 단계라 이슈 제보와 설계 토론 모두 큰 도움이 
 
 ---
 
+## 만든 사람들
+
+<table>
+  <tr>
+    <td align="center" width="160">
+      <img src="https://github.com/elrang3843.png?size=120" width="100" height="100" alt="HANDTECH"/><br/>
+      <sub><b>핸텍 (HANDTECH)</b></sub>
+    </td>
+    <td>
+      <ul>
+        <li><b>회사</b>: 핸텍 (HANDTECH)</li>
+        <li><b>저작권자 / 메인테이너</b>: 노진문 (Noh JinMoon)</li>
+        <li><b>GitHub</b>: <a href="https://github.com/elrang3843">@elrang3843</a></li>
+        <li><b>Repository</b>: <a href="https://github.com/elrang3843/PolyDoc">elrang3843/PolyDoc</a></li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+회사·저작권 정보의 정식 표기는 [`NOTICE`](NOTICE) 파일을 따릅니다.
+
+---
+
 ## 라이선스
 
 이 프로젝트는 [Apache License 2.0](LICENSE) 으로 배포됩니다.
 
-써드파티 의존성의 라이선스 고지는 추후 `THIRD_PARTY_NOTICES.md` 와
+```
+Copyright (c) 2026 HANDTECH (핸텍) — Noh JinMoon (노진문)
+Licensed under the Apache License, Version 2.0
+```
+
+써드파티 의존성의 라이선스 고지는 추후 [`NOTICE`](NOTICE) 와
 앱 내 [도움말 → 라이선스] 메뉴에서 제공됩니다.
 
 ---
@@ -337,9 +378,14 @@ PolyDoc은 초기 단계라 이슈 제보와 설계 토론 모두 큰 도움이 
 | [`README.md`](README.md)           | 사용자·기여자   | 프로젝트 소개와 사용 안내 (이 문서)             |
 | [`HISTORY.md`](HISTORY.md)         | 사용자·기여자   | 변경 이력(Changelog) — 버전별 추가·수정 내역    |
 | [`IWPF.md`](IWPF.md)               | 설계자·개발자   | IWPF 통합 포맷 사양과 설계 근거                |
+| [`WORK_PLAN.md`](WORK_PLAN.md)     | 메인테이너·AI   | 다단계 작업 계획·진행 상태·인수인계             |
 | [`CLAUDE.md`](CLAUDE.md)           | Claude Code    | AI 어시스턴트가 참고할 개발 가이드라인          |
+| [`NOTICE`](NOTICE)                 | 모두           | 저작권 고지·써드파티 attribution                |
 | [`LICENSE`](LICENSE)               | 모두           | Apache License 2.0 본문                       |
 
 ---
 
-<sub>PolyDoc — 한국어 문서 생태계와 글로벌 워드프로세서 포맷을 한 자리에서.</sub>
+<p align="center">
+  <sub>PolyDoc — 한국어 문서 생태계와 글로벌 워드프로세서 포맷을 한 자리에서.</sub><br/>
+  <sub>© 2026 HANDTECH (핸텍) · Noh JinMoon (노진문)</sub>
+</p>

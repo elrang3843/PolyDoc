@@ -1,15 +1,18 @@
 # CLAUDE.md
 
-Claude Code가 이 저장소에서 작업할 때 참고하는 가이드. 자세한 내용은 `README.md`(사용자 안내), `IWPF.md`(파일 포맷 사양), `HISTORY.md`(변경 이력)를 본다.
+Claude Code가 이 저장소에서 작업할 때 참고하는 가이드. 자세한 내용은 `README.md`(사용자 안내), `IWPF.md`(파일 포맷 사양), `HISTORY.md`(변경 이력), `WORK_PLAN.md`(다단계 작업 계획)를 본다.
 
 ## 프로젝트 개요
 
 **PolyDoc** — HWP, HWPX, DOC, DOCX, HTML/HTM, MD, TXT 문서를 읽어 자체 포맷 **IWPF**로 저장하는 워드프로세서 앱.
 
-- 언어/UI: **C# + WPF**(또는 WinUI 3)
+- 회사: **핸텍 (HANDTECH)**
+- 메인테이너 / 저작권자: **노진문 (Noh JinMoon)** — GitHub `@elrang3843`
+- 언어/UI: **C# + WPF** (WinUI 3 가 아니라 WPF 로 확정)
 - 대상 OS: **Windows 10 이상**
 - 다국어: 한국어(기본), 영어
-- 라이선스 파일: `LICENSE`
+- 라이선스: Apache 2.0 — `LICENSE` / `NOTICE`
+- 회사 로고: `https://github.com/elrang3843.png` (GitHub 사용자 아바타) — 정식 로고 파일이 별도로 제공되면 교체
 
 ## 핵심 아키텍처 원칙
 
