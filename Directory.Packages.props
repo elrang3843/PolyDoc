@@ -5,6 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- UI / MVVM -->
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+
     <!-- Markdown -->
     <PackageVersion Include="Markdig" Version="0.42.0" />
 

@@ -92,11 +92,11 @@ PolyDoc/
 - ✅ A7 커밋·푸시
 
 ### Phase B — WPF UI 셸 (Windows 필수)
-- ☐ B1 PolyDoc.App 스캐폴딩 (WPF + MVVM)
-- ☐ B2 메뉴/툴바/문서 탭/룰러 골격
-- ☐ B3 i18n 리소스 (한/영)
-- ☐ B4 테마 시스템 (학생~장년 대상 다중 테마)
-- ☐ B5 사용자 게이트 G2: Windows에서 첫 빌드/run 결과 보고
+- ✅ B1 PolyDoc.App 스캐폴딩 (`net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0, ApplicationIcon=Handtech.ico, Handtech_1024.png 임베드)
+- ✅ B2 메인 메뉴 6단(파일/편집/입력/서식/도구/도움말) + TextBox 본문 편집기 + 상태 바 + About 다이얼로그
+- ◑ B3 i18n 한/영 — 1차 사이클은 한국어 하드코딩, `.resx` 리소스 분리는 다음 사이클로 이연
+- ◑ B4 테마 시스템 — 1차 사이클은 Light 단일 테마(핸텍 브랜드 블루), 다중 테마는 다음 사이클
+- ☐ B5 **G2** — Windows 머신에서 첫 `dotnet build` / `dotnet run` 결과 보고. 메뉴 동작·About 표시·IWPF/MD/TXT 열고 저장 검증
 
 ### Phase C — DOCX/HWPX 1급 시민 (M2-M3)
 - ☐ C1 DOCX reader (OpenXml)
@@ -155,31 +155,37 @@ PolyDoc/
 
 ---
 
-## 현재 인수인계 (Phase A 종료 시점)
+## 현재 인수인계 (Phase B 첫 사이클 종료 시점)
 
 ### 완료
-- 솔루션 골격 및 4개 src 라이브러리 빌드 그린
-- 콘솔 스모크 러너 4/4 통과
-- xUnit 테스트 코드 작성 완료 (실행은 Windows 에서)
+- Phase A: src 4 + tests 4 + tools/SmokeTest. G1 통과.
+- Phase B 첫 사이클: PolyDoc.App WPF (메인 윈도우, 메뉴 6단, About, Light 테마). 핸텍 로고/아이콘 통합.
 
-### 사용자(노진문) 작업이 필요한 항목 — G1 직전
-- [ ] Windows 머신에서 저장소 클론, `dotnet --info` 로 SDK 10.0.x 확인
-- [ ] `dotnet restore PolyDoc.slnx` — NuGet 정상이면 xUnit 자동 복원
-- [ ] `dotnet build PolyDoc.slnx` — 0 warning / 0 error 확인
-- [ ] `dotnet test PolyDoc.slnx` — 모든 xUnit 테스트 그린 확인
-- [ ] (옵션) `dotnet run --project tools/PolyDoc.SmokeTest` — 콘솔 스모크 4/4 통과 재확인
-- [ ] PR 리뷰 후 머지 결정 (G1)
+### 사용자(노진문) 작업이 필요한 항목 — G2 직전
+- [ ] Windows 머신에서 최신 브랜치 pull
+- [ ] `dotnet restore PolyDoc.slnx` — CommunityToolkit.Mvvm 8.4.0 자동 복원
+- [ ] `dotnet build PolyDoc.slnx` — `PolyDoc.App` 까지 포함해 0 error
+- [ ] `dotnet run --project src/PolyDoc.App` — 메인 윈도우가 뜨는지
+- [ ] **메뉴 검증**: 파일 → 새 파일 / 불러오기(IWPF·MD·TXT) / 저장 / 다른 이름으로 저장 동작
+- [ ] **단축키 검증**: Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S
+- [ ] **About 검증**: 도움말 → PolyDoc 정보 — 핸텍 로고·노진문·버전 1.0.0-test.1 표시
+- [ ] **외부 포맷 보호**: HWP/HWPX/DOC/DOCX 열기 시도 시 "외부 컨버터 필요" 안내가 뜨는지
+- [ ] 작업창 타이틀 바: 편집 후 `*` 표시, 저장 후 사라지는지
+- [ ] (가능하다면) 메뉴 동작·About 다이얼로그 스크린샷 첨부
 
-### Phase B 진입 전 정해야 할 것
-- 정식 회사 로고 파일이 별도로 있다면 `assets/logo.png` 로 추가하고 README 의 GitHub 아바타 참조를 교체할지 (현재는 `https://github.com/elrang3843.png` 사용)
-- WPF 앱의 .NET TFM: `net10.0-windows`(권장) vs `net10.0-windows10.0.19041.0`(WinRT API 사용 시) — 사인 만들기·인쇄 미리보기 같은 기능에서 결정
+### 알려진 위험 (Linux 에서 빌드 검증 불가)
+- WPF 빌드는 Windows 전용 SDK 가 필요하므로 본 환경에서 컴파일 검증 못 함. XAML 의 binding path, namespace, pack URI 가 첫 시도에 정확해야 함. **빌드 에러가 나면 출력 그대로 보내주면 다음 응답에서 즉시 패치**.
+- `pack://application:,,,/Assets/Handtech_1024.png` 는 csproj 의 `<Resource Link="Assets\Handtech_1024.png">` 와 일치시켰지만, MSBuild 가 Link 메타를 정확히 처리하는지는 Windows 빌드에서 첫 검증.
+- Directory.Build.props 의 `TreatWarningsAsErrors=true` 가 WPF 코드젠 경고와 충돌하면 빌드 실패 가능. 발생 시 App 프로젝트 한정으로 완화 검토.
 
-### 다음 세션 첫 작업 후보
-1. `src/PolyDoc.App/` WPF 프로젝트 스캐폴딩 (Phase B1)
-2. MVVM 골격 + 메인 윈도우 + 메뉴 리소스 한·영 분리
-3. IWPF 파일 드래그&드롭 → Core 모델 → 단순 본문 표시 (TextBlock 수준) 까지
+### 다음 사이클 (G2 통과 후)
+1. **i18n 분리** — `Properties/Resources.resx` (ko-KR 기본) + `Resources.en.resx`. XAML 에 `{x:Static p:Resources.MenuFile}` 바인딩.
+2. **테마 다중화** — 학생/청년/장년 대상 (Soft, Vivid, HighContrast 등) — `Themes/<Name>.xaml` 추가, 도구 → 설정에서 런타임 전환.
+3. **편집 기능 1차** — 찾기/바꾸기 다이얼로그, 문서 정보 (속성) 다이얼로그.
+4. **드래그 & 드롭** — 파일을 윈도우에 끌어 놓으면 즉시 열기.
 
-### 알려진 한계
-- Markdown 코덱이 Markdig 의 풀 CommonMark 가 아닌 **실용 서브셋**. 코드블록·인용·표·이미지·링크 미지원. Phase C 진입 전 Markdig 로 교체하거나 서브셋 확장.
-- Block 다형성을 `JsonDerivedType` 로 처리 — 현재 `Paragraph` 만 등록. `Table`, `Image`, `TextBox` 등 추가 시 같은 위치에 등록해야 한다 (`src/PolyDoc.Core/Block.cs`).
-- IWPF document.json 본문은 Phase A 에서 JSON. 후속 단계에서 IWPF 사양에 맞춰 일부를 XML 로 전환할 수 있다 (`document.xml`, `styles.xml`).
+### 알려진 한계 (코드 베이스 전반)
+- Markdown 코덱이 Markdig 의 풀 CommonMark 가 아닌 **실용 서브셋**. 코드블록·인용·표·이미지·링크 미지원. NuGet 회복 후 Markdig 로 교체.
+- Block 다형성을 `JsonDerivedType` 로 처리 — 현재 `Paragraph` 만 등록. `Table`, `Image`, `TextBox` 등 추가 시 같은 위치에 등록 (`src/PolyDoc.Core/Block.cs`).
+- IWPF document.json 본문은 Phase A 에서 JSON. 후속 단계에서 IWPF 사양에 맞춰 일부를 XML 로 전환 가능 (`document.xml`, `styles.xml`).
+- 본문 편집기가 `TextBox` (plain string). Phase E 에서 RichTextBox/FlowDocument 로 교체하면서 ParagraphStyle/RunStyle 양방향 동기화 도입.

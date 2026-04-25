@@ -45,6 +45,10 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — 핸텍 공식 회사 로고/아이콘 자산: `assets/Handtech_1024.png` (1024×1024 PNG), `assets/Handtech.ico` (멀티 사이즈 Windows ICO).
+- **Added** — `src/PolyDoc.App` WPF 앱 첫 사이클 (Phase B1~B4 골격). `net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0. 메인 윈도우(파일/편집/입력/서식/도구/도움말 메뉴), TextBox 본문 편집기, 상태 바, About 다이얼로그(로고·핸텍·노진문·버전 표시). 파일 메뉴는 IWPF/MD/TXT 직접 처리, 외부 포맷은 Phase D 안내 메시지. Ctrl+N/O/S, Ctrl+Shift+S 단축키. 한국어 UI(.resx 분리는 다음 사이클로 이연).
+- **Added** — Light 기본 테마 (`src/PolyDoc.App/Themes/Light.xaml`) — 핸텍 브랜드 블루 기반.
+- **Added** — `Directory.Packages.props` 에 CommunityToolkit.Mvvm 8.4.0 등록.
 - **Internal** — Phase A 솔루션 골격: `PolyDoc.slnx` + `src/PolyDoc.Core` + `src/PolyDoc.Iwpf` + `src/PolyDoc.Codecs.Text` + `src/PolyDoc.Codecs.Markdown` + 대응 `tests/*` xUnit 프로젝트 + `tools/PolyDoc.SmokeTest` 콘솔 러너. .NET 10 + Central Package Management.
 - **Added** — `PolyDoc.Core` 공통 문서 모델 1차: `PolyDocument`, `DocumentMetadata`, `Section`/`PageSettings`, `Block`/`NodeStatus`, `Paragraph`/`ParagraphStyle`/`Alignment`/`OutlineLevel`/`ListMarker`/`ListKind`, `Run`/`RunStyle`/`Color`, `StyleSheet`, `Provenance`/`SourceAnchor`, `IDocumentReader`/`IDocumentWriter`/`IDocumentCodec`. 한글 조판용 `WidthPercent`(장평) / `LetterSpacingPx`(자간) 포함.
 - **Added** — `PolyDoc.Iwpf` 1차 codec (writer/reader). ZIP+JSON 패키지(`manifest.json`, `content/document.json`, `content/styles.json`, 선택적 `provenance/source-map.json`). 매니페스트 SHA-256 해시 검증, packageType 검사, 위변조 거부.
@@ -56,8 +60,9 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 
 ### Changed
 - **Docs** — 버전 정책 명시: 사용자 명시 지시 전까지 모든 빌드는 테스트 버전(`1.0.0-test.<n>`)으로 관리하고, 최초 정식 릴리스는 `1.0.0` 으로 한다는 규칙을 `HISTORY.md` / `CLAUDE.md` / `README.md` 에 일관되게 반영.
-- **Docs** — `README.md` 헤더에 핸텍 회사 로고(GitHub 아바타) + 핸텍/노진문 표기, "만든 사람들" 섹션, .NET 10 배지 추가, UI 를 WPF 로 확정.
-- **Docs** — `CLAUDE.md` 프로젝트 개요에 회사·메인테이너 정보 반영, WORK_PLAN.md 참조 추가.
+- **Docs** — `README.md` 헤더 로고를 GitHub 아바타에서 정식 핸텍 로고(`assets/Handtech_1024.png`)로 교체.
+- **Docs** — `CLAUDE.md` 의 로고/아이콘 경로를 정식 자산(`assets/Handtech_1024.png`, `assets/Handtech.ico`) 으로 갱신.
+- **Docs** — `README.md` 헤더에 핸텍 회사 로고 + 핸텍/노진문 표기, "만든 사람들" 섹션, .NET 10 배지 추가, UI 를 WPF 로 확정.
 
 ### Added (docs)
 - **Docs** — `WORK_PLAN.md` 신설. 다단계 작업 계획서, 환경 사실관계, 기술 스택, Phase A~H 진행표, 사용자 게이트 G0~G5, 다음 세션 인수인계 체크리스트.

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PolyDoc.App</RootNamespace>
+    <AssemblyName>PolyDoc</AssemblyName>
+    <ApplicationIcon>..\..\assets\Handtech.ico</ApplicationIcon>
+    <ApplicationTitle>PolyDoc</ApplicationTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyDoc.Core\PolyDoc.Core.csproj" />
+    <ProjectReference Include="..\PolyDoc.Iwpf\PolyDoc.Iwpf.csproj" />
+    <ProjectReference Include="..\PolyDoc.Codecs.Text\PolyDoc.Codecs.Text.csproj" />
+    <ProjectReference Include="..\PolyDoc.Codecs.Markdown\PolyDoc.Codecs.Markdown.csproj" />
+  </ItemGroup>
+
+  <!-- 회사 로고를 앱 리소스로 임베드 (About 다이얼로그에서 표시) -->
+  <ItemGroup>
+    <Resource Include="..\..\assets\Handtech_1024.png">
+      <Link>Assets\Handtech_1024.png</Link>
+    </Resource>
+  </ItemGroup>
+
+</Project>

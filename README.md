@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/elrang3843.png?size=160" alt="HANDTECH" width="120" height="120" />
+  <img src="assets/Handtech_1024.png" alt="HANDTECH" width="160" height="160" />
 </p>
 
 <h1 align="center">PolyDoc</h1>
@@ -339,7 +339,7 @@ PolyDoc은 초기 단계라 이슈 제보와 설계 토론 모두 큰 도움이 
 <table>
   <tr>
     <td align="center" width="160">
-      <img src="https://github.com/elrang3843.png?size=120" width="100" height="100" alt="HANDTECH"/><br/>
+      <img src="assets/Handtech_1024.png" width="120" height="120" alt="HANDTECH"/><br/>
       <sub><b>핸텍 (HANDTECH)</b></sub>
     </td>
     <td>

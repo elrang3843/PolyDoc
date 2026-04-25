@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/PolyDoc.App/PolyDoc.App.csproj" />
     <Project Path="src/PolyDoc.Codecs.Markdown/PolyDoc.Codecs.Markdown.csproj" />
     <Project Path="src/PolyDoc.Codecs.Text/PolyDoc.Codecs.Text.csproj" />
     <Project Path="src/PolyDoc.Core/PolyDoc.Core.csproj" />
