@@ -272,10 +272,17 @@ public sealed class HwpxReader : IDocumentReader
             foreach (var itemref in spineRefs)
             {
                 var idref = itemref.Attribute("idref")?.Value;
-                if (!string.IsNullOrEmpty(idref) && manifestItems.TryGetValue(idref!, out var href))
+                if (string.IsNullOrEmpty(idref) || !manifestItems.TryGetValue(idref!, out var href))
                 {
-                    sectionPaths.Add(CombineRoot(rootHpfPath, href));
+                    continue;
                 }
+                // 한컴 hwpx 의 spine 은 본문 sections 외에 스크립트(.js)·이미지 등도 참조할 수 있어
+                // 우리는 .xml 항목만 section 후보로 채택. (LoadXml 실패가 status 메시지에 노이즈로 뜨는 것 방지.)
+                if (!href.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                sectionPaths.Add(CombineRoot(rootHpfPath, href));
             }
         }
 
@@ -283,6 +290,10 @@ public sealed class HwpxReader : IDocumentReader
         {
             foreach (var (id, href) in manifestItems)
             {
+                if (!href.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
                 if (id.StartsWith("section", StringComparison.OrdinalIgnoreCase)
                     || (href is { Length: > 0 } && System.IO.Path.GetFileName(href).StartsWith("section", StringComparison.OrdinalIgnoreCase)))
                 {
