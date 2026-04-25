@@ -43,8 +43,9 @@ public sealed class HwpxReader : IDocumentReader
 
             ValidateMimetype(archive);
 
-            var rootHpfPath = ResolveContentHpf(archive);
-            var (sectionPaths, metadata) = ReadOpfManifest(archive, rootHpfPath);
+            var parseErrors = new List<string>();
+            var rootHpfPath = ResolveContentHpf(archive, parseErrors);
+            var (sectionPaths, metadata) = ReadOpfManifest(archive, rootHpfPath, parseErrors);
 
             // OPF 가 변종 namespace 또는 빠진 spine 으로 비어 있을 수 있어 ZIP 직접 스캔으로 fallback.
             if (sectionPaths.Count == 0)
@@ -68,7 +69,7 @@ public sealed class HwpxReader : IDocumentReader
             for (int i = 0; i < sectionPaths.Count; i++)
             {
                 var path = sectionPaths[i];
-                var sectionDoc = LoadXml(archive, path);
+                var sectionDoc = LoadXml(archive, path, parseErrors);
                 var section = ReadSectionFromDoc(sectionDoc);
                 document.Sections.Add(section);
 
@@ -141,6 +142,13 @@ public sealed class HwpxReader : IDocumentReader
                 document.Metadata.Custom["hwpx.xmlEntries"] = string.Join("; ", xmlEntries);
             }
 
+            // 누적된 XML 파싱 오류는 진단에 박는다. throw 대신 graceful degradation 으로,
+            // 사용자 문서 일부라도 보이게 한다.
+            if (parseErrors.Count > 0)
+            {
+                document.Metadata.Custom["hwpx.parseErrors"] = string.Join(" | ", parseErrors.Take(3));
+            }
+
             return document;
         }
         finally
@@ -211,9 +219,9 @@ public sealed class HwpxReader : IDocumentReader
         }
     }
 
-    private static string ResolveContentHpf(ZipArchive archive)
+    private static string ResolveContentHpf(ZipArchive archive, List<string>? errors = null)
     {
-        var container = LoadXml(archive, HwpxPaths.ContainerXml);
+        var container = LoadXml(archive, HwpxPaths.ContainerXml, errors);
         if (container?.Root is null)
         {
             return HwpxPaths.ContentHpf;
@@ -226,9 +234,9 @@ public sealed class HwpxReader : IDocumentReader
         return string.IsNullOrEmpty(fullPath) ? HwpxPaths.ContentHpf : fullPath!;
     }
 
-    private static (List<string> sectionPaths, DocumentMetadata metadata) ReadOpfManifest(ZipArchive archive, string rootHpfPath)
+    private static (List<string> sectionPaths, DocumentMetadata metadata) ReadOpfManifest(ZipArchive archive, string rootHpfPath, List<string>? errors = null)
     {
-        var doc = LoadXml(archive, rootHpfPath);
+        var doc = LoadXml(archive, rootHpfPath, errors);
         var metadata = new DocumentMetadata();
         var sectionPaths = new List<string>();
         if (doc?.Root is null)
@@ -401,11 +409,26 @@ public sealed class HwpxReader : IDocumentReader
         _ => Alignment.Left,
     };
 
-    private static XDocument? LoadXml(ZipArchive archive, string path)
+    private static XDocument? LoadXml(ZipArchive archive, string path, List<string>? errors = null)
     {
         var entry = archive.GetEntry(path);
-        if (entry is null) return null;
-        using var stream = entry.Open();
-        return XDocument.Load(stream);
+        if (entry is null)
+        {
+            errors?.Add($"missing entry: {path}");
+            return null;
+        }
+        try
+        {
+            using var stream = entry.Open();
+            // BOM 자동 감지 + UTF-8 기본. 일부 한컴 hwpx 의 packaging XML 이 BOM 으로 시작해
+            // raw stream → XDocument.Load 가 'Data at the root level is invalid' 로 throw 하는 경우 회피.
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return XDocument.Load(reader);
+        }
+        catch (Exception ex)
+        {
+            errors?.Add($"{path}: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 }

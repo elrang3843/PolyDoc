@@ -170,8 +170,15 @@ public partial class MainViewModel : ObservableObject
             doc.Metadata.Custom.TryGetValue("hwpx.firstSectionRoot", out var rootName);
             doc.Metadata.Custom.TryGetValue("hwpx.firstSectionTags", out var tags);
             doc.Metadata.Custom.TryGetValue("hwpx.xmlEntries", out var xmlEntries);
+            doc.Metadata.Custom.TryGetValue("hwpx.parseErrors", out var parseErrors);
             // 한 줄로 합쳐 ToolTip 으로도 풀 텍스트 공유 가능.
-            return $"열기 완료 — {name} | 본문 0건, 섹션 {sCount ?? "?"}개 (entry-hit={hit ?? "?"}) | path={firstPath ?? "?"} | root=<{rootName ?? "?"}> | 자식: {tags ?? "(없음)"} | xml: {xmlEntries ?? "(없음)"}";
+            var errPart = string.IsNullOrEmpty(parseErrors) ? "" : $" | XML 오류: {parseErrors}";
+            return $"열기 완료 — {name} | 본문 0건, 섹션 {sCount ?? "?"}개 (entry-hit={hit ?? "?"}) | path={firstPath ?? "?"} | root=<{rootName ?? "?"}> | 자식: {tags ?? "(없음)"} | xml: {xmlEntries ?? "(없음)"}{errPart}";
+        }
+        // 본문은 보였지만 일부 packaging XML 이 깨졌을 수 있으니 그것도 함께 알린다 (silent degradation).
+        if (doc.Metadata.Custom.TryGetValue("hwpx.parseErrors", out var perr) && !string.IsNullOrEmpty(perr))
+        {
+            return $"열기 완료 — {name} (일부 XML 파싱 경고: {perr})";
         }
         return $"열기 완료 — {name}";
     }
