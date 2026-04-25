@@ -75,6 +75,111 @@ public class IwpfRoundTripTests
     }
 
     [Fact]
+    public void RoundTrip_TableStructure()
+    {
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var table = new Table();
+        table.Columns.Add(new TableColumn { WidthMm = 30 });
+        table.Columns.Add(new TableColumn { WidthMm = 50 });
+
+        var row = new TableRow();
+        row.Cells.Add(new TableCell { Blocks = { Paragraph.Of("이름") } });
+        row.Cells.Add(new TableCell { Blocks = { Paragraph.Of("값"), Paragraph.Of("부가 설명") } });
+        table.Rows.Add(row);
+        section.Blocks.Add(table);
+
+        var bytes = WriteToBytes(doc);
+        var read = ReadFromBytes(bytes);
+
+        var t = read.Sections[0].Blocks.OfType<Table>().Single();
+        Assert.Equal(2, t.Columns.Count);
+        Assert.Single(t.Rows);
+        Assert.Equal(2, t.Rows[0].Cells.Count);
+        Assert.Equal(2, t.Rows[0].Cells[1].Blocks.Count);
+        Assert.Equal("값", ((Paragraph)t.Rows[0].Cells[1].Blocks[0]).GetPlainText());
+        Assert.Equal("부가 설명", ((Paragraph)t.Rows[0].Cells[1].Blocks[1]).GetPlainText());
+    }
+
+    [Fact]
+    public void RoundTrip_ImageStoredInResourcesImagesDir()
+    {
+        var image = new ImageBlock
+        {
+            MediaType = "image/png",
+            Data = Enumerable.Range(0, 256).Select(i => (byte)i).ToArray(),
+            WidthMm = 30,
+            HeightMm = 20,
+            Description = "샘플",
+        };
+
+        var doc = new PolyDocument();
+        var section = new Section();
+        section.Blocks.Add(image);
+        doc.Sections.Add(section);
+
+        var bytes = WriteToBytes(doc);
+
+        // ZIP 안에 resources/images/ 파트가 만들어져야 한다.
+        using var ms = new MemoryStream(bytes);
+        using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+        var imageEntries = archive.Entries.Where(e => e.FullName.StartsWith("resources/images/", StringComparison.Ordinal)).ToList();
+        Assert.Single(imageEntries);
+
+        // 라운드트립 후 ImageBlock 의 바이트가 동일하고 ResourcePath 가 채워져 있어야 한다.
+        var read = ReadFromBytes(bytes);
+        var roundTripImage = read.Sections[0].Blocks.OfType<ImageBlock>().Single();
+        Assert.Equal(image.Data, roundTripImage.Data);
+        Assert.NotNull(roundTripImage.ResourcePath);
+        Assert.StartsWith("resources/images/", roundTripImage.ResourcePath!);
+        Assert.NotNull(roundTripImage.Sha256);
+        Assert.Matches("^[0-9a-f]{64}$", roundTripImage.Sha256!);
+    }
+
+    [Fact]
+    public void RoundTrip_DedupesIdenticalImages()
+    {
+        var bytes = new byte[] { 1, 2, 3, 4, 5 };
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        section.Blocks.Add(new ImageBlock { MediaType = "image/png", Data = bytes });
+        section.Blocks.Add(new ImageBlock { MediaType = "image/png", Data = (byte[])bytes.Clone() });
+
+        var packageBytes = WriteToBytes(doc);
+
+        using var ms = new MemoryStream(packageBytes);
+        using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+        var imageEntries = archive.Entries.Count(e => e.FullName.StartsWith("resources/images/", StringComparison.Ordinal));
+        Assert.Equal(1, imageEntries);
+    }
+
+    [Fact]
+    public void RoundTrip_OpaqueBlockPreservesXml()
+    {
+        const string xml = "<vendor:custom xmlns:vendor=\"urn:x-vendor\">payload</vendor:custom>";
+        var doc = new PolyDocument();
+        var section = new Section();
+        section.Blocks.Add(new OpaqueBlock
+        {
+            Format = "docx",
+            Kind = "vendor",
+            Xml = xml,
+            DisplayLabel = "[보존된 vendor]",
+        });
+        doc.Sections.Add(section);
+
+        var read = ReadFromBytes(WriteToBytes(doc));
+        var preserved = read.Sections[0].Blocks.OfType<OpaqueBlock>().Single();
+        Assert.Equal("docx", preserved.Format);
+        Assert.Equal("vendor", preserved.Kind);
+        Assert.Equal(xml, preserved.Xml);
+        Assert.Equal(NodeStatus.Opaque, preserved.Status);
+    }
+
+    [Fact]
     public void Manifest_RecordsSha256ForEveryPart()
     {
         var doc = PolyDocument.Empty();

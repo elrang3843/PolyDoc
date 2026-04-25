@@ -45,43 +45,166 @@ public static class FlowDocumentBuilder
 
     private static void BuildSection(Wpf.FlowDocument fd, Section section)
     {
+        AppendBlocks(fd.Blocks, section.Blocks);
+    }
+
+    /// <summary>FlowDocument 또는 셀(TableCell) 양쪽에서 공유하는 블록 추가 로직.</summary>
+    private static void AppendBlocks(System.Collections.IList target, IList<Block> blocks)
+    {
         Wpf.List? currentList = null;
         ListKind? currentKind = null;
 
-        foreach (var block in section.Blocks)
+        foreach (var block in blocks)
         {
-            if (block is not Paragraph p)
+            switch (block)
             {
-                continue;
-            }
-
-            if (p.Style.ListMarker is { } marker)
-            {
-                if (currentList is null || currentKind != marker.Kind)
-                {
-                    currentList = new Wpf.List
+                case Paragraph p when p.Style.ListMarker is { } marker:
+                    if (currentList is null || currentKind != marker.Kind)
                     {
-                        MarkerStyle = marker.Kind == ListKind.Bullet
-                            ? TextMarkerStyle.Disc
-                            : TextMarkerStyle.Decimal,
-                    };
-                    if (marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } start && start >= 1)
-                    {
-                        currentList.StartIndex = start;
+                        currentList = new Wpf.List
+                        {
+                            MarkerStyle = marker.Kind == ListKind.Bullet
+                                ? TextMarkerStyle.Disc
+                                : TextMarkerStyle.Decimal,
+                        };
+                        if (marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } start && start >= 1)
+                        {
+                            currentList.StartIndex = start;
+                        }
+                        target.Add(currentList);
+                        currentKind = marker.Kind;
                     }
-                    fd.Blocks.Add(currentList);
-                    currentKind = marker.Kind;
-                }
+                    currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p)));
+                    break;
 
-                currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p)));
-            }
-            else
-            {
-                currentList = null;
-                currentKind = null;
-                fd.Blocks.Add(BuildParagraph(p));
+                case Paragraph p:
+                    currentList = null;
+                    currentKind = null;
+                    target.Add(BuildParagraph(p));
+                    break;
+
+                case Table t:
+                    currentList = null;
+                    currentKind = null;
+                    target.Add(BuildTable(t));
+                    break;
+
+                case ImageBlock image:
+                    currentList = null;
+                    currentKind = null;
+                    target.Add(BuildImage(image));
+                    break;
+
+                case OpaqueBlock opaque:
+                    currentList = null;
+                    currentKind = null;
+                    target.Add(BuildOpaquePlaceholder(opaque));
+                    break;
             }
         }
+    }
+
+    private static Wpf.Table BuildTable(Table table)
+    {
+        var wtable = new Wpf.Table { CellSpacing = 0 };
+        foreach (var col in table.Columns)
+        {
+            var width = col.WidthMm > 0
+                ? new GridLength(MmToDip(col.WidthMm))
+                : GridLength.Auto;
+            wtable.Columns.Add(new Wpf.TableColumn { Width = width });
+        }
+
+        var rowGroup = new Wpf.TableRowGroup();
+        wtable.RowGroups.Add(rowGroup);
+
+        foreach (var row in table.Rows)
+        {
+            var wrow = new Wpf.TableRow();
+            foreach (var cell in row.Cells)
+            {
+                var wcell = new Wpf.TableCell
+                {
+                    BorderBrush = WpfMedia.Brushes.LightGray,
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(4),
+                    ColumnSpan = Math.Max(cell.ColumnSpan, 1),
+                    RowSpan = Math.Max(cell.RowSpan, 1),
+                };
+                AppendBlocks(wcell.Blocks, cell.Blocks);
+                if (wcell.Blocks.Count == 0)
+                {
+                    wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
+                }
+                wrow.Cells.Add(wcell);
+            }
+            rowGroup.Rows.Add(wrow);
+        }
+
+        wtable.Tag = table;
+        return wtable;
+    }
+
+    private static Wpf.BlockUIContainer BuildImage(ImageBlock image)
+    {
+        var container = new Wpf.BlockUIContainer { Tag = image };
+
+        if (image.Data.Length == 0)
+        {
+            container.Child = new System.Windows.Controls.TextBlock
+            {
+                Text = $"[이미지 누락 — {image.MediaType}]",
+                Foreground = WpfMedia.Brushes.Gray,
+                FontStyle = FontStyles.Italic,
+            };
+            return container;
+        }
+
+        var bitmap = new WpfMedia.Imaging.BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = WpfMedia.Imaging.BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = new MemoryStream(image.Data, writable: false);
+        bitmap.EndInit();
+        bitmap.Freeze();
+
+        var control = new System.Windows.Controls.Image
+        {
+            Source = bitmap,
+            Stretch = WpfMedia.Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        if (image.WidthMm > 0)
+        {
+            control.Width = MmToDip(image.WidthMm);
+        }
+        if (image.HeightMm > 0)
+        {
+            control.Height = MmToDip(image.HeightMm);
+        }
+        if (!string.IsNullOrEmpty(image.Description))
+        {
+            control.ToolTip = image.Description;
+        }
+
+        container.Child = control;
+        return container;
+    }
+
+    private static Wpf.Paragraph BuildOpaquePlaceholder(OpaqueBlock opaque)
+    {
+        // 보존 섬은 편집 불가 placeholder 로 시각화. Parser 가 Tag 에서 원본을 그대로 회수한다.
+        var paragraph = new Wpf.Paragraph
+        {
+            Background = WpfMedia.Brushes.WhiteSmoke,
+            Foreground = WpfMedia.Brushes.DimGray,
+            FontStyle = FontStyles.Italic,
+            BorderBrush = WpfMedia.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 4, 8, 4),
+            Tag = opaque,
+        };
+        paragraph.Inlines.Add(new Wpf.Run(opaque.DisplayLabel));
+        return paragraph;
     }
 
     private static Wpf.Paragraph BuildParagraph(Paragraph p)

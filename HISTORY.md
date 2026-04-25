@@ -45,6 +45,12 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — 비텍스트 객체(표·이미지·미인식 도형) 1차 모델링 + 라운드트립. IWPF.md 의 「opaque island」 정책 본격 적용.
+  - `PolyDoc.Core` 블록 추가: `Table` / `TableRow` / `TableCell` / `TableColumn`, `ImageBlock`, `OpaqueBlock` (Block 의 `JsonDerivedType` 디스크리미네이터 4종 등록).
+  - `PolyDoc.Iwpf`: ImageBlock 의 binary 를 `resources/images/img-NNNN.<ext>` 로 분리 저장하고 SHA-256 dedupe. 매니페스트에 별도 part 로 기록되어 무결성 검증. 다형성 디스크리미네이터를 `kind` → `$type` 으로 변경 (`OpaqueBlock.Kind` 속성과의 충돌 회피).
+  - `PolyDoc.Codecs.Docx`: Reader 가 `w:tbl` → Table (셀 너비·병합·중첩 표), `w:drawing` 의 그림 → ImageBlock (ImagePart 바이너리 추출, EMU → mm 사이즈 보존, alt text), 미인식 블록 → OpaqueBlock(Format="docx", Xml=OuterXml). Writer 는 대칭으로 `w:tbl` / `w:drawing`+`ImagePart` 등록 / OpaqueBlock OuterXml 을 임시 Body 로 파싱 후 자식만 옮겨 그대로 재출력.
+  - `PolyDoc.App` (WPF): FlowDocumentBuilder 가 Table → `Wpf.Table`, ImageBlock → `BlockUIContainer + Image` (메모리 BitmapImage), OpaqueBlock → 회색 placeholder Paragraph 로 시각화. FlowDocumentParser 가 Tag 머지로 비파괴 회수 (사용자가 셀 텍스트만 편집해도 표 구조·컬럼 너비·이미지 바이너리 보존).
+  - 테스트: DOCX 라운드트립 9건(표·이미지 바이트 동일성·OpaqueBlock 보존 추가), IWPF 라운드트립 9건(Table 구조·이미지 resources/images 분리·dedupe·OpaqueBlock 추가). xUnit 합계 36 → 43건. 스모크 5/5.
 - **Changed** — 본문 편집기를 `TextBox` (plain string) 에서 **`RichTextBox` + `FlowDocument`** 로 업그레이드. DocxReader/IwpfReader 가 이미 가져온 폰트·크기·색·굵게·기울임·밑줄·취소선·위·아래첨자·정렬·줄간격·문단간격·들여쓰기·헤더 레벨이 화면에 그대로 표시되고, 사용자가 그대로 편집·저장 가능.
 - **Added** — `src/PolyDoc.App/Services/FlowDocumentBuilder.cs` — PolyDocument → WPF FlowDocument 매퍼. RunStyle (폰트·크기 (pt→DIP)·색상 (PolyDoc.Color → SolidColorBrush)·강조·장식·BaselineAlignment), ParagraphStyle (정렬·간격·들여쓰기·LineHeight·Outline 헤더 시각화), ListMarker (Wpf.List/ListItem) 매핑. 원본 `Paragraph`/`Run` 을 Tag 에 보관해 Parser 가 비-FlowDocument 속성을 비파괴 보존.
 - **Added** — `src/PolyDoc.App/Services/FlowDocumentParser.cs` — FlowDocument → PolyDocument 역매퍼. Tag 머지로 한글 조판(장평·자간) / Provenance / 페이지 설정 비파괴 보존. FontWeight/FontStyle/TextDecorations/Foreground/Background/BaselineAlignment 추출, FontSize 로 헤더 레벨 추정.

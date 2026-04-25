@@ -3,8 +3,11 @@ using System.Text.Json.Serialization;
 namespace PolyDoc.Core;
 
 /// <summary>섹션 본문을 구성하는 블록 (문단·표·이미지 등) 의 추상 베이스.</summary>
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
 [JsonDerivedType(typeof(Paragraph), "paragraph")]
+[JsonDerivedType(typeof(Table), "table")]
+[JsonDerivedType(typeof(ImageBlock), "image")]
+[JsonDerivedType(typeof(OpaqueBlock), "opaque")]
 public abstract class Block
 {
     public string? Id { get; set; }

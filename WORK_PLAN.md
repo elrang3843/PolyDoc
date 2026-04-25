@@ -101,7 +101,8 @@ PolyDoc/
 ### Phase C — DOCX/HWPX 1급 시민 (M2-M3)
 - ✅ C1 DOCX reader (OpenXml SDK 3.5.1) — 단락·헤더·정렬·강조·폰트·색상·리스트
 - ✅ C2 DOCX writer + xUnit 라운드트립 6건 + 스모크 1건
-- ◑ C2b Markdown reader 를 Markdig 로 교체 (CommonMark 풀 파싱)
+- ✅ C2b Markdown reader 를 Markdig 로 교체 (CommonMark 풀 파싱)
+- ✅ C2.5 비텍스트 객체 (표·이미지·OpaqueBlock) 1차 — Core 모델 + DOCX/IWPF 라운드트립 + WPF 시각화. xUnit 36 → 43.
 - ☐ C3 HWPX reader (KS X 6101) — 자체 구현 시작
 - ☐ C4 HWPX writer + 라운드트립 테스트
 - ☐ G3: 사용자가 Word/한컴에서 결과 시각 검증 — Phase C 후반에 도달
@@ -168,11 +169,11 @@ PolyDoc/
 | 프로젝트 | 테스트 수 | 상태 |
 |---|---|---|
 | PolyDoc.Core.Tests | 9 | ✅ |
-| PolyDoc.Iwpf.Tests | 5 | ✅ |
+| PolyDoc.Iwpf.Tests | 9 | ✅ |
 | PolyDoc.Codecs.Text.Tests | 5 | ✅ |
 | PolyDoc.Codecs.Markdown.Tests | 11 | ✅ |
-| PolyDoc.Codecs.Docx.Tests | 6 | ✅ |
-| **합계** | **36** | **All green** |
+| PolyDoc.Codecs.Docx.Tests | 9 | ✅ |
+| **합계** | **43** | **All green** |
 | PolyDoc.SmokeTest 콘솔 | 5 | ✅ |
 
 ### 사용자(노진문) 작업이 필요한 항목 — RichTextBox 업그레이드 검증 (G2.5)

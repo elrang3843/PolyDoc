@@ -40,12 +40,22 @@ public static class FlowDocumentParser
 
     private static void ParseBlocks(Section section, IEnumerable<Wpf.Block> blocks)
     {
+        ParseInto(section.Blocks, blocks);
+    }
+
+    private static void ParseInto(IList<Block> target, IEnumerable<Wpf.Block> blocks)
+    {
         foreach (var block in blocks)
         {
             switch (block)
             {
+                // Tag 가 OpaqueBlock 인 paragraph 는 보존 섬 — 원본 그대로 회수.
+                case Wpf.Paragraph { Tag: OpaqueBlock opaque }:
+                    target.Add(opaque);
+                    break;
+
                 case Wpf.Paragraph wpfPara:
-                    section.Blocks.Add(ParseParagraph(wpfPara, listMarker: null));
+                    target.Add(ParseParagraph(wpfPara, listMarker: null));
                     break;
 
                 case Wpf.List list:
@@ -66,18 +76,75 @@ public static class FlowDocumentParser
                         {
                             if (inner is Wpf.Paragraph pp)
                             {
-                                section.Blocks.Add(ParseParagraph(pp, marker));
+                                target.Add(ParseParagraph(pp, marker));
                             }
                         }
                     }
                     break;
                 }
 
+                case Wpf.Table wpfTable:
+                    target.Add(ParseTable(wpfTable));
+                    break;
+
+                case Wpf.BlockUIContainer container when container.Tag is ImageBlock image:
+                    target.Add(image);
+                    break;
+
                 case Wpf.Section nested:
-                    ParseBlocks(section, nested.Blocks);
+                    ParseInto(target, nested.Blocks);
                     break;
             }
         }
+    }
+
+    private static Table ParseTable(Wpf.Table wpfTable)
+    {
+        // 표는 사용자가 셀 안 텍스트만 편집할 수 있다고 가정. 구조(행/열/병합)와 컬럼 너비는 Tag 의 원본을
+        // 베이스로 두고, 셀 본문만 파싱 결과로 갱신해 비파괴 라운드트립을 보장한다.
+        var seed = wpfTable.Tag is Table original
+            ? new Table
+            {
+                Id = original.Id,
+                Status = original.Status,
+                Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
+            }
+            : new Table();
+
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+        if (rowGroup is null)
+        {
+            return seed;
+        }
+
+        for (int rowIndex = 0; rowIndex < rowGroup.Rows.Count; rowIndex++)
+        {
+            var wpfRow = rowGroup.Rows[rowIndex];
+            var origRow = (wpfTable.Tag is Table o && rowIndex < o.Rows.Count) ? o.Rows[rowIndex] : null;
+            var row = new TableRow { HeightMm = origRow?.HeightMm ?? 0 };
+
+            for (int cellIndex = 0; cellIndex < wpfRow.Cells.Count; cellIndex++)
+            {
+                var wpfCell = wpfRow.Cells[cellIndex];
+                var origCell = (origRow is not null && cellIndex < origRow.Cells.Count) ? origRow.Cells[cellIndex] : null;
+                var cell = new TableCell
+                {
+                    ColumnSpan = wpfCell.ColumnSpan > 0 ? wpfCell.ColumnSpan : (origCell?.ColumnSpan ?? 1),
+                    RowSpan = wpfCell.RowSpan > 0 ? wpfCell.RowSpan : (origCell?.RowSpan ?? 1),
+                    WidthMm = origCell?.WidthMm ?? 0,
+                };
+                ParseInto(cell.Blocks, wpfCell.Blocks);
+                if (cell.Blocks.Count == 0)
+                {
+                    cell.Blocks.Add(Paragraph.Of(string.Empty));
+                }
+                row.Cells.Add(cell);
+            }
+
+            seed.Rows.Add(row);
+        }
+
+        return seed;
     }
 
     private static bool IsBulletMarker(TextMarkerStyle style)

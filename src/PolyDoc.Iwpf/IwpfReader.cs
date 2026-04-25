@@ -69,6 +69,9 @@ public sealed class IwpfReader : IDocumentReader
                     ?? new Provenance();
             }
 
+            // resources/images/* — ImageBlock.ResourcePath 가 있는 블록의 Data 를 다시 채운다.
+            RehydrateImageResources(document, archive, manifest);
+
             return document;
         }
         finally
@@ -116,6 +119,52 @@ public sealed class IwpfReader : IDocumentReader
         {
             throw new InvalidDataException(
                 $"IWPF integrity check failed for '{path}'. Expected SHA-256 {expectedHex}, got {actualHex}.");
+        }
+    }
+
+    private void RehydrateImageResources(PolyDocument document, ZipArchive archive, IwpfManifest manifest)
+    {
+        var cache = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+        foreach (var section in document.Sections)
+        {
+            Walk(section.Blocks);
+        }
+        return;
+
+        void Walk(IList<Block> blocks)
+        {
+            foreach (var block in blocks)
+            {
+                switch (block)
+                {
+                    case ImageBlock image when !string.IsNullOrEmpty(image.ResourcePath):
+                        image.Data = LoadResource(image.ResourcePath!);
+                        break;
+                    case Table table:
+                        foreach (var row in table.Rows)
+                            foreach (var cell in row.Cells)
+                                Walk(cell.Blocks);
+                        break;
+                }
+            }
+        }
+
+        byte[] LoadResource(string path)
+        {
+            if (cache.TryGetValue(path, out var cached))
+            {
+                return cached;
+            }
+            var payload = ReadEntry(archive, path)
+                ?? throw new InvalidDataException(
+                    $"IWPF package is missing referenced image part '{path}'.");
+            if (VerifyHashes && manifest.Parts.TryGetValue(path, out var entry))
+            {
+                VerifyHash(path, payload, entry.Sha256);
+            }
+            cache[path] = payload;
+            return payload;
         }
     }
 }

@@ -135,6 +135,109 @@ public class DocxRoundTripTests
         Assert.ThrowsAny<Exception>(() => new DocxReader().Read(ms));
     }
 
+    [Fact]
+    public void RoundTrip_PreservesTableStructure()
+    {
+        var table = new Table();
+        table.Columns.Add(new TableColumn { WidthMm = 40 });
+        table.Columns.Add(new TableColumn { WidthMm = 60 });
+
+        var headerRow = new TableRow();
+        headerRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("이름") } });
+        headerRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("값") } });
+        table.Rows.Add(headerRow);
+
+        var dataRow = new TableRow();
+        dataRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("월") } });
+        dataRow.Cells.Add(new TableCell { Blocks = { Paragraph.Of("31일") } });
+        table.Rows.Add(dataRow);
+
+        var doc = new PolyDocument();
+        var section = new Section();
+        section.Blocks.Add(table);
+        doc.Sections.Add(section);
+
+        var roundTripped = WriteThenRead(doc);
+        var t = roundTripped.Sections[0].Blocks.OfType<Table>().Single();
+
+        Assert.Equal(2, t.Rows.Count);
+        Assert.Equal(2, t.Rows[0].Cells.Count);
+        Assert.Equal("이름", ((Paragraph)t.Rows[0].Cells[0].Blocks[0]).GetPlainText());
+        Assert.Equal("값", ((Paragraph)t.Rows[0].Cells[1].Blocks[0]).GetPlainText());
+        Assert.Equal("월", ((Paragraph)t.Rows[1].Cells[0].Blocks[0]).GetPlainText());
+        Assert.Equal("31일", ((Paragraph)t.Rows[1].Cells[1].Blocks[0]).GetPlainText());
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesImageBytes()
+    {
+        // 1×1 투명 PNG 의 최소 바이트열.
+        byte[] tinyPng = new byte[]
+        {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+            0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        };
+
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        section.Blocks.Add(new ImageBlock
+        {
+            MediaType = "image/png",
+            Data = tinyPng,
+            WidthMm = 50,
+            HeightMm = 30,
+            Description = "라운드트립 이미지",
+        });
+
+        var roundTripped = WriteThenRead(doc);
+        var image = roundTripped.Sections[0].Blocks.OfType<ImageBlock>().Single();
+
+        Assert.Equal(tinyPng, image.Data);
+        Assert.Equal("image/png", image.MediaType);
+        Assert.Equal(50, image.WidthMm, precision: 0);
+        Assert.Equal(30, image.HeightMm, precision: 0);
+        Assert.Equal("라운드트립 이미지", image.Description);
+    }
+
+    [Fact]
+    public void RoundTrip_OpaqueBlock_IsPreservedThroughDocx()
+    {
+        // OpaqueBlock 의 OuterXml 은 Word 의 sdt(content control) 같은 미인식 요소를 보존.
+        // OpenXmlUnknownElement 는 leading whitespace 를 element name 의 일부로 해석하므로 single-line 으로 정리.
+        const string opaqueXml =
+            "<w:sdt xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">" +
+            "<w:sdtContent><w:p><w:r><w:t>opaque payload</w:t></w:r></w:p></w:sdtContent>" +
+            "</w:sdt>";
+
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        section.Blocks.Add(new OpaqueBlock
+        {
+            Format = "docx",
+            Kind = "sdt",
+            Xml = opaqueXml,
+            DisplayLabel = "[보존된 sdt]",
+        });
+
+        // 라운드트립 후 OpaqueBlock 으로 다시 보존되어야 한다 (DocxReader 가 미인식 블록을 OpaqueBlock 으로 흡수).
+        var roundTripped = WriteThenRead(doc);
+
+        var preserved = roundTripped.Sections[0].Blocks.OfType<OpaqueBlock>().FirstOrDefault();
+        Assert.NotNull(preserved);
+        Assert.Equal("docx", preserved!.Format);
+        Assert.Equal("sdt", preserved.Kind);
+        Assert.Contains("opaque payload", preserved.Xml ?? string.Empty);
+    }
+
     private static PolyDocument WriteThenRead(PolyDocument document)
     {
         using var ms = new MemoryStream();
