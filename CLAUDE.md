@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Claude Code가 이 저장소에서 작업할 때 참고하는 가이드. 자세한 내용은 `README.md`(제품 사양)와 `IWPF.md`(파일 포맷 사양)를 본다.
+Claude Code가 이 저장소에서 작업할 때 참고하는 가이드. 자세한 내용은 `README.md`(사용자 안내), `IWPF.md`(파일 포맷 사양), `HISTORY.md`(변경 이력)를 본다.
 
 ## 프로젝트 개요
 
@@ -111,3 +111,11 @@ HWPX export 시 원형에 가깝게 직렬화, DOCX export 시 시각 대체(이
 - 파일 I/O 단위 테스트는 위 "테스트 코퍼스" 카테고리를 기준으로 설계.
 - 새 외부 포맷 지원 추가 시: ① 공통 모델 매핑 ② fidelity capsule 정의 ③ provenance 기록
   ④ 라운드트립 테스트 추가 — 네 단계를 한 세트로 진행.
+
+## 변경 이력 관리
+
+- 사용자·기여자에게 영향 있는 모든 변경은 같은 PR/커밋에서 **`HISTORY.md` 의 `## [Unreleased]` 섹션**
+  에 한 줄을 추가한다.
+- 카테고리: `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` / `Docs` / `Internal`.
+- 형식·릴리스 절차는 `HISTORY.md` 상단의 "작성 규칙" 을 따른다.
+- 정식 버전(SemVer) 부여는 첫 실행 가능 빌드(M1 완료) 이후 시작한다.
