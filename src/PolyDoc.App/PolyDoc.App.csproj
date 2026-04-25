@@ -19,6 +19,7 @@
     <ProjectReference Include="..\PolyDoc.Iwpf\PolyDoc.Iwpf.csproj" />
     <ProjectReference Include="..\PolyDoc.Codecs.Text\PolyDoc.Codecs.Text.csproj" />
     <ProjectReference Include="..\PolyDoc.Codecs.Markdown\PolyDoc.Codecs.Markdown.csproj" />
+    <ProjectReference Include="..\PolyDoc.Codecs.Docx\PolyDoc.Codecs.Docx.csproj" />
   </ItemGroup>
 
   <!-- 회사 로고를 앱 리소스로 임베드 (About 다이얼로그에서 표시) -->
