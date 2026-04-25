@@ -6,20 +6,21 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using PolyDoc.App.Services;
 using PolyDoc.App.Views;
-using PolyDoc.Codecs.Text;
 using PolyDoc.Core;
+using Wpf = System.Windows.Documents;
 
 namespace PolyDoc.App.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+    /// <summary>편집 모델의 source-of-truth 인 PolyDocument. FlowDocument 와는 Builder/Parser 로 동기화.</summary>
     private PolyDocument _document = PolyDocument.Empty();
 
     [ObservableProperty]
-    private string _documentTitle = "(새 문서)";
+    private Wpf.FlowDocument _flowDocument = new();
 
     [ObservableProperty]
-    private string _documentBody = string.Empty;
+    private string _documentTitle = "(새 문서)";
 
     [ObservableProperty]
     private string _currentFilePath = string.Empty;
@@ -30,35 +31,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasUnsavedChanges;
 
-    public PolyDocument Document
-    {
-        get => _document;
-        private set
-        {
-            _document = value;
-            DocumentBody = PlainTextWriter.ToText(value);
-            DocumentTitle = string.IsNullOrEmpty(CurrentFilePath)
-                ? "(새 문서)"
-                : Path.GetFileName(CurrentFilePath);
-            HasUnsavedChanges = false;
-            OnPropertyChanged(nameof(WindowTitle));
-        }
-    }
-
     public string WindowTitle
         => HasUnsavedChanges
             ? $"PolyDoc — {DocumentTitle} *"
             : $"PolyDoc — {DocumentTitle}";
-
-    partial void OnDocumentBodyChanged(string value)
-    {
-        // 사용자가 본문을 편집한 시점부터 dirty 표시.
-        if (!_suppressDirty)
-        {
-            HasUnsavedChanges = true;
-            OnPropertyChanged(nameof(WindowTitle));
-        }
-    }
 
     partial void OnDocumentTitleChanged(string value)
         => OnPropertyChanged(nameof(WindowTitle));
@@ -66,16 +42,31 @@ public partial class MainViewModel : ObservableObject
     partial void OnHasUnsavedChangesChanged(bool value)
         => OnPropertyChanged(nameof(WindowTitle));
 
+    /// <summary>RichTextBox 에서 본문 변경이 일어나면 code-behind 가 호출. Open/Save 등 프로그램적 변경 중에는 _suppressDirty 로 무시.</summary>
+    public void MarkDirty()
+    {
+        if (_suppressDirty) return;
+        HasUnsavedChanges = true;
+    }
+
     private bool _suppressDirty;
+
+    private void LoadDocument(PolyDocument document, string? path)
+    {
+        _document = document;
+        _suppressDirty = true;
+        FlowDocument = FlowDocumentBuilder.Build(document);
+        _suppressDirty = false;
+        CurrentFilePath = path ?? string.Empty;
+        DocumentTitle = string.IsNullOrEmpty(path) ? "(새 문서)" : Path.GetFileName(path);
+        HasUnsavedChanges = false;
+    }
 
     [RelayCommand]
     private void New()
     {
         if (!ConfirmDiscardChanges()) return;
-        CurrentFilePath = string.Empty;
-        _suppressDirty = true;
-        Document = PolyDocument.Empty();
-        _suppressDirty = false;
+        LoadDocument(PolyDocument.Empty(), null);
         StatusMessage = "새 문서가 생성되었습니다.";
     }
 
@@ -116,10 +107,7 @@ public partial class MainViewModel : ObservableObject
         {
             using var fs = File.OpenRead(path);
             var doc = reader.Read(fs);
-            CurrentFilePath = path;
-            _suppressDirty = true;
-            Document = doc;
-            _suppressDirty = false;
+            LoadDocument(doc, path);
             StatusMessage = $"열기 완료 — {Path.GetFileName(path)}";
         }
         catch (Exception ex)
@@ -146,11 +134,12 @@ public partial class MainViewModel : ObservableObject
         {
             Filter = KnownFormats.SaveFilter,
             Title = "다른 이름으로 저장",
-            FileName = string.IsNullOrEmpty(CurrentFilePath) ? "문서.iwpf" : Path.GetFileName(CurrentFilePath),
+            FileName = string.IsNullOrEmpty(CurrentFilePath)
+                ? "문서.iwpf"
+                : Path.GetFileName(CurrentFilePath),
         };
         if (dlg.ShowDialog() != true) return;
 
-        // 외부 포맷 저장 시 한 번 더 확인.
         if (KnownFormats.RequiresExternalConverter(dlg.FileName) && !KnownFormats.IsSupportedNatively(dlg.FileName))
         {
             var ext = Path.GetExtension(dlg.FileName).TrimStart('.').ToLowerInvariant();
@@ -192,17 +181,16 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        // 본문 편집 결과를 PolyDocument 로 다시 합친다 (Phase B 첫 사이클: plain text 모델).
-        // Phase E 의 리치 편집 도입 후에는 이 로직이 ViewModel <-> 도큐먼트 모델 동기화로 대체된다.
-        var rebuilt = PlainTextReader.FromText(DocumentBody);
-        rebuilt.Metadata.Title = string.IsNullOrEmpty(CurrentFilePath)
-            ? Path.GetFileNameWithoutExtension(path)
-            : Path.GetFileNameWithoutExtension(CurrentFilePath);
-
         try
         {
+            // FlowDocument 를 다시 PolyDocument 로 회수. 원본을 머지 베이스로 넘겨
+            // 메타·페이지 설정·한글 조판 속성을 비파괴 보존한다.
+            var rebuilt = FlowDocumentParser.Parse(FlowDocument, _document);
+
             using var fs = File.Create(path);
             writer.Write(rebuilt, fs);
+
+            _document = rebuilt;
             CurrentFilePath = path;
             DocumentTitle = Path.GetFileName(path);
             HasUnsavedChanges = false;

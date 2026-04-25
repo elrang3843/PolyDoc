@@ -45,6 +45,13 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Changed** — 본문 편집기를 `TextBox` (plain string) 에서 **`RichTextBox` + `FlowDocument`** 로 업그레이드. DocxReader/IwpfReader 가 이미 가져온 폰트·크기·색·굵게·기울임·밑줄·취소선·위·아래첨자·정렬·줄간격·문단간격·들여쓰기·헤더 레벨이 화면에 그대로 표시되고, 사용자가 그대로 편집·저장 가능.
+- **Added** — `src/PolyDoc.App/Services/FlowDocumentBuilder.cs` — PolyDocument → WPF FlowDocument 매퍼. RunStyle (폰트·크기 (pt→DIP)·색상 (PolyDoc.Color → SolidColorBrush)·강조·장식·BaselineAlignment), ParagraphStyle (정렬·간격·들여쓰기·LineHeight·Outline 헤더 시각화), ListMarker (Wpf.List/ListItem) 매핑. 원본 `Paragraph`/`Run` 을 Tag 에 보관해 Parser 가 비-FlowDocument 속성을 비파괴 보존.
+- **Added** — `src/PolyDoc.App/Services/FlowDocumentParser.cs` — FlowDocument → PolyDocument 역매퍼. Tag 머지로 한글 조판(장평·자간) / Provenance / 페이지 설정 비파괴 보존. FontWeight/FontStyle/TextDecorations/Foreground/Background/BaselineAlignment 추출, FontSize 로 헤더 레벨 추정.
+- **Added** — `tests/PolyDoc.App.Tests` (net10.0-windows + UseWPF) — FlowDocumentBuilder/Parser 라운드트립 9건. 본 환경(Linux)에선 WPF 의존이라 build/test 못 돌리고 사용자 Windows 검증 (G2.5).
+- **Changed** — `MainViewModel`: `DocumentBody` 문자열 제거, `FlowDocument` ObservableProperty 노출. `LoadDocument` 헬퍼로 Open/New 통일. SaveTo 가 FlowDocument 를 Parser 에 보내 원본 `_document` 를 머지 베이스로 회수해 비파괴 저장. `MarkDirty()` public 메서드.
+- **Changed** — `MainWindow`: 본문 영역을 `RichTextBox` 로 교체. code-behind 가 ViewModel `FlowDocument` 변경 시 `BodyEditor.Document` 동기화, `TextChanged` 에서 `vm.MarkDirty()` 호출. 프로그램적 변경 중에는 `_suppressTextChanged` 플래그로 dirty 회피.
+
 - **Added** — Phase C (1/N) DOCX 1급 시민 codec — `src/PolyDoc.Codecs.Docx`. DocumentFormat.OpenXml 3.5.1 기반 reader/writer. 단락 / Heading1~6 / 정렬(좌·중·우·양쪽·균등) / 굵게·기울임·밑줄·취소선·위첨자·아래첨자 / 폰트 패밀리·크기 / 색상 / 기본 리스트 / Title·Author 코어 속성 라운드트립. xUnit 라운드트립 6건 + 스모크 1건 그린.
 - **Added** — `tests/PolyDoc.Codecs.Docx.Tests` xUnit 라운드트립 테스트 6건.
 - **Added** — `Directory.Packages.props` 에 DocumentFormat.OpenXml 3.5.1 (MIT) 등록.

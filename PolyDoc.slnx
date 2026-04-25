@@ -8,6 +8,7 @@
     <Project Path="src/PolyDoc.Iwpf/PolyDoc.Iwpf.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/PolyDoc.App.Tests/PolyDoc.App.Tests.csproj" />
     <Project Path="tests/PolyDoc.Codecs.Docx.Tests/PolyDoc.Codecs.Docx.Tests.csproj" />
     <Project Path="tests/PolyDoc.Codecs.Markdown.Tests/PolyDoc.Codecs.Markdown.Tests.csproj" />
     <Project Path="tests/PolyDoc.Codecs.Text.Tests/PolyDoc.Codecs.Text.Tests.csproj" />

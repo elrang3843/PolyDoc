@@ -97,22 +97,21 @@
             </StatusBarItem>
         </StatusBar>
 
-        <!-- 본문 영역 — Phase B 첫 사이클은 plain text 편집기.
-             Phase E 의 리치 편집 도입 시 RichTextBox / FlowDocument 로 교체. -->
+        <!-- 본문 영역 — Phase B 폴리싱: RichTextBox + FlowDocument 로 서식 표시·편집.
+             RichTextBox.Document 는 DependencyProperty 가 아니라 code-behind 에서 ViewModel 의
+             FlowDocument 변경을 받아 동기화한다. TextChanged 는 dirty 마킹용. -->
         <Border Margin="12" BorderBrush="{StaticResource Divider}" BorderThickness="1">
-            <TextBox x:Name="BodyEditor"
-                     Text="{Binding DocumentBody, UpdateSourceTrigger=PropertyChanged}"
-                     AcceptsReturn="True"
-                     AcceptsTab="True"
-                     TextWrapping="Wrap"
-                     VerticalScrollBarVisibility="Auto"
-                     HorizontalScrollBarVisibility="Auto"
-                     FontFamily="Consolas, D2Coding, 맑은 고딕"
-                     FontSize="14"
-                     Padding="12"
-                     BorderThickness="0"
-                     Background="{StaticResource Surface}"
-                     Foreground="{StaticResource OnSurface}" />
+            <RichTextBox x:Name="BodyEditor"
+                         AcceptsReturn="True"
+                         AcceptsTab="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         IsDocumentEnabled="True"
+                         SpellCheck.IsEnabled="False"
+                         Padding="12"
+                         BorderThickness="0"
+                         Background="{StaticResource Surface}"
+                         Foreground="{StaticResource OnSurface}" />
         </Border>
 
     </DockPanel>

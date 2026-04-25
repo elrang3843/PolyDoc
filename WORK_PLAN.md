@@ -91,10 +91,12 @@ PolyDoc/
 
 ### Phase B — WPF UI 셸 (Windows 필수)
 - ✅ B1 PolyDoc.App 스캐폴딩 (`net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0, ApplicationIcon=Handtech.ico, Handtech_1024.png 임베드)
-- ✅ B2 메인 메뉴 6단(파일/편집/입력/서식/도구/도움말) + TextBox 본문 편집기 + 상태 바 + About 다이얼로그
+- ✅ B2 메인 메뉴 6단(파일/편집/입력/서식/도구/도움말) + 본문 편집기 + 상태 바 + About 다이얼로그
+- ✅ B2.5 본문 편집기를 **RichTextBox + FlowDocument** 로 업그레이드. FlowDocumentBuilder/Parser 로 PolyDocument 와 양방향 동기화, 한글 조판 등 비-FlowDocument 속성은 Tag 머지로 비파괴 보존. PolyDoc.App.Tests 프로젝트(net10.0-windows + xUnit) 신설, 9 라운드트립 테스트 작성.
 - ◑ B3 i18n 한/영 — 1차 사이클은 한국어 하드코딩, `.resx` 리소스 분리는 다음 사이클로 이연
 - ◑ B4 테마 시스템 — 1차 사이클은 Light 단일 테마(핸텍 브랜드 블루), 다중 테마는 다음 사이클
-- ☐ B5 **G2** — Windows 머신에서 첫 `dotnet build` / `dotnet run` 결과 보고. 메뉴 동작·About 표시·IWPF/MD/TXT 열고 저장 검증
+- ✅ B5 **G2** — Windows 머신에서 첫 `dotnet build` / `dotnet run` 통과. 메뉴 동작·About 표시·IWPF/MD/TXT/DOCX 열고 저장 정상 (사용자 보고).
+- ☐ B5.5 **G2.5** — RichTextBox 업그레이드 후 Windows 검증: build/test 그린, .docx 의 폰트·크기·색·정렬이 화면에 표시되고 편집·저장이 보존되는지.
 
 ### Phase C — DOCX/HWPX 1급 시민 (M2-M3)
 - ✅ C1 DOCX reader (OpenXml SDK 3.5.1) — 단락·헤더·정렬·강조·폰트·색상·리스트
@@ -173,16 +175,19 @@ PolyDoc/
 | **합계** | **36** | **All green** |
 | PolyDoc.SmokeTest 콘솔 | 5 | ✅ |
 
-### 사용자(노진문) 작업이 필요한 항목 — Phase C 진입 사이클 검증
-- [ ] Windows 에서 `git pull` 후 `dotnet restore` (DocumentFormat.OpenXml 3.5.1 / Markdig 0.42.0 자동 복원)
-- [ ] `dotnet build PolyDoc.slnx` — App 까지 포함해 0 error
-- [ ] `dotnet test PolyDoc.slnx` — **xUnit 36건 모두 그린**
-- [ ] (선택) `dotnet run --project src/PolyDoc.App` — `.docx` 파일을 직접 열고 본문이 표시되는지
-- [ ] (선택) PolyDoc 에서 `.docx` 로 저장 → Microsoft Word 에서 열어 보이는지 (G3 의 일부, 시각 검증)
+### 사용자(노진문) 작업이 필요한 항목 — RichTextBox 업그레이드 검증 (G2.5)
+- [ ] Windows 에서 `git pull` 후 `dotnet restore`
+- [ ] `dotnet build PolyDoc.slnx` — App + 새 PolyDoc.App.Tests 까지 포함해 0 error
+- [ ] `dotnet test PolyDoc.slnx` — 기존 36건 + 신규 9건 = **xUnit 45건 모두 그린**
+- [ ] `dotnet run --project src/PolyDoc.App`
+- [ ] **시각 검증**: Word 에서 만든 `.docx` (제목·본문·굵게·색·정렬 섞인) 를 열어 → 화면에 서식이 그대로 보여야 함
+- [ ] **편집 후 저장**: 본문 일부 수정 → 저장 → 다시 Word 에서 열어 서식 보존 확인 (G3 일부)
+- [ ] `.iwpf` 라운드트립도 동일하게 시각 보존되는지
 
 ### 다음 단계 후보
-- **C3·C4 HWPX codec** — KS X 6101 기반 자체 구현. 다음 세션 메인 작업.
-- **B 사이클 폴리싱** — i18n .resx (한/영), 테마 다중화, 드래그&드롭, 찾기·바꾸기.
+- **표·이미지 opaque 보존** — IWPF.md 의 「opaque island」 정책 적용. DocxReader 가 표/이미지를 OpaqueBlock 으로 보존, Writer 가 그대로 재출력. RichTextBox 본문엔 placeholder 토큰.
+- **C3·C4 HWPX codec** — KS X 6101 기반 자체 구현.
+- **B 사이클 폴리싱 더** — i18n .resx (한/영), 테마 다중화, 드래그&드롭, 찾기·바꾸기.
 - **D 단계 진입** — HWP/DOC/HTML 외부 컨버터 (LibreOffice headless) IPC 연결.
 
 ### 다음 사이클 (G2 통과 후)
@@ -192,7 +197,7 @@ PolyDoc/
 4. **드래그 & 드롭** — 파일을 윈도우에 끌어 놓으면 즉시 열기.
 
 ### 알려진 한계 (코드 베이스 전반)
-- Markdown 코덱이 Markdig 의 풀 CommonMark 가 아닌 **실용 서브셋**. 코드블록·인용·표·이미지·링크 미지원. NuGet 회복 후 Markdig 로 교체.
 - Block 다형성을 `JsonDerivedType` 로 처리 — 현재 `Paragraph` 만 등록. `Table`, `Image`, `TextBox` 등 추가 시 같은 위치에 등록 (`src/PolyDoc.Core/Block.cs`).
 - IWPF document.json 본문은 Phase A 에서 JSON. 후속 단계에서 IWPF 사양에 맞춰 일부를 XML 로 전환 가능 (`document.xml`, `styles.xml`).
-- 본문 편집기가 `TextBox` (plain string). Phase E 에서 RichTextBox/FlowDocument 로 교체하면서 ParagraphStyle/RunStyle 양방향 동기화 도입.
+- 본문 편집기가 RichTextBox + FlowDocument. FlowDocument 가 표현 못 하는 모델 속성(장평·자간·Provenance)은 ViewModel 의 `_document` 머지 베이스로 비파괴 보존. 편집 후에도 유지되는지는 Save 시 `FlowDocumentParser.Parse(fd, originalForMerge: _document)` 호출이 정상 동작에 의존.
+- WPF 빌드 검증을 본 환경(Linux)에서 못 함. App 코드 변경 직후엔 (1) csproj `<ProjectReference>` 누락 점검, (2) 새 NuGet 패키지의 namespace 와 우리 type 이름이 충돌하는지 점검 — 두 가지를 매번 확인 사이클로 돌릴 것 (DocumentFormat.OpenXml 충돌로 두 차례 빌드 실패한 lessons-learned).
