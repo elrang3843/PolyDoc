@@ -105,9 +105,12 @@ PolyDoc/
 - ✅ C2.5 비텍스트 객체 (표·이미지·OpaqueBlock) 1차 — Core 모델 + DOCX/IWPF 라운드트립 + WPF 시각화
 - ✅ C3 HWPX reader (KS X 6101) — 자체 구현 1차 (단락·런·정렬·강조·헤더 H1~H6)
 - ✅ C4 HWPX writer + 라운드트립 테스트 (xUnit 6건 + 스모크 1건)
-- ◑ C5 HWPX 표·이미지·OpaqueBlock 매핑 — 다음 사이클
-- ☐ G3 (DOCX 부분): 사용자가 Word 에서 시각 검증 — 이미 통과
-- ☐ G3 (HWPX 부분): 사용자가 한컴 오피스에서 시각 검증 — 호환성 fine-tune 필요
+- ✅ C4.5 한컴 hwpx 변종 호환 — ZIP entry path 정규화, BOM-aware StreamReader, OPF spine .xml 필터, header.xml 의 charPr/paraPr/style ID → PolyDoc 모델 매핑
+- ☐ C5 HWPX 표·이미지·OpaqueBlock 매핑 (`<hp:tbl>` → Table, BinData/ → ImageBlock) — 다음 사이클
+- ☐ C6 HWPX writer 의 한컴 호환 향상 — header.xml 에 사용자별 RunStyle/ParagraphStyle 마다 동적 charPr/paraPr 생성, hp:linesegarray 보강
+- ☐ G3 (DOCX 측): 사용자가 Word 에서 시각 검증 — 통과 (직접 처리·라운드트립 정상 보고)
+- ◑ G3 (HWPX 측 reader): 한컴 hwpx 4건 본문·서식 정상 표시 — 통과 (사용자 보고 OK)
+- ☐ G3 (HWPX 측 writer): PolyDoc 가 만든 .hwpx 를 한컴 오피스에서 정상 표시 — 사용자 검증 필요
 
 ### Phase D — 외부 CLI 컨버터 분리
 - ☐ D1 PolyDoc.Cli.Docx 분리
