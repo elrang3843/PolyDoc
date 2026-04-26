@@ -397,7 +397,7 @@ public partial class PageFormatWindow : Window
         PreviewCanvas.Children.Add(label);
     }
 
-    private Brush GetPaperBrush()
+    private WpfMedia.Brush GetPaperBrush()
     {
         if (!string.IsNullOrEmpty(_settings.PaperColor) &&
             TryParseWpfColor(_settings.PaperColor, out var c))
