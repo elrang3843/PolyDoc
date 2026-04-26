@@ -674,6 +674,30 @@ public partial class MainViewModel : ObservableObject
             WritePassword = mode != PasswordMode.Read  ? _writePassword    : null,
         };
 
+    // ── 확대/축소 ────────────────────────────────────────────────────────────
+    private double _zoomPercent = 100;
+
+    /// <summary>편집창 배율 (10–500 %). ScaleTransform 을 통해 PaperStackPanel 에 LayoutTransform 으로 적용.</summary>
+    public double ZoomPercent
+    {
+        get => _zoomPercent;
+        set
+        {
+            var clamped = Math.Clamp(Math.Round(value), 10, 500);
+            if (SetProperty(ref _zoomPercent, clamped))
+                OnPropertyChanged(nameof(ZoomScale));
+        }
+    }
+
+    /// <summary>ZoomPercent / 100. ScaleTransform.ScaleX/Y 에 바인딩.</summary>
+    public double ZoomScale => _zoomPercent / 100.0;
+
+    [RelayCommand]
+    private void ZoomIn()  => ZoomPercent += 10;
+
+    [RelayCommand]
+    private void ZoomOut() => ZoomPercent -= 10;
+
     private bool ConfirmDiscardChanges()
     {
         if (!HasUnsavedChanges) return true;

@@ -252,4 +252,8 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string SettingsLangKorean  => SR.SettingsLangKorean;
     public string SettingsLangEnglish => SR.SettingsLangEnglish;
     public string FindReplaceCloseBtn => SR.FindReplaceClose;
+    public string ToolbarZoomIn      => SR.ToolbarZoomIn;
+    public string ToolbarZoomOut     => SR.ToolbarZoomOut;
+    public string ToolbarFitWidth    => SR.ToolbarFitWidth;
+    public string ToolbarFitPage     => SR.ToolbarFitPage;
 }

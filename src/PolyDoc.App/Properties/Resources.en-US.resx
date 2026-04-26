@@ -334,4 +334,8 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageSizeGroupNewspaper"       xml:space="preserve"><value>— Newspaper —</value></data>
   <data name="PageSizeGroupKoreanBook"      xml:space="preserve"><value>— Korean Book Sizes —</value></data>
   <data name="PageSizeGroupIntlBook"        xml:space="preserve"><value>— International Book Sizes —</value></data>
+  <data name="ToolbarZoomIn"               xml:space="preserve"><value>Zoom In (10%)</value></data>
+  <data name="ToolbarZoomOut"              xml:space="preserve"><value>Zoom Out (10%)</value></data>
+  <data name="ToolbarFitWidth"             xml:space="preserve"><value>Fit to Width</value></data>
+  <data name="ToolbarFitPage"              xml:space="preserve"><value>Fit to Page</value></data>
 </root>

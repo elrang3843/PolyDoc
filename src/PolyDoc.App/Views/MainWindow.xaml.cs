@@ -285,4 +285,53 @@ public partial class MainWindow : Window
         }
         e.Handled = true;
     }
+
+    // ── 확대/축소 조절기 ──────────────────────────────────────────────────────
+
+    private void OnFitToWidth(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        // 뷰포트 너비에서 PaperStackPanel 좌우 여백(32+32) 을 빼고 용지 논리 너비로 나눈다.
+        const double hMargin = 64;
+        double paperW = PaperBorder.Width;
+        double viewW  = EditorScrollViewer.ViewportWidth;
+        if (paperW <= 0 || viewW <= 0) return;
+        _viewModel.ZoomPercent = (viewW - hMargin) / paperW * 100;
+    }
+
+    private void OnFitToPage(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        const double hMargin = 64; // StackPanel 좌우 여백
+        const double vMargin = 76; // StackPanel 상(28)+하(48) 여백
+        double paperW = PaperBorder.Width;
+        double paperH = PaperBorder.MinHeight; // 콘텐츠가 길어도 한 페이지 분량 기준
+        double viewW  = EditorScrollViewer.ViewportWidth;
+        double viewH  = EditorScrollViewer.ViewportHeight;
+        if (paperW <= 0 || paperH <= 0 || viewW <= 0 || viewH <= 0) return;
+        double fitW = (viewW - hMargin) / paperW;
+        double fitH = (viewH - vMargin) / paperH;
+        _viewModel.ZoomPercent = Math.Min(fitW, fitH) * 100;
+    }
+
+    private void OnZoomTextBoxKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        ApplyZoomFromTextBox();
+        BodyEditor.Focus();
+        e.Handled = true;
+    }
+
+    private void OnZoomTextBoxLostFocus(object sender, RoutedEventArgs e)
+        => ApplyZoomFromTextBox();
+
+    private void ApplyZoomFromTextBox()
+    {
+        if (_viewModel is null) return;
+        var text = TxtZoom.Text.Trim().TrimEnd('%');
+        if (double.TryParse(text, out double val))
+            _viewModel.ZoomPercent = val;
+        else
+            TxtZoom.Text = _viewModel.ZoomPercent.ToString("0");
+    }
 }

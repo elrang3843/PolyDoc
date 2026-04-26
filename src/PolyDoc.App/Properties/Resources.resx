@@ -335,4 +335,8 @@
   <data name="PageSizeGroupNewspaper"       xml:space="preserve"><value>— 신문 판형 —</value></data>
   <data name="PageSizeGroupKoreanBook"      xml:space="preserve"><value>— 한국 도서 판형 —</value></data>
   <data name="PageSizeGroupIntlBook"        xml:space="preserve"><value>— 국제 도서 판형 —</value></data>
+  <data name="ToolbarZoomIn"               xml:space="preserve"><value>확대 (10%)</value></data>
+  <data name="ToolbarZoomOut"              xml:space="preserve"><value>축소 (10%)</value></data>
+  <data name="ToolbarFitWidth"             xml:space="preserve"><value>폭 맞춤</value></data>
+  <data name="ToolbarFitPage"              xml:space="preserve"><value>쪽 맞춤</value></data>
 </root>

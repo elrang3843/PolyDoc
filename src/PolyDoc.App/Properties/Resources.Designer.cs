@@ -317,5 +317,9 @@ namespace PolyDoc.App.Properties
         internal static string PageSizeGroupNewspaper      => Get(nameof(PageSizeGroupNewspaper));
         internal static string PageSizeGroupKoreanBook     => Get(nameof(PageSizeGroupKoreanBook));
         internal static string PageSizeGroupIntlBook       => Get(nameof(PageSizeGroupIntlBook));
+        internal static string ToolbarZoomIn               => Get(nameof(ToolbarZoomIn));
+        internal static string ToolbarZoomOut              => Get(nameof(ToolbarZoomOut));
+        internal static string ToolbarFitWidth             => Get(nameof(ToolbarFitWidth));
+        internal static string ToolbarFitPage              => Get(nameof(ToolbarFitPage));
     }
 }
