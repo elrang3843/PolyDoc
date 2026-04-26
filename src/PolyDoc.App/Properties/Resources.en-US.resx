@@ -244,4 +244,6 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="FormatCharFgColor"     xml:space="preserve"><value>Text color</value></data>
   <data name="FormatCharBgColor"     xml:space="preserve"><value>Highlight</value></data>
   <data name="FormatCharPreviewGroup" xml:space="preserve"><value>Preview</value></data>
+  <data name="FormatCharWidthPercent"  xml:space="preserve"><value>Width</value></data>
+  <data name="FormatCharLetterSpacing" xml:space="preserve"><value>Spacing</value></data>
 </root>

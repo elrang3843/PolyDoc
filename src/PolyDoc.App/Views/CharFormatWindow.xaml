@@ -19,38 +19,79 @@
                 <TextBlock Text="{Binding FormatCharFontGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
                            FontWeight="SemiBold" />
             </GroupBox.Header>
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="64" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0"
-                           Text="{Binding FormatCharFontFamily, Source={x:Static svc:LocalizedStrings.Instance}}"
-                           VerticalAlignment="Center" Margin="0,0,6,0" />
-                <ComboBox Grid.Column="1" x:Name="CboFont"
-                          IsEditable="True" IsTextSearchEnabled="True"
-                          Background="{DynamicResource SurfaceAlt}"
-                          Foreground="{DynamicResource OnSurface}"
-                          BorderBrush="{DynamicResource Divider}"
-                          VerticalAlignment="Center"
-                          SelectionChanged="OnPreviewUpdate" />
-                <TextBlock Grid.Column="2"
-                           Text="{Binding FormatCharFontSize, Source={x:Static svc:LocalizedStrings.Instance}}"
-                           VerticalAlignment="Center" Margin="10,0,6,0" />
-                <TextBox Grid.Column="3" x:Name="TxtSize"
-                         Background="{DynamicResource SurfaceAlt}"
-                         Foreground="{DynamicResource OnSurface}"
-                         CaretBrush="{DynamicResource OnSurface}"
-                         BorderBrush="{DynamicResource Divider}"
-                         VerticalAlignment="Center" Padding="4,3"
-                         TextChanged="OnPreviewUpdate" />
-                <TextBlock Grid.Column="4" Text="pt"
-                           VerticalAlignment="Center" Margin="4,0,0,0"
-                           Foreground="{DynamicResource OnSurfaceMuted}" />
-            </Grid>
+            <StackPanel>
+                <!-- 행 1: 글꼴 이름 / 크기 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding FormatCharFontFamily, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ComboBox Grid.Column="1" x:Name="CboFont"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              Background="{DynamicResource SurfaceAlt}"
+                              Foreground="{DynamicResource OnSurface}"
+                              BorderBrush="{DynamicResource Divider}"
+                              VerticalAlignment="Center"
+                              SelectionChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding FormatCharFontSize, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="10,0,6,0" />
+                    <TextBox Grid.Column="3" x:Name="TxtSize"
+                             Background="{DynamicResource SurfaceAlt}"
+                             Foreground="{DynamicResource OnSurface}"
+                             CaretBrush="{DynamicResource OnSurface}"
+                             BorderBrush="{DynamicResource Divider}"
+                             VerticalAlignment="Center" Padding="4,3"
+                             TextChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="4" Text="pt"
+                               VerticalAlignment="Center" Margin="4,0,0,0"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                </Grid>
+                <!-- 행 2: 글자폭 / 자간 -->
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="60" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="60" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding FormatCharWidthPercent, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="1" x:Name="TxtWidthPercent"
+                             Background="{DynamicResource SurfaceAlt}"
+                             Foreground="{DynamicResource OnSurface}"
+                             CaretBrush="{DynamicResource OnSurface}"
+                             BorderBrush="{DynamicResource Divider}"
+                             VerticalAlignment="Center" Padding="4,3"
+                             TextChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="2" Text="%"
+                               VerticalAlignment="Center" Margin="4,0,0,0"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                    <TextBlock Grid.Column="4"
+                               Text="{Binding FormatCharLetterSpacing, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="10,0,6,0" />
+                    <TextBox Grid.Column="5" x:Name="TxtLetterSpacing"
+                             Background="{DynamicResource SurfaceAlt}"
+                             Foreground="{DynamicResource OnSurface}"
+                             CaretBrush="{DynamicResource OnSurface}"
+                             BorderBrush="{DynamicResource Divider}"
+                             VerticalAlignment="Center" Padding="4,3"
+                             TextChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="6" Text="px"
+                               VerticalAlignment="Center" Margin="4,0,0,0"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                </Grid>
+            </StackPanel>
         </GroupBox>
 
         <!-- 스타일 그룹 -->

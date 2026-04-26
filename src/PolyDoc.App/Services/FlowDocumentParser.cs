@@ -230,6 +230,44 @@ public static class FlowDocumentParser
                 p.AddText(r.Text, seed);
                 break;
             }
+            case Wpf.InlineUIContainer iuc:
+            {
+                // FlowDocumentBuilder 가 ScaleTransform 으로 만든 글자폭 시각화 컨테이너.
+                // Tag 에 원본 PolyDoc Run 이 있으면 직접 회수. 없으면 TextBlock 속성에서 추출.
+                if (iuc.Tag is Run origRun)
+                {
+                    p.AddText(origRun.Text, Clone(origRun.Style));
+                }
+                else if (iuc.Child is System.Windows.Controls.TextBlock tb)
+                {
+                    var style = new RunStyle
+                    {
+                        FontSizePt = FlowDocumentBuilder.DipToPt(tb.FontSize),
+                        Bold = tb.FontWeight.ToOpenTypeWeight() >= FontWeights.Bold.ToOpenTypeWeight(),
+                        Italic = tb.FontStyle == FontStyles.Italic,
+                    };
+                    if (tb.FontFamily != null) style.FontFamily = tb.FontFamily.Source;
+                    if (tb.LayoutTransform is WpfMedia.ScaleTransform st)
+                        style.WidthPercent = st.ScaleX * 100.0;
+                    if (tb.Foreground is WpfMedia.SolidColorBrush fg)
+                        style.Foreground = new Color(fg.Color.R, fg.Color.G, fg.Color.B, fg.Color.A);
+                    if (tb.Background is WpfMedia.SolidColorBrush bg)
+                        style.Background = new Color(bg.Color.R, bg.Color.G, bg.Color.B, bg.Color.A);
+                    if (tb.TextDecorations is { Count: > 0 } decos)
+                    {
+                        foreach (var d in decos)
+                        {
+                            if (d.Location == TextDecorationLocation.Underline) style.Underline = true;
+                            else if (d.Location == TextDecorationLocation.Strikethrough) style.Strikethrough = true;
+                            else if (d.Location == TextDecorationLocation.OverLine) style.Overline = true;
+                        }
+                    }
+                    var cs = System.Windows.Documents.Typography.GetCharacterSpacing(tb);
+                    if (cs != 0) style.LetterSpacingPx = cs / 1000.0 * tb.FontSize;
+                    p.AddText(tb.Text, style);
+                }
+                break;
+            }
             case Wpf.LineBreak:
                 p.AddText("\n", Clone(baseStyle));
                 break;
@@ -259,6 +297,14 @@ public static class FlowDocumentParser
         {
             s.Subscript = true;
             s.Superscript = false;
+        }
+
+        // 자간: Typography.CharacterSpacing (1/1000 em) → px
+        var cs = System.Windows.Documents.Typography.GetCharacterSpacing(wpfRun);
+        if (cs != 0)
+        {
+            var dip = wpfRun.FontSize > 0 ? wpfRun.FontSize : FlowDocumentBuilder.PtToDip(11);
+            s.LetterSpacingPx = cs / 1000.0 * dip;
         }
     }
 

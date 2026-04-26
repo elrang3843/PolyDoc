@@ -54,6 +54,7 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 
 ### Added
 - **Added** — 서식 > 글자 서식 다이얼로그 (`CharFormatWindow`). RichTextBox 선택 영역의 글꼴·크기·굵게·기울임꼴·밑줄·취소선·위선·위첨자·아래첨자·글자색·배경색을 읽어 표시하고, OK 시 선택 영역에 일괄 적용. 선택이 없으면 캐럿 위치 서식을 읽어 이후 입력에 반영. 미리보기 TextBlock 실시간 갱신. 선택 혼합값(mixed)은 세 상태 체크박스(불확정)로 표시 — 값을 바꾸지 않으면 해당 속성 변경 없음.
+- **Added** — 글자폭(WidthPercent)·자간(LetterSpacingPx) WPF 시각화. 글자폭 != 100% 인 Run 은 `ScaleTransform` + `InlineUIContainer(TextBlock)`으로 렌더링. 자간은 `Typography.CharacterSpacing`(1/1000 em)으로 적용. `CharFormatWindow` 글꼴 그룹에 글자폭(%) / 자간(px) 입력란 추가 및 미리보기 실시간 반영. `FlowDocumentParser` 가 `InlineUIContainer`·`CharacterSpacing` 값을 파싱해 IWPF 라운드트립 보존.
 
 ### Fixed
 - **Fixed** — 다른 이름으로 저장 시 형식을 바꿔도 원본 파일명(확장자 포함)이 그대로 남아 "이미 있습니다" 경고가 뜨던 문제. `SaveFileDialog.FileName` 초기값을 `GetFileName` → `GetFileNameWithoutExtension` 으로 변경 — 선택한 필터의 확장자가 자동 적용된다.

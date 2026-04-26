@@ -151,6 +151,8 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string FormatCharFgColor      => SR.FormatCharFgColor;
     public string FormatCharBgColor      => SR.FormatCharBgColor;
     public string FormatCharPreviewGroup => SR.FormatCharPreviewGroup;
+    public string FormatCharWidthPercent  => SR.FormatCharWidthPercent;
+    public string FormatCharLetterSpacing => SR.FormatCharLetterSpacing;
 
     // ── 설정 다이얼로그 ─────────────────────────────────────────
     public string SettingsTitle       => SR.SettingsTitle;

@@ -229,5 +229,7 @@ namespace PolyDoc.App.Properties
         internal static string FormatCharFgColor      => Get(nameof(FormatCharFgColor));
         internal static string FormatCharBgColor      => Get(nameof(FormatCharBgColor));
         internal static string FormatCharPreviewGroup => Get(nameof(FormatCharPreviewGroup));
+        internal static string FormatCharWidthPercent  => Get(nameof(FormatCharWidthPercent));
+        internal static string FormatCharLetterSpacing => Get(nameof(FormatCharLetterSpacing));
     }
 }

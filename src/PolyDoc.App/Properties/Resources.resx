@@ -244,4 +244,6 @@
   <data name="FormatCharFgColor"     xml:space="preserve"><value>글자색</value></data>
   <data name="FormatCharBgColor"     xml:space="preserve"><value>배경색</value></data>
   <data name="FormatCharPreviewGroup" xml:space="preserve"><value>미리보기</value></data>
+  <data name="FormatCharWidthPercent"  xml:space="preserve"><value>글자폭</value></data>
+  <data name="FormatCharLetterSpacing" xml:space="preserve"><value>자간</value></data>
 </root>

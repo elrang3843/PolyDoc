@@ -214,7 +214,7 @@ public static class FlowDocumentBuilder
         ApplyParagraphStyle(wpfPara, p.Style);
         foreach (var run in p.Runs)
         {
-            wpfPara.Inlines.Add(BuildRun(run));
+            wpfPara.Inlines.Add(BuildInline(run));
         }
         // 원본 PolyDoc.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
@@ -268,65 +268,97 @@ public static class FlowDocumentBuilder
         }
     }
 
-    private static Wpf.Run BuildRun(Run run)
+    /// <summary>PolyDoc Run 을 WPF Inline 으로 변환. 글자폭이 100% 가 아니면 InlineUIContainer 반환.</summary>
+    public static Wpf.Inline BuildInline(Run run)
     {
-        var wpfRun = new Wpf.Run(run.Text);
         var s = run.Style;
+        if (Math.Abs(s.WidthPercent - 100) > 0.5)
+        {
+            return BuildScaledContainer(run);
+        }
+
+        var wpfRun = new Wpf.Run(run.Text);
 
         if (!string.IsNullOrEmpty(s.FontFamily))
-        {
             wpfRun.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
-        }
         if (Math.Abs(s.FontSizePt - 11) > 0.001)
-        {
             wpfRun.FontSize = PtToDip(s.FontSizePt);
-        }
         if (s.Bold)
-        {
             wpfRun.FontWeight = FontWeights.Bold;
-        }
         if (s.Italic)
-        {
             wpfRun.FontStyle = FontStyles.Italic;
-        }
 
         var decorations = new TextDecorationCollection();
-        if (s.Underline)
-        {
-            foreach (var d in TextDecorations.Underline) decorations.Add(d);
-        }
-        if (s.Strikethrough)
-        {
-            foreach (var d in TextDecorations.Strikethrough) decorations.Add(d);
-        }
-        if (s.Overline)
-        {
-            foreach (var d in TextDecorations.OverLine) decorations.Add(d);
-        }
+        if (s.Underline) foreach (var d in TextDecorations.Underline) decorations.Add(d);
+        if (s.Strikethrough) foreach (var d in TextDecorations.Strikethrough) decorations.Add(d);
+        if (s.Overline) foreach (var d in TextDecorations.OverLine) decorations.Add(d);
         if (decorations.Count > 0)
-        {
             wpfRun.TextDecorations = decorations;
-        }
 
         if (s.Foreground is { } fg)
-        {
             wpfRun.Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
-        }
         if (s.Background is { } bg)
-        {
             wpfRun.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
-        }
+
         if (s.Superscript)
-        {
             wpfRun.BaselineAlignment = BaselineAlignment.Superscript;
-        }
         else if (s.Subscript)
-        {
             wpfRun.BaselineAlignment = BaselineAlignment.Subscript;
+
+        // 자간: Typography.CharacterSpacing (1/1000 em 단위)
+        if (Math.Abs(s.LetterSpacingPx) > 0.01)
+        {
+            var dip = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 11);
+            var emUnits = (int)Math.Round(s.LetterSpacingPx / dip * 1000);
+            if (emUnits != 0)
+                System.Windows.Documents.Typography.SetCharacterSpacing(wpfRun, emUnits);
         }
 
         // 원본 Run 도 Tag 에 보관 (Parser 머지용).
         wpfRun.Tag = run;
         return wpfRun;
+    }
+
+    /// <summary>글자폭 != 100% 인 Run 을 ScaleTransform TextBlock + InlineUIContainer 로 시각화.</summary>
+    public static Wpf.InlineUIContainer BuildScaledContainer(Run run)
+    {
+        var s = run.Style;
+        var fontSize = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 11);
+
+        var tb = new System.Windows.Controls.TextBlock
+        {
+            Text = run.Text,
+            FontSize = fontSize,
+            LayoutTransform = new WpfMedia.ScaleTransform(s.WidthPercent / 100.0, 1.0),
+        };
+
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            tb.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+        if (s.Bold) tb.FontWeight = FontWeights.Bold;
+        if (s.Italic) tb.FontStyle = FontStyles.Italic;
+
+        var decos = new TextDecorationCollection();
+        if (s.Underline) foreach (var d in TextDecorations.Underline) decos.Add(d);
+        if (s.Strikethrough) foreach (var d in TextDecorations.Strikethrough) decos.Add(d);
+        if (s.Overline) foreach (var d in TextDecorations.OverLine) decos.Add(d);
+        if (decos.Count > 0) tb.TextDecorations = decos;
+
+        if (s.Foreground is { } fg)
+            tb.Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+        if (s.Background is { } bg)
+            tb.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+
+        if (Math.Abs(s.LetterSpacingPx) > 0.01)
+        {
+            var emUnits = (int)Math.Round(s.LetterSpacingPx / fontSize * 1000);
+            if (emUnits != 0) System.Windows.Documents.Typography.SetCharacterSpacing(tb, emUnits);
+        }
+
+        tb.Tag = run;
+        return new Wpf.InlineUIContainer(tb)
+        {
+            BaselineAlignment = BaselineAlignment.Baseline,
+            Tag = run,
+        };
     }
 }
