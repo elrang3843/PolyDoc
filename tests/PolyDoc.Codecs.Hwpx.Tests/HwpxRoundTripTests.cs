@@ -218,6 +218,89 @@ public class HwpxRoundTripTests
         Assert.Equal(1, binDataEntries);
     }
 
+    [Fact]
+    public void RoundTrip_PreservesFontSize()
+    {
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var p = new Paragraph();
+        p.AddText("작은",  new RunStyle { FontSizePt = 9 });
+        p.AddText("보통",  new RunStyle { FontSizePt = 11 });
+        p.AddText("큰",    new RunStyle { FontSizePt = 18 });
+        p.AddText("매우큰", new RunStyle { FontSizePt = 36 });
+        section.Blocks.Add(p);
+
+        var runs = WriteThenRead(doc).EnumerateParagraphs().Single().Runs;
+        Assert.Equal(9,  runs.Single(r => r.Text == "작은").Style.FontSizePt,  precision: 1);
+        Assert.Equal(11, runs.Single(r => r.Text == "보통").Style.FontSizePt,  precision: 1);
+        Assert.Equal(18, runs.Single(r => r.Text == "큰").Style.FontSizePt,    precision: 1);
+        Assert.Equal(36, runs.Single(r => r.Text == "매우큰").Style.FontSizePt, precision: 1);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesForegroundColor()
+    {
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var p = new Paragraph();
+        p.AddText("빨강", new RunStyle { Foreground = new Color(255, 0,   0)   });
+        p.AddText("초록", new RunStyle { Foreground = new Color(0,   128, 0)   });
+        p.AddText("파랑", new RunStyle { Foreground = new Color(0,   0,   255) });
+        section.Blocks.Add(p);
+
+        var runs = WriteThenRead(doc).EnumerateParagraphs().Single().Runs;
+        Assert.Equal(new Color(255, 0,   0),   runs.Single(r => r.Text == "빨강").Style.Foreground);
+        Assert.Equal(new Color(0,   128, 0),   runs.Single(r => r.Text == "초록").Style.Foreground);
+        Assert.Equal(new Color(0,   0,   255), runs.Single(r => r.Text == "파랑").Style.Foreground);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesFontFamily()
+    {
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var p = new Paragraph();
+        p.AddText("고딕",   new RunStyle { FontFamily = "맑은 고딕" });
+        p.AddText("명조",   new RunStyle { FontFamily = "바탕" });
+        p.AddText("고정폭", new RunStyle { FontFamily = "Consolas" });
+        section.Blocks.Add(p);
+
+        var runs = WriteThenRead(doc).EnumerateParagraphs().Single().Runs;
+        Assert.Equal("맑은 고딕", runs.Single(r => r.Text == "고딕").Style.FontFamily);
+        Assert.Equal("바탕",      runs.Single(r => r.Text == "명조").Style.FontFamily);
+        Assert.Equal("Consolas",  runs.Single(r => r.Text == "고정폭").Style.FontFamily);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesMultipleStylesCombined()
+    {
+        var doc = new PolyDocument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var p = new Paragraph();
+        p.AddText("복합", new RunStyle
+        {
+            FontFamily = "바탕",
+            FontSizePt = 14,
+            Bold = true,
+            Foreground = new Color(200, 50, 50),
+        });
+        section.Blocks.Add(p);
+
+        var run = WriteThenRead(doc).EnumerateParagraphs().Single().Runs.Single();
+        Assert.Equal("바탕",            run.Style.FontFamily);
+        Assert.Equal(14,                run.Style.FontSizePt, precision: 1);
+        Assert.True(run.Style.Bold);
+        Assert.Equal(new Color(200, 50, 50), run.Style.Foreground);
+    }
+
     private static byte[] WriteToBytes(PolyDocument doc)
     {
         using var ms = new MemoryStream();
