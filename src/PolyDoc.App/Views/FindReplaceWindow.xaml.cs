@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -24,6 +25,26 @@ public partial class FindReplaceWindow : Window
 
     private void OnFindNext(object sender, RoutedEventArgs e) => FindNext();
 
+    private void OnReplace(object sender, RoutedEventArgs e)
+    {
+        var query = FindBox.Text;
+        if (string.IsNullOrEmpty(query)) { SetStatus("찾을 내용을 입력하세요."); return; }
+
+        var caseSensitive = CaseSensitiveBox.IsChecked == true;
+        var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+        // 현재 선택이 검색어와 일치하면 교체
+        var sel = _editor.Selection;
+        if (!sel.IsEmpty && string.Equals(sel.Text, query, comparison))
+        {
+            sel.Text = ReplaceBox.Text;
+            _lastMatchEnd = _editor.Selection.End;
+        }
+
+        // 다음 찾기
+        FindNext();
+    }
+
     private void OnReplaceAll(object sender, RoutedEventArgs e)
     {
         var query = FindBox.Text;
@@ -49,7 +70,6 @@ public partial class FindReplaceWindow : Window
 
         if (found is null)
         {
-            // wrap around
             found = FlowDocumentSearch.FindNext(doc, query, doc.ContentStart, CaseSensitiveBox.IsChecked == true);
             if (found is null) { _lastMatchEnd = null; SetStatus("찾을 수 없습니다."); return; }
             SetStatus("문서 처음부터 다시 검색했습니다.");

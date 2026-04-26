@@ -19,6 +19,9 @@ public partial class SettingsWindow : Window
 
     private void OnThemeChecked(object sender, RoutedEventArgs e)
     {
+        // InitializeComponent 중 ThemeDark/ThemeSoft 가 아직 null 일 수 있음
+        if (ThemeDark is null || ThemeSoft is null) return;
+
         if (ThemeDark.IsChecked == true)       ThemeService.Apply(ThemeService.Theme.Dark);
         else if (ThemeSoft.IsChecked == true)  ThemeService.Apply(ThemeService.Theme.Soft);
         else                                   ThemeService.Apply(ThemeService.Theme.Light);

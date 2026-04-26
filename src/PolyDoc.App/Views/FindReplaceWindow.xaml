@@ -12,13 +12,15 @@
 
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />  <!-- 0: 찾기 -->
             <RowDefinition Height="8" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />  <!-- 2: 바꾸기 -->
+            <RowDefinition Height="10" />
+            <RowDefinition Height="Auto" />  <!-- 4: 대소문자 -->
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />  <!-- 6: 상태 메시지 -->
             <RowDefinition Height="12" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="12" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />  <!-- 8: 버튼 -->
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="80" />
@@ -51,20 +53,23 @@
 
         <!-- 상태 메시지 -->
         <TextBlock x:Name="StatusText"
-                   Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
+                   Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2"
                    Foreground="{StaticResource OnSurfaceMuted}"
                    FontSize="11"
-                   Margin="0,0,0,0"
+                   MinHeight="16"
                    TextWrapping="Wrap" />
 
         <!-- 버튼 -->
-        <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2"
+        <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">
             <Button Content="다음 찾기(_N)"
                     Padding="12,5"
                     IsDefault="True"
                     Click="OnFindNext" />
+            <Button Content="바꾸기(_E)"
+                    Padding="12,5" Margin="8,0,0,0"
+                    Click="OnReplace" />
             <Button Content="모두 바꾸기(_A)"
                     Padding="12,5" Margin="8,0,0,0"
                     Click="OnReplaceAll" />
