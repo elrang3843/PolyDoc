@@ -192,6 +192,7 @@ PolyDoc/
 - [ ] `.iwpf` 라운드트립도 동일하게 시각 보존되는지
 
 ### 다음 단계 후보
+- **개요 서식 — 색상 입력 위젯 통합** (매뉴얼·문서 최종 수정 전 처리). 현재 `OutlineStyleWindow` 의 선색·배경색은 hex 텍스트박스 + 클릭 시 ColorDialog 를 여는 스와치로 분리되어 있다. 이를 "텍스트 입력 + 드롭다운 picker" 가 결합된 단일 위젯(예: 표준 색 팔레트 + 사용자 정의 클릭 시 ColorDialog 오픈) 으로 교체 — 입력·선택을 한 컨트롤에서 모두 처리.
 - **표·이미지 opaque 보존** — IWPF.md 의 「opaque island」 정책 적용. DocxReader 가 표/이미지를 OpaqueBlock 으로 보존, Writer 가 그대로 재출력. RichTextBox 본문엔 placeholder 토큰.
 - **C3·C4 HWPX codec** — KS X 6101 기반 자체 구현.
 - **B 사이클 폴리싱 더** — i18n .resx (한/영), 테마 다중화, 드래그&드롭, 찾기·바꾸기.
