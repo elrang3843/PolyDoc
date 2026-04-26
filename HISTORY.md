@@ -44,6 +44,9 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — 서식 > 개요 서식 다이얼로그 (`OutlineStyleWindow`). Body/H1~H6 7개 수준의 글자 모양·문단 모양·번호 매기기·테두리·배경색을 수준별로 편집. 글자/문단 편집은 기존 `CharFormatWindow` / `ParaFormatWindow` 의 단독 모드(에디터 없이 RunStyle / ParagraphStyle 직접 받는 생성자)를 재사용해 구현. 내장 4가지 프리셋(기본/학술/비즈니스/모던)을 제공하며 수준별 초기화 버튼 포함. `FlowDocumentBuilder` 가 `PolyDocument.OutlineStyles` 를 읽어 제목/본문 단락에 사용자 정의 스타일을 반영. `PolyDocument.OutlineStyles` (`OutlineStyleSet`) 는 IWPF 직렬화 시 자동 포함. `OutlineLevelStyle` — RunStyle + ParagraphStyle + OutlineNumbering + OutlineBorder + BackgroundColor(hex).
+
 ### Fixed
 - **Fixed** — 글자폭·자간이 적용된 영역이 통째로 atomic 요소로 잡혀 클릭만 해도 전체 범위가 다시 선택되고 캐럿이 안으로 들어가지 못하던 문제. `FlowDocumentBuilder.BuildScaledContainer` 가 더 이상 한 Run 전체를 하나의 `InlineUIContainer` (TextBlock/StackPanel) 로 감싸지 않고, **Span 안에 문자별 InlineUIContainer 를 나열**하도록 변경. 각 IUC 와 부모 Span 모두 같은 `PolyDoc.Run` 을 Tag 로 가져 라운드트립 머지 단서가 된다. `FlowDocumentParser` 의 Span 케이스에 `TryMergePerCharSpan` 추가 — 모든 자식이 같은 Tag 의 per-char IUC 면 한 Run 으로 머지하고, 사용자 편집(중간에 Run 삽입 등)이 있으면 자식별 fallback. `CharFormatWindow.CollectLeafInlines` / `GetFirstInlineInSelection` / `ApplyTypographicProps` 도 Span 단위 교체를 인식하도록 갱신.
 - **Fixed** — 글자 서식 적용 후 InlineUIContainer 가 atomic 요소로 잡혀 선택 영역이 시각상 묶여 보이고 자동 해제되지 않던 문제. `CharFormatWindow.OnOk` 에서 적용 직후 `_editor.Selection.Select(end, end)` 으로 캐럿을 끝으로 collapse.

@@ -250,5 +250,38 @@ namespace PolyDoc.App.Properties
         internal static string FormatParaOutline         => Get(nameof(FormatParaOutline));
         internal static string FormatParaOutlineBody     => Get(nameof(FormatParaOutlineBody));
         internal static string FormatParaPreviewGroup    => Get(nameof(FormatParaPreviewGroup));
+
+        internal static string MenuFormatOutline             => Get(nameof(MenuFormatOutline));
+        internal static string FormatOutlineTitle            => Get(nameof(FormatOutlineTitle));
+        internal static string FormatOutlinePreset           => Get(nameof(FormatOutlinePreset));
+        internal static string FormatOutlineLevels           => Get(nameof(FormatOutlineLevels));
+        internal static string FormatOutlineLevelBody        => Get(nameof(FormatOutlineLevelBody));
+        internal static string FormatOutlineCharGroup        => Get(nameof(FormatOutlineCharGroup));
+        internal static string FormatOutlineParaGroup        => Get(nameof(FormatOutlineParaGroup));
+        internal static string FormatOutlineNumberGroup      => Get(nameof(FormatOutlineNumberGroup));
+        internal static string FormatOutlineBorderGroup      => Get(nameof(FormatOutlineBorderGroup));
+        internal static string FormatOutlineBgGroup          => Get(nameof(FormatOutlineBgGroup));
+        internal static string FormatOutlineEdit             => Get(nameof(FormatOutlineEdit));
+        internal static string FormatOutlineNumberStyle      => Get(nameof(FormatOutlineNumberStyle));
+        internal static string FormatOutlinePrefix           => Get(nameof(FormatOutlinePrefix));
+        internal static string FormatOutlineSuffix           => Get(nameof(FormatOutlineSuffix));
+        internal static string FormatOutlineBorderTop        => Get(nameof(FormatOutlineBorderTop));
+        internal static string FormatOutlineBorderBottom     => Get(nameof(FormatOutlineBorderBottom));
+        internal static string FormatOutlineBorderColor      => Get(nameof(FormatOutlineBorderColor));
+        internal static string FormatOutlineBgColor          => Get(nameof(FormatOutlineBgColor));
+        internal static string FormatOutlinePreviewGroup     => Get(nameof(FormatOutlinePreviewGroup));
+        internal static string FormatOutlineResetLevel       => Get(nameof(FormatOutlineResetLevel));
+        internal static string FormatOutlineApplyAll         => Get(nameof(FormatOutlineApplyAll));
+        internal static string FormatOutlineNumberNone       => Get(nameof(FormatOutlineNumberNone));
+        internal static string FormatOutlineNumberDecimal    => Get(nameof(FormatOutlineNumberDecimal));
+        internal static string FormatOutlineNumberAlphaLower => Get(nameof(FormatOutlineNumberAlphaLower));
+        internal static string FormatOutlineNumberAlphaUpper => Get(nameof(FormatOutlineNumberAlphaUpper));
+        internal static string FormatOutlineNumberRomanLower => Get(nameof(FormatOutlineNumberRomanLower));
+        internal static string FormatOutlineNumberRomanUpper => Get(nameof(FormatOutlineNumberRomanUpper));
+        internal static string FormatOutlineNumberHangul     => Get(nameof(FormatOutlineNumberHangul));
+        internal static string FormatOutlinePresetDefault    => Get(nameof(FormatOutlinePresetDefault));
+        internal static string FormatOutlinePresetAcademic   => Get(nameof(FormatOutlinePresetAcademic));
+        internal static string FormatOutlinePresetBusiness   => Get(nameof(FormatOutlinePresetBusiness));
+        internal static string FormatOutlinePresetModern     => Get(nameof(FormatOutlinePresetModern));
     }
 }

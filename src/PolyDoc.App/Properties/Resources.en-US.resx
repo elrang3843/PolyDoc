@@ -266,4 +266,38 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="FormatParaOutline"         xml:space="preserve"><value>Outline level</value></data>
   <data name="FormatParaOutlineBody"     xml:space="preserve"><value>Body</value></data>
   <data name="FormatParaPreviewGroup"    xml:space="preserve"><value>Preview</value></data>
+
+  <!-- Outline styles dialog -->
+  <data name="MenuFormatOutline"              xml:space="preserve"><value>Outline Styles(_U)…</value></data>
+  <data name="FormatOutlineTitle"             xml:space="preserve"><value>Outline Styles</value></data>
+  <data name="FormatOutlinePreset"            xml:space="preserve"><value>Preset</value></data>
+  <data name="FormatOutlineLevels"            xml:space="preserve"><value>Outline Levels</value></data>
+  <data name="FormatOutlineLevelBody"         xml:space="preserve"><value>Body</value></data>
+  <data name="FormatOutlineCharGroup"         xml:space="preserve"><value>Character</value></data>
+  <data name="FormatOutlineParaGroup"         xml:space="preserve"><value>Paragraph</value></data>
+  <data name="FormatOutlineNumberGroup"       xml:space="preserve"><value>Numbering</value></data>
+  <data name="FormatOutlineBorderGroup"       xml:space="preserve"><value>Border</value></data>
+  <data name="FormatOutlineBgGroup"           xml:space="preserve"><value>Background</value></data>
+  <data name="FormatOutlineEdit"              xml:space="preserve"><value>Edit…</value></data>
+  <data name="FormatOutlineNumberStyle"       xml:space="preserve"><value>Number style</value></data>
+  <data name="FormatOutlinePrefix"            xml:space="preserve"><value>Prefix</value></data>
+  <data name="FormatOutlineSuffix"            xml:space="preserve"><value>Suffix</value></data>
+  <data name="FormatOutlineBorderTop"         xml:space="preserve"><value>Top line</value></data>
+  <data name="FormatOutlineBorderBottom"      xml:space="preserve"><value>Bottom line</value></data>
+  <data name="FormatOutlineBorderColor"       xml:space="preserve"><value>Line color</value></data>
+  <data name="FormatOutlineBgColor"           xml:space="preserve"><value>Background color</value></data>
+  <data name="FormatOutlinePreviewGroup"      xml:space="preserve"><value>Preview</value></data>
+  <data name="FormatOutlineResetLevel"        xml:space="preserve"><value>Reset this level</value></data>
+  <data name="FormatOutlineApplyAll"          xml:space="preserve"><value>Apply to document</value></data>
+  <data name="FormatOutlineNumberNone"        xml:space="preserve"><value>None</value></data>
+  <data name="FormatOutlineNumberDecimal"     xml:space="preserve"><value>1. 2. 3.</value></data>
+  <data name="FormatOutlineNumberAlphaLower"  xml:space="preserve"><value>a. b. c.</value></data>
+  <data name="FormatOutlineNumberAlphaUpper"  xml:space="preserve"><value>A. B. C.</value></data>
+  <data name="FormatOutlineNumberRomanLower"  xml:space="preserve"><value>i. ii. iii.</value></data>
+  <data name="FormatOutlineNumberRomanUpper"  xml:space="preserve"><value>I. II. III.</value></data>
+  <data name="FormatOutlineNumberHangul"      xml:space="preserve"><value>가. 나. 다.</value></data>
+  <data name="FormatOutlinePresetDefault"     xml:space="preserve"><value>Default</value></data>
+  <data name="FormatOutlinePresetAcademic"    xml:space="preserve"><value>Academic</value></data>
+  <data name="FormatOutlinePresetBusiness"    xml:space="preserve"><value>Business</value></data>
+  <data name="FormatOutlinePresetModern"      xml:space="preserve"><value>Modern</value></data>
 </root>

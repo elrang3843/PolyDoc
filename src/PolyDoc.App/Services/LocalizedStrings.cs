@@ -174,6 +174,40 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string FormatParaOutlineBody     => SR.FormatParaOutlineBody;
     public string FormatParaPreviewGroup    => SR.FormatParaPreviewGroup;
 
+    // ── 개요 서식 다이얼로그 ────────────────────────────────────
+    public string MenuFormatOutline             => SR.MenuFormatOutline;
+    public string FormatOutlineTitle            => SR.FormatOutlineTitle;
+    public string FormatOutlinePreset           => SR.FormatOutlinePreset;
+    public string FormatOutlineLevels           => SR.FormatOutlineLevels;
+    public string FormatOutlineLevelBody        => SR.FormatOutlineLevelBody;
+    public string FormatOutlineCharGroup        => SR.FormatOutlineCharGroup;
+    public string FormatOutlineParaGroup        => SR.FormatOutlineParaGroup;
+    public string FormatOutlineNumberGroup      => SR.FormatOutlineNumberGroup;
+    public string FormatOutlineBorderGroup      => SR.FormatOutlineBorderGroup;
+    public string FormatOutlineBgGroup          => SR.FormatOutlineBgGroup;
+    public string FormatOutlineEdit             => SR.FormatOutlineEdit;
+    public string FormatOutlineNumberStyle      => SR.FormatOutlineNumberStyle;
+    public string FormatOutlinePrefix           => SR.FormatOutlinePrefix;
+    public string FormatOutlineSuffix           => SR.FormatOutlineSuffix;
+    public string FormatOutlineBorderTop        => SR.FormatOutlineBorderTop;
+    public string FormatOutlineBorderBottom     => SR.FormatOutlineBorderBottom;
+    public string FormatOutlineBorderColor      => SR.FormatOutlineBorderColor;
+    public string FormatOutlineBgColor          => SR.FormatOutlineBgColor;
+    public string FormatOutlinePreviewGroup     => SR.FormatOutlinePreviewGroup;
+    public string FormatOutlineResetLevel       => SR.FormatOutlineResetLevel;
+    public string FormatOutlineApplyAll         => SR.FormatOutlineApplyAll;
+    public string FormatOutlineNumberNone       => SR.FormatOutlineNumberNone;
+    public string FormatOutlineNumberDecimal    => SR.FormatOutlineNumberDecimal;
+    public string FormatOutlineNumberAlphaLower => SR.FormatOutlineNumberAlphaLower;
+    public string FormatOutlineNumberAlphaUpper => SR.FormatOutlineNumberAlphaUpper;
+    public string FormatOutlineNumberRomanLower => SR.FormatOutlineNumberRomanLower;
+    public string FormatOutlineNumberRomanUpper => SR.FormatOutlineNumberRomanUpper;
+    public string FormatOutlineNumberHangul     => SR.FormatOutlineNumberHangul;
+    public string FormatOutlinePresetDefault    => SR.FormatOutlinePresetDefault;
+    public string FormatOutlinePresetAcademic   => SR.FormatOutlinePresetAcademic;
+    public string FormatOutlinePresetBusiness   => SR.FormatOutlinePresetBusiness;
+    public string FormatOutlinePresetModern     => SR.FormatOutlinePresetModern;
+
     // ── 설정 다이얼로그 ─────────────────────────────────────────
     public string SettingsTitle       => SR.SettingsTitle;
     public string SettingsTheme       => SR.SettingsTheme;

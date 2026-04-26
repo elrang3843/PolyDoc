@@ -30,6 +30,8 @@ public static class FlowDocumentBuilder
     {
         ArgumentNullException.ThrowIfNull(document);
 
+        var outlineStyles = document.OutlineStyles ?? OutlineStyleSet.CreateDefault();
+
         var fd = new Wpf.FlowDocument
         {
             FontFamily = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
@@ -39,18 +41,19 @@ public static class FlowDocumentBuilder
 
         foreach (var section in document.Sections)
         {
-            BuildSection(fd, section);
+            BuildSection(fd, section, outlineStyles);
         }
         return fd;
     }
 
-    private static void BuildSection(Wpf.FlowDocument fd, Section section)
+    private static void BuildSection(Wpf.FlowDocument fd, Section section, OutlineStyleSet outlineStyles)
     {
-        AppendBlocks(fd.Blocks, section.Blocks);
+        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles);
     }
 
     /// <summary>FlowDocument 또는 셀(TableCell) 양쪽에서 공유하는 블록 추가 로직.</summary>
-    private static void AppendBlocks(System.Collections.IList target, IList<Block> blocks)
+    private static void AppendBlocks(System.Collections.IList target, IList<Block> blocks,
+        OutlineStyleSet? outlineStyles = null)
     {
         Wpf.List? currentList = null;
         ListKind? currentKind = null;
@@ -75,19 +78,19 @@ public static class FlowDocumentBuilder
                         target.Add(currentList);
                         currentKind = marker.Kind;
                     }
-                    currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p)));
+                    currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles)));
                     break;
 
                 case Paragraph p:
                     currentList = null;
                     currentKind = null;
-                    target.Add(BuildParagraph(p));
+                    target.Add(BuildParagraph(p, outlineStyles));
                     break;
 
                 case Table t:
                     currentList = null;
                     currentKind = null;
-                    target.Add(BuildTable(t));
+                    target.Add(BuildTable(t, outlineStyles));
                     break;
 
                 case ImageBlock image:
@@ -105,7 +108,7 @@ public static class FlowDocumentBuilder
         }
     }
 
-    private static Wpf.Table BuildTable(Table table)
+    private static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null)
     {
         var wtable = new Wpf.Table { CellSpacing = 0 };
         foreach (var col in table.Columns)
@@ -132,7 +135,7 @@ public static class FlowDocumentBuilder
                     ColumnSpan = Math.Max(cell.ColumnSpan, 1),
                     RowSpan = Math.Max(cell.RowSpan, 1),
                 };
-                AppendBlocks(wcell.Blocks, cell.Blocks);
+                AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles);
                 if (wcell.Blocks.Count == 0)
                 {
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
@@ -208,10 +211,10 @@ public static class FlowDocumentBuilder
         return paragraph;
     }
 
-    private static Wpf.Paragraph BuildParagraph(Paragraph p)
+    private static Wpf.Paragraph BuildParagraph(Paragraph p, OutlineStyleSet? outlineStyles = null)
     {
         var wpfPara = new Wpf.Paragraph();
-        ApplyParagraphStyle(wpfPara, p.Style);
+        ApplyParagraphStyle(wpfPara, p.Style, outlineStyles);
         foreach (var run in p.Runs)
         {
             wpfPara.Inlines.Add(BuildInline(run));
@@ -221,7 +224,8 @@ public static class FlowDocumentBuilder
         return wpfPara;
     }
 
-    private static void ApplyParagraphStyle(Wpf.Paragraph wpfPara, ParagraphStyle style)
+    private static void ApplyParagraphStyle(Wpf.Paragraph wpfPara, ParagraphStyle style,
+        OutlineStyleSet? outlineStyles = null)
     {
         wpfPara.TextAlignment = style.Alignment switch
         {
@@ -231,41 +235,92 @@ public static class FlowDocumentBuilder
             _ => TextAlignment.Left,
         };
 
-        // Heading 시각화 — 레벨별로 단락 폰트 크기·굵기를 조정. Run 단의 명시 크기는 BuildRun 에서 다시 덮어쓴다.
+        // 개요 수준이 있으면 OutlineStyleSet 에서 글자 크기·굵기 읽기 (없으면 내장 기본값).
         if (style.Outline > OutlineLevel.Body)
         {
-            wpfPara.FontSize = style.Outline switch
+            var ls = outlineStyles?.GetLevel(style.Outline) ?? OutlineStyleSet.DefaultForLevel(style.Outline);
+            var charStyle = ls.Char;
+            wpfPara.FontSize   = PtToDip(charStyle.FontSizePt > 0 ? charStyle.FontSizePt : 11);
+            wpfPara.FontWeight = charStyle.Bold ? FontWeights.Bold : FontWeights.SemiBold;
+            if (!string.IsNullOrEmpty(charStyle.FontFamily))
+                wpfPara.FontFamily = new WpfMedia.FontFamily(charStyle.FontFamily);
+            if (charStyle.Italic)
+                wpfPara.FontStyle = FontStyles.Italic;
+            if (charStyle.Foreground is { } fg)
+                wpfPara.Foreground = new WpfMedia.SolidColorBrush(
+                    WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+            if (ls.BackgroundColor is { } bgHex)
             {
-                OutlineLevel.H1 => PtToDip(24),
-                OutlineLevel.H2 => PtToDip(20),
-                OutlineLevel.H3 => PtToDip(17),
-                OutlineLevel.H4 => PtToDip(15),
-                OutlineLevel.H5 => PtToDip(13),
-                OutlineLevel.H6 => PtToDip(12),
-                _ => PtToDip(11),
-            };
-            wpfPara.FontWeight = FontWeights.SemiBold;
+                try
+                {
+                    var bgc = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(bgHex);
+                    wpfPara.Background = new WpfMedia.SolidColorBrush(bgc);
+                }
+                catch { }
+            }
+            if (ls.Border.ShowTop || ls.Border.ShowBottom)
+            {
+                WpfMedia.SolidColorBrush borderBrush;
+                if (!string.IsNullOrEmpty(ls.Border.Color))
+                {
+                    try { borderBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(ls.Border.Color)); }
+                    catch { borderBrush = WpfMedia.Brushes.DimGray; }
+                }
+                else
+                {
+                    borderBrush = WpfMedia.Brushes.DimGray;
+                }
+                wpfPara.BorderBrush     = borderBrush;
+                wpfPara.BorderThickness = new Thickness(0,
+                    ls.Border.ShowTop    ? 1 : 0, 0,
+                    ls.Border.ShowBottom ? 1 : 0);
+            }
+            // Para 공간 설정은 OutlineStyle 의 Para 를 우선하되, ParagraphStyle 직접 값이 0이 아니면 덮어씀
+            var paraStyle = ls.Para;
+            var top    = style.SpaceBeforePt > 0 ? PtToDip(style.SpaceBeforePt)
+                        : paraStyle.SpaceBeforePt > 0 ? PtToDip(paraStyle.SpaceBeforePt) : 0.0;
+            var bottom = style.SpaceAfterPt  > 0 ? PtToDip(style.SpaceAfterPt)
+                        : paraStyle.SpaceAfterPt  > 0 ? PtToDip(paraStyle.SpaceAfterPt)  : 0.0;
+            var left   = style.IndentLeftMm  > 0 ? MmToDip(style.IndentLeftMm)  : 0.0;
+            var right  = style.IndentRightMm > 0 ? MmToDip(style.IndentRightMm) : 0.0;
+            if (top > 0 || bottom > 0 || left > 0 || right > 0)
+                wpfPara.Margin = new Thickness(left, top, right, bottom);
+
+            var lhf = style.LineHeightFactor != 1.2 ? style.LineHeightFactor : paraStyle.LineHeightFactor;
+            if (Math.Abs(lhf - 1.2) > 0.01)
+                wpfPara.LineHeight = wpfPara.FontSize * lhf;
+
+            if (Math.Abs(style.IndentFirstLineMm) > 0.001)
+                wpfPara.TextIndent = MmToDip(style.IndentFirstLineMm);
+            return;
         }
 
-        var top = style.SpaceBeforePt > 0 ? PtToDip(style.SpaceBeforePt) : 0.0;
-        var bottom = style.SpaceAfterPt > 0 ? PtToDip(style.SpaceAfterPt) : 0.0;
-        var left = style.IndentLeftMm > 0 ? MmToDip(style.IndentLeftMm) : 0.0;
-        var right = style.IndentRightMm > 0 ? MmToDip(style.IndentRightMm) : 0.0;
-        if (top > 0 || bottom > 0 || left > 0 || right > 0)
+        // 본문 (Body) 처리 — OutlineStyle 의 본문 스타일도 적용
+        if (outlineStyles != null)
         {
-            wpfPara.Margin = new Thickness(left, top, right, bottom);
+            var bodyLs = outlineStyles.GetLevel(OutlineLevel.Body);
+            var bc = bodyLs.Char;
+            if (bc.FontSizePt > 0 && Math.Abs(bc.FontSizePt - 11) > 0.01)
+                wpfPara.FontSize = PtToDip(bc.FontSizePt);
+            if (!string.IsNullOrEmpty(bc.FontFamily))
+                wpfPara.FontFamily = new WpfMedia.FontFamily(bc.FontFamily);
+            var bpLhf = bodyLs.Para.LineHeightFactor;
+            if (Math.Abs(bpLhf - 1.2) > 0.01 && Math.Abs(style.LineHeightFactor - 1.2) < 0.01)
+                wpfPara.LineHeight = wpfPara.FontSize * bpLhf;
         }
+
+        var sTop = style.SpaceBeforePt > 0 ? PtToDip(style.SpaceBeforePt) : 0.0;
+        var sBottom = style.SpaceAfterPt > 0 ? PtToDip(style.SpaceAfterPt) : 0.0;
+        var sLeft = style.IndentLeftMm > 0 ? MmToDip(style.IndentLeftMm) : 0.0;
+        var sRight = style.IndentRightMm > 0 ? MmToDip(style.IndentRightMm) : 0.0;
+        if (sTop > 0 || sBottom > 0 || sLeft > 0 || sRight > 0)
+            wpfPara.Margin = new Thickness(sLeft, sTop, sRight, sBottom);
 
         if (Math.Abs(style.IndentFirstLineMm) > 0.001)
-        {
             wpfPara.TextIndent = MmToDip(style.IndentFirstLineMm);
-        }
 
-        // LineHeight 는 절대 DIP. 1.2 (기본) 면 명시 안 해 자연스러운 동작에 맡김.
         if (Math.Abs(style.LineHeightFactor - 1.2) > 0.01)
-        {
             wpfPara.LineHeight = wpfPara.FontSize * style.LineHeightFactor;
-        }
     }
 
     /// <summary>글자폭 != 100% 또는 자간 != 0 이면 Span(per-char InlineUIContainer 들), 그 외에는 Run 반환.</summary>

@@ -23,6 +23,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>편집 모델의 source-of-truth 인 PolyDocument. FlowDocument 와는 Builder/Parser 로 동기화.</summary>
     private PolyDocument _document = PolyDocument.Empty();
 
+    /// <summary>현재 편집 중인 문서 (OutlineStyles 등 접근용).</summary>
+    public PolyDocument Document => _document;
+
     /// <summary>
     /// 열기 보호(Read/Both)에 사용할 비밀번호. null/빈 문자열이면 평문 저장.
     /// 메모리 외 어디에도 저장되지 않는다 (ViewModel 인스턴스 생명 주기 내에서만 유효).
@@ -524,6 +527,24 @@ public partial class MainViewModel : ObservableObject
     }
 
     public event EventHandler? SettingsRequested;
+
+    [RelayCommand]
+    private void OutlineStyle()
+    {
+        OutlineStyleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public event EventHandler? OutlineStyleRequested;
+
+    /// <summary>개요 서식 적용. OutlineStyleWindow 가 OK 시 호출해 문서에 반영하고 FlowDocument 재빌드.</summary>
+    public void ApplyOutlineStyles(PolyDoc.Core.OutlineStyleSet styleSet)
+    {
+        _document.OutlineStyles = styleSet;
+        _suppressDirty = true;
+        FlowDocument = FlowDocumentBuilder.Build(_document);
+        _suppressDirty = false;
+        HasUnsavedChanges = true;
+    }
 
     [RelayCommand]
     private void Close()

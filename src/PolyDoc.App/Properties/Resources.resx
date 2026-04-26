@@ -266,4 +266,38 @@
   <data name="FormatParaOutline"         xml:space="preserve"><value>개요 수준</value></data>
   <data name="FormatParaOutlineBody"     xml:space="preserve"><value>본문</value></data>
   <data name="FormatParaPreviewGroup"    xml:space="preserve"><value>미리보기</value></data>
+
+  <!-- 개요 서식 다이얼로그 -->
+  <data name="MenuFormatOutline"              xml:space="preserve"><value>개요 서식(_U)…</value></data>
+  <data name="FormatOutlineTitle"             xml:space="preserve"><value>개요 서식</value></data>
+  <data name="FormatOutlinePreset"            xml:space="preserve"><value>프리셋</value></data>
+  <data name="FormatOutlineLevels"            xml:space="preserve"><value>개요 수준</value></data>
+  <data name="FormatOutlineLevelBody"         xml:space="preserve"><value>본문</value></data>
+  <data name="FormatOutlineCharGroup"         xml:space="preserve"><value>글자 모양</value></data>
+  <data name="FormatOutlineParaGroup"         xml:space="preserve"><value>문단 모양</value></data>
+  <data name="FormatOutlineNumberGroup"       xml:space="preserve"><value>번호 매기기</value></data>
+  <data name="FormatOutlineBorderGroup"       xml:space="preserve"><value>테두리</value></data>
+  <data name="FormatOutlineBgGroup"           xml:space="preserve"><value>배경</value></data>
+  <data name="FormatOutlineEdit"              xml:space="preserve"><value>편집…</value></data>
+  <data name="FormatOutlineNumberStyle"       xml:space="preserve"><value>번호 스타일</value></data>
+  <data name="FormatOutlinePrefix"            xml:space="preserve"><value>앞</value></data>
+  <data name="FormatOutlineSuffix"            xml:space="preserve"><value>뒤</value></data>
+  <data name="FormatOutlineBorderTop"         xml:space="preserve"><value>위 선</value></data>
+  <data name="FormatOutlineBorderBottom"      xml:space="preserve"><value>아래 선</value></data>
+  <data name="FormatOutlineBorderColor"       xml:space="preserve"><value>선 색</value></data>
+  <data name="FormatOutlineBgColor"           xml:space="preserve"><value>배경색</value></data>
+  <data name="FormatOutlinePreviewGroup"      xml:space="preserve"><value>미리보기</value></data>
+  <data name="FormatOutlineResetLevel"        xml:space="preserve"><value>이 수준 초기화</value></data>
+  <data name="FormatOutlineApplyAll"          xml:space="preserve"><value>문서에 적용</value></data>
+  <data name="FormatOutlineNumberNone"        xml:space="preserve"><value>없음</value></data>
+  <data name="FormatOutlineNumberDecimal"     xml:space="preserve"><value>1. 2. 3.</value></data>
+  <data name="FormatOutlineNumberAlphaLower"  xml:space="preserve"><value>a. b. c.</value></data>
+  <data name="FormatOutlineNumberAlphaUpper"  xml:space="preserve"><value>A. B. C.</value></data>
+  <data name="FormatOutlineNumberRomanLower"  xml:space="preserve"><value>i. ii. iii.</value></data>
+  <data name="FormatOutlineNumberRomanUpper"  xml:space="preserve"><value>I. II. III.</value></data>
+  <data name="FormatOutlineNumberHangul"      xml:space="preserve"><value>가. 나. 다.</value></data>
+  <data name="FormatOutlinePresetDefault"     xml:space="preserve"><value>기본</value></data>
+  <data name="FormatOutlinePresetAcademic"    xml:space="preserve"><value>학술</value></data>
+  <data name="FormatOutlinePresetBusiness"    xml:space="preserve"><value>비즈니스</value></data>
+  <data name="FormatOutlinePresetModern"      xml:space="preserve"><value>모던</value></data>
 </root>

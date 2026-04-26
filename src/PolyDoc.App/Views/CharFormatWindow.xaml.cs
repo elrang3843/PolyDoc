@@ -10,15 +10,19 @@ using PolyDoc.App.Services;
 namespace PolyDoc.App.Views;
 
 /// <summary>
-/// 글자 서식 다이얼로그. RichTextBox 현재 선택 영역의 서식을 읽어 초기화하고,
-/// OK 시 선택 영역에 서식을 일괄 적용한다.
-/// 선택이 비어 있으면 캐럿 위치의 서식을 보여주고, 적용 시 이후 입력 문자에 반영된다.
+/// 글자 서식 다이얼로그.
+/// <list type="bullet">
+/// <item>RichTextBox 모드: 선택 영역의 서식을 읽어 초기화, OK 시 선택 영역에 일괄 적용.</item>
+/// <item>단독 모드(RunStyle 생성자): 에디터 없이 스타일 객체만 편집. ResultStyle 로 결과 반환.</item>
+/// </list>
 /// </summary>
 public partial class CharFormatWindow : Window
 {
-    private readonly RichTextBox _editor;
+    private readonly RichTextBox? _editor;
+    private readonly PolyDoc.Core.RunStyle? _standaloneStyle;
     private bool _suppressPreview;
 
+    /// <summary>RichTextBox 선택 영역 편집 모드.</summary>
     public CharFormatWindow(RichTextBox editor)
     {
         _editor = editor;
@@ -26,6 +30,18 @@ public partial class CharFormatWindow : Window
         PopulateFontFamilies();
         Loaded += (_, _) => LoadCurrentFormatting();
     }
+
+    /// <summary>단독 모드 — 에디터 없이 RunStyle 직접 편집. OK 후 ResultStyle 로 결과 읽기.</summary>
+    public CharFormatWindow(PolyDoc.Core.RunStyle initial)
+    {
+        _standaloneStyle = CloneRunStyle(initial);
+        InitializeComponent();
+        PopulateFontFamilies();
+        Loaded += (_, _) => LoadCurrentFormatting();
+    }
+
+    /// <summary>단독 모드에서 OK 후 편집 결과를 담는다.</summary>
+    public PolyDoc.Core.RunStyle? ResultStyle { get; private set; }
 
     // ── 초기화 ──────────────────────────────────────────────────
 
@@ -43,97 +59,117 @@ public partial class CharFormatWindow : Window
         _suppressPreview = true;
         try
         {
-            var sel = _editor.Selection;
-
-            // ── 글꼴 이름 ──
-            var fontFamilyVal = sel.GetPropertyValue(TextElement.FontFamilyProperty);
-            if (fontFamilyVal is FontFamily ff)
-                CboFont.Text = ff.Source;
-
-            // ── 글자 크기 ──
-            var fontSizeVal = sel.GetPropertyValue(TextElement.FontSizeProperty);
-            if (fontSizeVal is double dips)
-                TxtSize.Text = FlowDocumentBuilder.DipToPt(dips).ToString("0.#");
-
-            // ── 굵게 ──
-            var weightVal = sel.GetPropertyValue(TextElement.FontWeightProperty);
-            ChkBold.IsChecked = weightVal == DependencyProperty.UnsetValue
-                ? null
-                : (bool?)(weightVal is FontWeight fw && fw.ToOpenTypeWeight() >= FontWeights.Bold.ToOpenTypeWeight());
-
-            // ── 기울임꼴 ──
-            var styleVal = sel.GetPropertyValue(TextElement.FontStyleProperty);
-            ChkItalic.IsChecked = styleVal == DependencyProperty.UnsetValue
-                ? null
-                : (bool?)(styleVal is FontStyle fs && fs == FontStyles.Italic);
-
-            // ── 텍스트 장식 ──
-            var decoVal = sel.GetPropertyValue(Inline.TextDecorationsProperty);
-            if (decoVal == DependencyProperty.UnsetValue)
+            if (_standaloneStyle is { } s)
             {
-                ChkUnderline.IsChecked    = null;
-                ChkStrikethrough.IsChecked = null;
-                ChkOverline.IsChecked     = null;
-            }
-            else if (decoVal is TextDecorationCollection tdc)
-            {
-                ChkUnderline.IsChecked    = tdc.Any(d => d.Location == TextDecorationLocation.Underline);
-                ChkStrikethrough.IsChecked = tdc.Any(d => d.Location == TextDecorationLocation.Strikethrough);
-                ChkOverline.IsChecked     = tdc.Any(d => d.Location == TextDecorationLocation.OverLine);
+                // 단독 모드: RunStyle 에서 직접 읽음
+                if (!string.IsNullOrEmpty(s.FontFamily))  CboFont.Text    = s.FontFamily;
+                TxtSize.Text          = s.FontSizePt.ToString("0.#");
+                ChkBold.IsChecked     = s.Bold;
+                ChkItalic.IsChecked   = s.Italic;
+                ChkUnderline.IsChecked    = s.Underline;
+                ChkStrikethrough.IsChecked = s.Strikethrough;
+                ChkOverline.IsChecked     = s.Overline;
+                ChkSuperscript.IsChecked  = s.Superscript;
+                ChkSubscript.IsChecked    = s.Subscript;
+                if (s.Foreground is { } fg)
+                {
+                    TxtFgColor.Text     = $"#{fg.R:X2}{fg.G:X2}{fg.B:X2}";
+                    FgSwatch.Background = new SolidColorBrush(Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+                }
+                if (s.Background is { } bg)
+                {
+                    TxtBgColor.Text     = $"#{bg.R:X2}{bg.G:X2}{bg.B:X2}";
+                    BgSwatch.Background = new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+                }
+                TxtWidthPercent.Text  = s.WidthPercent.ToString("0.#");
+                TxtLetterSpacing.Text = s.LetterSpacingPx.ToString("0.##");
             }
             else
             {
-                ChkUnderline.IsChecked    = false;
-                ChkStrikethrough.IsChecked = false;
-                ChkOverline.IsChecked     = false;
-            }
+                // RichTextBox 모드: 선택 영역에서 읽음
+                var sel = _editor!.Selection;
 
-            // ── 위/아래첨자 ──
-            var baselineVal = sel.GetPropertyValue(Inline.BaselineAlignmentProperty);
-            if (baselineVal == DependencyProperty.UnsetValue)
-            {
-                ChkSuperscript.IsChecked = null;
-                ChkSubscript.IsChecked   = null;
-            }
-            else if (baselineVal is BaselineAlignment ba)
-            {
-                ChkSuperscript.IsChecked = ba == BaselineAlignment.Superscript;
-                ChkSubscript.IsChecked   = ba == BaselineAlignment.Subscript;
-            }
+                var fontFamilyVal = sel.GetPropertyValue(TextElement.FontFamilyProperty);
+                if (fontFamilyVal is FontFamily ff)
+                    CboFont.Text = ff.Source;
 
-            // ── 글자색 ──
-            var fgVal = sel.GetPropertyValue(TextElement.ForegroundProperty);
-            if (fgVal is SolidColorBrush fgBrush)
-            {
-                TxtFgColor.Text   = ToHex(fgBrush.Color);
-                FgSwatch.Background = new SolidColorBrush(fgBrush.Color);
-            }
+                var fontSizeVal = sel.GetPropertyValue(TextElement.FontSizeProperty);
+                if (fontSizeVal is double dips)
+                    TxtSize.Text = FlowDocumentBuilder.DipToPt(dips).ToString("0.#");
 
-            // ── 배경색 ──
-            var bgVal = sel.GetPropertyValue(TextElement.BackgroundProperty);
-            if (bgVal is SolidColorBrush bgBrush)
-            {
-                TxtBgColor.Text   = ToHex(bgBrush.Color);
-                BgSwatch.Background = new SolidColorBrush(bgBrush.Color);
-            }
+                var weightVal = sel.GetPropertyValue(TextElement.FontWeightProperty);
+                ChkBold.IsChecked = weightVal == DependencyProperty.UnsetValue
+                    ? null
+                    : (bool?)(weightVal is FontWeight fw && fw.ToOpenTypeWeight() >= FontWeights.Bold.ToOpenTypeWeight());
 
-            // ── 글자폭 / 자간: 첫 인라인의 Tag 에서 읽음 ──
-            TxtWidthPercent.Text  = "100";
-            TxtLetterSpacing.Text = "0";
-            var firstInline = GetFirstInlineInSelection();
-            var taggedRun = firstInline switch
-            {
-                Run r                                       => r.Tag as PolyDoc.Core.Run,
-                Span sp                                     => sp.Tag as PolyDoc.Core.Run,
-                InlineUIContainer iuc                       => iuc.Tag as PolyDoc.Core.Run,
-                _                                           => null,
-            };
-            if (taggedRun != null)
-            {
-                if (Math.Abs(taggedRun.Style.WidthPercent - 100) > 0.1)
-                    TxtWidthPercent.Text = taggedRun.Style.WidthPercent.ToString("0.#");
-                if (Math.Abs(taggedRun.Style.LetterSpacingPx) > 0.01)
-                    TxtLetterSpacing.Text = taggedRun.Style.LetterSpacingPx.ToString("0.##");
+                var styleVal = sel.GetPropertyValue(TextElement.FontStyleProperty);
+                ChkItalic.IsChecked = styleVal == DependencyProperty.UnsetValue
+                    ? null
+                    : (bool?)(styleVal is FontStyle fs && fs == FontStyles.Italic);
+
+                var decoVal = sel.GetPropertyValue(Inline.TextDecorationsProperty);
+                if (decoVal == DependencyProperty.UnsetValue)
+                {
+                    ChkUnderline.IsChecked    = null;
+                    ChkStrikethrough.IsChecked = null;
+                    ChkOverline.IsChecked     = null;
+                }
+                else if (decoVal is TextDecorationCollection tdc)
+                {
+                    ChkUnderline.IsChecked    = tdc.Any(d => d.Location == TextDecorationLocation.Underline);
+                    ChkStrikethrough.IsChecked = tdc.Any(d => d.Location == TextDecorationLocation.Strikethrough);
+                    ChkOverline.IsChecked     = tdc.Any(d => d.Location == TextDecorationLocation.OverLine);
+                }
+                else
+                {
+                    ChkUnderline.IsChecked    = false;
+                    ChkStrikethrough.IsChecked = false;
+                    ChkOverline.IsChecked     = false;
+                }
+
+                var baselineVal = sel.GetPropertyValue(Inline.BaselineAlignmentProperty);
+                if (baselineVal == DependencyProperty.UnsetValue)
+                {
+                    ChkSuperscript.IsChecked = null;
+                    ChkSubscript.IsChecked   = null;
+                }
+                else if (baselineVal is BaselineAlignment ba)
+                {
+                    ChkSuperscript.IsChecked = ba == BaselineAlignment.Superscript;
+                    ChkSubscript.IsChecked   = ba == BaselineAlignment.Subscript;
+                }
+
+                var fgVal = sel.GetPropertyValue(TextElement.ForegroundProperty);
+                if (fgVal is SolidColorBrush fgBrush)
+                {
+                    TxtFgColor.Text   = ToHex(fgBrush.Color);
+                    FgSwatch.Background = new SolidColorBrush(fgBrush.Color);
+                }
+
+                var bgVal = sel.GetPropertyValue(TextElement.BackgroundProperty);
+                if (bgVal is SolidColorBrush bgBrush)
+                {
+                    TxtBgColor.Text   = ToHex(bgBrush.Color);
+                    BgSwatch.Background = new SolidColorBrush(bgBrush.Color);
+                }
+
+                TxtWidthPercent.Text  = "100";
+                TxtLetterSpacing.Text = "0";
+                var firstInline = GetFirstInlineInSelection();
+                var taggedRun = firstInline switch
+                {
+                    Run r             => r.Tag as PolyDoc.Core.Run,
+                    Span sp           => sp.Tag as PolyDoc.Core.Run,
+                    InlineUIContainer iuc => iuc.Tag as PolyDoc.Core.Run,
+                    _                 => null,
+                };
+                if (taggedRun != null)
+                {
+                    if (Math.Abs(taggedRun.Style.WidthPercent - 100) > 0.1)
+                        TxtWidthPercent.Text = taggedRun.Style.WidthPercent.ToString("0.#");
+                    if (Math.Abs(taggedRun.Style.LetterSpacingPx) > 0.01)
+                        TxtLetterSpacing.Text = taggedRun.Style.LetterSpacingPx.ToString("0.##");
+                }
             }
         }
         finally
@@ -243,25 +279,68 @@ public partial class CharFormatWindow : Window
 
     private void OnOk(object sender, RoutedEventArgs e)
     {
-        ApplyToSelection();
-        // 선택 영역이 InlineUIContainer 로 교체되면 WPF 가 atomic 요소를 둘러싼 highlight 를
-        // 그대로 잡고 있어 시각상 "묶여" 보인다. 캐럿을 영역 끝으로 collapse 해서 해제.
-        try
+        if (_standaloneStyle != null)
         {
-            var end = _editor.Selection.End;
-            if (end != null) _editor.Selection.Select(end, end);
+            // 단독 모드: UI 값을 _standaloneStyle 에 기록 후 복사본을 ResultStyle 로 노출.
+            WriteToRunStyle(_standaloneStyle);
+            ResultStyle = CloneRunStyle(_standaloneStyle);
         }
-        catch { /* TextPointer 무효화 시 무시 */ }
+        else
+        {
+            ApplyToSelection();
+            try
+            {
+                var end = _editor!.Selection.End;
+                if (end != null) _editor.Selection.Select(end, end);
+            }
+            catch { }
+        }
         DialogResult = true;
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 
-    // ── 선택 영역 서식 적용 ──────────────────────────────────────
+    // ── UI → RunStyle 쓰기 (단독 모드용) ────────────────────────
+
+    private void WriteToRunStyle(PolyDoc.Core.RunStyle s)
+    {
+        s.FontFamily   = CboFont.Text?.Trim();
+        if (double.TryParse(TxtSize.Text, out var pt) && pt >= 1)  s.FontSizePt = pt;
+        s.Bold         = ChkBold.IsChecked == true;
+        s.Italic       = ChkItalic.IsChecked == true;
+        s.Underline    = ChkUnderline.IsChecked == true;
+        s.Strikethrough = ChkStrikethrough.IsChecked == true;
+        s.Overline     = ChkOverline.IsChecked == true;
+        s.Superscript  = ChkSuperscript.IsChecked == true;
+        s.Subscript    = ChkSubscript.IsChecked == true;
+        s.Foreground   = TryParseColor(TxtFgColor.Text, out var fg) ? new PolyDoc.Core.Color(fg.R, fg.G, fg.B, fg.A) : null;
+        s.Background   = TryParseColor(TxtBgColor.Text, out var bg) ? new PolyDoc.Core.Color(bg.R, bg.G, bg.B, bg.A) : null;
+        if (double.TryParse(TxtWidthPercent.Text, out var wp) && wp >= 1) s.WidthPercent = wp;
+        if (double.TryParse(TxtLetterSpacing.Text, out var ls)) s.LetterSpacingPx = ls;
+    }
+
+    private static PolyDoc.Core.RunStyle CloneRunStyle(PolyDoc.Core.RunStyle s) => new()
+    {
+        FontFamily     = s.FontFamily,
+        FontSizePt     = s.FontSizePt,
+        Bold           = s.Bold,
+        Italic         = s.Italic,
+        Underline      = s.Underline,
+        Strikethrough  = s.Strikethrough,
+        Overline       = s.Overline,
+        Superscript    = s.Superscript,
+        Subscript      = s.Subscript,
+        Foreground     = s.Foreground,
+        Background     = s.Background,
+        WidthPercent   = s.WidthPercent,
+        LetterSpacingPx = s.LetterSpacingPx,
+    };
+
+    // ── 선택 영역 서식 적용 (RichTextBox 모드) ───────────────────
 
     private void ApplyToSelection()
     {
-        var sel = _editor.Selection;
+        var sel = _editor!.Selection;
 
         // 글꼴 이름
         var fontName = CboFont.Text?.Trim();

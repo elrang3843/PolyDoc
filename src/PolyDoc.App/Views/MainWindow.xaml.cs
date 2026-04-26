@@ -32,8 +32,9 @@ public partial class MainWindow : Window
             _viewModel = vm;
             ApplyFlowDocument(vm.FlowDocument);
             vm.PropertyChanged += OnViewModelPropertyChanged;
-            vm.FindReplaceRequested += OnFindReplaceRequested;
-            vm.SettingsRequested   += OnSettingsRequested;
+            vm.FindReplaceRequested  += OnFindReplaceRequested;
+            vm.SettingsRequested     += OnSettingsRequested;
+            vm.OutlineStyleRequested += OnOutlineStyleRequested;
             vm.RefreshSystemKeys();
             vm.RefreshMemoryUsage();
         }
@@ -123,6 +124,16 @@ public partial class MainWindow : Window
     private void OnSettingsRequested(object? sender, EventArgs e)
     {
         var dlg = new SettingsWindow { Owner = this };
+        dlg.ShowDialog();
+    }
+
+    private void OnOutlineStyleRequested(object? sender, EventArgs e)
+    {
+        var current = (_viewModel is { } vm2 && vm2.Document?.OutlineStyles != null)
+            ? vm2.Document.OutlineStyles
+            : PolyDoc.Core.OutlineStyleSet.CreateDefault();
+        var dlg = new OutlineStyleWindow(current) { Owner = this };
+        dlg.StyleApplied += (_, styleSet) => _viewModel?.ApplyOutlineStyles(styleSet);
         dlg.ShowDialog();
     }
 
