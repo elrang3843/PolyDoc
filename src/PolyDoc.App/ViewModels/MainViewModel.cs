@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
@@ -542,6 +543,45 @@ public partial class MainViewModel : ObservableObject
         _document.OutlineStyles = styleSet;
         RebuildFlowDocument();
     }
+
+    // ── 글상자 (Insert > TextBox) ────────────────────────────────────────
+    // 메뉴 클릭 → ViewModel 이 이벤트 발생 → View 가 드래그 생성 모드 진입.
+    // 모델 갱신은 View 가 AddFloatingObjectToCurrentSection 으로 위임.
+
+    [RelayCommand]
+    private void InsertTextBox()
+    {
+        InsertTextBoxRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public event EventHandler? InsertTextBoxRequested;
+
+    /// <summary>드래그 생성 완료 후 View 가 호출 — 첫 섹션의 FloatingObjects 에 추가하고 Dirty 표시.</summary>
+    public void AddFloatingObjectToCurrentSection(PolyDoc.Core.FloatingObject obj)
+    {
+        var section = _document.Sections.FirstOrDefault();
+        if (section is null) return;
+        section.FloatingObjects.Add(obj);
+        MarkDirty();
+        RefreshMemoryUsage();
+    }
+
+    /// <summary>오버레이 삭제 시 View 가 호출.</summary>
+    public void RemoveFloatingObject(PolyDoc.Core.FloatingObject obj)
+    {
+        foreach (var section in _document.Sections)
+        {
+            if (section.FloatingObjects.Remove(obj))
+            {
+                MarkDirty();
+                RefreshMemoryUsage();
+                return;
+            }
+        }
+    }
+
+    /// <summary>드래그/리사이즈/본문 편집 변경 시 View 가 호출.</summary>
+    public void NotifyFloatingObjectChanged() => MarkDirty();
 
     /// <summary>PageSettings 변경 후 FlowDocument 를 재빌드해 화면에 반영한다.</summary>
     public void RebuildFlowDocument()

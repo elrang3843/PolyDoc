@@ -105,6 +105,7 @@
   <data name="StatusInsert" xml:space="preserve"><value>삽입</value></data>
   <data name="StatusOverwrite" xml:space="preserve"><value>수정</value></data>
   <data name="StatusDocClosed" xml:space="preserve"><value>문서를 닫았습니다.</value></data>
+  <data name="StatusDrawTextBox" xml:space="preserve"><value>글상자를 그릴 영역을 마우스로 드래그하세요. (Esc 로 취소)</value></data>
 
   <!-- 다이얼로그 공통 -->
   <data name="DlgOK" xml:space="preserve"><value>확인</value></data>

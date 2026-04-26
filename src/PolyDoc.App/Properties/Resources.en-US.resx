@@ -105,6 +105,7 @@
   <data name="StatusInsert" xml:space="preserve"><value>INS</value></data>
   <data name="StatusOverwrite" xml:space="preserve"><value>OVR</value></data>
   <data name="StatusDocClosed" xml:space="preserve"><value>Document closed.</value></data>
+  <data name="StatusDrawTextBox" xml:space="preserve"><value>Drag a region for the text box. (Esc to cancel)</value></data>
 
   <!-- Common dialogs -->
   <data name="DlgOK" xml:space="preserve"><value>OK</value></data>

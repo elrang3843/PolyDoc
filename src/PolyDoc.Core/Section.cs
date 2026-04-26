@@ -5,6 +5,13 @@ public sealed class Section
     public string? Id { get; set; }
     public PageSettings Page { get; set; } = new();
     public IList<Block> Blocks { get; set; } = new List<Block>();
+
+    /// <summary>
+    /// 텍스트 흐름 외부에 자유 위치로 배치되는 객체 (글상자 등).
+    /// 본문(<see cref="Blocks"/>) 과 별도 레이어로 렌더링되며, 직렬화는
+    /// <see cref="FloatingObjectJsonConverter"/> 로 다형 처리.
+    /// </summary>
+    public IList<FloatingObject> FloatingObjects { get; set; } = new List<FloatingObject>();
 }
 
 // ── 용지 크기 종류 ────────────────────────────────────────────────────────

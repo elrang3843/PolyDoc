@@ -7,6 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using PolyDoc.App.ViewModels;
+using PolyDoc.Core;
+using SR = PolyDoc.App.Properties.Resources;
 
 namespace PolyDoc.App.Views;
 
@@ -15,6 +17,12 @@ public partial class MainWindow : Window
     private MainViewModel? _viewModel;
     private bool _suppressTextChanged;
     private DispatcherTimer? _statusTimer;
+
+    // ── 글상자 드래그 생성 / 선택 상태 ────────────────────────────
+    private bool _drawingTextBox;
+    private bool _drawingInProgress;
+    private Point _drawStart;
+    private TextBoxOverlay? _selectedOverlay;
 
     public MainWindow()
     {
@@ -37,9 +45,16 @@ public partial class MainWindow : Window
             vm.FindReplaceRequested  += OnFindReplaceRequested;
             vm.SettingsRequested     += OnSettingsRequested;
             vm.OutlineStyleRequested += OnOutlineStyleRequested;
+            vm.InsertTextBoxRequested += OnInsertTextBoxRequested;
             vm.RefreshSystemKeys();
             vm.RefreshMemoryUsage();
         }
+
+        // RichTextBox 클릭 = 본문 편집 의도. 드래그 생성 모드가 아니면 글상자 선택 해제.
+        BodyEditor.PreviewMouseLeftButtonDown += (_, _) =>
+        {
+            if (!_drawingTextBox) DeselectAllOverlays();
+        };
 
         _statusTimer = new DispatcherTimer
         {
@@ -79,6 +94,18 @@ public partial class MainWindow : Window
                 Dispatcher.BeginInvoke(new Action(() => _viewModel?.RefreshSystemKeys()),
                     DispatcherPriority.Input);
                 break;
+            case Key.Escape:
+                if (_drawingTextBox)
+                {
+                    EndDrawingMode();
+                    e.Handled = true;
+                }
+                else if (_selectedOverlay is not null)
+                {
+                    DeselectAllOverlays();
+                    e.Handled = true;
+                }
+                break;
         }
     }
 
@@ -114,6 +141,9 @@ public partial class MainWindow : Window
         // 용지 크기·색상을 PaperBorder 에 반영
         var page = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
         ApplyPageSettings(page);
+
+        // 부유 객체 (글상자 등) 오버레이 재구축
+        RebuildFloatingObjects();
     }
 
     private void ApplyPageSettings(PolyDoc.Core.PageSettings? page)
@@ -333,5 +363,169 @@ public partial class MainWindow : Window
             _viewModel.ZoomPercent = val;
         else
             TxtZoom.Text = _viewModel.ZoomPercent.ToString("0");
+    }
+
+    // ── 글상자 (입력 > 글상자) ──────────────────────────────────────────────
+
+    private void OnInsertTextBoxRequested(object? sender, EventArgs e)
+    {
+        _drawingTextBox = true;
+        Mouse.OverrideCursor = Cursors.Cross;
+        if (_viewModel is not null)
+            _viewModel.StatusMessage = SR.StatusDrawTextBox;
+    }
+
+    private void EndDrawingMode()
+    {
+        _drawingTextBox = false;
+        _drawingInProgress = false;
+        Mouse.OverrideCursor = null;
+        DrawPreviewRect.Visibility = Visibility.Collapsed;
+        if (PaperBorder.IsMouseCaptured) PaperBorder.ReleaseMouseCapture();
+        if (_viewModel is not null) _viewModel.StatusMessage = SR.StatusReady;
+    }
+
+    private void OnPaperPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_drawingTextBox) return;
+
+        var pos = e.GetPosition(PaperBorder);
+        pos.X = Math.Clamp(pos.X, 0, PaperBorder.ActualWidth);
+        pos.Y = Math.Clamp(pos.Y, 0, PaperBorder.ActualHeight);
+
+        _drawStart = pos;
+        _drawingInProgress = true;
+
+        Canvas.SetLeft(DrawPreviewRect, pos.X);
+        Canvas.SetTop(DrawPreviewRect, pos.Y);
+        DrawPreviewRect.Width = 0;
+        DrawPreviewRect.Height = 0;
+        DrawPreviewRect.Visibility = Visibility.Visible;
+
+        PaperBorder.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnPaperPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_drawingInProgress) return;
+
+        var pos = e.GetPosition(PaperBorder);
+        pos.X = Math.Clamp(pos.X, 0, PaperBorder.ActualWidth);
+        pos.Y = Math.Clamp(pos.Y, 0, PaperBorder.ActualHeight);
+
+        double x = Math.Min(_drawStart.X, pos.X);
+        double y = Math.Min(_drawStart.Y, pos.Y);
+        double w = Math.Abs(pos.X - _drawStart.X);
+        double h = Math.Abs(pos.Y - _drawStart.Y);
+
+        Canvas.SetLeft(DrawPreviewRect, x);
+        Canvas.SetTop(DrawPreviewRect, y);
+        DrawPreviewRect.Width  = w;
+        DrawPreviewRect.Height = h;
+    }
+
+    private void OnPaperPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_drawingInProgress) return;
+
+        var pos = e.GetPosition(PaperBorder);
+        pos.X = Math.Clamp(pos.X, 0, PaperBorder.ActualWidth);
+        pos.Y = Math.Clamp(pos.Y, 0, PaperBorder.ActualHeight);
+
+        double x = Math.Min(_drawStart.X, pos.X);
+        double y = Math.Min(_drawStart.Y, pos.Y);
+        double w = Math.Abs(pos.X - _drawStart.X);
+        double h = Math.Abs(pos.Y - _drawStart.Y);
+
+        EndDrawingMode();
+
+        // 너무 작은 드래그(클릭에 가까움) 는 생성 안 함.
+        const double minDip = 10;
+        if (w < minDip || h < minDip)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var model = new TextBoxObject
+        {
+            XMm      = x / TextBoxOverlay.DipsPerMm,
+            YMm      = y / TextBoxOverlay.DipsPerMm,
+            WidthMm  = w / TextBoxOverlay.DipsPerMm,
+            HeightMm = h / TextBoxOverlay.DipsPerMm,
+            Status   = NodeStatus.Modified,
+        };
+        _viewModel?.AddFloatingObjectToCurrentSection(model);
+        var overlay = AddTextBoxOverlay(model);
+        SelectOverlay(overlay);
+        overlay.BeginEditing();
+
+        e.Handled = true;
+    }
+
+    /// <summary>현재 섹션의 FloatingObjects 를 캔버스에 다시 채워 그린다 (문서 로드 시).</summary>
+    private void RebuildFloatingObjects()
+    {
+        FloatingCanvas.Children.Clear();
+        _selectedOverlay = null;
+        var section = _viewModel?.Document.Sections.FirstOrDefault();
+        if (section is null) return;
+        foreach (var obj in section.FloatingObjects.OfType<TextBoxObject>())
+        {
+            AddTextBoxOverlay(obj);
+        }
+    }
+
+    private TextBoxOverlay AddTextBoxOverlay(TextBoxObject model)
+    {
+        var overlay = new TextBoxOverlay(model);
+        Canvas.SetLeft(overlay, model.XMm * TextBoxOverlay.DipsPerMm);
+        Canvas.SetTop(overlay,  model.YMm * TextBoxOverlay.DipsPerMm);
+        overlay.Width  = model.WidthMm  * TextBoxOverlay.DipsPerMm;
+        overlay.Height = model.HeightMm * TextBoxOverlay.DipsPerMm;
+
+        overlay.Selected += (_, _) => SelectOverlay(overlay);
+
+        overlay.GeometryChangedCommitted += (_, _) =>
+        {
+            // Canvas DIP → mm 동기화. NaN 방어 (SetLeft 직후라 정상이지만 안전).
+            double left = Canvas.GetLeft(overlay); if (double.IsNaN(left)) left = 0;
+            double top  = Canvas.GetTop(overlay);  if (double.IsNaN(top))  top  = 0;
+            model.XMm      = left / TextBoxOverlay.DipsPerMm;
+            model.YMm      = top  / TextBoxOverlay.DipsPerMm;
+            model.WidthMm  = overlay.ActualWidth  / TextBoxOverlay.DipsPerMm;
+            model.HeightMm = overlay.ActualHeight / TextBoxOverlay.DipsPerMm;
+            model.Status   = NodeStatus.Modified;
+            _viewModel?.NotifyFloatingObjectChanged();
+        };
+
+        overlay.ContentChangedCommitted += (_, _) => _viewModel?.NotifyFloatingObjectChanged();
+
+        overlay.DeleteRequested += (_, _) =>
+        {
+            FloatingCanvas.Children.Remove(overlay);
+            _viewModel?.RemoveFloatingObject(model);
+            if (ReferenceEquals(_selectedOverlay, overlay)) _selectedOverlay = null;
+            BodyEditor.Focus();
+        };
+
+        FloatingCanvas.Children.Add(overlay);
+        return overlay;
+    }
+
+    private void SelectOverlay(TextBoxOverlay overlay)
+    {
+        if (!ReferenceEquals(_selectedOverlay, overlay) && _selectedOverlay is not null)
+            _selectedOverlay.IsSelected = false;
+        _selectedOverlay = overlay;
+        overlay.IsSelected = true;
+    }
+
+    private void DeselectAllOverlays()
+    {
+        if (_selectedOverlay is null) return;
+        _selectedOverlay.IsSelected = false;
+        _selectedOverlay = null;
     }
 }
