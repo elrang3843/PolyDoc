@@ -161,6 +161,25 @@ public partial class TextBoxOverlay : UserControl
             else
                 ShapePath.Fill = Brushes.White;
         }
+
+        // ── 안쪽 여백 (Margin = padding) ──────────────────────────────
+        InnerEditor.Margin = new Thickness(
+            Model.PaddingLeftMm   * DipsPerMm,
+            Model.PaddingTopMm    * DipsPerMm,
+            Model.PaddingRightMm  * DipsPerMm,
+            Model.PaddingBottomMm * DipsPerMm);
+
+        // ── 가로 정렬 ─────────────────────────────────────────────────
+        var ta = Model.HAlign switch
+        {
+            TextBoxHAlign.Center  => System.Windows.TextAlignment.Center,
+            TextBoxHAlign.Right   => System.Windows.TextAlignment.Right,
+            TextBoxHAlign.Justify => System.Windows.TextAlignment.Justify,
+            _                     => System.Windows.TextAlignment.Left,
+        };
+        InnerEditor.Document.TextAlignment = ta;
+        foreach (var b in InnerEditor.Document.Blocks)
+            if (b is System.Windows.Documents.Paragraph wp) wp.TextAlignment = ta;
     }
 
     // PolyDoc.Core.Color 와 충돌하므로 WpfMedia alias 로 명시.
@@ -235,23 +254,50 @@ public partial class TextBoxOverlay : UserControl
 
     private void OnContextMenuProperties(object sender, RoutedEventArgs e)
     {
-        var dlg = new TextBoxPropertiesWindow(
-            Model.BorderColor,
-            Model.BorderThicknessPt,
-            Model.BackgroundColor)
-        {
-            Owner = Window.GetWindow(this),
-        };
-
+        var dlg = new TextBoxPropertiesWindow(Model) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() == true)
         {
             Model.BorderColor        = dlg.ResultBorderColor;
             Model.BorderThicknessPt  = dlg.ResultBorderThicknessPt;
             Model.BackgroundColor    = dlg.ResultBackgroundColor;
+            Model.PaddingTopMm       = dlg.ResultPaddingTopMm;
+            Model.PaddingBottomMm    = dlg.ResultPaddingBottomMm;
+            Model.PaddingLeftMm      = dlg.ResultPaddingLeftMm;
+            Model.PaddingRightMm     = dlg.ResultPaddingRightMm;
+            Model.HAlign             = dlg.ResultHAlign;
+            Model.VAlign             = dlg.ResultVAlign;
             Model.Status             = NodeStatus.Modified;
             ApplyShapeFromModel();
             AppearanceChangedCommitted?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    private void OnContextMenuCharFormat(object sender, RoutedEventArgs e)
+    {
+        InnerEditor.Focus();
+        Keyboard.Focus(InnerEditor);
+        var dlg = new CharFormatWindow(InnerEditor) { Owner = Window.GetWindow(this) };
+        if (dlg.ShowDialog() == true)
+        {
+            SyncEditorToModel();
+            Model.Status = NodeStatus.Modified;
+            ContentChangedCommitted?.Invoke(this, EventArgs.Empty);
+        }
+        InnerEditor.Focus();
+    }
+
+    private void OnContextMenuParaFormat(object sender, RoutedEventArgs e)
+    {
+        InnerEditor.Focus();
+        Keyboard.Focus(InnerEditor);
+        var dlg = new ParaFormatWindow(InnerEditor) { Owner = Window.GetWindow(this) };
+        if (dlg.ShowDialog() == true)
+        {
+            SyncEditorToModel();
+            Model.Status = NodeStatus.Modified;
+            ContentChangedCommitted?.Invoke(this, EventArgs.Empty);
+        }
+        InnerEditor.Focus();
     }
 
     private void OnContextMenuBringForward(object sender, RoutedEventArgs e)
@@ -272,6 +318,12 @@ public partial class TextBoxOverlay : UserControl
     private void OnRootMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
+
+        // 핸들 Rectangle 클릭은 OnHandleMouseDown 이 처리 — 여기서 e.Handled 를 세팅하면
+        // tunneling 이 멈춰 OnHandleMouseDown 이 호출되지 않으므로 반드시 빠져나온다.
+        if (e.OriginalSource is Rectangle { Tag: string rTag } &&
+            rTag is "TL" or "TR" or "BL" or "BR")
+            return;
 
         Selected?.Invoke(this, EventArgs.Empty);
 

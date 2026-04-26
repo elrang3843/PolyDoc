@@ -13,6 +13,8 @@
     <UserControl.ContextMenu>
         <ContextMenu Opened="OnContextMenuOpened">
             <MenuItem Header="속성(_P)..." Click="OnContextMenuProperties" />
+            <MenuItem Header="글자 속성(_C)..." Click="OnContextMenuCharFormat" />
+            <MenuItem Header="문단 속성(_A)..." Click="OnContextMenuParaFormat" />
             <Separator />
             <MenuItem Header="앞으로 가져오기(_F)" Click="OnContextMenuBringForward" />
             <MenuItem Header="뒤로 보내기(_B)" Click="OnContextMenuSendBack" />

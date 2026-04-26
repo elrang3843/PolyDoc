@@ -45,6 +45,10 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — 글상자 속성 대화상자 확장. 안쪽 여백 4방향(위·아래·왼·오른, mm) 입력란 추가. 가로 정렬(왼쪽/가운데/오른쪽/양쪽) + 세로 정렬(위/가운데/아래) ComboBox 추가. 테두리·배경색 hex 입력란 옆에 Color Picker 버튼(클릭 시 `System.Windows.Forms.ColorDialog` 전체보기 모드로 열림) 추가.
+- **Added** — 글상자 우클릭 메뉴에 "글자 속성..." / "문단 속성..." 항목 추가. `CharFormatWindow` / `ParaFormatWindow` 를 글상자 내 `RichTextBox` (`InnerEditor`) 에 연결해 기존 글자·문단 서식 대화상자를 그대로 재사용.
+- **Added** — 글상자 `TextBoxObject` 모델에 `PaddingTopMm`/`PaddingBottomMm`/`PaddingLeftMm`/`PaddingRightMm` (기존 단일 `PaddingMm` 대체), `HAlign`(`TextBoxHAlign` enum), `VAlign`(`TextBoxVAlign` enum) 추가. IWPF 직렬화 자동 포함.
+- **Fixed** — 글상자 크기 조절 핸들 클릭 시 이동만 되고 리사이즈가 안 되던 버그. `PreviewMouseLeftButtonDown`(tunneling) 이벤트에서 UserControl 루트가 먼저 발화해 `e.Handled = true` 를 세팅, 핸들 Rectangle 의 `OnHandleMouseDown` 이 호출되지 않던 원인. `OnRootMouseDown` 에서 핸들 클릭(`Tag: "TL"/"TR"/"BL"/"BR"`)을 조기 감지해 즉시 리턴, 이벤트가 핸들까지 터널링되도록 수정.
 - **Added** — 글상자 4종 추가 모양 렌더링 (Speech/Cloud/Spiky/Lightning). `TextBoxOverlay` 에 `Path Stretch=Fill` 방식으로 각 모양의 `PathGeometry` 문자열(100×100 정규화 좌표)을 정의 — 말풍선(하단 중앙 삼각 꼬리), 구름풍선(베지어 곡선 다중 돌기), 가시풍선(12각 별형), 번개상자(번개 볼트 실루엣). 테두리 색·두께·배경색을 모양별로 일관 적용.
 - **Added** — 글상자 속성 대화상자 (`TextBoxPropertiesWindow`). 우클릭 컨텍스트 메뉴 → "속성..." 으로 열림. 테두리 색(hex), 테두리 두께(pt), 배경색(hex) 입력란 + 실시간 색상 미리보기. 확인 시 모델 갱신 + `AppearanceChangedCommitted` 이벤트 발행 → Dirty 플래그 갱신.
 - **Added** — 글상자 우클릭 컨텍스트 메뉴. 속성/앞으로 가져오기/뒤로 보내기/삭제 항목. 앞/뒤 이동은 `FloatingCanvas` 자식 순서(ZOrder) 조정.

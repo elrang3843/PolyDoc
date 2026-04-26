@@ -16,7 +16,7 @@ public abstract class FloatingObject
     public NodeStatus Status { get; set; } = NodeStatus.Clean;
 }
 
-/// <summary>글상자 모양. 이번 사이클은 <see cref="Rectangle"/> 만 렌더링하며, 나머지는 모델 슬롯만 예약.</summary>
+/// <summary>글상자 모양.</summary>
 public enum TextBoxShape
 {
     Rectangle = 0,
@@ -25,6 +25,12 @@ public enum TextBoxShape
     Spiky     = 3,
     Lightning = 4,
 }
+
+/// <summary>글상자 내 텍스트 가로 정렬.</summary>
+public enum TextBoxHAlign { Left = 0, Center = 1, Right = 2, Justify = 3 }
+
+/// <summary>글상자 내 텍스트 세로 정렬.</summary>
+public enum TextBoxVAlign { Top = 0, Middle = 1, Bottom = 2 }
 
 public sealed class TextBoxObject : FloatingObject
 {
@@ -38,8 +44,15 @@ public sealed class TextBoxObject : FloatingObject
     /// <summary>배경색 (hex). null/빈 = 흰색.</summary>
     public string? BackgroundColor { get; set; }
 
-    /// <summary>안쪽 여백 (mm).</summary>
-    public double PaddingMm { get; set; } = 2.0;
+    // ── 4방향 안쪽 여백 (mm) ──────────────────────────────────────────────────
+    public double PaddingTopMm    { get; set; } = 2.0;
+    public double PaddingBottomMm { get; set; } = 2.0;
+    public double PaddingLeftMm   { get; set; } = 2.0;
+    public double PaddingRightMm  { get; set; } = 2.0;
+
+    // ── 텍스트 정렬 ───────────────────────────────────────────────────────────
+    public TextBoxHAlign HAlign { get; set; } = TextBoxHAlign.Left;
+    public TextBoxVAlign VAlign { get; set; } = TextBoxVAlign.Top;
 
     /// <summary>본문 블록. 최소 1개의 빈 Paragraph 를 포함하도록 기본값 설정.</summary>
     public IList<Block> Content { get; set; } = new List<Block> { new Paragraph() };
