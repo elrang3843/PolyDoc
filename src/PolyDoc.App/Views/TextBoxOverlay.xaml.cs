@@ -274,8 +274,9 @@ public partial class TextBoxOverlay : UserControl
 
     private void OnContextMenuCharFormat(object sender, RoutedEventArgs e)
     {
-        InnerEditor.Focus();
-        Keyboard.Focus(InnerEditor);
+        // Focus 를 미리 복귀시키면 inactive selection 이 collapse 되므로
+        // 다이얼로그에 InnerEditor 를 그대로 전달 — Selection 포인터는 포커스
+        // 없이도 유효하게 유지된다.
         var dlg = new CharFormatWindow(InnerEditor) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() == true)
         {
@@ -288,8 +289,6 @@ public partial class TextBoxOverlay : UserControl
 
     private void OnContextMenuParaFormat(object sender, RoutedEventArgs e)
     {
-        InnerEditor.Focus();
-        Keyboard.Focus(InnerEditor);
         var dlg = new ParaFormatWindow(InnerEditor) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() == true)
         {
