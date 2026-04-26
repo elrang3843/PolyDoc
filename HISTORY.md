@@ -45,7 +45,9 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
-- **Added** — 편집 영역 페이지 뷰. `ScrollViewer`(스크롤바 상시 표시) 위에 종이(`PaperBorder`)가 떠 있는 형태로 재구성. 그림자(`DropShadowEffect BlurRadius=18`) 적용, 캔버스 배경은 테마별 `EditorCanvasBg` 리소스. `PageSettings` 가 변경될 때마다 `PaperBorder.Width`(방향 보정 포함)와 배경색을 자동 갱신. `FlowDocument.PagePadding` 이 용지 내 여백을 담당하므로 `RichTextBox.Padding=0`.
+- **Added** — 메뉴 바로 아래에 메인 툴바 추가. 1단계로 파일 그룹(새 파일/불러오기/저장/다른 이름으로 저장/미리보기/인쇄/닫기) 7개 버튼 노출. 아이콘은 `Resources/ToolbarIcons.xaml` 의 `DrawingImage` 리소스를 `App.xaml` 에 머지해 사용하며, SVG 원본 80개는 `Resources/Icons/svg/` 에 임베드(추후 `Svg.Skia`/`SharpVectors` 로 동적 로딩 예정). 미리보기·인쇄는 메뉴와 동일하게 비활성.
+- **Added** — `PageSettings.ShowMarginGuides` (기본 `true`) — 편집창 용지 위에 점선(파랑) 여백 안내선을 표시. 페이지 서식 > 여백 탭에 "여백 안내선 표시" 체크박스 추가.
+- **Added** — 편집 영역 페이지 뷰. `ScrollViewer`(스크롤바 상시 표시) 위에 종이(`PaperBorder`)가 떠 있는 형태로 재구성. 그림자(`DropShadowEffect BlurRadius=18`) 적용, 캔버스 배경은 테마별 `EditorCanvasBg` 리소스. `PageSettings` 가 변경될 때마다 `PaperBorder.Width`(방향 보정 포함)와 배경색을 자동 갱신. 본문 들여쓰기는 `RichTextBox.Padding` 으로 페이지 여백을 반영 (RichTextBox 는 FlowDocument.PagePadding 을 무시).
 - **Added** — 서식 > 페이지 모양 다이얼로그 (`PageFormatWindow`). 용지 크기(ISO A·B, JIS/KS B, 미국·국제, 신문 판형, 한국/국제 도서 판형 전체), 용지 색상, 방향(세로/가로), 여백(위·아래·좌·우·머리말·꼬리말), 다단(N단+단간격), 페이지 번호 시작값, 미리보기(여백·단 구분선 포함). 머리말·꼬리말 입력 UI 는 다음 사이클에서 추가. `PageSettings` 를 `FlowDocumentBuilder` 에서 읽어 `FlowDocument.PageWidth/PagePadding/ColumnWidth/ColumnGap` 및 용지 배경색에 반영.
 - **Added** — 서식 > 개요 서식 다이얼로그 (`OutlineStyleWindow`). Body/H1~H6 7개 수준의 글자 모양·문단 모양·번호 매기기·테두리·배경색을 수준별로 편집. 글자/문단 편집은 기존 `CharFormatWindow` / `ParaFormatWindow` 의 단독 모드(에디터 없이 RunStyle / ParagraphStyle 직접 받는 생성자)를 재사용해 구현. 내장 4가지 프리셋(기본/학술/비즈니스/모던)을 제공하며 수준별 초기화 버튼 포함. `FlowDocumentBuilder` 가 `PolyDocument.OutlineStyles` 를 읽어 제목/본문 단락에 사용자 정의 스타일을 반영. `PolyDocument.OutlineStyles` (`OutlineStyleSet`) 는 IWPF 직렬화 시 자동 포함. `OutlineLevelStyle` — RunStyle + ParagraphStyle + OutlineNumbering + OutlineBorder + BackgroundColor(hex).
 

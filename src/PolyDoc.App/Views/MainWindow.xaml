@@ -112,6 +112,47 @@
             </MenuItem>
         </Menu>
 
+        <!-- 메인 툴바 — 메뉴 바로 아래. 1단계: 파일 그룹 7개 버튼.
+             아이콘은 Resources/ToolbarIcons.xaml 의 DrawingImage StaticResource 사용.
+             ToolTip 은 메뉴 항목과 동일한 i18n 문자열 재사용. -->
+        <ToolBarTray DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
+            <ToolBar Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     ToolBarTray.IsLocked="True">
+                <Button Command="{Binding NewCommand}"
+                        ToolTip="{Binding MenuFileNew, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FileNew}" Width="20" Height="20" />
+                </Button>
+                <Button Command="{Binding OpenCommand}"
+                        ToolTip="{Binding MenuFileOpen, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FileOpen}" Width="20" Height="20" />
+                </Button>
+                <Button Command="{Binding SaveCommand}"
+                        ToolTip="{Binding MenuFileSave, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FileSave}" Width="20" Height="20" />
+                </Button>
+                <Button Command="{Binding SaveAsCommand}"
+                        ToolTip="{Binding MenuFileSaveAs, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FileSaveAs}" Width="20" Height="20" />
+                </Button>
+                <Separator />
+                <!-- 미리보기/인쇄는 메뉴와 동일하게 비활성 (커맨드 미구현) -->
+                <Button IsEnabled="False"
+                        ToolTip="{Binding MenuFilePreview, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FilePreview}" Width="20" Height="20" />
+                </Button>
+                <Button IsEnabled="False"
+                        ToolTip="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FilePrint}" Width="20" Height="20" />
+                </Button>
+                <Separator />
+                <Button Command="{Binding CloseCommand}"
+                        ToolTip="{Binding MenuFileClose, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Image Source="{StaticResource Icon_FileClose}" Width="20" Height="20" />
+                </Button>
+            </ToolBar>
+        </ToolBarTray>
+
         <!-- 상태 바 — 좌측: 상태 메시지 (가변 너비) / 우측: 파일경로·메모리·Insert·Caps·Num 고정 그룹.
              ItemsPanel 을 DockPanel 로 교체하고 상태 메시지만 Left dock, 나머지는 Right dock 으로 우측에 모은다.
              자식 순서대로 우측에서부터 stacking 되므로 XAML 작성 순서 = 시각상 좌→우. -->

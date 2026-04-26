@@ -39,6 +39,12 @@
     </Resource>
   </ItemGroup>
 
+  <!-- 툴바 아이콘 — SVG 원본은 후속 SvgImage 로딩용으로 임베드,
+       현재는 Resources/ToolbarIcons.xaml 의 DrawingImage 만 App.xaml 에 머지해 사용. -->
+  <ItemGroup>
+    <Resource Include="Resources\Icons\svg\**\*.svg" />
+  </ItemGroup>
+
   <!-- i18n: Properties/Resources.resx + en-US satellite
        Update (not Include) to avoid duplicate with SDK default glob. -->
   <ItemGroup>
