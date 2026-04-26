@@ -142,6 +142,39 @@ public partial class MainWindow : Window
         BodyEditor.Focus();
     }
 
+    // 쓰기 보호: IsReadOnly 가 켜져 있으면 RichTextBox 가 자체적으로 입력을 막지만,
+    // 사용자에게 "왜 안 되지?" 의 침묵 대신 비밀번호 프롬프트를 띄워 즉시 잠금 해제 흐름으로 안내한다.
+    // 검증 성공 시 ViewModel 이 IsWriteProtected=false 로 풀고, 다음 키부터 바로 편집된다.
+    private void OnEditorPreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        if (_viewModel?.IsWriteProtected != true) return;
+        e.Handled = true;
+        _viewModel.TryUnlockForEditing();
+    }
+
+    private void OnEditorPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_viewModel?.IsWriteProtected != true) return;
+        if (!IsEditingIntent(e)) return;
+        e.Handled = true;
+        _viewModel.TryUnlockForEditing();
+    }
+
+    /// <summary>
+    /// 입력 키가 "편집 의도" 인지 판별. 화살표·Home/End·Ctrl+C/Ctrl+A 등 읽기 전용 동작은 false.
+    /// (PreviewTextInput 이 일반 문자 입력은 별도로 처리하므로 여기서는 특수 편집 키만 본다.)
+    /// </summary>
+    private static bool IsEditingIntent(KeyEventArgs e)
+    {
+        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
+        return e.Key switch
+        {
+            Key.Back or Key.Delete or Key.Enter or Key.Tab => true,
+            Key.V or Key.X when ctrl                       => true,  // 붙여넣기 / 잘라내기
+            _                                              => false,
+        };
+    }
+
     private void OnDragOver(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;

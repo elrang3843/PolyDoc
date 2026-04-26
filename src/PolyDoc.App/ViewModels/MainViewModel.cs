@@ -38,6 +38,17 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private string? _writePassword;
 
+    /// <summary>
+    /// true 면 현재 문서가 쓰기 보호 상태이며 편집이 잠겨 있다.
+    /// (_writeLock 이 있고 아직 비밀번호 검증이 안 된 경우.)
+    /// View 가 이 값을 RichTextBox.IsReadOnly 에 바인딩 + 상태 표시줄 인디케이터로 사용한다.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isWriteProtected;
+
+    private void RecomputeWriteProtection()
+        => IsWriteProtected = _writeLock is not null && _writePassword is null;
+
     private PasswordMode CurrentPasswordMode =>
         (!string.IsNullOrEmpty(_documentPassword), _writeLock is not null) switch
         {
@@ -124,7 +135,8 @@ public partial class MainViewModel : ObservableObject
         _document = document;
         _documentPassword = password;
         _writeLock = writeLock;
-        _writePassword = null; // 파일 로드 시 항상 초기화 — 저장 전에 재검증 필요
+        _writePassword = null; // 파일 로드 시 항상 초기화 — 편집/저장 전에 재검증 필요
+        RecomputeWriteProtection();
         _suppressDirty = true;
         FlowDocument = FlowDocumentBuilder.Build(document);
         _suppressDirty = false;
@@ -211,7 +223,8 @@ public partial class MainViewModel : ObservableObject
         }
 
         LoadDocument(doc, path, usedPassword, writeLock);
-        StatusMessage = BuildOpenStatusMessage(path, doc);
+        StatusMessage = BuildOpenStatusMessage(path, doc)
+            + (IsWriteProtected ? "  " + SR.StatusWriteProtectedSuffix : "");
     }
 
     /// <summary>
@@ -420,6 +433,7 @@ public partial class MainViewModel : ObservableObject
                     _writeLock        = pwd is not null ? IwpfEncryption.CreateWriteLock(pwd) : null;
                     break;
             }
+            RecomputeWriteProtection();
             dirty = true;
         }
 
@@ -603,12 +617,25 @@ public partial class MainViewModel : ObservableObject
 
             if (IwpfEncryption.VerifyWriteLock(prompt.EnteredPassword, _writeLock!))
             {
-                _writePassword = prompt.EnteredPassword; // 이후 저장 시 재사용
+                _writePassword = prompt.EnteredPassword; // 이후 편집·저장 시 재사용
+                RecomputeWriteProtection();              // IsWriteProtected → false
                 return true;
             }
 
             errorMessage = SR.PwdWrong;
         }
+    }
+
+    /// <summary>
+    /// 쓰기 보호 상태에서 편집 시도가 감지됐을 때 호출. 비밀번호 프롬프트를 띄우고
+    /// 검증 성공 시 IsWriteProtected 를 false 로 풀어 이후 편집을 허용한다.
+    /// 이미 잠금 해제 상태이면 즉시 반환.
+    /// </summary>
+    public void TryUnlockForEditing()
+    {
+        if (!IsWriteProtected) return;
+        if (VerifyWritePassword())
+            StatusMessage = SR.StatusWriteUnlocked;
     }
 
     private IwpfWriter BuildIwpfWriter(PasswordMode mode)

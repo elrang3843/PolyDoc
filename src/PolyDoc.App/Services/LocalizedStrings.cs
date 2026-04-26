@@ -122,11 +122,13 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string PwdChangeNew          => SR.PwdChangeNew;
     public string PwdChangeConfirm      => SR.PwdChangeConfirm;
     public string PwdChangeHintRemove   => SR.PwdChangeHintRemove;
+    public string PwdWritePromptMessage => SR.PwdWritePromptMessage;
     public string PwdModeGroupLabel     => SR.PwdModeGroupLabel;
     public string PwdModeNone           => SR.PwdModeNone;
     public string PwdModeRead           => SR.PwdModeRead;
     public string PwdModeWrite          => SR.PwdModeWrite;
     public string PwdModeBoth           => SR.PwdModeBoth;
+    public string StatusWriteProtected  => SR.StatusWriteProtected;
     public string DlgConfirm            => SR.DlgConfirm;
 
     // ── 설정 다이얼로그 ─────────────────────────────────────────

@@ -187,7 +187,10 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PwdMismatch"         xml:space="preserve"><value>The two passwords do not match.</value></data>
   <data name="PwdEmpty"            xml:space="preserve"><value>Please enter a password.</value></data>
   <data name="PwdWrong"            xml:space="preserve"><value>Incorrect password.</value></data>
-  <data name="PwdWritePromptMessage" xml:space="preserve"><value>This file is write-protected. Enter the password to save.</value></data>
+  <data name="PwdWritePromptMessage" xml:space="preserve"><value>This file is write-protected. Enter the password to edit or save.</value></data>
+  <data name="StatusWriteProtected"   xml:space="preserve"><value>Write-protected</value></data>
+  <data name="StatusWriteProtectedSuffix" xml:space="preserve"><value>(write-protected — unlock to edit)</value></data>
+  <data name="StatusWriteUnlocked"    xml:space="preserve"><value>Write protection unlocked — editing is allowed for this session.</value></data>
 
   <!-- Password protection modes -->
   <data name="PwdModeGroupLabel"   xml:space="preserve"><value>Protection mode</value></data>

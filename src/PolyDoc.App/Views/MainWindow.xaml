@@ -20,6 +20,10 @@
         <vm:MainViewModel />
     </Window.DataContext>
 
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
     <Window.InputBindings>
         <KeyBinding Modifiers="Control" Key="N" Command="{Binding NewCommand}" />
         <KeyBinding Modifiers="Control" Key="O" Command="{Binding OpenCommand}" />
@@ -152,6 +156,17 @@
             </StatusBarItem>
             <Separator DockPanel.Dock="Right" />
 
+            <!-- 쓰기 보호 표시 — IsWriteProtected 일 때만 보임. 상태 메시지 우측, 파일 경로 좌측. -->
+            <StatusBarItem DockPanel.Dock="Right"
+                           Visibility="{Binding IsWriteProtected, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding StatusWriteProtected, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           Foreground="#E67E22"
+                           FontWeight="SemiBold"
+                           ToolTip="{Binding PwdWritePromptMessage, Source={x:Static svc:LocalizedStrings.Instance}}" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right"
+                       Visibility="{Binding IsWriteProtected, Converter={StaticResource BoolToVis}}" />
+
             <!-- 좌측 — 가변 너비. LastChildFill=True 로 남은 가로 공간을 모두 차지. -->
             <StatusBarItem>
                 <TextBlock Text="{Binding StatusMessage}"
@@ -171,11 +186,14 @@
                          VerticalScrollBarVisibility="Auto"
                          HorizontalScrollBarVisibility="Auto"
                          IsDocumentEnabled="True"
+                         IsReadOnly="{Binding IsWriteProtected}"
                          SpellCheck.IsEnabled="False"
                          Padding="12"
                          BorderThickness="0"
                          Background="{DynamicResource Surface}"
-                         Foreground="{DynamicResource OnSurface}" />
+                         Foreground="{DynamicResource OnSurface}"
+                         PreviewKeyDown="OnEditorPreviewKeyDown"
+                         PreviewTextInput="OnEditorPreviewTextInput" />
         </Border>
 
     </DockPanel>

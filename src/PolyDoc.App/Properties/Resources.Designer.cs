@@ -171,7 +171,10 @@ namespace PolyDoc.App.Properties
         internal static string PwdMismatch           => Get(nameof(PwdMismatch));
         internal static string PwdEmpty              => Get(nameof(PwdEmpty));
         internal static string PwdWrong              => Get(nameof(PwdWrong));
-        internal static string PwdWritePromptMessage => Get(nameof(PwdWritePromptMessage));
+        internal static string PwdWritePromptMessage   => Get(nameof(PwdWritePromptMessage));
+        internal static string StatusWriteProtected       => Get(nameof(StatusWriteProtected));
+        internal static string StatusWriteProtectedSuffix => Get(nameof(StatusWriteProtectedSuffix));
+        internal static string StatusWriteUnlocked        => Get(nameof(StatusWriteUnlocked));
 
         // 비밀번호 보호 모드
         internal static string PwdModeGroupLabel   => Get(nameof(PwdModeGroupLabel));
