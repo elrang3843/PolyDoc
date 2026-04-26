@@ -308,6 +308,7 @@ namespace PolyDoc.App.Properties
         internal static string PageFormatColumns           => Get(nameof(PageFormatColumns));
         internal static string PageFormatColumnGap         => Get(nameof(PageFormatColumnGap));
         internal static string PageFormatPageNumberStart   => Get(nameof(PageFormatPageNumberStart));
+        internal static string PageFormatShowMarginGuides  => Get(nameof(PageFormatShowMarginGuides));
         internal static string PageFormatPreviewGroup      => Get(nameof(PageFormatPreviewGroup));
         internal static string PageSizeGroupIsoA           => Get(nameof(PageSizeGroupIsoA));
         internal static string PageSizeGroupIsoB           => Get(nameof(PageSizeGroupIsoB));

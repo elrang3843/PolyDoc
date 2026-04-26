@@ -120,10 +120,24 @@ public partial class MainWindow : Window
     {
         if (page is null) return;
 
+        double padL = PolyDoc.App.Services.FlowDocumentBuilder.MmToDip(page.MarginLeftMm);
+        double padT = PolyDoc.App.Services.FlowDocumentBuilder.MmToDip(page.MarginTopMm);
+        double padR = PolyDoc.App.Services.FlowDocumentBuilder.MmToDip(page.MarginRightMm);
+        double padB = PolyDoc.App.Services.FlowDocumentBuilder.MmToDip(page.MarginBottomMm);
+
         // 용지 너비·높이 (세로·가로 방향 보정).
         // Height 는 MinHeight 로 지정해 빈 문서도 한 페이지 분량으로 보이고, 본문이 길어지면 늘어난다.
         PaperBorder.Width     = PolyDoc.App.Services.FlowDocumentBuilder.MmToDip(page.EffectiveWidthMm);
         PaperBorder.MinHeight = PolyDoc.App.Services.FlowDocumentBuilder.MmToDip(page.EffectiveHeightMm);
+
+        // 여백을 RichTextBox Padding 으로 반영 — FlowDocument.PagePadding 은 RichTextBox 컨텍스트에서 무시됨
+        BodyEditor.Padding = new Thickness(padL, padT, padR, padB);
+
+        // 여백 안내선 위치 갱신
+        MarginGuideRect.Margin     = new Thickness(padL, padT, padR, padB);
+        MarginGuideRect.Visibility = page.ShowMarginGuides
+            ? System.Windows.Visibility.Visible
+            : System.Windows.Visibility.Collapsed;
 
         // 용지 배경색 — 지정된 경우 SolidColorBrush, 없으면 테마 Surface 동적 리소스
         if (!string.IsNullOrEmpty(page.PaperColor))

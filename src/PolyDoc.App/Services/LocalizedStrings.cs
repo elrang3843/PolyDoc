@@ -232,6 +232,7 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string PageFormatColumns           => SR.PageFormatColumns;
     public string PageFormatColumnGap         => SR.PageFormatColumnGap;
     public string PageFormatPageNumberStart   => SR.PageFormatPageNumberStart;
+    public string PageFormatShowMarginGuides  => SR.PageFormatShowMarginGuides;
     public string PageFormatPreviewGroup      => SR.PageFormatPreviewGroup;
     public string PageSizeGroupIsoA           => SR.PageSizeGroupIsoA;
     public string PageSizeGroupIsoB           => SR.PageSizeGroupIsoB;

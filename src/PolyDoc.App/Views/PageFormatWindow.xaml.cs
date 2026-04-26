@@ -141,6 +141,9 @@ public partial class PageFormatWindow : Window
             TxtMarginHeader.Text = _settings.MarginHeaderMm.ToString("0.##");
             TxtMarginFooter.Text = _settings.MarginFooterMm.ToString("0.##");
 
+            // 여백 안내선
+            ChkShowMarginGuides.IsChecked = _settings.ShowMarginGuides;
+
             // 레이아웃
             TxtColumns.Text         = _settings.ColumnCount.ToString();
             TxtColumnGap.Text       = _settings.ColumnGapMm.ToString("0.##");
@@ -268,6 +271,12 @@ public partial class PageFormatWindow : Window
         TrySetMm(TxtMarginHeader, v => _settings.MarginHeaderMm = v);
         TrySetMm(TxtMarginFooter, v => _settings.MarginFooterMm = v);
         UpdatePreview();
+    }
+
+    private void OnShowMarginGuidesChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppress) return;
+        _settings.ShowMarginGuides = ChkShowMarginGuides.IsChecked == true;
     }
 
     // ── 레이아웃 ─────────────────────────────────────────────────
@@ -478,5 +487,6 @@ public partial class PageFormatWindow : Window
         },
         DifferentFirstPage = s.DifferentFirstPage,
         DifferentOddEven   = s.DifferentOddEven,
+        ShowMarginGuides   = s.ShowMarginGuides,
     };
 }

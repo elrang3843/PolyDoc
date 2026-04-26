@@ -325,6 +325,7 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageFormatColumns"            xml:space="preserve"><value>Columns</value></data>
   <data name="PageFormatColumnGap"          xml:space="preserve"><value>Column gap (mm)</value></data>
   <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>Page number start</value></data>
+  <data name="PageFormatShowMarginGuides"   xml:space="preserve"><value>Show margin guides</value></data>
   <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>Preview</value></data>
   <data name="PageSizeGroupIsoA"            xml:space="preserve"><value>— ISO A Series —</value></data>
   <data name="PageSizeGroupIsoB"            xml:space="preserve"><value>— ISO B Series —</value></data>

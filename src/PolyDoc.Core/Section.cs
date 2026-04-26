@@ -99,6 +99,9 @@ public sealed class PageSettings
     public bool DifferentFirstPage { get; set; }
     public bool DifferentOddEven   { get; set; }
 
+    // 여백 안내선 표시 (편집 화면)
+    public bool ShowMarginGuides { get; set; } = true;
+
     // ── 계산 헬퍼 ──────────────────────────────────────────────
     /// <summary>방향 보정 후 실제 용지 너비 (mm).</summary>
     public double EffectiveWidthMm  => Orientation == PageOrientation.Portrait ? WidthMm : HeightMm;

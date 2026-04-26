@@ -123,6 +123,8 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120" />
@@ -188,6 +190,12 @@
                                    Foreground="{DynamicResource OnSurface}"
                                    BorderBrush="{DynamicResource Divider}"
                                    TextChanged="OnMarginChanged" />
+
+                        <CheckBox  Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="2"
+                                   x:Name="ChkShowMarginGuides"
+                                   Content="{Binding PageFormatShowMarginGuides, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   Checked="OnShowMarginGuidesChanged"
+                                   Unchecked="OnShowMarginGuidesChanged" />
                     </Grid>
                 </TabItem>
 

@@ -36,17 +36,13 @@ public static class FlowDocumentBuilder
         var page = document.Sections.FirstOrDefault()?.Page ?? new PageSettings();
 
         double wDip = MmToDip(page.EffectiveWidthMm);
-        double padL = MmToDip(page.MarginLeftMm);
-        double padR = MmToDip(page.MarginRightMm);
-        double padT = MmToDip(page.MarginTopMm);
-        double padB = MmToDip(page.MarginBottomMm);
 
         var fd = new Wpf.FlowDocument
         {
             FontFamily  = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
             FontSize    = PtToDip(11),
             PageWidth   = wDip,
-            PagePadding = new Thickness(padL, padT, padR, padB),
+            PagePadding = new Thickness(0),
         };
 
         // 용지 배경색
@@ -65,7 +61,7 @@ public static class FlowDocumentBuilder
         if (page.ColumnCount > 1)
         {
             double gapDip     = MmToDip(page.ColumnGapMm);
-            double contentDip = wDip - padL - padR;
+            double contentDip = wDip - MmToDip(page.MarginLeftMm) - MmToDip(page.MarginRightMm);
             fd.ColumnWidth = Math.Max(10, (contentDip - gapDip * (page.ColumnCount - 1)) / page.ColumnCount);
             fd.ColumnGap   = gapDip;
         }

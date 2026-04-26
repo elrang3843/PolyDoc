@@ -325,6 +325,7 @@
   <data name="PageFormatColumns"            xml:space="preserve"><value>단 수</value></data>
   <data name="PageFormatColumnGap"          xml:space="preserve"><value>단 간격 (mm)</value></data>
   <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>페이지 번호 시작</value></data>
+  <data name="PageFormatShowMarginGuides"   xml:space="preserve"><value>여백 안내선 표시</value></data>
   <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>미리보기</value></data>
   <!-- 용지 크기 그룹 헤더 -->
   <data name="PageSizeGroupIsoA"            xml:space="preserve"><value>— ISO A 시리즈 —</value></data>
