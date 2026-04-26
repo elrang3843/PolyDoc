@@ -112,9 +112,9 @@ public partial class ParaFormatWindow : Window
         };
 
         var p = new Wpf.Paragraph();
-        p.Inlines.Add(new Run("가나다라 ABCD 1234. 미리보기 텍스트입니다. 정렬과 들여쓰기, 줄 간격이 표시됩니다."));
+        p.Inlines.Add(new Wpf.Run("가나다라 ABCD 1234. 미리보기 텍스트입니다. 정렬과 들여쓰기, 줄 간격이 표시됩니다."));
         p.Inlines.Add(new LineBreak());
-        p.Inlines.Add(new Run("두 번째 줄. 줄 간격이 적용된 모습을 확인하세요."));
+        p.Inlines.Add(new Wpf.Run("두 번째 줄. 줄 간격이 적용된 모습을 확인하세요."));
 
         ApplyToWpfParagraph(p, includeMargin: true);
         fd.Blocks.Add(p);
