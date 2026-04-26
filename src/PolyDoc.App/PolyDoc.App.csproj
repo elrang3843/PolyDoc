@@ -15,6 +15,14 @@
     <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
 
+  <!-- UseWindowsForms 가 추가하는 implicit global using 이 WPF 타입과 충돌.
+       System.Windows.Forms / System.Drawing 은 OutlineStyleWindow 에서
+       완전한 네임스페이스(System.Windows.Forms.ColorDialog 등)로만 사용. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\PolyDoc.Core\PolyDoc.Core.csproj" />
     <ProjectReference Include="..\PolyDoc.Iwpf\PolyDoc.Iwpf.csproj" />
