@@ -45,6 +45,7 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — 글상자 4종 모양에 형태 파라미터 추가. `TextBoxObject` 모델에 `SpeechDirection`(`SpeechPointerDirection` enum: 8방향), `CloudPuffCount`(6~32, 기본 10), `SpikeCount`(5~24, 기본 12), `LightningBendCount`(1~5, 기본 2) 추가. `TextBoxOverlay` 의 정적 PathGeometry 상수를 동적 생성기(`BuildSpeechPath`/`BuildCloudPath`/`BuildSpikyPath`/`BuildLightningPath`)로 교체 — 100×100 정규화 좌표 위에서 파라미터에 따라 path 문자열을 매번 빌드. 말풍선 꼬리는 8방향(상하좌우+4모서리) 어디든, 구름은 베지어 호 N개, 가시별은 N각 별, 번개는 N개 꺽임 템플릿. 속성 대화상자(`TextBoxPropertiesWindow`)에 모양 선택값에 따라 표시되는 conditional 패널 4개 — 말풍선 꼬리 방향(3×3 RadioButton 그리드), 구름 뭉게 개수, 가시 개수, 번개 꺽임 개수.
 - **Added** — 글상자 속성 대화상자 확장. 안쪽 여백 4방향(위·아래·왼·오른, mm) 입력란 추가. 가로 정렬(왼쪽/가운데/오른쪽/양쪽) + 세로 정렬(위/가운데/아래) ComboBox 추가. 테두리·배경색 hex 입력란 옆에 Color Picker 버튼(클릭 시 `System.Windows.Forms.ColorDialog` 전체보기 모드로 열림) 추가.
 - **Added** — 글상자 우클릭 메뉴에 "글자 속성..." / "문단 속성..." 항목 추가. `CharFormatWindow` / `ParaFormatWindow` 를 글상자 내 `RichTextBox` (`InnerEditor`) 에 연결해 기존 글자·문단 서식 대화상자를 그대로 재사용.
 - **Added** — 글상자 `TextBoxObject` 모델에 `PaddingTopMm`/`PaddingBottomMm`/`PaddingLeftMm`/`PaddingRightMm` (기존 단일 `PaddingMm` 대체), `HAlign`(`TextBoxHAlign` enum), `VAlign`(`TextBoxVAlign` enum) 추가. IWPF 직렬화 자동 포함.

@@ -26,6 +26,19 @@ public enum TextBoxShape
     Lightning = 4,
 }
 
+/// <summary>말풍선 꼬리 방향 (8방향). 박스의 어느 변/모서리에서 꼬리가 뻗는지.</summary>
+public enum SpeechPointerDirection
+{
+    Bottom      = 0,
+    BottomLeft  = 1,
+    Left        = 2,
+    TopLeft     = 3,
+    Top         = 4,
+    TopRight    = 5,
+    Right       = 6,
+    BottomRight = 7,
+}
+
 /// <summary>글상자 내 텍스트 가로 정렬.</summary>
 public enum TextBoxHAlign { Left = 0, Center = 1, Right = 2, Justify = 3 }
 
@@ -53,6 +66,19 @@ public sealed class TextBoxObject : FloatingObject
     // ── 텍스트 정렬 ───────────────────────────────────────────────────────────
     public TextBoxHAlign HAlign { get; set; } = TextBoxHAlign.Left;
     public TextBoxVAlign VAlign { get; set; } = TextBoxVAlign.Top;
+
+    // ── 모양별 형태 파라미터 ─────────────────────────────────────────────────
+    /// <summary>말풍선(Speech) 꼬리가 뻗는 방향.</summary>
+    public SpeechPointerDirection SpeechDirection { get; set; } = SpeechPointerDirection.Bottom;
+
+    /// <summary>구름풍선(Cloud) 둘레의 뭉게뭉게(돌출 호) 개수. 6~24 권장.</summary>
+    public int CloudPuffCount { get; set; } = 10;
+
+    /// <summary>가시풍선(Spiky) 가시(별 꼭짓점) 개수. 5~24 권장.</summary>
+    public int SpikeCount { get; set; } = 12;
+
+    /// <summary>번개상자(Lightning) 지그재그 꺽임 개수. 1~5 권장 (1=단순, 2=기본 볼트).</summary>
+    public int LightningBendCount { get; set; } = 2;
 
     /// <summary>본문 블록. 최소 1개의 빈 Paragraph 를 포함하도록 기본값 설정.</summary>
     public IList<Block> Content { get; set; } = new List<Block> { new Paragraph() };

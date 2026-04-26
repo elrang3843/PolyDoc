@@ -1,5 +1,7 @@
 using System;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -24,31 +26,176 @@ public partial class TextBoxOverlay : UserControl
 {
     public const double DipsPerMm = 96.0 / 25.4;
 
-    // ── PathGeometry 문자열 (100×100 정규화 공간, Stretch=Fill 로 자동 스케일) ──
+    // ── PathGeometry 생성기 (100×100 정규화 공간, Stretch=Fill 로 자동 스케일) ──
 
-    // 말풍선: 둥근 사각형 + 하단 중앙 삼각 꼬리
-    private const string PathSpeech =
-        "M 6,0 L 94,0 Q 100,0 100,6 L 100,70 Q 100,76 94,76 " +
-        "L 58,76 L 50,95 L 42,76 L 6,76 Q 0,76 0,70 L 0,6 Q 0,0 6,0 Z";
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    // 구름풍선: 여러 개의 둥근 튀어나온 부분으로 구성
-    private const string PathCloud =
-        "M 20,80 " +
-        "C 5,80 0,65 5,55 C 0,45 5,32 18,32 " +
-        "C 14,18 28,10 40,16 C 43,5 57,2 66,10 " +
-        "C 73,3 87,6 88,20 C 100,20 100,38 93,46 " +
-        "C 102,55 98,72 86,76 C 86,88 74,90 64,82 " +
-        "C 58,92 44,93 38,84 C 28,92 18,90 20,80 Z";
+    /// <summary>
+    /// 말풍선 PathGeometry 생성. 본체는 둥근 사각형, 꼬리는 <paramref name="dir"/>
+    /// 방향으로 100×100 박스 변/모서리에 닿도록 그린다.
+    /// 꼬리 쪽 변에는 15 단위 여백을 두어 본체 영역을 줄인다.
+    /// </summary>
+    private static string BuildSpeechPath(SpeechPointerDirection dir)
+    {
+        const double m = 15;   // 꼬리 여백
+        const double r = 6;    // 본체 모서리 반경
+        const double tw = 9;   // 직선변 꼬리 밑변 절반 너비
+        const double offs = 3; // 꼬리 끝점 살짝 비대칭 (자연스럽게)
 
-    // 가시풍선: 12각 별 모양 (뾰족한 돌기)
-    private const string PathSpiky =
-        "M 50,0 L 58,35 L 94,25 L 68,50 L 93,75 " +
-        "L 58,65 L 50,100 L 42,65 L 7,75 L 32,50 " +
-        "L 6,25 L 42,35 Z";
+        double bL = 0, bT = 0, bR = 100, bB = 100;
+        bool tL = dir is SpeechPointerDirection.Left  or SpeechPointerDirection.TopLeft  or SpeechPointerDirection.BottomLeft;
+        bool tR = dir is SpeechPointerDirection.Right or SpeechPointerDirection.TopRight or SpeechPointerDirection.BottomRight;
+        bool tT = dir is SpeechPointerDirection.Top   or SpeechPointerDirection.TopLeft  or SpeechPointerDirection.TopRight;
+        bool tB = dir is SpeechPointerDirection.Bottom or SpeechPointerDirection.BottomLeft or SpeechPointerDirection.BottomRight;
+        if (tL) bL = m;
+        if (tR) bR = 100 - m;
+        if (tT) bT = m;
+        if (tB) bB = 100 - m;
 
-    // 번개상자: 번개 볼트 실루엣
-    private const string PathLightning =
-        "M 65,0 L 22,52 L 46,52 L 35,100 L 78,48 L 54,48 Z";
+        var sb = new StringBuilder();
+        // 시계방향: 좌상 모서리(반경 시작점) → 상변 → 우상 → 우변 → 우하 → 하변 → 좌하 → 좌변 → 좌상.
+        sb.AppendFormat(Inv, "M {0:0.##},{1:0.##} ", bL + r, bT);
+
+        // ── 상변 (Top 꼬리 분기) ──
+        if (dir == SpeechPointerDirection.Top)
+        {
+            double cx = (bL + bR) / 2;
+            sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} L {2:0.##},0 L {3:0.##},{1:0.##} ",
+                cx - tw, bT, cx + offs, cx + tw);
+        }
+        sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} ", bR - r, bT);
+
+        // ── 우상 모서리 (TopRight 꼬리 분기) ──
+        if (dir == SpeechPointerDirection.TopRight)
+            sb.AppendFormat(Inv, "L 100,0 L {0:0.##},{1:0.##} ", bR, bT + r);
+        else
+            sb.AppendFormat(Inv, "Q {0:0.##},{1:0.##} {0:0.##},{2:0.##} ", bR, bT, bT + r);
+
+        // ── 우변 (Right 꼬리 분기) ──
+        if (dir == SpeechPointerDirection.Right)
+        {
+            double cy = (bT + bB) / 2;
+            sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} L 100,{2:0.##} L {0:0.##},{3:0.##} ",
+                bR, cy - tw, cy + offs, cy + tw);
+        }
+        sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} ", bR, bB - r);
+
+        // ── 우하 모서리 ──
+        if (dir == SpeechPointerDirection.BottomRight)
+            sb.AppendFormat(Inv, "L 100,100 L {0:0.##},{1:0.##} ", bR - r, bB);
+        else
+            sb.AppendFormat(Inv, "Q {0:0.##},{1:0.##} {2:0.##},{1:0.##} ", bR, bB, bR - r);
+
+        // ── 하변 (Bottom 꼬리 분기) ──
+        if (dir == SpeechPointerDirection.Bottom)
+        {
+            double cx = (bL + bR) / 2;
+            sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} L {2:0.##},100 L {3:0.##},{1:0.##} ",
+                cx + tw, bB, cx - offs, cx - tw);
+        }
+        sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} ", bL + r, bB);
+
+        // ── 좌하 모서리 ──
+        if (dir == SpeechPointerDirection.BottomLeft)
+            sb.AppendFormat(Inv, "L 0,100 L {0:0.##},{1:0.##} ", bL, bB - r);
+        else
+            sb.AppendFormat(Inv, "Q {0:0.##},{1:0.##} {0:0.##},{2:0.##} ", bL, bB, bB - r);
+
+        // ── 좌변 (Left 꼬리 분기) ──
+        if (dir == SpeechPointerDirection.Left)
+        {
+            double cy = (bT + bB) / 2;
+            sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} L 0,{2:0.##} L {0:0.##},{3:0.##} ",
+                bL, cy + tw, cy - offs, cy - tw);
+        }
+        sb.AppendFormat(Inv, "L {0:0.##},{1:0.##} ", bL, bT + r);
+
+        // ── 좌상 모서리 ──
+        if (dir == SpeechPointerDirection.TopLeft)
+            sb.AppendFormat(Inv, "L 0,0 L {0:0.##},{1:0.##} ", bL + r, bT);
+        else
+            sb.AppendFormat(Inv, "Q {0:0.##},{1:0.##} {2:0.##},{1:0.##} ", bL, bT, bL + r);
+
+        sb.Append('Z');
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 구름풍선 PathGeometry. 둘레를 따라 N개의 볼록한 호(quadratic Bezier)를 이어 그린다.
+    /// 안쪽 타원 위에 N개 기준점을 배치하고, 인접 기준점 사이를 외곽 타원의 점을 control 로 한 호로 잇는다.
+    /// </summary>
+    private static string BuildCloudPath(int puffCount)
+    {
+        int n = Math.Clamp(puffCount, 6, 32);
+        const double cx = 50, cy = 50;
+        const double rxIn = 38, ryIn = 32;
+        const double rxOut = 56, ryOut = 56;
+        const double startA = -Math.PI / 2;
+
+        var basePts = new (double X, double Y)[n];
+        for (int i = 0; i < n; i++)
+        {
+            double a = startA + 2 * Math.PI * i / n;
+            basePts[i] = (cx + rxIn * Math.Cos(a), cy + ryIn * Math.Sin(a));
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendFormat(Inv, "M {0:0.##},{1:0.##} ", basePts[0].X, basePts[0].Y);
+        for (int i = 0; i < n; i++)
+        {
+            int j = (i + 1) % n;
+            double a = startA + 2 * Math.PI * (i + 0.5) / n;
+            double mx = cx + rxOut * Math.Cos(a);
+            double my = cy + ryOut * Math.Sin(a);
+            sb.AppendFormat(Inv, "Q {0:0.##},{1:0.##} {2:0.##},{3:0.##} ",
+                mx, my, basePts[j].X, basePts[j].Y);
+        }
+        sb.Append('Z');
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 가시풍선 PathGeometry. N각 별 — 외곽 정점(50→0) 과 안쪽 정점(rIn) 을 교대로 잇는다.
+    /// </summary>
+    private static string BuildSpikyPath(int spikeCount)
+    {
+        int n = Math.Clamp(spikeCount, 5, 24);
+        const double cx = 50, cy = 50;
+        const double rOut = 50;
+        const double rIn  = 32;
+        const double startA = -Math.PI / 2;
+
+        var sb = new StringBuilder();
+        int total = n * 2;
+        for (int i = 0; i < total; i++)
+        {
+            double a = startA + Math.PI * i / n;
+            double r = (i % 2 == 0) ? rOut : rIn;
+            double x = cx + r * Math.Cos(a);
+            double y = cy + r * Math.Sin(a);
+            sb.AppendFormat(Inv, "{0} {1:0.##},{2:0.##} ", i == 0 ? "M" : "L", x, y);
+        }
+        sb.Append('Z');
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 번개상자 PathGeometry. 꺽임 개수에 따라 미리 정의된 템플릿을 선택.
+    /// 1=단순(작은 V형), 2=기본 볼트(원래 모양), 3~5=촘촘한 지그재그.
+    /// </summary>
+    private static string BuildLightningPath(int bendCount)
+    {
+        int b = Math.Clamp(bendCount, 1, 5);
+        return b switch
+        {
+            1 => "M 60,0 L 32,60 L 52,60 L 40,100 L 70,42 L 50,42 Z",
+            2 => "M 65,0 L 22,52 L 46,52 L 35,100 L 78,48 L 54,48 Z",
+            3 => "M 70,0 L 30,32 L 50,32 L 22,64 L 42,64 L 32,100 L 76,58 L 56,58 L 78,28 L 60,28 Z",
+            4 => "M 72,0 L 32,24 L 50,24 L 22,48 L 42,48 L 26,72 L 46,72 L 35,100 L 76,68 L 56,68 L 78,44 L 58,44 L 78,18 L 60,18 Z",
+            5 => "M 72,0 L 32,18 L 48,18 L 22,38 L 40,38 L 18,56 L 38,56 L 22,76 L 42,76 L 32,100 L 76,72 L 56,72 L 78,54 L 58,54 L 78,34 L 58,34 L 78,14 L 60,14 Z",
+            _ => "M 65,0 L 22,52 L 46,52 L 35,100 L 78,48 L 54,48 Z",
+        };
+    }
 
     public TextBoxObject Model { get; }
 
@@ -142,11 +289,11 @@ public partial class TextBoxOverlay : UserControl
 
             var pathData = Model.Shape switch
             {
-                TextBoxShape.Speech    => PathSpeech,
-                TextBoxShape.Cloud     => PathCloud,
-                TextBoxShape.Spiky     => PathSpiky,
-                TextBoxShape.Lightning => PathLightning,
-                _                      => PathSpeech,
+                TextBoxShape.Speech    => BuildSpeechPath(Model.SpeechDirection),
+                TextBoxShape.Cloud     => BuildCloudPath(Model.CloudPuffCount),
+                TextBoxShape.Spiky     => BuildSpikyPath(Model.SpikeCount),
+                TextBoxShape.Lightning => BuildLightningPath(Model.LightningBendCount),
+                _                      => BuildSpeechPath(Model.SpeechDirection),
             };
             ShapePath.Data = Geometry.Parse(pathData);
             ShapePath.StrokeThickness = Math.Max(0.5, Model.BorderThicknessPt);
@@ -278,6 +425,10 @@ public partial class TextBoxOverlay : UserControl
             Model.PaddingRightMm     = dlg.ResultPaddingRightMm;
             Model.HAlign             = dlg.ResultHAlign;
             Model.VAlign             = dlg.ResultVAlign;
+            Model.SpeechDirection    = dlg.ResultSpeechDirection;
+            Model.CloudPuffCount     = dlg.ResultCloudPuffCount;
+            Model.SpikeCount         = dlg.ResultSpikeCount;
+            Model.LightningBendCount = dlg.ResultLightningBendCount;
             Model.Status             = NodeStatus.Modified;
             ApplyShapeFromModel();
             AppearanceChangedCommitted?.Invoke(this, EventArgs.Empty);

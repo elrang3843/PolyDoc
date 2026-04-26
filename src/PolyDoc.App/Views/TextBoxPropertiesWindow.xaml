@@ -15,16 +15,83 @@
         <!-- ── 모양 ── -->
         <TextBlock Text="모양" FontWeight="SemiBold" Margin="0,0,0,6" />
         <ComboBox x:Name="CboShape"
-                  Margin="0,0,0,12"
+                  Margin="0,0,0,8"
                   Background="{DynamicResource SurfaceAlt}"
                   Foreground="{DynamicResource OnSurface}"
-                  BorderBrush="{DynamicResource Divider}">
+                  BorderBrush="{DynamicResource Divider}"
+                  SelectionChanged="OnShapeChanged">
             <ComboBoxItem Content="사각형" />
             <ComboBoxItem Content="말풍선" />
             <ComboBoxItem Content="구름풍선" />
             <ComboBoxItem Content="가시풍선" />
             <ComboBoxItem Content="번개상자" />
         </ComboBox>
+
+        <!-- ── 말풍선: 꼬리 방향 (8방향 그리드) ── -->
+        <Grid x:Name="PnlSpeech" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="꼬리 방향" VerticalAlignment="Center" />
+            <UniformGrid Grid.Column="1" Rows="3" Columns="3" Width="120"
+                         HorizontalAlignment="Left">
+                <RadioButton x:Name="RbSpeechTL" GroupName="SpeechDir" Tag="TopLeft"     Content="↖" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <RadioButton x:Name="RbSpeechT"  GroupName="SpeechDir" Tag="Top"         Content="↑" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <RadioButton x:Name="RbSpeechTR" GroupName="SpeechDir" Tag="TopRight"    Content="↗" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <RadioButton x:Name="RbSpeechL"  GroupName="SpeechDir" Tag="Left"        Content="←" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <Border /> <!-- center placeholder -->
+                <RadioButton x:Name="RbSpeechR"  GroupName="SpeechDir" Tag="Right"       Content="→" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <RadioButton x:Name="RbSpeechBL" GroupName="SpeechDir" Tag="BottomLeft"  Content="↙" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <RadioButton x:Name="RbSpeechB"  GroupName="SpeechDir" Tag="Bottom"      Content="↓" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <RadioButton x:Name="RbSpeechBR" GroupName="SpeechDir" Tag="BottomRight" Content="↘" Padding="6,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </UniformGrid>
+        </Grid>
+
+        <!-- ── 구름풍선: 뭉게 개수 ── -->
+        <Grid x:Name="PnlCloud" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="뭉게 개수 (6~32)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtCloudPuffs"
+                     Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
+        </Grid>
+
+        <!-- ── 가시풍선: 가시 개수 ── -->
+        <Grid x:Name="PnlSpiky" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="가시 개수 (5~24)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtSpikeCount"
+                     Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
+        </Grid>
+
+        <!-- ── 번개상자: 꺽임 개수 ── -->
+        <Grid x:Name="PnlLightning" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="꺽임 개수 (1~5)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtLightningBends"
+                     Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
+        </Grid>
 
         <!-- ── 테두리 ── -->
         <TextBlock Text="테두리" FontWeight="SemiBold" Margin="0,0,0,6" />

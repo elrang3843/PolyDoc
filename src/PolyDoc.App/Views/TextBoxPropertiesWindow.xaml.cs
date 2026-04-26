@@ -1,23 +1,29 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using PolyDoc.Core;
 using WpfMedia = System.Windows.Media;
 
 namespace PolyDoc.App.Views;
 
-/// <summary>글상자 테두리·배경·여백·정렬 편집 대화상자.</summary>
+/// <summary>글상자 테두리·배경·여백·정렬 + 모양별 형태 파라미터 편집 대화상자.</summary>
 public partial class TextBoxPropertiesWindow : Window
 {
-    public TextBoxShape  ResultShape            { get; private set; }
-    public string?       ResultBorderColor      { get; private set; }
+    public TextBoxShape  ResultShape             { get; private set; }
+    public string?       ResultBorderColor       { get; private set; }
     public double        ResultBorderThicknessPt { get; private set; }
-    public string?       ResultBackgroundColor  { get; private set; }
-    public double        ResultPaddingTopMm     { get; private set; }
-    public double        ResultPaddingBottomMm  { get; private set; }
-    public double        ResultPaddingLeftMm    { get; private set; }
-    public double        ResultPaddingRightMm   { get; private set; }
-    public TextBoxHAlign ResultHAlign           { get; private set; }
-    public TextBoxVAlign ResultVAlign           { get; private set; }
+    public string?       ResultBackgroundColor   { get; private set; }
+    public double        ResultPaddingTopMm      { get; private set; }
+    public double        ResultPaddingBottomMm   { get; private set; }
+    public double        ResultPaddingLeftMm     { get; private set; }
+    public double        ResultPaddingRightMm    { get; private set; }
+    public TextBoxHAlign ResultHAlign            { get; private set; }
+    public TextBoxVAlign ResultVAlign            { get; private set; }
+
+    public SpeechPointerDirection ResultSpeechDirection    { get; private set; }
+    public int                    ResultCloudPuffCount     { get; private set; }
+    public int                    ResultSpikeCount         { get; private set; }
+    public int                    ResultLightningBendCount { get; private set; }
 
     public TextBoxPropertiesWindow(TextBoxObject model)
     {
@@ -36,23 +42,74 @@ public partial class TextBoxPropertiesWindow : Window
         CboHAlign.SelectedIndex = (int)model.HAlign;
         CboVAlign.SelectedIndex = (int)model.VAlign;
 
+        // 모양별 파라미터
+        SelectSpeechDirection(model.SpeechDirection);
+        TxtCloudPuffs.Text     = model.CloudPuffCount.ToString();
+        TxtSpikeCount.Text     = model.SpikeCount.ToString();
+        TxtLightningBends.Text = model.LightningBendCount.ToString();
+
+        UpdateShapePanelVisibility();
+
         RefreshColorButton(BtnBorderColorPick,     TxtBorderColor.Text);
         RefreshColorButton(BtnBackgroundColorPick, TxtBackgroundColor.Text);
     }
 
+    // ── 모양 변경 → 해당 파라미터 패널만 표시 ──────────────────────
+
+    private void OnShapeChanged(object sender, SelectionChangedEventArgs e)
+        => UpdateShapePanelVisibility();
+
+    private void UpdateShapePanelVisibility()
+    {
+        var shape = (TextBoxShape)System.Math.Clamp(CboShape.SelectedIndex, 0, 4);
+        PnlSpeech.Visibility    = shape == TextBoxShape.Speech    ? Visibility.Visible : Visibility.Collapsed;
+        PnlCloud.Visibility     = shape == TextBoxShape.Cloud     ? Visibility.Visible : Visibility.Collapsed;
+        PnlSpiky.Visibility     = shape == TextBoxShape.Spiky     ? Visibility.Visible : Visibility.Collapsed;
+        PnlLightning.Visibility = shape == TextBoxShape.Lightning ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SelectSpeechDirection(SpeechPointerDirection dir)
+    {
+        var rb = dir switch
+        {
+            SpeechPointerDirection.TopLeft     => RbSpeechTL,
+            SpeechPointerDirection.Top         => RbSpeechT,
+            SpeechPointerDirection.TopRight    => RbSpeechTR,
+            SpeechPointerDirection.Left        => RbSpeechL,
+            SpeechPointerDirection.Right       => RbSpeechR,
+            SpeechPointerDirection.BottomLeft  => RbSpeechBL,
+            SpeechPointerDirection.Bottom      => RbSpeechB,
+            SpeechPointerDirection.BottomRight => RbSpeechBR,
+            _                                  => RbSpeechB,
+        };
+        rb.IsChecked = true;
+    }
+
+    private SpeechPointerDirection GetSelectedSpeechDirection()
+    {
+        if (RbSpeechTL.IsChecked == true) return SpeechPointerDirection.TopLeft;
+        if (RbSpeechT .IsChecked == true) return SpeechPointerDirection.Top;
+        if (RbSpeechTR.IsChecked == true) return SpeechPointerDirection.TopRight;
+        if (RbSpeechL .IsChecked == true) return SpeechPointerDirection.Left;
+        if (RbSpeechR .IsChecked == true) return SpeechPointerDirection.Right;
+        if (RbSpeechBL.IsChecked == true) return SpeechPointerDirection.BottomLeft;
+        if (RbSpeechBR.IsChecked == true) return SpeechPointerDirection.BottomRight;
+        return SpeechPointerDirection.Bottom;
+    }
+
     // ── 색 텍스트 변경 → 미리보기 버튼 갱신 ────────────────────────
 
-    private void OnBorderColorChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    private void OnBorderColorChanged(object sender, TextChangedEventArgs e)
         => RefreshColorButton(BtnBorderColorPick, TxtBorderColor.Text);
 
-    private void OnBackgroundColorChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    private void OnBackgroundColorChanged(object sender, TextChangedEventArgs e)
         => RefreshColorButton(BtnBackgroundColorPick, TxtBackgroundColor.Text);
 
-    private static void RefreshColorButton(System.Windows.Controls.Button btn, string? hex)
+    private static void RefreshColorButton(Button btn, string? hex)
     {
         if (string.IsNullOrWhiteSpace(hex))
         {
-            btn.Background = System.Windows.Media.Brushes.Transparent;
+            btn.Background = Brushes.Transparent;
             return;
         }
         try
@@ -62,7 +119,7 @@ public partial class TextBoxPropertiesWindow : Window
             var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(s)!;
             btn.Background = new SolidColorBrush(c);
         }
-        catch { btn.Background = System.Windows.Media.Brushes.Transparent; }
+        catch { btn.Background = Brushes.Transparent; }
     }
 
     // ── 색 선택 Picker ───────────────────────────────────────────────
@@ -73,7 +130,7 @@ public partial class TextBoxPropertiesWindow : Window
     private void OnBackgroundColorPickClick(object sender, RoutedEventArgs e)
         => PickColor(TxtBackgroundColor);
 
-    private void PickColor(System.Windows.Controls.TextBox target)
+    private void PickColor(TextBox target)
     {
         using var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true };
         if (TryParseWpfColor(target.Text, out var current))
@@ -99,7 +156,7 @@ public partial class TextBoxPropertiesWindow : Window
 
     private void OnOk(object sender, RoutedEventArgs e)
     {
-        ResultShape = (TextBoxShape)Math.Clamp(CboShape.SelectedIndex, 0, 4);
+        ResultShape = (TextBoxShape)System.Math.Clamp(CboShape.SelectedIndex, 0, 4);
 
         ResultBorderColor = string.IsNullOrWhiteSpace(TxtBorderColor.Text)
             ? null : TxtBorderColor.Text.Trim();
@@ -115,8 +172,13 @@ public partial class TextBoxPropertiesWindow : Window
         ResultPaddingLeftMm   = ParseMm(TxtPaddingLeft.Text);
         ResultPaddingRightMm  = ParseMm(TxtPaddingRight.Text);
 
-        ResultHAlign = (TextBoxHAlign)Math.Clamp(CboHAlign.SelectedIndex, 0, 3);
-        ResultVAlign = (TextBoxVAlign)Math.Clamp(CboVAlign.SelectedIndex, 0, 2);
+        ResultHAlign = (TextBoxHAlign)System.Math.Clamp(CboHAlign.SelectedIndex, 0, 3);
+        ResultVAlign = (TextBoxVAlign)System.Math.Clamp(CboVAlign.SelectedIndex, 0, 2);
+
+        ResultSpeechDirection    = GetSelectedSpeechDirection();
+        ResultCloudPuffCount     = ParseInt(TxtCloudPuffs.Text,     10, 6, 32);
+        ResultSpikeCount         = ParseInt(TxtSpikeCount.Text,     12, 5, 24);
+        ResultLightningBendCount = ParseInt(TxtLightningBends.Text,  2, 1,  5);
 
         DialogResult = true;
     }
@@ -125,4 +187,7 @@ public partial class TextBoxPropertiesWindow : Window
 
     private static double ParseMm(string? s)
         => double.TryParse(s?.Trim(), out var v) && v >= 0 ? v : 2.0;
+
+    private static int ParseInt(string? s, int fallback, int min, int max)
+        => int.TryParse(s?.Trim(), out var v) ? System.Math.Clamp(v, min, max) : fallback;
 }
