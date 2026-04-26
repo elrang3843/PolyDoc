@@ -286,6 +286,7 @@
   <data name="FormatOutlineBorderBottom"      xml:space="preserve"><value>아래 선</value></data>
   <data name="FormatOutlineBorderColor"       xml:space="preserve"><value>선 색</value></data>
   <data name="FormatOutlineBgColor"           xml:space="preserve"><value>배경색</value></data>
+  <data name="FormatOutlineBgNone"            xml:space="preserve"><value>없음 (투명)</value></data>
   <data name="FormatOutlinePreviewGroup"      xml:space="preserve"><value>미리보기</value></data>
   <data name="FormatOutlineResetLevel"        xml:space="preserve"><value>이 수준 초기화</value></data>
   <data name="FormatOutlineApplyAll"          xml:space="preserve"><value>문서에 적용</value></data>

@@ -193,6 +193,7 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string FormatOutlineBorderBottom     => SR.FormatOutlineBorderBottom;
     public string FormatOutlineBorderColor      => SR.FormatOutlineBorderColor;
     public string FormatOutlineBgColor          => SR.FormatOutlineBgColor;
+    public string FormatOutlineBgNone           => SR.FormatOutlineBgNone;
     public string FormatOutlinePreviewGroup     => SR.FormatOutlinePreviewGroup;
     public string FormatOutlineResetLevel       => SR.FormatOutlineResetLevel;
     public string FormatOutlineApplyAll         => SR.FormatOutlineApplyAll;

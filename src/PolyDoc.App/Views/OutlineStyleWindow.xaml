@@ -176,23 +176,29 @@
                         <TextBlock Text="{Binding FormatOutlineBgGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    FontWeight="SemiBold" />
                     </GroupBox.Header>
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Left"
-                                   Text="{Binding FormatOutlineBgColor, Source={x:Static svc:LocalizedStrings.Instance}}"
-                                   VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <Border x:Name="BgColorSwatch"
-                                DockPanel.Dock="Right"
-                                Width="20" Height="20" Margin="4,0,0,0"
-                                BorderBrush="{DynamicResource Divider}" BorderThickness="1"
-                                Cursor="Hand"
-                                MouseLeftButtonDown="OnBgSwatchClick" />
-                        <TextBox x:Name="TxtBgColor"
-                                 Padding="4,2"
-                                 Background="{DynamicResource SurfaceAlt}"
-                                 Foreground="{DynamicResource OnSurface}"
-                                 BorderBrush="{DynamicResource Divider}"
-                                 TextChanged="OnBgColorChanged" />
-                    </DockPanel>
+                    <StackPanel>
+                        <CheckBox x:Name="ChkBgNone"
+                                  Content="{Binding FormatOutlineBgNone, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  Margin="0,2,0,6"
+                                  Checked="OnBgNoneChanged" Unchecked="OnBgNoneChanged" />
+                        <DockPanel x:Name="PanelBgColor">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="{Binding FormatOutlineBgColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <Border x:Name="BgColorSwatch"
+                                    DockPanel.Dock="Right"
+                                    Width="20" Height="20" Margin="4,0,0,0"
+                                    BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                                    Cursor="Hand"
+                                    MouseLeftButtonDown="OnBgSwatchClick" />
+                            <TextBox x:Name="TxtBgColor"
+                                     Padding="4,2"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnBgColorChanged" />
+                        </DockPanel>
+                    </StackPanel>
                 </GroupBox>
 
             </StackPanel>

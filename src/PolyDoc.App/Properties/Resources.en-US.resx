@@ -286,6 +286,7 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="FormatOutlineBorderBottom"      xml:space="preserve"><value>Bottom line</value></data>
   <data name="FormatOutlineBorderColor"       xml:space="preserve"><value>Line color</value></data>
   <data name="FormatOutlineBgColor"           xml:space="preserve"><value>Background color</value></data>
+  <data name="FormatOutlineBgNone"            xml:space="preserve"><value>None (transparent)</value></data>
   <data name="FormatOutlinePreviewGroup"      xml:space="preserve"><value>Preview</value></data>
   <data name="FormatOutlineResetLevel"        xml:space="preserve"><value>Reset this level</value></data>
   <data name="FormatOutlineApplyAll"          xml:space="preserve"><value>Apply to document</value></data>

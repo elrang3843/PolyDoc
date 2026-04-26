@@ -134,6 +134,9 @@ public partial class OutlineStyleWindow : Window
                 BorderColorSwatch.Background = null;
 
             // 배경색
+            bool bgNone = string.IsNullOrEmpty(ls.BackgroundColor);
+            ChkBgNone.IsChecked   = bgNone;
+            PanelBgColor.IsEnabled = !bgNone;
             TxtBgColor.Text = ls.BackgroundColor ?? "";
             if (TryParseColor(ls.BackgroundColor, out var bgc))
                 BgColorSwatch.Background = new WpfMedia.SolidColorBrush(bgc);
@@ -246,7 +249,7 @@ public partial class OutlineStyleWindow : Window
     }
 
     private void OnBorderSwatchClick(object sender, MouseButtonEventArgs e)
-        => TxtBorderColor.Focus();
+        => PickColor(TxtBorderColor);
 
     private void OnBorderColorChanged(object sender, TextChangedEventArgs e)
     {
@@ -268,7 +271,25 @@ public partial class OutlineStyleWindow : Window
     // ── 배경색 ──────────────────────────────────────────────────
 
     private void OnBgSwatchClick(object sender, MouseButtonEventArgs e)
-        => TxtBgColor.Focus();
+        => PickColor(TxtBgColor);
+
+    private void OnBgNoneChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppress) return;
+        bool none = ChkBgNone.IsChecked == true;
+        PanelBgColor.IsEnabled = !none;
+        if (none)
+        {
+            CurrentLevelStyle.BackgroundColor = null;
+            BgColorSwatch.Background = null;
+        }
+        else if (TryParseColor(TxtBgColor.Text, out var c))
+        {
+            CurrentLevelStyle.BackgroundColor = NormalizeHex(TxtBgColor.Text.Trim());
+            BgColorSwatch.Background = new WpfMedia.SolidColorBrush(c);
+        }
+        UpdatePreview();
+    }
 
     private void OnBgColorChanged(object sender, TextChangedEventArgs e)
     {
@@ -423,6 +444,18 @@ public partial class OutlineStyleWindow : Window
     private void OnClose(object sender, RoutedEventArgs e) => DialogResult = false;
 
     // ── 유틸 ────────────────────────────────────────────────────
+
+    private void PickColor(System.Windows.Controls.TextBox target)
+    {
+        using var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true };
+        if (TryParseColor(target.Text, out var current))
+            dlg.Color = System.Drawing.Color.FromArgb(current.A, current.R, current.G, current.B);
+        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var p = dlg.Color;
+            target.Text = $"#{p.R:X2}{p.G:X2}{p.B:X2}";
+        }
+    }
 
     private static bool TryParseColor(string? hex, out WpfMedia.Color color)
     {

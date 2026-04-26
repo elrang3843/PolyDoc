@@ -269,6 +269,7 @@ namespace PolyDoc.App.Properties
         internal static string FormatOutlineBorderBottom     => Get(nameof(FormatOutlineBorderBottom));
         internal static string FormatOutlineBorderColor      => Get(nameof(FormatOutlineBorderColor));
         internal static string FormatOutlineBgColor          => Get(nameof(FormatOutlineBgColor));
+        internal static string FormatOutlineBgNone           => Get(nameof(FormatOutlineBgNone));
         internal static string FormatOutlinePreviewGroup     => Get(nameof(FormatOutlinePreviewGroup));
         internal static string FormatOutlineResetLevel       => Get(nameof(FormatOutlineResetLevel));
         internal static string FormatOutlineApplyAll         => Get(nameof(FormatOutlineApplyAll));
