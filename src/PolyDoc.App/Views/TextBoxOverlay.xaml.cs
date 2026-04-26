@@ -338,6 +338,21 @@ public partial class TextBoxOverlay : UserControl
             TextBoxVAlign.Bottom => VerticalAlignment.Bottom,
             _                    => VerticalAlignment.Stretch,
         };
+
+        // ── 회전 ───────────────────────────────────────────────────────
+        // 박스 중심을 피벗으로 모양·본문 모두 함께 회전. 0이면 transform 제거.
+        // 드래그/리사이즈 좌표는 부모 캔버스 좌표계 기반이라 회전과 무관하게 동작 —
+        // 다만 회전 상태에서 핸들 드래그 시 마우스 이동 방향과 박스 변 방향이 어긋나
+        // 약간 어색해 보일 수 있다 (회전 0 으로 되돌려 조절 권장).
+        if (Math.Abs(Model.RotationAngleDeg) < 0.01)
+        {
+            RenderTransform = Transform.Identity;
+        }
+        else
+        {
+            RenderTransformOrigin = new Point(0.5, 0.5);
+            RenderTransform = new RotateTransform(Model.RotationAngleDeg);
+        }
     }
 
     // PolyDoc.Core.Color 와 충돌하므로 WpfMedia alias 로 명시.
@@ -429,6 +444,7 @@ public partial class TextBoxOverlay : UserControl
             Model.CloudPuffCount     = dlg.ResultCloudPuffCount;
             Model.SpikeCount         = dlg.ResultSpikeCount;
             Model.LightningBendCount = dlg.ResultLightningBendCount;
+            Model.RotationAngleDeg   = dlg.ResultRotationAngleDeg;
             Model.Status             = NodeStatus.Modified;
             ApplyShapeFromModel();
             AppearanceChangedCommitted?.Invoke(this, EventArgs.Empty);

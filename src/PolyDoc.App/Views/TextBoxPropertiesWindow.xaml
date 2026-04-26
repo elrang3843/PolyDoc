@@ -246,7 +246,7 @@
         <!-- ── 정렬 ── -->
         <TextBlock Text="정렬" FontWeight="SemiBold" Margin="0,0,0,6" />
 
-        <Grid Margin="0,0,0,20">
+        <Grid Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="100" />
                 <ColumnDefinition Width="*" />
@@ -276,6 +276,24 @@
                 <ComboBoxItem Content="가운데" />
                 <ComboBoxItem Content="아래" />
             </ComboBox>
+        </Grid>
+
+        <!-- ── 회전 ── -->
+        <TextBlock Text="회전" FontWeight="SemiBold" Margin="0,0,0,6" />
+
+        <Grid Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="각도 (°, -360~360)" VerticalAlignment="Center"
+                       TextWrapping="Wrap" />
+            <TextBox x:Name="TxtRotationAngle"
+                     Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
         </Grid>
 
         <!-- ── 확인 / 취소 ── -->

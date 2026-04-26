@@ -24,6 +24,7 @@ public partial class TextBoxPropertiesWindow : Window
     public int                    ResultCloudPuffCount     { get; private set; }
     public int                    ResultSpikeCount         { get; private set; }
     public int                    ResultLightningBendCount { get; private set; }
+    public double                 ResultRotationAngleDeg   { get; private set; }
 
     public TextBoxPropertiesWindow(TextBoxObject model)
     {
@@ -47,6 +48,7 @@ public partial class TextBoxPropertiesWindow : Window
         TxtCloudPuffs.Text     = model.CloudPuffCount.ToString();
         TxtSpikeCount.Text     = model.SpikeCount.ToString();
         TxtLightningBends.Text = model.LightningBendCount.ToString();
+        TxtRotationAngle.Text  = model.RotationAngleDeg.ToString("0.##");
 
         UpdateShapePanelVisibility();
 
@@ -179,9 +181,13 @@ public partial class TextBoxPropertiesWindow : Window
         ResultCloudPuffCount     = ParseInt(TxtCloudPuffs.Text,     10, 6, 32);
         ResultSpikeCount         = ParseInt(TxtSpikeCount.Text,     12, 5, 24);
         ResultLightningBendCount = ParseInt(TxtLightningBends.Text,  2, 1,  5);
+        ResultRotationAngleDeg   = ParseAngle(TxtRotationAngle.Text);
 
         DialogResult = true;
     }
+
+    private static double ParseAngle(string? s)
+        => double.TryParse(s?.Trim(), out var v) ? System.Math.Clamp(v, -360, 360) : 0;
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 

@@ -67,6 +67,9 @@ public sealed class TextBoxObject : FloatingObject
     public TextBoxHAlign HAlign { get; set; } = TextBoxHAlign.Left;
     public TextBoxVAlign VAlign { get; set; } = TextBoxVAlign.Top;
 
+    /// <summary>박스 전체 회전각 (도, 시계방향). 모양과 본문 모두 함께 회전. -360~360.</summary>
+    public double RotationAngleDeg { get; set; }
+
     // ── 모양별 형태 파라미터 ─────────────────────────────────────────────────
     /// <summary>말풍선(Speech) 꼬리가 뻗는 방향.</summary>
     public SpeechPointerDirection SpeechDirection { get; set; } = SpeechPointerDirection.Bottom;
