@@ -315,20 +315,9 @@ public partial class CharFormatWindow : Window
     {
         bool needsContainer = Math.Abs(widthPercent - 100) > 0.5 || Math.Abs(letterSpacingPx) > 0.01;
         var sel = _editor.Selection;
+        if (sel.IsEmpty) return;
 
-        // 선택 영역 내 모든 인라인 수집
-        var inlines = new System.Collections.Generic.List<Inline>();
-        var ptr = sel.Start;
-        while (ptr != null && ptr.CompareTo(sel.End) < 0)
-        {
-            if (ptr.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.ElementStart)
-            {
-                var elem = ptr.GetAdjacentElement(LogicalDirection.Forward);
-                if (elem is Run or InlineUIContainer)
-                    inlines.Add((Inline)elem);
-            }
-            ptr = ptr.GetNextContextPosition(LogicalDirection.Forward);
-        }
+        var inlines = CollectLeafInlines(sel);
 
         foreach (var inline in inlines)
         {
@@ -351,6 +340,35 @@ public partial class CharFormatWindow : Window
 
             ReplaceInline(inline, newInline);
         }
+    }
+
+    /// <summary>
+    /// 선택 영역의 모든 Run / InlineUIContainer 를 중복 없이 수집.
+    /// sel.Start 가 Run 내부(Text 컨텍스트)에 위치할 때 ElementStart 를 볼 수 없으므로
+    /// 루프 전에 sel.Start.Parent 를 먼저 확인한다.
+    /// </summary>
+    private static System.Collections.Generic.List<Inline> CollectLeafInlines(TextSelection sel)
+    {
+        var result = new System.Collections.Generic.List<Inline>();
+
+        void TryAdd(object? obj)
+        {
+            if (obj is Run r && !result.Contains(r)) result.Add(r);
+            else if (obj is InlineUIContainer iuc && !result.Contains(iuc)) result.Add(iuc);
+        }
+
+        // sel.Start 가 Run/IUC 내부를 가리킬 때 (TextPointerContext.Text) 해당 요소를 선추가
+        TryAdd(sel.Start.Parent);
+
+        var ptr = sel.Start;
+        while (ptr != null && ptr.CompareTo(sel.End) < 0)
+        {
+            if (ptr.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.ElementStart)
+                TryAdd(ptr.GetAdjacentElement(LogicalDirection.Forward));
+            ptr = ptr.GetNextContextPosition(LogicalDirection.Forward);
+        }
+
+        return result;
     }
 
     private static void ReplaceInline(Inline old, Inline replacement)
@@ -444,8 +462,9 @@ public partial class CharFormatWindow : Window
     private Inline? GetFirstInlineInSelection()
     {
         var sel = _editor.Selection;
-        if (sel.IsEmpty)
-            return sel.Start.Parent as Inline;
+        // sel.Start.Parent が Run/IUC なら即返す (Text コンテキストで ElementStart が見えないケース対策)
+        if (sel.Start.Parent is Run or InlineUIContainer)
+            return (Inline)sel.Start.Parent;
 
         var ptr = sel.Start;
         while (ptr != null && ptr.CompareTo(sel.End) < 0)
