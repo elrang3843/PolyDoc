@@ -81,6 +81,27 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string FindReplaceReplaceAll  => SR.FindReplaceReplaceAll;
     public string FindReplaceClose       => SR.FindReplaceClose;
 
+    // ── 문서 정보 다이얼로그 ────────────────────────────────────
+    public string DocInfoTitle      => SR.DocInfoTitle;
+    public string DocInfoGroupFile  => SR.DocInfoGroupFile;
+    public string DocInfoGroupMeta  => SR.DocInfoGroupMeta;
+    public string DocInfoGroupStats => SR.DocInfoGroupStats;
+    public string DocInfoPath       => SR.DocInfoPath;
+    public string DocInfoFormat     => SR.DocInfoFormat;
+    public string DocInfoDataSize   => SR.DocInfoDataSize;
+    public string DocInfoDocTitle   => SR.DocInfoDocTitle;
+    public string DocInfoAuthor     => SR.DocInfoAuthor;
+    public string DocInfoLanguage   => SR.DocInfoLanguage;
+    public string DocInfoCreated    => SR.DocInfoCreated;
+    public string DocInfoModified   => SR.DocInfoModified;
+    public string DocInfoParas      => SR.DocInfoParas;
+    public string DocInfoChars      => SR.DocInfoChars;
+    public string DocInfoWords      => SR.DocInfoWords;
+    public string DocInfoLines      => SR.DocInfoLines;
+    public string DocInfoSections   => SR.DocInfoSections;
+    public string DocInfoTables     => SR.DocInfoTables;
+    public string DocInfoImages     => SR.DocInfoImages;
+
     // ── 설정 다이얼로그 ─────────────────────────────────────────
     public string SettingsTitle       => SR.SettingsTitle;
     public string SettingsTheme       => SR.SettingsTheme;

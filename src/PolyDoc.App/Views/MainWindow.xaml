@@ -66,7 +66,7 @@
                 <Separator />
                 <MenuItem Header="{Binding MenuEditFindReplace, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding FindReplaceCommand}" InputGestureText="Ctrl+F" />
                 <Separator />
-                <MenuItem Header="{Binding MenuEditDocInfo, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuEditDocInfo, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding DocInfoCommand}" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuInsert, Source={x:Static svc:LocalizedStrings.Instance}}">

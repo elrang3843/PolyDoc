@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -6,6 +7,7 @@ using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
+using PolyDoc.App.Models;
 using PolyDoc.App.Services;
 using PolyDoc.App.Views;
 using PolyDoc.Core;
@@ -232,6 +234,87 @@ public partial class MainViewModel : ObservableObject
             Owner = Application.Current.MainWindow,
         };
         window.ShowDialog();
+    }
+
+    [RelayCommand]
+    private void DocInfo()
+    {
+        var text = _document.ToPlainText();
+        var charsNoSpace = text.Replace(" ", "").Replace("\n", "").Replace("\r", "").Length;
+        var charsWithSpace = text.Replace("\n", "").Replace("\r", "").Length;
+        var words = text.Split(new[] { ' ', '\n', '\r', '\t' },
+                               StringSplitOptions.RemoveEmptyEntries).Length;
+        var lines = text.Split('\n').Length;
+
+        var (paras, tables, images) = CountBlocks(_document.Sections);
+        var bytes = DocumentMeasurement.EstimateBytes(_document);
+        var meta  = _document.Metadata;
+        var none  = SR.DocInfoNone;
+
+        var path   = string.IsNullOrEmpty(CurrentFilePath) ? SR.DocInfoNotSaved : CurrentFilePath;
+        var format = string.IsNullOrEmpty(CurrentFilePath)
+            ? SR.DlgNewDocTitle
+            : Path.GetExtension(CurrentFilePath).TrimStart('.').ToUpperInvariant();
+
+        var info = new DocumentInfoModel
+        {
+            FilePath       = path,
+            Format         = format,
+            DataSize       = DocumentMeasurement.FormatBytes(bytes),
+            DocTitle       = string.IsNullOrWhiteSpace(meta.Title)  ? none : meta.Title,
+            Author         = string.IsNullOrWhiteSpace(meta.Author) ? none : meta.Author,
+            Language       = meta.Language,
+            Created        = meta.Created.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
+            Modified       = meta.Modified.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
+            ParagraphCount = paras.ToString("N0"),
+            CharCount      = $"{charsNoSpace:N0}  ({charsWithSpace:N0} 공백 포함)",
+            WordCount      = words.ToString("N0"),
+            LineCount      = lines.ToString("N0"),
+            SectionCount   = _document.Sections.Count.ToString("N0"),
+            TableCount     = tables.ToString("N0"),
+            ImageCount     = images.ToString("N0"),
+        };
+
+        var dlg = new DocumentInfoWindow(info) { Owner = Application.Current.MainWindow };
+        dlg.ShowDialog();
+    }
+
+    private static (int paragraphs, int tables, int images) CountBlocks(IEnumerable<Section> sections)
+    {
+        int p = 0, t = 0, i = 0;
+        foreach (var section in sections)
+        {
+            var (sp, st, si) = CountBlocks(section.Blocks);
+            p += sp; t += st; i += si;
+        }
+        return (p, t, i);
+    }
+
+    private static (int paragraphs, int tables, int images) CountBlocks(IList<Block> blocks)
+    {
+        int p = 0, t = 0, i = 0;
+        foreach (var block in blocks)
+        {
+            switch (block)
+            {
+                case Paragraph:
+                    p++;
+                    break;
+                case Table table:
+                    t++;
+                    foreach (var row in table.Rows)
+                        foreach (var cell in row.Cells)
+                        {
+                            var (cp, ct, ci) = CountBlocks(cell.Blocks);
+                            p += cp; t += ct; i += ci;
+                        }
+                    break;
+                case ImageBlock:
+                    i++;
+                    break;
+            }
+        }
+        return (p, t, i);
     }
 
     [RelayCommand]

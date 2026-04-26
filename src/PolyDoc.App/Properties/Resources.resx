@@ -131,7 +131,29 @@
   <data name="DlgFileSaveTitle" xml:space="preserve"><value>다른 이름으로 저장</value></data>
   <data name="DlgDefaultFileName" xml:space="preserve"><value>문서.iwpf</value></data>
 
-  <!-- About -->
+  <!-- 문서 정보 다이얼로그 -->
+  <data name="DocInfoTitle"       xml:space="preserve"><value>문서 정보</value></data>
+  <data name="DocInfoGroupFile"   xml:space="preserve"><value>파일</value></data>
+  <data name="DocInfoGroupMeta"   xml:space="preserve"><value>문서 속성</value></data>
+  <data name="DocInfoGroupStats"  xml:space="preserve"><value>통계</value></data>
+  <data name="DocInfoPath"        xml:space="preserve"><value>경로</value></data>
+  <data name="DocInfoFormat"      xml:space="preserve"><value>형식</value></data>
+  <data name="DocInfoDataSize"    xml:space="preserve"><value>데이터 크기</value></data>
+  <data name="DocInfoDocTitle"    xml:space="preserve"><value>제목</value></data>
+  <data name="DocInfoAuthor"      xml:space="preserve"><value>작성자</value></data>
+  <data name="DocInfoLanguage"    xml:space="preserve"><value>언어</value></data>
+  <data name="DocInfoCreated"     xml:space="preserve"><value>생성일</value></data>
+  <data name="DocInfoModified"    xml:space="preserve"><value>수정일</value></data>
+  <data name="DocInfoParas"       xml:space="preserve"><value>문단</value></data>
+  <data name="DocInfoChars"       xml:space="preserve"><value>글자</value></data>
+  <data name="DocInfoWords"       xml:space="preserve"><value>단어</value></data>
+  <data name="DocInfoLines"       xml:space="preserve"><value>줄</value></data>
+  <data name="DocInfoSections"    xml:space="preserve"><value>섹션</value></data>
+  <data name="DocInfoTables"      xml:space="preserve"><value>표</value></data>
+  <data name="DocInfoImages"      xml:space="preserve"><value>이미지</value></data>
+  <data name="DocInfoNotSaved"    xml:space="preserve"><value>(저장되지 않음)</value></data>
+  <data name="DocInfoNone"        xml:space="preserve"><value>(없음)</value></data>
+
   <data name="AboutTitle" xml:space="preserve"><value>PolyDoc 정보</value></data>
   <data name="AboutProduct" xml:space="preserve"><value>PolyDoc</value></data>
   <data name="AboutCompany" xml:space="preserve"><value>핸텍 (HANDTECH)</value></data>

@@ -119,6 +119,29 @@ namespace PolyDoc.App.Properties
         internal static string DlgFileSaveTitle         => Get(nameof(DlgFileSaveTitle));
         internal static string DlgDefaultFileName       => Get(nameof(DlgDefaultFileName));
 
+        // ── 문서 정보 다이얼로그 ────────────────────────────────────
+        internal static string DocInfoTitle      => Get(nameof(DocInfoTitle));
+        internal static string DocInfoGroupFile  => Get(nameof(DocInfoGroupFile));
+        internal static string DocInfoGroupMeta  => Get(nameof(DocInfoGroupMeta));
+        internal static string DocInfoGroupStats => Get(nameof(DocInfoGroupStats));
+        internal static string DocInfoPath       => Get(nameof(DocInfoPath));
+        internal static string DocInfoFormat     => Get(nameof(DocInfoFormat));
+        internal static string DocInfoDataSize   => Get(nameof(DocInfoDataSize));
+        internal static string DocInfoDocTitle   => Get(nameof(DocInfoDocTitle));
+        internal static string DocInfoAuthor     => Get(nameof(DocInfoAuthor));
+        internal static string DocInfoLanguage   => Get(nameof(DocInfoLanguage));
+        internal static string DocInfoCreated    => Get(nameof(DocInfoCreated));
+        internal static string DocInfoModified   => Get(nameof(DocInfoModified));
+        internal static string DocInfoParas      => Get(nameof(DocInfoParas));
+        internal static string DocInfoChars      => Get(nameof(DocInfoChars));
+        internal static string DocInfoWords      => Get(nameof(DocInfoWords));
+        internal static string DocInfoLines      => Get(nameof(DocInfoLines));
+        internal static string DocInfoSections   => Get(nameof(DocInfoSections));
+        internal static string DocInfoTables     => Get(nameof(DocInfoTables));
+        internal static string DocInfoImages     => Get(nameof(DocInfoImages));
+        internal static string DocInfoNotSaved   => Get(nameof(DocInfoNotSaved));
+        internal static string DocInfoNone       => Get(nameof(DocInfoNone));
+
         // ── About ────────────────────────────────────────────────────
         internal static string AboutTitle   => Get(nameof(AboutTitle));
         internal static string AboutProduct => Get(nameof(AboutProduct));
