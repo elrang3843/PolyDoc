@@ -301,4 +301,37 @@
   <data name="FormatOutlinePresetAcademic"    xml:space="preserve"><value>학술</value></data>
   <data name="FormatOutlinePresetBusiness"    xml:space="preserve"><value>비즈니스</value></data>
   <data name="FormatOutlinePresetModern"      xml:space="preserve"><value>모던</value></data>
+
+  <!-- ── 페이지 서식 ── -->
+  <data name="PageFormatTitle"              xml:space="preserve"><value>페이지 모양</value></data>
+  <data name="PageFormatPaperTab"           xml:space="preserve"><value>용지</value></data>
+  <data name="PageFormatMarginsTab"         xml:space="preserve"><value>여백</value></data>
+  <data name="PageFormatLayoutTab"          xml:space="preserve"><value>레이아웃</value></data>
+  <data name="PageFormatSizeLabel"          xml:space="preserve"><value>용지 크기</value></data>
+  <data name="PageFormatCustomSize"         xml:space="preserve"><value>사용자 정의</value></data>
+  <data name="PageFormatWidthLabel"         xml:space="preserve"><value>너비 (mm)</value></data>
+  <data name="PageFormatHeightLabel"        xml:space="preserve"><value>높이 (mm)</value></data>
+  <data name="PageFormatOrientation"        xml:space="preserve"><value>방향</value></data>
+  <data name="PageFormatPortrait"           xml:space="preserve"><value>세로</value></data>
+  <data name="PageFormatLandscape"          xml:space="preserve"><value>가로</value></data>
+  <data name="PageFormatPaperColor"         xml:space="preserve"><value>용지 색상</value></data>
+  <data name="PageFormatPaperColorDefault"  xml:space="preserve"><value>흰색 (기본)</value></data>
+  <data name="PageFormatMarginTop"          xml:space="preserve"><value>위 (mm)</value></data>
+  <data name="PageFormatMarginBottom"       xml:space="preserve"><value>아래 (mm)</value></data>
+  <data name="PageFormatMarginLeft"         xml:space="preserve"><value>왼쪽 (mm)</value></data>
+  <data name="PageFormatMarginRight"        xml:space="preserve"><value>오른쪽 (mm)</value></data>
+  <data name="PageFormatMarginHeader"       xml:space="preserve"><value>머리말 (mm)</value></data>
+  <data name="PageFormatMarginFooter"       xml:space="preserve"><value>꼬리말 (mm)</value></data>
+  <data name="PageFormatColumns"            xml:space="preserve"><value>단 수</value></data>
+  <data name="PageFormatColumnGap"          xml:space="preserve"><value>단 간격 (mm)</value></data>
+  <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>페이지 번호 시작</value></data>
+  <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>미리보기</value></data>
+  <!-- 용지 크기 그룹 헤더 -->
+  <data name="PageSizeGroupIsoA"            xml:space="preserve"><value>— ISO A 시리즈 —</value></data>
+  <data name="PageSizeGroupIsoB"            xml:space="preserve"><value>— ISO B 시리즈 —</value></data>
+  <data name="PageSizeGroupJisB"            xml:space="preserve"><value>— JIS/KS B 시리즈 —</value></data>
+  <data name="PageSizeGroupUS"              xml:space="preserve"><value>— 미국·국제 —</value></data>
+  <data name="PageSizeGroupNewspaper"       xml:space="preserve"><value>— 신문 판형 —</value></data>
+  <data name="PageSizeGroupKoreanBook"      xml:space="preserve"><value>— 한국 도서 판형 —</value></data>
+  <data name="PageSizeGroupIntlBook"        xml:space="preserve"><value>— 국제 도서 판형 —</value></data>
 </root>

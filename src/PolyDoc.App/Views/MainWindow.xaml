@@ -90,7 +90,8 @@
                           Click="OnFormatChar" />
                 <MenuItem Header="{Binding MenuFormatPara, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnFormatPara" />
-                <MenuItem Header="{Binding MenuFormatPage, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuFormatPage, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnFormatPage" />
                 <Separator />
                 <MenuItem Header="{Binding MenuFormatOutline, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="{Binding OutlineStyleCommand}" />

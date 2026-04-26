@@ -301,4 +301,36 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="FormatOutlinePresetAcademic"    xml:space="preserve"><value>Academic</value></data>
   <data name="FormatOutlinePresetBusiness"    xml:space="preserve"><value>Business</value></data>
   <data name="FormatOutlinePresetModern"      xml:space="preserve"><value>Modern</value></data>
+
+  <!-- ── Page Format ── -->
+  <data name="PageFormatTitle"              xml:space="preserve"><value>Page Setup</value></data>
+  <data name="PageFormatPaperTab"           xml:space="preserve"><value>Paper</value></data>
+  <data name="PageFormatMarginsTab"         xml:space="preserve"><value>Margins</value></data>
+  <data name="PageFormatLayoutTab"          xml:space="preserve"><value>Layout</value></data>
+  <data name="PageFormatSizeLabel"          xml:space="preserve"><value>Paper size</value></data>
+  <data name="PageFormatCustomSize"         xml:space="preserve"><value>Custom</value></data>
+  <data name="PageFormatWidthLabel"         xml:space="preserve"><value>Width (mm)</value></data>
+  <data name="PageFormatHeightLabel"        xml:space="preserve"><value>Height (mm)</value></data>
+  <data name="PageFormatOrientation"        xml:space="preserve"><value>Orientation</value></data>
+  <data name="PageFormatPortrait"           xml:space="preserve"><value>Portrait</value></data>
+  <data name="PageFormatLandscape"          xml:space="preserve"><value>Landscape</value></data>
+  <data name="PageFormatPaperColor"         xml:space="preserve"><value>Paper color</value></data>
+  <data name="PageFormatPaperColorDefault"  xml:space="preserve"><value>White (default)</value></data>
+  <data name="PageFormatMarginTop"          xml:space="preserve"><value>Top (mm)</value></data>
+  <data name="PageFormatMarginBottom"       xml:space="preserve"><value>Bottom (mm)</value></data>
+  <data name="PageFormatMarginLeft"         xml:space="preserve"><value>Left (mm)</value></data>
+  <data name="PageFormatMarginRight"        xml:space="preserve"><value>Right (mm)</value></data>
+  <data name="PageFormatMarginHeader"       xml:space="preserve"><value>Header (mm)</value></data>
+  <data name="PageFormatMarginFooter"       xml:space="preserve"><value>Footer (mm)</value></data>
+  <data name="PageFormatColumns"            xml:space="preserve"><value>Columns</value></data>
+  <data name="PageFormatColumnGap"          xml:space="preserve"><value>Column gap (mm)</value></data>
+  <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>Page number start</value></data>
+  <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>Preview</value></data>
+  <data name="PageSizeGroupIsoA"            xml:space="preserve"><value>— ISO A Series —</value></data>
+  <data name="PageSizeGroupIsoB"            xml:space="preserve"><value>— ISO B Series —</value></data>
+  <data name="PageSizeGroupJisB"            xml:space="preserve"><value>— JIS/KS B Series —</value></data>
+  <data name="PageSizeGroupUS"              xml:space="preserve"><value>— US / International —</value></data>
+  <data name="PageSizeGroupNewspaper"       xml:space="preserve"><value>— Newspaper —</value></data>
+  <data name="PageSizeGroupKoreanBook"      xml:space="preserve"><value>— Korean Book Sizes —</value></data>
+  <data name="PageSizeGroupIntlBook"        xml:space="preserve"><value>— International Book Sizes —</value></data>
 </root>

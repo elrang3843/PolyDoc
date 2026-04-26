@@ -209,6 +209,38 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string FormatOutlinePresetBusiness   => SR.FormatOutlinePresetBusiness;
     public string FormatOutlinePresetModern     => SR.FormatOutlinePresetModern;
 
+    // ── 페이지 서식 ─────────────────────────────────────────────
+    public string PageFormatTitle             => SR.PageFormatTitle;
+    public string PageFormatPaperTab          => SR.PageFormatPaperTab;
+    public string PageFormatMarginsTab        => SR.PageFormatMarginsTab;
+    public string PageFormatLayoutTab         => SR.PageFormatLayoutTab;
+    public string PageFormatSizeLabel         => SR.PageFormatSizeLabel;
+    public string PageFormatCustomSize        => SR.PageFormatCustomSize;
+    public string PageFormatWidthLabel        => SR.PageFormatWidthLabel;
+    public string PageFormatHeightLabel       => SR.PageFormatHeightLabel;
+    public string PageFormatOrientation       => SR.PageFormatOrientation;
+    public string PageFormatPortrait          => SR.PageFormatPortrait;
+    public string PageFormatLandscape         => SR.PageFormatLandscape;
+    public string PageFormatPaperColor        => SR.PageFormatPaperColor;
+    public string PageFormatPaperColorDefault => SR.PageFormatPaperColorDefault;
+    public string PageFormatMarginTop         => SR.PageFormatMarginTop;
+    public string PageFormatMarginBottom      => SR.PageFormatMarginBottom;
+    public string PageFormatMarginLeft        => SR.PageFormatMarginLeft;
+    public string PageFormatMarginRight       => SR.PageFormatMarginRight;
+    public string PageFormatMarginHeader      => SR.PageFormatMarginHeader;
+    public string PageFormatMarginFooter      => SR.PageFormatMarginFooter;
+    public string PageFormatColumns           => SR.PageFormatColumns;
+    public string PageFormatColumnGap         => SR.PageFormatColumnGap;
+    public string PageFormatPageNumberStart   => SR.PageFormatPageNumberStart;
+    public string PageFormatPreviewGroup      => SR.PageFormatPreviewGroup;
+    public string PageSizeGroupIsoA           => SR.PageSizeGroupIsoA;
+    public string PageSizeGroupIsoB           => SR.PageSizeGroupIsoB;
+    public string PageSizeGroupJisB           => SR.PageSizeGroupJisB;
+    public string PageSizeGroupUS             => SR.PageSizeGroupUS;
+    public string PageSizeGroupNewspaper      => SR.PageSizeGroupNewspaper;
+    public string PageSizeGroupKoreanBook     => SR.PageSizeGroupKoreanBook;
+    public string PageSizeGroupIntlBook       => SR.PageSizeGroupIntlBook;
+
     // ── 설정 다이얼로그 ─────────────────────────────────────────
     public string SettingsTitle       => SR.SettingsTitle;
     public string SettingsTheme       => SR.SettingsTheme;

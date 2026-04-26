@@ -32,12 +32,43 @@ public static class FlowDocumentBuilder
 
         var outlineStyles = document.OutlineStyles ?? OutlineStyleSet.CreateDefault();
 
+        // 첫 번째 섹션의 PageSettings 를 FlowDocument 기본으로 사용
+        var page = document.Sections.FirstOrDefault()?.Page ?? new PageSettings();
+
+        double wDip = MmToDip(page.EffectiveWidthMm);
+        double padL = MmToDip(page.MarginLeftMm);
+        double padR = MmToDip(page.MarginRightMm);
+        double padT = MmToDip(page.MarginTopMm);
+        double padB = MmToDip(page.MarginBottomMm);
+
         var fd = new Wpf.FlowDocument
         {
-            FontFamily = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
-            FontSize = PtToDip(11),
-            PagePadding = new Thickness(48),
+            FontFamily  = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
+            FontSize    = PtToDip(11),
+            PageWidth   = wDip,
+            PagePadding = new Thickness(padL, padT, padR, padB),
         };
+
+        // 용지 배경색
+        if (!string.IsNullOrEmpty(page.PaperColor))
+        {
+            try
+            {
+                var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(page.PaperColor)!;
+                fd.Background = new WpfMedia.SolidColorBrush(c);
+            }
+            catch { /* 파싱 실패 시 기본 배경 유지 */ }
+        }
+
+        // 다단 — FlowDocument.ColumnWidth 로 단 너비 지정
+        // (RichTextBox 에서는 시각적 효과가 제한적이나 PageViewer/Print 에서 적용됨)
+        if (page.ColumnCount > 1)
+        {
+            double gapDip     = MmToDip(page.ColumnGapMm);
+            double contentDip = wDip - padL - padR;
+            fd.ColumnWidth = Math.Max(10, (contentDip - gapDip * (page.ColumnCount - 1)) / page.ColumnCount);
+            fd.ColumnGap   = gapDip;
+        }
 
         foreach (var section in document.Sections)
         {

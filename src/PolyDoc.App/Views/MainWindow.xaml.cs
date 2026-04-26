@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -154,6 +155,20 @@ public partial class MainWindow : Window
         {
             _viewModel?.MarkDirty();
             BodyEditor.Focus();
+        }
+    }
+
+    private void OnFormatPage(object sender, RoutedEventArgs e)
+    {
+        var current = _viewModel?.Document.Sections.FirstOrDefault()?.Page
+                      ?? new PolyDoc.Core.PageSettings();
+        var dlg = new PageFormatWindow(current) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            if (_viewModel?.Document.Sections.FirstOrDefault() is { } section)
+                section.Page = dlg.ResultSettings;
+            _viewModel?.RebuildFlowDocument();
+            _viewModel?.MarkDirty();
         }
     }
 

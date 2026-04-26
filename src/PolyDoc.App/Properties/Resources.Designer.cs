@@ -284,5 +284,37 @@ namespace PolyDoc.App.Properties
         internal static string FormatOutlinePresetAcademic   => Get(nameof(FormatOutlinePresetAcademic));
         internal static string FormatOutlinePresetBusiness   => Get(nameof(FormatOutlinePresetBusiness));
         internal static string FormatOutlinePresetModern     => Get(nameof(FormatOutlinePresetModern));
+
+        // ── 페이지 서식 ──
+        internal static string PageFormatTitle             => Get(nameof(PageFormatTitle));
+        internal static string PageFormatPaperTab          => Get(nameof(PageFormatPaperTab));
+        internal static string PageFormatMarginsTab        => Get(nameof(PageFormatMarginsTab));
+        internal static string PageFormatLayoutTab         => Get(nameof(PageFormatLayoutTab));
+        internal static string PageFormatSizeLabel         => Get(nameof(PageFormatSizeLabel));
+        internal static string PageFormatCustomSize        => Get(nameof(PageFormatCustomSize));
+        internal static string PageFormatWidthLabel        => Get(nameof(PageFormatWidthLabel));
+        internal static string PageFormatHeightLabel       => Get(nameof(PageFormatHeightLabel));
+        internal static string PageFormatOrientation       => Get(nameof(PageFormatOrientation));
+        internal static string PageFormatPortrait          => Get(nameof(PageFormatPortrait));
+        internal static string PageFormatLandscape         => Get(nameof(PageFormatLandscape));
+        internal static string PageFormatPaperColor        => Get(nameof(PageFormatPaperColor));
+        internal static string PageFormatPaperColorDefault => Get(nameof(PageFormatPaperColorDefault));
+        internal static string PageFormatMarginTop         => Get(nameof(PageFormatMarginTop));
+        internal static string PageFormatMarginBottom      => Get(nameof(PageFormatMarginBottom));
+        internal static string PageFormatMarginLeft        => Get(nameof(PageFormatMarginLeft));
+        internal static string PageFormatMarginRight       => Get(nameof(PageFormatMarginRight));
+        internal static string PageFormatMarginHeader      => Get(nameof(PageFormatMarginHeader));
+        internal static string PageFormatMarginFooter      => Get(nameof(PageFormatMarginFooter));
+        internal static string PageFormatColumns           => Get(nameof(PageFormatColumns));
+        internal static string PageFormatColumnGap         => Get(nameof(PageFormatColumnGap));
+        internal static string PageFormatPageNumberStart   => Get(nameof(PageFormatPageNumberStart));
+        internal static string PageFormatPreviewGroup      => Get(nameof(PageFormatPreviewGroup));
+        internal static string PageSizeGroupIsoA           => Get(nameof(PageSizeGroupIsoA));
+        internal static string PageSizeGroupIsoB           => Get(nameof(PageSizeGroupIsoB));
+        internal static string PageSizeGroupJisB           => Get(nameof(PageSizeGroupJisB));
+        internal static string PageSizeGroupUS             => Get(nameof(PageSizeGroupUS));
+        internal static string PageSizeGroupNewspaper      => Get(nameof(PageSizeGroupNewspaper));
+        internal static string PageSizeGroupKoreanBook     => Get(nameof(PageSizeGroupKoreanBook));
+        internal static string PageSizeGroupIntlBook       => Get(nameof(PageSizeGroupIntlBook));
     }
 }

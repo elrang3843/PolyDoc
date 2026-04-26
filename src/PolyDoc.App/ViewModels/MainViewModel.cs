@@ -540,6 +540,12 @@ public partial class MainViewModel : ObservableObject
     public void ApplyOutlineStyles(PolyDoc.Core.OutlineStyleSet styleSet)
     {
         _document.OutlineStyles = styleSet;
+        RebuildFlowDocument();
+    }
+
+    /// <summary>PageSettings 변경 후 FlowDocument 를 재빌드해 화면에 반영한다.</summary>
+    public void RebuildFlowDocument()
+    {
         _suppressDirty = true;
         FlowDocument = FlowDocumentBuilder.Build(_document);
         _suppressDirty = false;
