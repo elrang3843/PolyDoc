@@ -409,7 +409,8 @@ public partial class MainViewModel : ObservableObject
         // ── 비밀번호 보호 모드 ──
         if (info.PasswordChanged)
         {
-            var pwd = string.IsNullOrEmpty(info.NewPassword) ? null : info.NewPassword;
+            var readPwd  = string.IsNullOrEmpty(info.NewReadPassword)  ? null : info.NewReadPassword;
+            var writePwd = string.IsNullOrEmpty(info.NewWritePassword) ? null : info.NewWritePassword;
             switch (info.PasswordMode)
             {
                 case PasswordMode.None:
@@ -418,19 +419,19 @@ public partial class MainViewModel : ObservableObject
                     _writeLock        = null;
                     break;
                 case PasswordMode.Read:
-                    _documentPassword = pwd;
+                    _documentPassword = readPwd;
                     _writePassword    = null;
                     _writeLock        = null;
                     break;
                 case PasswordMode.Write:
                     _documentPassword = null;
-                    _writePassword    = pwd;    // 평문 캐시 — 저장 시 재사용
-                    _writeLock        = pwd is not null ? IwpfEncryption.CreateWriteLock(pwd) : null;
+                    _writePassword    = writePwd;
+                    _writeLock        = writePwd is not null ? IwpfEncryption.CreateWriteLock(writePwd) : null;
                     break;
                 case PasswordMode.Both:
-                    _documentPassword = pwd;
-                    _writePassword    = pwd;
-                    _writeLock        = pwd is not null ? IwpfEncryption.CreateWriteLock(pwd) : null;
+                    _documentPassword = readPwd;
+                    _writePassword    = writePwd;
+                    _writeLock        = writePwd is not null ? IwpfEncryption.CreateWriteLock(writePwd) : null;
                     break;
             }
             RecomputeWriteProtection();
@@ -639,13 +640,12 @@ public partial class MainViewModel : ObservableObject
     }
 
     private IwpfWriter BuildIwpfWriter(PasswordMode mode)
-    {
-        // Read: _documentPassword 로 AES 암호화.
-        // Write: _writePassword 로 write-lock 해시 생성.
-        // Both: _documentPassword (== _writePassword) 로 AES 암호화 + write-lock.
-        var pwd = mode == PasswordMode.Write ? _writePassword : _documentPassword;
-        return new IwpfWriter { PasswordMode = mode, Password = pwd };
-    }
+        => new IwpfWriter
+        {
+            PasswordMode  = mode,
+            Password      = mode != PasswordMode.Write ? _documentPassword : null,
+            WritePassword = mode != PasswordMode.Read  ? _writePassword    : null,
+        };
 
     private bool ConfirmDiscardChanges()
     {

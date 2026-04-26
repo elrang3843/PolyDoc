@@ -23,11 +23,16 @@ public sealed class IwpfWriter : IDocumentWriter
     public PasswordMode PasswordMode { get; init; }
 
     /// <summary>
-    /// <see cref="PasswordMode"/> 가 None 이 아닐 때 사용할 비밀번호.
-    /// Read/Both 모드에서는 AES-256-GCM 암호화 키 유도에 사용하고,
-    /// Write/Both 모드에서는 쓰기 잠금 PBKDF2 해시 생성에도 사용한다.
+    /// Read / Both 모드에서 AES-256-GCM 암호화 키 유도에 사용할 비밀번호(열기 암호).
+    /// Write 전용 모드에서는 사용하지 않는다.
     /// </summary>
     public string? Password { get; init; }
+
+    /// <summary>
+    /// Write / Both 모드에서 쓰기 잠금 PBKDF2 해시 생성에 사용할 비밀번호(쓰기 암호).
+    /// null 이면 <see cref="Password"/> 를 대신 사용한다(Both 동일 암호 시).
+    /// </summary>
+    public string? WritePassword { get; init; }
 
     public void Write(PolyDocument document, Stream output)
     {
@@ -45,7 +50,7 @@ public sealed class IwpfWriter : IDocumentWriter
                 break;
 
             case PasswordMode.Write:
-                WritePlain(document, output, writeLockPassword: Password);
+                WritePlain(document, output, writeLockPassword: WritePassword ?? Password);
                 break;
 
             default: // None
@@ -235,7 +240,7 @@ public sealed class IwpfWriter : IDocumentWriter
         // 1. inner IWPF ZIP 을 메모리에 평문으로 빌드.
         //    Both 모드면 write-lock 도 inner 에 포함한다.
         using var innerStream = new MemoryStream();
-        var writeLockPwd = (mode == PasswordMode.Both) ? password : null;
+        var writeLockPwd = (mode == PasswordMode.Both) ? (WritePassword ?? password) : null;
         WritePlain(document, innerStream, writeLockPassword: writeLockPwd);
         var innerBytes = innerStream.ToArray();
 

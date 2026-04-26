@@ -41,9 +41,11 @@ public sealed partial class DocumentInfoModel : ObservableObject
     /// <summary>
     /// PasswordChangeWindow 를 거쳐 사용자가 선택한 새 모드/비밀번호.
     /// 다이얼로그를 거치지 않았으면 <c>PasswordChanged == false</c> — 변경 없음.
+    /// Both 모드에서 같은 암호이면 두 값이 동일하고, 다른 암호이면 각각 다른 값이 설정된다.
     /// </summary>
-    public bool PasswordChanged { get; set; }
-    public string? NewPassword  { get; set; }
+    public bool PasswordChanged       { get; set; }
+    public string? NewReadPassword    { get; set; }
+    public string? NewWritePassword   { get; set; }
 
     // ── 워터마크 ────────────────────────────────────────────
     [ObservableProperty]

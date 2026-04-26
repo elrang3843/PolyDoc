@@ -182,6 +182,9 @@ namespace PolyDoc.App.Properties
         internal static string PwdModeRead         => Get(nameof(PwdModeRead));
         internal static string PwdModeWrite        => Get(nameof(PwdModeWrite));
         internal static string PwdModeBoth         => Get(nameof(PwdModeBoth));
+        internal static string PwdChkRead          => Get(nameof(PwdChkRead));
+        internal static string PwdChkWrite         => Get(nameof(PwdChkWrite));
+        internal static string PwdChkSame          => Get(nameof(PwdChkSame));
         internal static string DocInfoPwdModeNone  => Get(nameof(DocInfoPwdModeNone));
         internal static string DocInfoPwdModeRead  => Get(nameof(DocInfoPwdModeRead));
         internal static string DocInfoPwdModeWrite => Get(nameof(DocInfoPwdModeWrite));

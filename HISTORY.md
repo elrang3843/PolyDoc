@@ -53,6 +53,7 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 - **Fixed** — B 폴리싱 4종 빌드 오류 수정 (2226861 에서 미적용). `Properties/Resources.Designer.cs` 누락으로 `dotnet build` 가 실패해 새 기능이 배포되지 않던 문제 해결 — Designer.cs 수동 생성 (`ResourceManager` + 정적 속성). 드래그&드롭: `RichTextBox` 가 `DragOver`를 가로채 파일 드롭 이벤트가 윈도우에 도달하지 않던 문제 — Window 이벤트를 `Drop`/`DragOver` → `PreviewDrop`/`PreviewDragOver` 로 변경, 파일 드롭만 처리 후 `Handled=true`.
 
 ### Added
+- **Added** — 암호 설정 다이얼로그를 체크박스 기반으로 재설계. 열기·쓰기 암호를 독립적으로 설정 가능 — 같이사용 체크 시 단일 입력란, 미체크 시 열기/쓰기 각각 다른 입력란 활성화. `IwpfWriter.WritePassword` 추가로 Both 모드에서 열기와 쓰기 암호를 별도로 지정 지원.
 - **Added** — 쓰기 보호 자동 잠금 해제 UX. 쓰기 보호된 IWPF 를 열면 `RichTextBox.IsReadOnly=true` 로 시작 + 상태 표시줄에 "쓰기 보호됨" 인디케이터(주황). 사용자가 첫 편집(타이핑·Backspace·Delete·Enter·Tab·Ctrl+V/X)을 시도하면 즉시 비밀번호 프롬프트. 정답이면 같은 세션 내 추가 입력·저장 시 재입력 요구하지 않음.
 - **Added** — IWPF 암호 보호 3단계 모드. 단순 암호화(열기 보호)에서 열기 / 쓰기 / 둘 다 보호 모드로 확장. 쓰기 보호(`PasswordMode.Write`)는 AES 암호화 없이 PBKDF2 해시만 `security/write-lock.json` 에 저장해 저장 시 비밀번호를 검증한다; 둘 다(`Both`)는 AES-256-GCM 암호화 + inner ZIP 내 write-lock 병행. `PasswordChangeWindow` 에 보호 모드 RadioButton 추가. 문서 정보 보안 탭에서 현재 모드를 표시.
 - **Added** — 편집 > 문서 정보 다이얼로그 확장: 3개 탭 (정보 / 보안 / 워터마크). 작성자(Author) 입력 가능. 저장 시 첫 저장이면 작성일자 + 수정일자, 이후 저장에서는 수정일자만 자동 갱신.

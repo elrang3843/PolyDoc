@@ -198,6 +198,9 @@
   <data name="PwdModeRead"         xml:space="preserve"><value>열기 보호 — 파일을 열 때 비밀번호가 필요합니다</value></data>
   <data name="PwdModeWrite"        xml:space="preserve"><value>쓰기 보호 — 저장할 때 비밀번호가 필요합니다</value></data>
   <data name="PwdModeBoth"         xml:space="preserve"><value>둘 다 — 열기와 저장 모두 비밀번호가 필요합니다</value></data>
+  <data name="PwdChkRead"          xml:space="preserve"><value>열기 암호</value></data>
+  <data name="PwdChkWrite"         xml:space="preserve"><value>쓰기 암호</value></data>
+  <data name="PwdChkSame"          xml:space="preserve"><value>같은 암호 사용</value></data>
   <data name="DocInfoPwdModeNone"  xml:space="preserve"><value>없음</value></data>
   <data name="DocInfoPwdModeRead"  xml:space="preserve"><value>열기 보호 (암호화)</value></data>
   <data name="DocInfoPwdModeWrite" xml:space="preserve"><value>쓰기 보호</value></data>

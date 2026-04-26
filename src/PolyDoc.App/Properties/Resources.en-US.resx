@@ -198,6 +198,9 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PwdModeRead"         xml:space="preserve"><value>Open protection — password required to open the file</value></data>
   <data name="PwdModeWrite"        xml:space="preserve"><value>Save protection — password required to save</value></data>
   <data name="PwdModeBoth"         xml:space="preserve"><value>Both — password required to open and save</value></data>
+  <data name="PwdChkRead"          xml:space="preserve"><value>Open password</value></data>
+  <data name="PwdChkWrite"         xml:space="preserve"><value>Write password</value></data>
+  <data name="PwdChkSame"          xml:space="preserve"><value>Use same password</value></data>
   <data name="DocInfoPwdModeNone"  xml:space="preserve"><value>None</value></data>
   <data name="DocInfoPwdModeRead"  xml:space="preserve"><value>Open protection (encrypted)</value></data>
   <data name="DocInfoPwdModeWrite" xml:space="preserve"><value>Save protection</value></data>

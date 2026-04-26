@@ -128,6 +128,9 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string PwdModeRead           => SR.PwdModeRead;
     public string PwdModeWrite          => SR.PwdModeWrite;
     public string PwdModeBoth           => SR.PwdModeBoth;
+    public string PwdChkRead            => SR.PwdChkRead;
+    public string PwdChkWrite           => SR.PwdChkWrite;
+    public string PwdChkSame            => SR.PwdChkSame;
     public string StatusWriteProtected  => SR.StatusWriteProtected;
     public string DlgConfirm            => SR.DlgConfirm;
 

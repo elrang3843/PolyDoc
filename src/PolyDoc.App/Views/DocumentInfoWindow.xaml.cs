@@ -31,9 +31,10 @@ public partial class DocumentInfoWindow : Window
         var dlg = new PasswordChangeWindow(_model.PasswordMode) { Owner = this };
         if (dlg.ShowDialog() != true) return;
 
-        _model.PasswordChanged = true;
-        _model.PasswordMode    = dlg.ResultMode;
-        _model.NewPassword     = dlg.ResultPassword;
+        _model.PasswordChanged     = true;
+        _model.PasswordMode        = dlg.ResultMode;
+        _model.NewReadPassword     = dlg.ResultReadPassword;
+        _model.NewWritePassword    = dlg.ResultWritePassword;
         UpdatePasswordStatus();
     }
 
