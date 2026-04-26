@@ -72,7 +72,6 @@
                    Margin="-1" />
 
         <Canvas x:Name="HandlesCanvas"
-                Background="Transparent"
                 IsHitTestVisible="True"
                 Visibility="Collapsed">
             <Rectangle x:Name="HandleTL" Width="8" Height="8"
