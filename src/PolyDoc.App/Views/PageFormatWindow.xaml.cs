@@ -405,7 +405,7 @@ public partial class PageFormatWindow : Window
         return Brushes.White;
     }
 
-    private static Line MakeHLine(double x, double y, double w, Color color) => new()
+    private static Line MakeHLine(double x, double y, double w, System.Windows.Media.Color color) => new()
     {
         X1 = x, Y1 = y, X2 = x + w, Y2 = y,
         Stroke          = new SolidColorBrush(color),
@@ -431,7 +431,7 @@ public partial class PageFormatWindow : Window
             setter(v);
     }
 
-    private static bool TryParseWpfColor(string? hex, out Color color)
+    private static bool TryParseWpfColor(string? hex, out System.Windows.Media.Color color)
     {
         color = default;
         if (string.IsNullOrWhiteSpace(hex)) return false;
