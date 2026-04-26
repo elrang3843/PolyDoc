@@ -74,8 +74,13 @@
             </MenuItem>
 
             <MenuItem Header="{Binding MenuInsert, Source={x:Static svc:LocalizedStrings.Instance}}">
-                <MenuItem Header="{Binding MenuInsertTextBox, Source={x:Static svc:LocalizedStrings.Instance}}"
-                          Command="{Binding InsertTextBoxCommand}" />
+                <MenuItem Header="{Binding MenuInsertTextBox, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <MenuItem Header="사각형(_R)"   Command="{Binding InsertTextBoxCommand}" CommandParameter="Rectangle" />
+                    <MenuItem Header="말풍선(_S)"   Command="{Binding InsertTextBoxCommand}" CommandParameter="Speech" />
+                    <MenuItem Header="구름풍선(_C)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Cloud" />
+                    <MenuItem Header="가시풍선(_K)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Spiky" />
+                    <MenuItem Header="번개상자(_L)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Lightning" />
+                </MenuItem>
                 <MenuItem Header="{Binding MenuInsertTable, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
                 <MenuItem Header="{Binding MenuInsertGraph, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
                 <MenuItem Header="{Binding MenuInsertSpecialChar, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />

@@ -549,12 +549,20 @@ public partial class MainViewModel : ObservableObject
     // 모델 갱신은 View 가 AddFloatingObjectToCurrentSection 으로 위임.
 
     [RelayCommand]
-    private void InsertTextBox()
+    private void InsertTextBox(object? shapeParam)
     {
-        InsertTextBoxRequested?.Invoke(this, EventArgs.Empty);
+        var shape = shapeParam switch
+        {
+            "Speech"    => PolyDoc.Core.TextBoxShape.Speech,
+            "Cloud"     => PolyDoc.Core.TextBoxShape.Cloud,
+            "Spiky"     => PolyDoc.Core.TextBoxShape.Spiky,
+            "Lightning" => PolyDoc.Core.TextBoxShape.Lightning,
+            _           => PolyDoc.Core.TextBoxShape.Rectangle,
+        };
+        InsertTextBoxRequested?.Invoke(this, shape);
     }
 
-    public event EventHandler? InsertTextBoxRequested;
+    public event EventHandler<PolyDoc.Core.TextBoxShape>? InsertTextBoxRequested;
 
     /// <summary>드래그 생성 완료 후 View 가 호출 — 첫 섹션의 FloatingObjects 에 추가하고 Dirty 표시.</summary>
     public void AddFloatingObjectToCurrentSection(PolyDoc.Core.FloatingObject obj)

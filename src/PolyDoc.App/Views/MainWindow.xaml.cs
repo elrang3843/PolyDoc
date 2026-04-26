@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private bool _drawingTextBox;
     private bool _drawingInProgress;
     private Point _drawStart;
+    private TextBoxShape _drawingShape = TextBoxShape.Rectangle;
     private TextBoxOverlay? _selectedOverlay;
 
     public MainWindow()
@@ -369,9 +370,10 @@ public partial class MainWindow : Window
 
     // ── 글상자 (입력 > 글상자) ──────────────────────────────────────────────
 
-    private void OnInsertTextBoxRequested(object? sender, EventArgs e)
+    private void OnInsertTextBoxRequested(object? sender, TextBoxShape shape)
     {
         _drawingTextBox = true;
+        _drawingShape   = shape;
         Mouse.OverrideCursor = Cursors.Cross;
         if (_viewModel is not null)
             _viewModel.StatusMessage = SR.StatusDrawTextBox;
@@ -452,6 +454,7 @@ public partial class MainWindow : Window
 
         var model = new TextBoxObject
         {
+            Shape    = _drawingShape,
             XMm      = x / TextBoxOverlay.DipsPerMm,
             YMm      = y / TextBoxOverlay.DipsPerMm,
             WidthMm  = w / TextBoxOverlay.DipsPerMm,

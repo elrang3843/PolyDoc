@@ -59,6 +59,21 @@
                     <Setter Property="Margin" Value="0" />
                 </Style>
             </RichTextBox.Resources>
+            <!-- 본문 우클릭: 편집 + 글자/문단 서식. 외곽 우클릭(UserControl.ContextMenu)
+                 과 별도 — 본문에서 RichTextBox 가 ContextMenu 를 직접 처리하므로
+                 부모 메뉴는 가려진다. 이 메뉴는 텍스트 편집에 집중. -->
+            <RichTextBox.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="잘라내기(_T)" Command="ApplicationCommands.Cut" />
+                    <MenuItem Header="복사(_C)"   Command="ApplicationCommands.Copy" />
+                    <MenuItem Header="붙여넣기(_P)" Command="ApplicationCommands.Paste" />
+                    <Separator />
+                    <MenuItem Header="모두 선택(_A)" Command="ApplicationCommands.SelectAll" />
+                    <Separator />
+                    <MenuItem Header="글자 속성(_R)..." Click="OnContextMenuCharFormat" />
+                    <MenuItem Header="문단 속성(_G)..." Click="OnContextMenuParaFormat" />
+                </ContextMenu>
+            </RichTextBox.ContextMenu>
         </RichTextBox>
 
         <!-- 선택 시에만 표시되는 chrome (점선 외곽 + 4코너 핸들) -->
