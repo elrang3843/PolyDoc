@@ -187,6 +187,7 @@ public partial class PageFormatWindow : Window
     private void OnOrientationChanged(object sender, RoutedEventArgs e)
     {
         if (_suppress) return;
+        if (RbLandscape is null) return; // InitializeComponent 중 조기 발화 방어
         _settings.Orientation = RbLandscape.IsChecked == true
             ? PageOrientation.Landscape
             : PageOrientation.Portrait;
