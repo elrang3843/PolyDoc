@@ -6,9 +6,9 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        FontFamily="{StaticResource UiFont}"
-        Background="{StaticResource Surface}"
-        Foreground="{StaticResource OnSurface}">
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}">
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -34,7 +34,7 @@
         <TextBlock Grid.Row="2"
                    x:Name="VersionText"
                    Text="버전 1.0.0-test.1"
-                   Foreground="{StaticResource OnSurfaceMuted}"
+                   Foreground="{DynamicResource OnSurfaceMuted}"
                    HorizontalAlignment="Center"
                    Margin="0,4,0,0" />
 
@@ -43,11 +43,11 @@
                        FontSize="14" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
             <TextBlock Text="저작권자 / 메인테이너 — 노진문 (Noh JinMoon)"
-                       Foreground="{StaticResource OnSurfaceMuted}"
+                       Foreground="{DynamicResource OnSurfaceMuted}"
                        HorizontalAlignment="Center"
                        Margin="0,4,0,0" />
             <TextBlock Text="© 2026 HANDTECH. Apache License 2.0."
-                       Foreground="{StaticResource OnSurfaceMuted}"
+                       Foreground="{DynamicResource OnSurfaceMuted}"
                        HorizontalAlignment="Center"
                        Margin="0,4,0,0" />
         </StackPanel>

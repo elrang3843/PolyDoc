@@ -1,0 +1,238 @@
+<Window x:Class="PolyDoc.App.Views.OutlineStyleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="clr-namespace:PolyDoc.App.Services"
+        Title="{Binding FormatOutlineTitle, Source={x:Static svc:LocalizedStrings.Instance}}"
+        Width="680" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}">
+
+    <StackPanel Margin="12">
+
+        <!-- 상단: 프리셋 선택 -->
+        <DockPanel Margin="0,0,0,10">
+            <TextBlock DockPanel.Dock="Left"
+                       Text="{Binding FormatOutlinePreset, Source={x:Static svc:LocalizedStrings.Instance}}"
+                       VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold" />
+            <ComboBox x:Name="CboPreset"
+                      Width="180"
+                      DockPanel.Dock="Left"
+                      Background="{DynamicResource SurfaceAlt}"
+                      Foreground="{DynamicResource OnSurface}"
+                      BorderBrush="{DynamicResource Divider}"
+                      SelectionChanged="OnPresetChanged" />
+            <TextBlock DockPanel.Dock="Left"
+                       Text="{Binding FormatOutlineLevels, Source={x:Static svc:LocalizedStrings.Instance}}"
+                       VerticalAlignment="Center" Margin="24,0,8,0" FontWeight="SemiBold" />
+            <ComboBox x:Name="CboLevel"
+                      Width="120"
+                      DockPanel.Dock="Left"
+                      Background="{DynamicResource SurfaceAlt}"
+                      Foreground="{DynamicResource OnSurface}"
+                      BorderBrush="{DynamicResource Divider}"
+                      SelectionChanged="OnLevelChanged" />
+        </DockPanel>
+
+        <!-- 본문: 좌(수준 정보) / 우(편집 패널) -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 좌열: 글자모양 + 문단모양 -->
+            <StackPanel Grid.Column="0">
+
+                <!-- 글자 모양 -->
+                <GroupBox Margin="0,0,0,8" Padding="10,4,10,8">
+                    <GroupBox.Header>
+                        <TextBlock Text="{Binding FormatOutlineCharGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" />
+                    </GroupBox.Header>
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right"
+                                Content="{Binding FormatOutlineEdit, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                Padding="10,4" Margin="8,0,0,0"
+                                Click="OnEditChar" VerticalAlignment="Center" />
+                        <TextBlock x:Name="TxtCharSummary"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnSurfaceMuted}"
+                                   Text="11pt" />
+                    </DockPanel>
+                </GroupBox>
+
+                <!-- 문단 모양 -->
+                <GroupBox Margin="0,0,0,8" Padding="10,4,10,8">
+                    <GroupBox.Header>
+                        <TextBlock Text="{Binding FormatOutlineParaGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" />
+                    </GroupBox.Header>
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right"
+                                Content="{Binding FormatOutlineEdit, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                Padding="10,4" Margin="8,0,0,0"
+                                Click="OnEditPara" VerticalAlignment="Center" />
+                        <TextBlock x:Name="TxtParaSummary"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnSurfaceMuted}"
+                                   Text="왼쪽, 160%" />
+                    </DockPanel>
+                </GroupBox>
+
+                <!-- 번호 매기기 -->
+                <GroupBox Padding="10,4,10,8">
+                    <GroupBox.Header>
+                        <TextBlock Text="{Binding FormatOutlineNumberGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" />
+                    </GroupBox.Header>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   Text="{Binding FormatOutlineNumberStyle, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox x:Name="CboNumberStyle"
+                                  Grid.Row="0" Grid.Column="1"
+                                  Background="{DynamicResource SurfaceAlt}"
+                                  Foreground="{DynamicResource OnSurface}"
+                                  BorderBrush="{DynamicResource Divider}"
+                                  SelectionChanged="OnNumberStyleChanged" />
+
+                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                    Orientation="Horizontal" x:Name="PanelPrefixSuffix">
+                            <TextBlock Text="{Binding FormatOutlinePrefix, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" Margin="0,0,4,0" />
+                            <TextBox x:Name="TxtPrefix" Width="50" Padding="4,2"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnNumberingChanged" />
+                            <TextBlock Text="{Binding FormatOutlineSuffix, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" Margin="12,0,4,0" />
+                            <TextBox x:Name="TxtSuffix" Width="50" Padding="4,2"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnNumberingChanged" />
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
+            </StackPanel>
+
+            <!-- 우열: 테두리 + 배경 -->
+            <StackPanel Grid.Column="2">
+
+                <!-- 테두리 -->
+                <GroupBox Margin="0,0,0,8" Padding="10,4,10,8">
+                    <GroupBox.Header>
+                        <TextBlock Text="{Binding FormatOutlineBorderGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" />
+                    </GroupBox.Header>
+                    <StackPanel>
+                        <CheckBox x:Name="ChkBorderTop"
+                                  Content="{Binding FormatOutlineBorderTop, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  Margin="0,2" Click="OnBorderChanged" />
+                        <CheckBox x:Name="ChkBorderBottom"
+                                  Content="{Binding FormatOutlineBorderBottom, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  Margin="0,2" Click="OnBorderChanged" />
+                        <DockPanel Margin="0,6,0,0">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="{Binding FormatOutlineBorderColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <Border x:Name="BorderColorSwatch"
+                                    DockPanel.Dock="Right"
+                                    Width="20" Height="20" Margin="4,0,0,0"
+                                    BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                                    Cursor="Hand"
+                                    MouseLeftButtonDown="OnBorderSwatchClick" />
+                            <TextBox x:Name="TxtBorderColor"
+                                     Padding="4,2"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnBorderColorChanged" />
+                        </DockPanel>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- 배경 -->
+                <GroupBox Padding="10,4,10,8">
+                    <GroupBox.Header>
+                        <TextBlock Text="{Binding FormatOutlineBgGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" />
+                    </GroupBox.Header>
+                    <StackPanel>
+                        <CheckBox x:Name="ChkBgNone"
+                                  Content="{Binding FormatOutlineBgNone, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  Margin="0,2,0,6"
+                                  Checked="OnBgNoneChanged" Unchecked="OnBgNoneChanged" />
+                        <DockPanel x:Name="PanelBgColor">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="{Binding FormatOutlineBgColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <Border x:Name="BgColorSwatch"
+                                    DockPanel.Dock="Right"
+                                    Width="20" Height="20" Margin="4,0,0,0"
+                                    BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                                    Cursor="Hand"
+                                    MouseLeftButtonDown="OnBgSwatchClick" />
+                            <TextBox x:Name="TxtBgColor"
+                                     Padding="4,2"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnBgColorChanged" />
+                        </DockPanel>
+                    </StackPanel>
+                </GroupBox>
+
+            </StackPanel>
+        </Grid>
+
+        <!-- 미리보기 -->
+        <GroupBox Margin="0,10,0,10" Padding="4">
+            <GroupBox.Header>
+                <TextBlock Text="{Binding FormatOutlinePreviewGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           FontWeight="SemiBold" />
+            </GroupBox.Header>
+            <Border MinHeight="140" MaxHeight="200"
+                    BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                    Background="{DynamicResource Surface}">
+                <FlowDocumentScrollViewer x:Name="PreviewViewer"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          IsToolBarVisible="False"
+                                          Padding="8" />
+            </Border>
+        </GroupBox>
+
+        <!-- 하단 버튼 -->
+        <DockPanel>
+            <Button DockPanel.Dock="Left"
+                    Content="{Binding FormatOutlineResetLevel, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="12,5" Click="OnResetLevel" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="{Binding FormatOutlineApplyAll, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        Padding="12,5" IsDefault="True" Click="OnApply" />
+                <Button Content="{Binding FindReplaceClose, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        Padding="12,5" Margin="8,0,0,0" IsCancel="True" Click="OnClose" />
+            </StackPanel>
+        </DockPanel>
+
+    </StackPanel>
+</Window>

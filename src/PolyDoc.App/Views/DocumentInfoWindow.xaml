@@ -1,0 +1,262 @@
+<Window x:Class="PolyDoc.App.Views.DocumentInfoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="clr-namespace:PolyDoc.App.Services"
+        Title="{Binding DocInfoTitle, Source={x:Static svc:LocalizedStrings.Instance}}"
+        Width="560" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}">
+
+    <Window.Resources>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground"        Value="{DynamicResource OnSurfaceMuted}" />
+            <Setter Property="TextAlignment"     Value="Right" />
+            <Setter Property="Margin"            Value="0,4,10,4" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="FieldValue" TargetType="TextBlock">
+            <Setter Property="TextWrapping"      Value="Wrap" />
+            <Setter Property="Margin"            Value="0,4,0,4" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="GroupHeader" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin"     Value="0,0,0,6" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- ── 하단 확인/취소 버튼 ─────────────────────────── -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="20,12,20,16">
+            <Button Content="{Binding DlgConfirm, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="14,5" IsDefault="True" Click="OnOk" />
+            <Button Content="{Binding FindReplaceClose, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="14,5" Margin="8,0,0,0" IsCancel="True" Click="OnCancel" />
+        </StackPanel>
+
+        <TabControl Margin="14,14,14,0"
+                    Background="Transparent"
+                    BorderBrush="{DynamicResource Divider}">
+
+            <!-- ════════════════════════════════════════════════ -->
+            <!--  탭 1: 정보 (메타데이터 + 통계)                    -->
+            <!-- ════════════════════════════════════════════════ -->
+            <TabItem Header="{Binding DocInfoTabInfo, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <StackPanel Margin="20,16,20,16" MinWidth="440">
+
+                    <!-- 파일 -->
+                    <TextBlock Style="{StaticResource GroupHeader}"
+                               Text="{Binding DocInfoGroupFile, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                    <Grid Margin="8,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoPath, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding FilePath}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoFormat, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding Format}" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoDataSize, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding DataSize}" />
+                    </Grid>
+
+                    <Separator Margin="0,14,0,12" />
+
+                    <!-- 문서 속성 — Author 는 입력 가능 -->
+                    <TextBlock Style="{StaticResource GroupHeader}"
+                               Text="{Binding DocInfoGroupMeta, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                    <Grid Margin="8,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoDocTitle, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding DocTitle}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoAuthor, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="1" Grid.Column="1"
+                                   Text="{Binding Author, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoLanguage, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding Language}" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoCreated, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding Created}" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoModified, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding Modified}" />
+                    </Grid>
+
+                    <Separator Margin="0,14,0,12" />
+
+                    <!-- 통계 -->
+                    <TextBlock Style="{StaticResource GroupHeader}"
+                               Text="{Binding DocInfoGroupStats, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                    <Grid Margin="8,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoParas, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding ParagraphCount}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoChars, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding CharCount}" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoWords, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding WordCount}" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoLines, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding LineCount}" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoSections, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding SectionCount}" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoTables, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding TableCount}" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoImages, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding ImageCount}" />
+                    </Grid>
+                </StackPanel>
+            </TabItem>
+
+            <!-- ════════════════════════════════════════════════ -->
+            <!--  탭 2: 보안                                       -->
+            <!-- ════════════════════════════════════════════════ -->
+            <TabItem Header="{Binding DocInfoTabSecurity, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <StackPanel Margin="20,20,20,16" MinWidth="440">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoPwdStatus, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock x:Name="PasswordStatusText" Grid.Column="1"
+                                   Style="{StaticResource FieldValue}" FontWeight="SemiBold" />
+                    </Grid>
+
+                    <Button Content="{Binding DocInfoPwdChange, Source={x:Static svc:LocalizedStrings.Instance}}"
+                            HorizontalAlignment="Left" Padding="14,6"
+                            Margin="118,12,0,0" Click="OnPasswordChange" />
+
+                    <TextBlock Text="{Binding DocInfoPwdHint, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               Foreground="{DynamicResource OnSurfaceMuted}"
+                               TextWrapping="Wrap" Margin="0,18,0,0" FontSize="11" />
+                    <TextBlock Text="{Binding DocInfoPwdNotIwpf, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               Foreground="{DynamicResource OnSurfaceMuted}"
+                               TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11" />
+                </StackPanel>
+            </TabItem>
+
+            <!-- ════════════════════════════════════════════════ -->
+            <!--  탭 3: 워터마크                                    -->
+            <!-- ════════════════════════════════════════════════ -->
+            <TabItem Header="{Binding DocInfoTabWatermark, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <StackPanel Margin="20,20,20,16" MinWidth="440">
+
+                    <CheckBox Content="{Binding DocInfoWmEnabled, Source={x:Static svc:LocalizedStrings.Instance}}"
+                              IsChecked="{Binding WatermarkEnabled}" />
+
+                    <Grid Margin="0,14,0,0" IsEnabled="{Binding WatermarkEnabled}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoWmText, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding WatermarkText, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoWmFontSize, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="1" Grid.Column="1"
+                                   Text="{Binding WatermarkFontSize, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoWmRotation, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="2" Grid.Column="1"
+                                   Text="{Binding WatermarkRotation, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoWmOpacity, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="3" Grid.Column="1"
+                                   Text="{Binding WatermarkOpacity, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoWmColor, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="4" Grid.Column="1"
+                                   Text="{Binding WatermarkColor, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" Width="120" HorizontalAlignment="Left"
+                                   FontFamily="Consolas, D2Coding" />
+                    </Grid>
+
+                    <TextBlock Text="{Binding DocInfoWmHint, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               Foreground="{DynamicResource OnSurfaceMuted}"
+                               TextWrapping="Wrap" Margin="0,18,0,0" FontSize="11" />
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

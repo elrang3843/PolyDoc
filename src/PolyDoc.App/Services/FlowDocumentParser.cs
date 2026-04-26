@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using PolyDoc.Core;
 using Wpf = System.Windows.Documents;
@@ -230,11 +231,59 @@ public static class FlowDocumentParser
                 p.AddText(r.Text, seed);
                 break;
             }
+            case Wpf.InlineUIContainer iuc:
+            {
+                // FlowDocumentBuilder 가 만든 글자폭·자간 시각화 컨테이너.
+                // Tag 에 원본 PolyDoc Run 이 있으면 직접 회수. 없으면 시각 트리에서 추출.
+                if (iuc.Tag is Run origRun)
+                {
+                    p.AddText(origRun.Text, Clone(origRun.Style));
+                }
+                else if (iuc.Child is System.Windows.Controls.StackPanel panel)
+                {
+                    // 자간 StackPanel: 첫 TextBlock 에서 스타일·자간 읽기
+                    var style = new RunStyle { WidthPercent = 100 };
+                    var sb = new System.Text.StringBuilder();
+                    System.Windows.Controls.TextBlock? firstTb = null;
+                    foreach (var child in panel.Children)
+                    {
+                        if (child is System.Windows.Controls.TextBlock ctb)
+                        {
+                            sb.Append(ctb.Text);
+                            firstTb ??= ctb;
+                        }
+                    }
+                    if (firstTb != null)
+                    {
+                        style.LetterSpacingPx = firstTb.Margin.Right;
+                        if (firstTb.LayoutTransform is WpfMedia.ScaleTransform st)
+                            style.WidthPercent = st.ScaleX * 100.0;
+                        ExtractStyleFromTextBlock(firstTb, style);
+                    }
+                    p.AddText(sb.ToString(), style);
+                }
+                else if (iuc.Child is System.Windows.Controls.TextBlock tb)
+                {
+                    var style = new RunStyle { WidthPercent = 100 };
+                    if (tb.LayoutTransform is WpfMedia.ScaleTransform st)
+                        style.WidthPercent = st.ScaleX * 100.0;
+                    ExtractStyleFromTextBlock(tb, style);
+                    p.AddText(tb.Text, style);
+                }
+                break;
+            }
             case Wpf.LineBreak:
                 p.AddText("\n", Clone(baseStyle));
                 break;
             case Wpf.Span span:
             {
+                // 글자폭·자간 시각화 Span — Tag 가 PolyDoc.Run 이고 자식이 모두 같은 Tag 의 per-char IUC 면
+                // 한 덩어리로 머지해 원본 Run 의 비-FlowDocument 속성(WidthPercent / LetterSpacingPx) 보존.
+                if (span.Tag is Run spanRun && TryMergePerCharSpan(span, spanRun, out var mergedText))
+                {
+                    p.AddText(mergedText, Clone(spanRun.Style));
+                    break;
+                }
                 var spanStyle = Clone(baseStyle);
                 MergeInlineProperties(spanStyle, span);
                 foreach (var child in span.Inlines)
@@ -244,6 +293,31 @@ public static class FlowDocumentParser
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// per-char IUC Span 의 자식이 모두 같은 Run Tag 를 공유하는 IUC 면 텍스트를 모아 반환.
+    /// 사용자 편집(중간에 Run 삽입, 일부 IUC 제거 등)이 있으면 false — fallback 으로 자식별 파싱.
+    /// </summary>
+    private static bool TryMergePerCharSpan(Wpf.Span span, Run spanRun, out string text)
+    {
+        var sb = new StringBuilder();
+        foreach (var child in span.Inlines)
+        {
+            if (child is Wpf.InlineUIContainer iuc
+                && ReferenceEquals(iuc.Tag, spanRun)
+                && iuc.Child is System.Windows.Controls.TextBlock ctb)
+            {
+                sb.Append(ctb.Text);
+            }
+            else
+            {
+                text = string.Empty;
+                return false;
+            }
+        }
+        text = sb.ToString();
+        return text.Length > 0;
     }
 
     private static void ExtractRunStyle(Wpf.Run wpfRun, RunStyle s)
@@ -259,6 +333,36 @@ public static class FlowDocumentParser
         {
             s.Subscript = true;
             s.Superscript = false;
+        }
+
+        // 자간·글자폭 — Tag 에 원본 Run 이 있으면 그 값을 보존 (MergeInlineProperties 가 덮어쓰지 않으므로 여기서 복원).
+        if (wpfRun.Tag is Run origRun)
+        {
+            if (Math.Abs(origRun.Style.LetterSpacingPx) > 0.01)
+                s.LetterSpacingPx = origRun.Style.LetterSpacingPx;
+            if (Math.Abs(origRun.Style.WidthPercent - 100) > 0.5)
+                s.WidthPercent = origRun.Style.WidthPercent;
+        }
+    }
+
+    private static void ExtractStyleFromTextBlock(System.Windows.Controls.TextBlock tb, RunStyle s)
+    {
+        s.FontSizePt = FlowDocumentBuilder.DipToPt(tb.FontSize);
+        s.Bold = tb.FontWeight.ToOpenTypeWeight() >= FontWeights.Bold.ToOpenTypeWeight();
+        s.Italic = tb.FontStyle == FontStyles.Italic;
+        if (tb.FontFamily != null) s.FontFamily = tb.FontFamily.Source;
+        if (tb.Foreground is WpfMedia.SolidColorBrush fg)
+            s.Foreground = new Color(fg.Color.R, fg.Color.G, fg.Color.B, fg.Color.A);
+        if (tb.Background is WpfMedia.SolidColorBrush bg)
+            s.Background = new Color(bg.Color.R, bg.Color.G, bg.Color.B, bg.Color.A);
+        if (tb.TextDecorations is { Count: > 0 } decos)
+        {
+            foreach (var d in decos)
+            {
+                if (d.Location == TextDecorationLocation.Underline) s.Underline = true;
+                else if (d.Location == TextDecorationLocation.Strikethrough) s.Strikethrough = true;
+                else if (d.Location == TextDecorationLocation.OverLine) s.Overline = true;
+            }
         }
     }
 

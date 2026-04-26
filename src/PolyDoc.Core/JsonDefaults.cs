@@ -20,6 +20,7 @@ public static class JsonDefaults
             AllowTrailingCommas = true,
         };
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new BlockJsonConverter());
         return options;
     }
 }

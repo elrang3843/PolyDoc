@@ -18,6 +18,11 @@ public static class IwpfPaths
 
     public const string RenderDir = "render/";
     public const string SignaturesDir = "signatures/";
+
+    public const string SecurityDir       = "security/";
+    public const string SecurityEnvelope  = "security/envelope.json";
+    public const string SecurityPayload   = "security/payload.bin";
+    public const string SecurityWriteLock = "security/write-lock.json";
 }
 
 public static class IwpfMediaTypes

@@ -198,6 +198,70 @@ public class IwpfRoundTripTests
         Assert.All(manifest.Parts.Values, e => Assert.Matches("^[0-9a-f]{64}$", e.Sha256));
     }
 
+    [Fact]
+    public void Read_LegacyKindDiscriminator_StillReadable()
+    {
+        // 옛 빌드(29c09bd)는 discriminator 가 "kind" 였다.
+        // 사용자가 그 시기에 저장한 iwpf 가 신 빌드에서도 열려야 한다.
+        var doc = PolyDocument.Empty();
+        doc.Sections[0].Blocks.Add(Paragraph.Of("legacy"));
+        var bytes = WriteToBytes(doc);
+        var rewritten = RewriteDocumentJson(bytes,
+            json => json.Replace("\"$type\": \"paragraph\"", "\"kind\": \"paragraph\"", StringComparison.Ordinal));
+
+        var read = new IwpfReader { VerifyHashes = false }.Read(new MemoryStream(rewritten));
+        var paragraphs = read.EnumerateParagraphs().ToList();
+        Assert.Single(paragraphs);
+        Assert.Equal("legacy", paragraphs[0].GetPlainText());
+    }
+
+    [Fact]
+    public void Read_MissingDiscriminator_FallsBackToParagraph()
+    {
+        // 매우 옛 / 손상된 파일 시뮬레이션 — discriminator 가 아예 없으면 Paragraph 로 해석.
+        var doc = PolyDocument.Empty();
+        doc.Sections[0].Blocks.Add(Paragraph.Of("no-disc"));
+        var bytes = WriteToBytes(doc);
+        var rewritten = RewriteDocumentJson(bytes,
+            json => json.Replace("\"$type\": \"paragraph\",\n", "", StringComparison.Ordinal)
+                       .Replace("\"$type\": \"paragraph\",\r\n", "", StringComparison.Ordinal));
+
+        var read = new IwpfReader { VerifyHashes = false }.Read(new MemoryStream(rewritten));
+        var paragraphs = read.EnumerateParagraphs().ToList();
+        Assert.Single(paragraphs);
+        Assert.Equal("no-disc", paragraphs[0].GetPlainText());
+    }
+
+    private static byte[] RewriteDocumentJson(byte[] original, Func<string, string> transform)
+    {
+        using var input = new MemoryStream(original);
+        using var output = new MemoryStream();
+        using (var inputZip = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: true))
+        using (var outputZip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var entry in inputZip.Entries)
+            {
+                byte[] payload;
+                using (var es = entry.Open())
+                using (var ms = new MemoryStream())
+                {
+                    es.CopyTo(ms);
+                    payload = ms.ToArray();
+                }
+                if (entry.FullName == "content/document.json")
+                {
+                    var text = System.Text.Encoding.UTF8.GetString(payload);
+                    text = transform(text);
+                    payload = System.Text.Encoding.UTF8.GetBytes(text);
+                }
+                var newEntry = outputZip.CreateEntry(entry.FullName, CompressionLevel.Optimal);
+                using var ws = newEntry.Open();
+                ws.Write(payload, 0, payload.Length);
+            }
+        }
+        return output.ToArray();
+    }
+
     private static byte[] WriteToBytes(PolyDocument doc)
     {
         using var ms = new MemoryStream();

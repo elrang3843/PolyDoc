@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using PolyDoc.Core;
 
@@ -13,7 +14,14 @@ public sealed class IwpfReader : IDocumentReader
     /// <summary>true 면 매니페스트의 SHA-256 해시와 실제 페이로드 해시를 비교한다.</summary>
     public bool VerifyHashes { get; init; } = true;
 
-    public PolyDocument Read(Stream input)
+    public PolyDocument Read(Stream input) => Read(input, password: null);
+
+    /// <summary>
+    /// password 가 null/빈 문자열이면 암호화되지 않은 IWPF 만 읽을 수 있다.
+    /// 암호화된 패키지를 비밀번호 없이 읽으려 하면 <see cref="EncryptedIwpfException"/> 을 던지고,
+    /// 비밀번호가 틀리면 <see cref="WrongIwpfPasswordException"/> 을 던진다.
+    /// </summary>
+    public PolyDocument Read(Stream input, string? password)
     {
         ArgumentNullException.ThrowIfNull(input);
 
@@ -34,6 +42,26 @@ public sealed class IwpfReader : IDocumentReader
 
             var manifest = ReadManifest(archive);
 
+            // 암호화된 envelope 패키지면 inner ZIP 을 복호화한 뒤 재귀적으로 읽는다.
+            if (manifest.Encrypted)
+            {
+                if (string.IsNullOrEmpty(password))
+                    throw new EncryptedIwpfException();
+
+                var envelopeBytes = ReadEntry(archive, IwpfPaths.SecurityEnvelope)
+                    ?? throw new InvalidDataException($"Encrypted IWPF is missing '{IwpfPaths.SecurityEnvelope}'.");
+                var payloadBytes = ReadEntry(archive, IwpfPaths.SecurityPayload)
+                    ?? throw new InvalidDataException($"Encrypted IWPF is missing '{IwpfPaths.SecurityPayload}'.");
+
+                var envelope = JsonSerializer.Deserialize<IwpfEnvelope>(envelopeBytes, JsonDefaults.Options)
+                    ?? throw new InvalidDataException("Failed to deserialize security/envelope.json.");
+
+                var innerBytes = IwpfEncryption.Decrypt(payloadBytes, envelope, password);
+                using var innerStream = new MemoryStream(innerBytes, writable: false);
+                // 풀린 inner 는 평문 IWPF 다 — password=null 로 재귀.
+                return Read(innerStream, password: null);
+            }
+
             var documentBytes = ReadEntry(archive, IwpfPaths.DocumentJson)
                 ?? throw new InvalidDataException($"IWPF package is missing required part '{IwpfPaths.DocumentJson}'.");
 
@@ -44,6 +72,21 @@ public sealed class IwpfReader : IDocumentReader
 
             var document = JsonSerializer.Deserialize<PolyDocument>(documentBytes, JsonDefaults.Options)
                 ?? throw new InvalidDataException("Failed to deserialize content/document.json.");
+
+            // 쓰기 잠금 — manifest.WriteLocked 이면 security/write-lock.json 을 읽어
+            // Metadata.Custom 에 보관한다. ViewModel 이 이를 꺼내 _writeLock 으로 저장한다.
+            if (manifest.WriteLocked)
+            {
+                var writeLockBytes = ReadEntry(archive, IwpfPaths.SecurityWriteLock);
+                if (writeLockBytes is not null)
+                {
+                    if (VerifyHashes && manifest.Parts.TryGetValue(IwpfPaths.SecurityWriteLock, out var wlEntry))
+                    {
+                        VerifyHash(IwpfPaths.SecurityWriteLock, writeLockBytes, wlEntry.Sha256);
+                    }
+                    document.Metadata.Custom["iwpf.writeLock"] = Encoding.UTF8.GetString(writeLockBytes);
+                }
+            }
 
             // styles 파트 (있을 때만 머지)
             var stylesBytes = ReadEntry(archive, IwpfPaths.StylesJson);

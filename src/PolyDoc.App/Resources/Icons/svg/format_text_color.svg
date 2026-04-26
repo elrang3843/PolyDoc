@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>글자색</title>
+  <style>
+    .s { fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+    .f { fill:currentColor; }
+    .a { fill:none; stroke:#378ADD; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+    .af { fill:#378ADD; }
+    .r { fill:none; stroke:#E24B4A; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+    .g { fill:none; stroke:#1D9E75; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+  </style>
+  <text x="4" y="16" font-size="16" font-weight="500" fill="currentColor">A</text>
+  <rect x="3" y="18" width="16" height="3.5" rx="1" fill="#E24B4A"/>
+</svg>

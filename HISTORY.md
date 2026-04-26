@@ -45,8 +45,42 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — 툴바 오른쪽에 확대/축소 조절기 추가. "−/+" 버튼(10% 단계), 배율 직접 입력 TextBox(Enter·LostFocus 로 적용), "폭 맞춤"(뷰포트 너비 기준)·"쪽 맞춤"(너비·높이 중 작은 쪽 기준) 버튼. 배율은 `ZoomPercent`(10–500 %) 에 저장되며 `PaperStackPanel.LayoutTransform(ScaleTransform)` 으로 편집창 전체에 적용. 쪽 맞춤은 빈 문서에서도 `PaperBorder.MinHeight`(한 페이지 분량) 기준으로 계산.
+- **Added** — 메뉴 바로 아래에 메인 툴바 추가. 1단계로 파일 그룹(새 파일/불러오기/저장/다른 이름으로 저장/미리보기/인쇄/닫기) 7개 버튼 노출. 아이콘은 `Resources/ToolbarIcons.xaml` 의 `DrawingImage` 리소스를 `App.xaml` 에 머지해 사용하며, SVG 원본 80개는 `Resources/Icons/svg/` 에 임베드(추후 `Svg.Skia`/`SharpVectors` 로 동적 로딩 예정). 미리보기·인쇄는 메뉴와 동일하게 비활성.
+- **Added** — `PageSettings.ShowMarginGuides` (기본 `true`) — 편집창 용지 위에 점선(파랑) 여백 안내선을 표시. 페이지 서식 > 여백 탭에 "여백 안내선 표시" 체크박스 추가.
+- **Added** — 편집 영역 페이지 뷰. `ScrollViewer`(스크롤바 상시 표시) 위에 종이(`PaperBorder`)가 떠 있는 형태로 재구성. 그림자(`DropShadowEffect BlurRadius=18`) 적용, 캔버스 배경은 테마별 `EditorCanvasBg` 리소스. `PageSettings` 가 변경될 때마다 `PaperBorder.Width`(방향 보정 포함)와 배경색을 자동 갱신. 본문 들여쓰기는 `RichTextBox.Padding` 으로 페이지 여백을 반영 (RichTextBox 는 FlowDocument.PagePadding 을 무시).
+- **Added** — 서식 > 페이지 모양 다이얼로그 (`PageFormatWindow`). 용지 크기(ISO A·B, JIS/KS B, 미국·국제, 신문 판형, 한국/국제 도서 판형 전체), 용지 색상, 방향(세로/가로), 여백(위·아래·좌·우·머리말·꼬리말), 다단(N단+단간격), 페이지 번호 시작값, 미리보기(여백·단 구분선 포함). 머리말·꼬리말 입력 UI 는 다음 사이클에서 추가. `PageSettings` 를 `FlowDocumentBuilder` 에서 읽어 `FlowDocument.PageWidth/PagePadding/ColumnWidth/ColumnGap` 및 용지 배경색에 반영.
+- **Added** — 서식 > 개요 서식 다이얼로그 (`OutlineStyleWindow`). Body/H1~H6 7개 수준의 글자 모양·문단 모양·번호 매기기·테두리·배경색을 수준별로 편집. 글자/문단 편집은 기존 `CharFormatWindow` / `ParaFormatWindow` 의 단독 모드(에디터 없이 RunStyle / ParagraphStyle 직접 받는 생성자)를 재사용해 구현. 내장 4가지 프리셋(기본/학술/비즈니스/모던)을 제공하며 수준별 초기화 버튼 포함. `FlowDocumentBuilder` 가 `PolyDocument.OutlineStyles` 를 읽어 제목/본문 단락에 사용자 정의 스타일을 반영. `PolyDocument.OutlineStyles` (`OutlineStyleSet`) 는 IWPF 직렬화 시 자동 포함. `OutlineLevelStyle` — RunStyle + ParagraphStyle + OutlineNumbering + OutlineBorder + BackgroundColor(hex).
+
+### Fixed
+- **Fixed** — 개요 서식 다이얼로그: 선색·배경색 스와치 클릭 시 `System.Windows.Forms.ColorDialog` 색상 선택기가 열리도록 수정 (기존은 텍스트박스 포커스만 이동). 배경색 그룹에 "없음 (투명)" 체크박스 추가 — 체크 시 배경색 입력 비활성화 및 `BackgroundColor = null` 적용.
+- **Fixed** — 글자폭·자간이 적용된 영역이 통째로 atomic 요소로 잡혀 클릭만 해도 전체 범위가 다시 선택되고 캐럿이 안으로 들어가지 못하던 문제. `FlowDocumentBuilder.BuildScaledContainer` 가 더 이상 한 Run 전체를 하나의 `InlineUIContainer` (TextBlock/StackPanel) 로 감싸지 않고, **Span 안에 문자별 InlineUIContainer 를 나열**하도록 변경. 각 IUC 와 부모 Span 모두 같은 `PolyDoc.Run` 을 Tag 로 가져 라운드트립 머지 단서가 된다. `FlowDocumentParser` 의 Span 케이스에 `TryMergePerCharSpan` 추가 — 모든 자식이 같은 Tag 의 per-char IUC 면 한 Run 으로 머지하고, 사용자 편집(중간에 Run 삽입 등)이 있으면 자식별 fallback. `CharFormatWindow.CollectLeafInlines` / `GetFirstInlineInSelection` / `ApplyTypographicProps` 도 Span 단위 교체를 인식하도록 갱신.
+- **Fixed** — 글자 서식 적용 후 InlineUIContainer 가 atomic 요소로 잡혀 선택 영역이 시각상 묶여 보이고 자동 해제되지 않던 문제. `CharFormatWindow.OnOk` 에서 적용 직후 `_editor.Selection.Select(end, end)` 으로 캐럿을 끝으로 collapse.
+- **Fixed** — IWPF 옛 / 누락 discriminator 호환. `BlockJsonConverter` 신설 — 읽기 시 `$type` (현행) 외에 `kind` (29c09bd 시기 옛 빌드) 도 인식하고, 둘 다 없으면 `Paragraph` 로 폴백. 사용자가 옛 빌드로 저장한 iwpf 를 신 빌드에서 그대로 열 수 있다. 쓰기는 항상 `$type` 로 출력. xUnit 회귀 테스트 2건 추가 (legacy `kind` / 누락 discriminator).
+- **Fixed** — 테마 변경이 메인 윈도우에 적용되지 않던 문제. `MainWindow` / `AboutWindow` / `FindReplaceWindow` / `SettingsWindow` 의 모든 테마 리소스 참조를 `StaticResource` → `DynamicResource` 로 교체. (StaticResource 는 로드 시 한 번만 해석되어 사전 교체 후에도 옛 값을 유지.)
+- **Fixed** — 설정 창 우측 잘림 — 너비 320 → 380.
+- **Fixed** — 찾기/바꾸기에 "바꾸기(_E)" 단일 교체 버튼 추가, "모두 바꾸기(_A)" 유지. 상태 메시지 행을 별도 `Auto` 행으로 분리해 버튼 위치 흔들림 제거.
+- **Fixed** — 설정 창 조용한 종료. `OnThemeChecked` 가 `InitializeComponent` 중 `ThemeDark`/`ThemeSoft` 가 아직 null 인 상태에서 호출돼 `NullReferenceException`. null guard 추가.
+- **Fixed** — B 폴리싱 4종 빌드 오류 수정 (2226861 에서 미적용). `Properties/Resources.Designer.cs` 누락으로 `dotnet build` 가 실패해 새 기능이 배포되지 않던 문제 해결 — Designer.cs 수동 생성 (`ResourceManager` + 정적 속성). 드래그&드롭: `RichTextBox` 가 `DragOver`를 가로채 파일 드롭 이벤트가 윈도우에 도달하지 않던 문제 — Window 이벤트를 `Drop`/`DragOver` → `PreviewDrop`/`PreviewDragOver` 로 변경, 파일 드롭만 처리 후 `Handled=true`.
+
+### Added
+- **Added** — 서식 > 글자 서식 다이얼로그 (`CharFormatWindow`). RichTextBox 선택 영역의 글꼴·크기·굵게·기울임꼴·밑줄·취소선·위선·위첨자·아래첨자·글자색·배경색을 읽어 표시하고, OK 시 선택 영역에 일괄 적용. 선택이 없으면 캐럿 위치 서식을 읽어 이후 입력에 반영. 미리보기 TextBlock 실시간 갱신. 선택 혼합값(mixed)은 세 상태 체크박스(불확정)로 표시 — 값을 바꾸지 않으면 해당 속성 변경 없음.
+- **Added** — 글자폭(WidthPercent)·자간(LetterSpacingPx) WPF 시각화. 글자폭 != 100% 인 Run 은 `ScaleTransform` + `InlineUIContainer(TextBlock)`으로 렌더링. 자간은 `Typography.CharacterSpacing`(1/1000 em)으로 적용. `CharFormatWindow` 글꼴 그룹에 글자폭(%) / 자간(px) 입력란 추가 및 미리보기 실시간 반영. `FlowDocumentParser` 가 `InlineUIContainer`·`CharacterSpacing` 값을 파싱해 IWPF 라운드트립 보존.
+- **Added** — 서식 > 문단 서식 다이얼로그 (`ParaFormatWindow`). 선택 영역에 걸친 단락의 정렬(왼/가운데/오른/양쪽/배분), 줄 간격(%), 단락 위/아래 여백(pt), 첫 줄·왼쪽·오른쪽 들여쓰기(mm), 개요 수준(본문/H1~H6) 을 일괄 적용. `Paragraph.Tag`(PolyDoc.Paragraph)의 `Style` 도 함께 갱신해 비-FlowDocument 속성(IndentMm, SpaceBeforePt 등)까지 라운드트립 보존. `FlowDocumentScrollViewer` 기반 실시간 미리보기.
+
+### Fixed
+- **Fixed** — 다른 이름으로 저장 시 형식을 바꿔도 원본 파일명(확장자 포함)이 그대로 남아 "이미 있습니다" 경고가 뜨던 문제. `SaveFileDialog.FileName` 초기값을 `GetFileName` → `GetFileNameWithoutExtension` 으로 변경 — 선택한 필터의 확장자가 자동 적용된다.
+
+### Added
+- **Added** — 암호 설정 다이얼로그를 체크박스 기반으로 재설계. 열기·쓰기 암호를 독립적으로 설정 가능 — 같이사용 체크 시 단일 입력란, 미체크 시 열기/쓰기 각각 다른 입력란 활성화. `IwpfWriter.WritePassword` 추가로 Both 모드에서 열기와 쓰기 암호를 별도로 지정 지원.
+- **Added** — 쓰기 보호 자동 잠금 해제 UX. 쓰기 보호된 IWPF 를 열면 `RichTextBox.IsReadOnly=true` 로 시작 + 상태 표시줄에 "쓰기 보호됨" 인디케이터(주황). 사용자가 첫 편집(타이핑·Backspace·Delete·Enter·Tab·Ctrl+V/X)을 시도하면 즉시 비밀번호 프롬프트. 정답이면 같은 세션 내 추가 입력·저장 시 재입력 요구하지 않음.
+- **Added** — IWPF 암호 보호 3단계 모드. 단순 암호화(열기 보호)에서 열기 / 쓰기 / 둘 다 보호 모드로 확장. 쓰기 보호(`PasswordMode.Write`)는 AES 암호화 없이 PBKDF2 해시만 `security/write-lock.json` 에 저장해 저장 시 비밀번호를 검증한다; 둘 다(`Both`)는 AES-256-GCM 암호화 + inner ZIP 내 write-lock 병행. `PasswordChangeWindow` 에 보호 모드 RadioButton 추가. 문서 정보 보안 탭에서 현재 모드를 표시.
+- **Added** — 편집 > 문서 정보 다이얼로그 확장: 3개 탭 (정보 / 보안 / 워터마크). 작성자(Author) 입력 가능. 저장 시 첫 저장이면 작성일자 + 수정일자, 이후 저장에서는 수정일자만 자동 갱신.
+- **Added** — IWPF 문서 암호 보호. 다음 저장부터 PBKDF2-HMAC-SHA256 (200,000회) 으로 키 유도 + AES-256-GCM 으로 inner ZIP 전체 암호화 → outer envelope ZIP 봉인 (`security/envelope.json` + `security/payload.bin`). 옵션 패키지라 기존 평문 IWPF 와 100% 호환. 암호 보호 IWPF 를 열 때는 `PasswordPromptWindow` 로 입력 + 틀리면 GCM tag 불일치로 즉시 감지·재시도.
+- **Added** — IWPF 워터마크 설정 (텍스트 / 색상 / 글자 크기 / 회전 / 불투명도). `PolyDocument.Watermark` 로 직렬화 — 옵션 필드라 기존 IWPF 와 호환. 편집기 화면 미리보기·인쇄 렌더링은 후속 단계.
+- **Security** — AES-256-GCM 인증 암호화로 본문/스타일/리소스를 모두 봉인 — 잘못된 비밀번호 또는 변조 시 GCM tag 검증으로 거부. 암호는 메모리 내에서만 보관되고 비밀번호 자체는 저장하지 않는다 (envelope 에는 salt/nonce/tag 만 보관).
 - **Added** — B 폴리싱 4종.
-  - **드래그&드롭**: `MainWindow` 에 `AllowDrop=True` + `Drop`/`DragOver` 핸들러. 파일을 창에 끌어놓으면 `OpenFile(path)` 호출로 즉시 열기. `MainViewModel.OpenFile` 공개 메서드 추가, 내부 `OpenPath` 로 중복 제거.
+  - **드래그&드롭**: `MainWindow` 에 `AllowDrop=True` + `PreviewDrop`/`PreviewDragOver` 핸들러. 파일을 창에 끌어놓으면 `OpenFile(path)` 호출로 즉시 열기. `MainViewModel.OpenFile` 공개 메서드 추가, 내부 `OpenPath` 로 중복 제거.
   - **찾기/바꾸기**: `FindReplaceWindow` 모달리스 다이얼로그 (Ctrl+F / Ctrl+H). `FlowDocumentSearch` 헬퍼 — WPF `TextPointer` 기반 순방향 검색(`FindNext`) + `ReplaceAll`. 대소문자 구분 옵션, wrap-around, 상태 메시지 표시.
   - **i18n .resx 한/영 분리**: `Properties/Resources.resx` (한국어 기본) + `Properties/Resources.en-US.resx` (영어 병행). 메뉴 항목 / 다이얼로그 제목·버튼 / 상태 메시지 / 에러 메시지 전부 리소스 키로 분리. `MainViewModel` 의 모든 하드코딩 문자열을 `SR.Xxx` 참조로 교체.
   - **테마 다중화**: `Themes/Dark.xaml` (어두운 배경·밝은 텍스트) + `Themes/Soft.xaml` (따뜻한 아이보리 색조, 학생·장년 대상). `ThemeService` — `Application.Resources.MergedDictionaries[0]` 교체로 런타임 즉시 전환. `SettingsWindow` (도구→설정) — 라디오 버튼으로 Light/Dark/Soft 실시간 미리보기.

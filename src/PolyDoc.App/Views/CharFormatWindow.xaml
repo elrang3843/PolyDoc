@@ -1,0 +1,204 @@
+<Window x:Class="PolyDoc.App.Views.CharFormatWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="clr-namespace:PolyDoc.App.Services"
+        Title="{Binding FormatCharTitle, Source={x:Static svc:LocalizedStrings.Instance}}"
+        Width="500" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}">
+
+    <StackPanel Margin="16" MinWidth="450">
+
+        <!-- 글꼴 그룹 -->
+        <GroupBox Margin="0,0,0,8" Padding="10,4,10,8">
+            <GroupBox.Header>
+                <TextBlock Text="{Binding FormatCharFontGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           FontWeight="SemiBold" />
+            </GroupBox.Header>
+            <StackPanel>
+                <!-- 행 1: 글꼴 이름 / 크기 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding FormatCharFontFamily, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ComboBox Grid.Column="1" x:Name="CboFont"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              Background="{DynamicResource SurfaceAlt}"
+                              Foreground="{DynamicResource OnSurface}"
+                              BorderBrush="{DynamicResource Divider}"
+                              VerticalAlignment="Center"
+                              SelectionChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding FormatCharFontSize, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="10,0,6,0" />
+                    <TextBox Grid.Column="3" x:Name="TxtSize"
+                             Background="{DynamicResource SurfaceAlt}"
+                             Foreground="{DynamicResource OnSurface}"
+                             CaretBrush="{DynamicResource OnSurface}"
+                             BorderBrush="{DynamicResource Divider}"
+                             VerticalAlignment="Center" Padding="4,3"
+                             TextChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="4" Text="pt"
+                               VerticalAlignment="Center" Margin="4,0,0,0"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                </Grid>
+                <!-- 행 2: 글자폭 / 자간 -->
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="60" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="60" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding FormatCharWidthPercent, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="1" x:Name="TxtWidthPercent"
+                             Background="{DynamicResource SurfaceAlt}"
+                             Foreground="{DynamicResource OnSurface}"
+                             CaretBrush="{DynamicResource OnSurface}"
+                             BorderBrush="{DynamicResource Divider}"
+                             VerticalAlignment="Center" Padding="4,3"
+                             TextChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="2" Text="%"
+                               VerticalAlignment="Center" Margin="4,0,0,0"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                    <TextBlock Grid.Column="4"
+                               Text="{Binding FormatCharLetterSpacing, Source={x:Static svc:LocalizedStrings.Instance}}"
+                               VerticalAlignment="Center" Margin="10,0,6,0" />
+                    <TextBox Grid.Column="5" x:Name="TxtLetterSpacing"
+                             Background="{DynamicResource SurfaceAlt}"
+                             Foreground="{DynamicResource OnSurface}"
+                             CaretBrush="{DynamicResource OnSurface}"
+                             BorderBrush="{DynamicResource Divider}"
+                             VerticalAlignment="Center" Padding="4,3"
+                             TextChanged="OnPreviewUpdate" />
+                    <TextBlock Grid.Column="6" Text="px"
+                               VerticalAlignment="Center" Margin="4,0,0,0"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                </Grid>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- 스타일 그룹 -->
+        <GroupBox Margin="0,0,0,8" Padding="10,4,10,8">
+            <GroupBox.Header>
+                <TextBlock Text="{Binding FormatCharStyleGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           FontWeight="SemiBold" />
+            </GroupBox.Header>
+            <WrapPanel>
+                <CheckBox x:Name="ChkBold"
+                          Content="{Binding FormatCharBold, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,16,4" Click="OnStyleClick" />
+                <CheckBox x:Name="ChkItalic"
+                          Content="{Binding FormatCharItalic, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,16,4" Click="OnStyleClick" />
+                <CheckBox x:Name="ChkUnderline"
+                          Content="{Binding FormatCharUnderline, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,16,4" Click="OnStyleClick" />
+                <CheckBox x:Name="ChkStrikethrough"
+                          Content="{Binding FormatCharStrikethrough, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,16,4" Click="OnStyleClick" />
+                <CheckBox x:Name="ChkOverline"
+                          Content="{Binding FormatCharOverline, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,16,4" Click="OnStyleClick" />
+                <CheckBox x:Name="ChkSuperscript"
+                          Content="{Binding FormatCharSuperscript, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,16,4" Click="OnSuperscriptClick" />
+                <CheckBox x:Name="ChkSubscript"
+                          Content="{Binding FormatCharSubscript, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsThreeState="True" Margin="0,4,0,4"  Click="OnSubscriptClick" />
+            </WrapPanel>
+        </GroupBox>
+
+        <!-- 색상 그룹 -->
+        <GroupBox Margin="0,0,0,8" Padding="10,4,10,8">
+            <GroupBox.Header>
+                <TextBlock Text="{Binding FormatCharColorGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           FontWeight="SemiBold" />
+            </GroupBox.Header>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{Binding FormatCharFgColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           VerticalAlignment="Center" Margin="0,0,6,0" />
+                <!-- 글자색 스워치 — 클릭 시 TextBox 포커스 -->
+                <Border Grid.Column="1" x:Name="FgSwatch"
+                        Width="22" Height="18"
+                        BorderThickness="1" BorderBrush="{DynamicResource Divider}"
+                        VerticalAlignment="Center" Margin="0,0,4,0"
+                        Cursor="Hand" MouseLeftButtonUp="OnFgSwatchClick" />
+                <TextBox Grid.Column="2" x:Name="TxtFgColor"
+                         Background="{DynamicResource SurfaceAlt}"
+                         Foreground="{DynamicResource OnSurface}"
+                         CaretBrush="{DynamicResource OnSurface}"
+                         BorderBrush="{DynamicResource Divider}"
+                         VerticalAlignment="Center" Padding="4,3"
+                         TextChanged="OnFgColorChanged" />
+                <TextBlock Grid.Column="3" />
+                <TextBlock Grid.Column="4"
+                           Text="{Binding FormatCharBgColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           VerticalAlignment="Center" Margin="0,0,6,0" />
+                <!-- 배경색 스워치 -->
+                <Border Grid.Column="5" x:Name="BgSwatch"
+                        Width="22" Height="18"
+                        BorderThickness="1" BorderBrush="{DynamicResource Divider}"
+                        VerticalAlignment="Center" Margin="0,0,4,0"
+                        Cursor="Hand" MouseLeftButtonUp="OnBgSwatchClick" />
+                <TextBox Grid.Column="6" x:Name="TxtBgColor"
+                         Background="{DynamicResource SurfaceAlt}"
+                         Foreground="{DynamicResource OnSurface}"
+                         CaretBrush="{DynamicResource OnSurface}"
+                         BorderBrush="{DynamicResource Divider}"
+                         VerticalAlignment="Center" Padding="4,3"
+                         TextChanged="OnBgColorChanged" />
+            </Grid>
+        </GroupBox>
+
+        <!-- 미리보기 그룹 -->
+        <GroupBox Margin="0,0,0,12" Padding="10,4,10,8">
+            <GroupBox.Header>
+                <TextBlock Text="{Binding FormatCharPreviewGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           FontWeight="SemiBold" />
+            </GroupBox.Header>
+            <Border MinHeight="52"
+                    BorderThickness="1" BorderBrush="{DynamicResource Divider}"
+                    Background="{DynamicResource Surface}">
+                <TextBlock x:Name="PreviewText"
+                           Text="가나다AaBbCc 123"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Padding="12,8" TextWrapping="Wrap" />
+            </Border>
+        </GroupBox>
+
+        <!-- 버튼 -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="{Binding DlgConfirm, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="14,5" IsDefault="True" Click="OnOk" />
+            <Button Content="{Binding FindReplaceClose, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="14,5" Margin="8,0,0,0" IsCancel="True" Click="OnCancel" />
+        </StackPanel>
+    </StackPanel>
+</Window>

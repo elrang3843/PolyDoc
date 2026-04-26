@@ -4,6 +4,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>PolyDoc.App</RootNamespace>
     <AssemblyName>PolyDoc</AssemblyName>
     <ApplicationIcon>..\..\assets\Handtech.ico</ApplicationIcon>
@@ -12,6 +13,14 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <!-- UseWindowsForms 가 추가하는 implicit global using 이 WPF 타입과 충돌.
+       System.Windows.Forms / System.Drawing 은 OutlineStyleWindow 에서
+       완전한 네임스페이스(System.Windows.Forms.ColorDialog 등)로만 사용. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,13 +39,20 @@
     </Resource>
   </ItemGroup>
 
-  <!-- i18n: Properties/Resources.resx + en-US satellite -->
+  <!-- 툴바 아이콘 — SVG 원본은 후속 SvgImage 로딩용으로 임베드,
+       현재는 Resources/ToolbarIcons.xaml 의 DrawingImage 만 App.xaml 에 머지해 사용. -->
   <ItemGroup>
-    <EmbeddedResource Include="Properties\Resources.resx">
+    <Resource Include="Resources\Icons\svg\**\*.svg" />
+  </ItemGroup>
+
+  <!-- i18n: Properties/Resources.resx + en-US satellite
+       Update (not Include) to avoid duplicate with SDK default glob. -->
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
-    <EmbeddedResource Include="Properties\Resources.en-US.resx" />
+    <EmbeddedResource Update="Properties\Resources.en-US.resx" />
   </ItemGroup>
 
 </Project>
