@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using PolyDoc.App.Services;
+using SR = PolyDoc.App.Properties.Resources;
 
 namespace PolyDoc.App.Views;
 
@@ -28,7 +29,7 @@ public partial class FindReplaceWindow : Window
     private void OnReplace(object sender, RoutedEventArgs e)
     {
         var query = FindBox.Text;
-        if (string.IsNullOrEmpty(query)) { SetStatus("찾을 내용을 입력하세요."); return; }
+        if (string.IsNullOrEmpty(query)) { SetStatus(SR.FindReplaceEnterQuery); return; }
 
         var caseSensitive = CaseSensitiveBox.IsChecked == true;
         var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -48,13 +49,13 @@ public partial class FindReplaceWindow : Window
     private void OnReplaceAll(object sender, RoutedEventArgs e)
     {
         var query = FindBox.Text;
-        if (string.IsNullOrEmpty(query)) { SetStatus("찾을 내용을 입력하세요."); return; }
+        if (string.IsNullOrEmpty(query)) { SetStatus(SR.FindReplaceEnterQuery); return; }
 
         var count = FlowDocumentSearch.ReplaceAll(
             _editor.Document, query, ReplaceBox.Text, CaseSensitiveBox.IsChecked == true);
 
         _lastMatchEnd = null;
-        SetStatus(count == 0 ? "찾을 수 없습니다." : $"{count}개 바꿨습니다.");
+        SetStatus(count == 0 ? SR.FindReplaceNotFound : string.Format(SR.FindReplaceReplaced, count));
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
@@ -62,7 +63,7 @@ public partial class FindReplaceWindow : Window
     private void FindNext()
     {
         var query = FindBox.Text;
-        if (string.IsNullOrEmpty(query)) { SetStatus("찾을 내용을 입력하세요."); return; }
+        if (string.IsNullOrEmpty(query)) { SetStatus(SR.FindReplaceEnterQuery); return; }
 
         var doc = _editor.Document;
         var start = _lastMatchEnd ?? doc.ContentStart;
@@ -71,8 +72,8 @@ public partial class FindReplaceWindow : Window
         if (found is null)
         {
             found = FlowDocumentSearch.FindNext(doc, query, doc.ContentStart, CaseSensitiveBox.IsChecked == true);
-            if (found is null) { _lastMatchEnd = null; SetStatus("찾을 수 없습니다."); return; }
-            SetStatus("문서 처음부터 다시 검색했습니다.");
+            if (found is null) { _lastMatchEnd = null; SetStatus(SR.FindReplaceNotFound); return; }
+            SetStatus(SR.FindReplaceWrapped);
         }
         else
         {

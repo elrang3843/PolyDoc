@@ -30,7 +30,9 @@ namespace PolyDoc.App.Properties
         internal static string MenuFileOpen          => Get(nameof(MenuFileOpen));
         internal static string MenuFileSave          => Get(nameof(MenuFileSave));
         internal static string MenuFileSaveAs        => Get(nameof(MenuFileSaveAs));
+        internal static string MenuFilePreview       => Get(nameof(MenuFilePreview));
         internal static string MenuFilePrint         => Get(nameof(MenuFilePrint));
+        internal static string MenuFileClose         => Get(nameof(MenuFileClose));
         internal static string MenuFileExit          => Get(nameof(MenuFileExit));
 
         // ── 메뉴: 편집 ─────────────────────────────────────────────
@@ -79,6 +81,7 @@ namespace PolyDoc.App.Properties
         internal static string FindReplaceReplace     => Get(nameof(FindReplaceReplace));
         internal static string FindReplaceCaseSensitive => Get(nameof(FindReplaceCaseSensitive));
         internal static string FindReplaceFindNext    => Get(nameof(FindReplaceFindNext));
+        internal static string FindReplaceReplaceOne  => Get(nameof(FindReplaceReplaceOne));
         internal static string FindReplaceReplaceAll  => Get(nameof(FindReplaceReplaceAll));
         internal static string FindReplaceClose       => Get(nameof(FindReplaceClose));
         internal static string FindReplaceEnterQuery  => Get(nameof(FindReplaceEnterQuery));
@@ -130,5 +133,8 @@ namespace PolyDoc.App.Properties
         internal static string SettingsThemeDark  => Get(nameof(SettingsThemeDark));
         internal static string SettingsThemeSoft  => Get(nameof(SettingsThemeSoft));
         internal static string SettingsApply      => Get(nameof(SettingsApply));
+        internal static string SettingsLanguage   => Get(nameof(SettingsLanguage));
+        internal static string SettingsLangKorean => Get(nameof(SettingsLangKorean));
+        internal static string SettingsLangEnglish => Get(nameof(SettingsLangEnglish));
     }
 }

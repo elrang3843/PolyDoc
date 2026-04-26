@@ -38,7 +38,9 @@
   <data name="MenuFileOpen" xml:space="preserve"><value>_Open...</value></data>
   <data name="MenuFileSave" xml:space="preserve"><value>_Save</value></data>
   <data name="MenuFileSaveAs" xml:space="preserve"><value>Save _As...</value></data>
+  <data name="MenuFilePreview" xml:space="preserve"><value>_Preview</value></data>
   <data name="MenuFilePrint" xml:space="preserve"><value>_Print...</value></data>
+  <data name="MenuFileClose" xml:space="preserve"><value>_Close</value></data>
   <data name="MenuFileExit" xml:space="preserve"><value>E_xit</value></data>
 
   <!-- Menu: Edit -->
@@ -87,6 +89,7 @@
   <data name="FindReplaceReplace" xml:space="preserve"><value>_Replace:</value></data>
   <data name="FindReplaceCaseSensitive" xml:space="preserve"><value>_Case sensitive</value></data>
   <data name="FindReplaceFindNext" xml:space="preserve"><value>Find _Next</value></data>
+  <data name="FindReplaceReplaceOne" xml:space="preserve"><value>_Replace</value></data>
   <data name="FindReplaceReplaceAll" xml:space="preserve"><value>Replace _All</value></data>
   <data name="FindReplaceClose" xml:space="preserve"><value>Close</value></data>
   <data name="FindReplaceEnterQuery" xml:space="preserve"><value>Please enter search text.</value></data>
@@ -142,4 +145,7 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="SettingsThemeDark" xml:space="preserve"><value>Dark</value></data>
   <data name="SettingsThemeSoft" xml:space="preserve"><value>Soft</value></data>
   <data name="SettingsApply" xml:space="preserve"><value>Apply</value></data>
+  <data name="SettingsLanguage" xml:space="preserve"><value>Language:</value></data>
+  <data name="SettingsLangKorean" xml:space="preserve"><value>한국어</value></data>
+  <data name="SettingsLangEnglish" xml:space="preserve"><value>English (Default)</value></data>
 </root>

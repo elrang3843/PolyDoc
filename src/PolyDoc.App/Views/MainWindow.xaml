@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:PolyDoc.App.ViewModels"
+        xmlns:svc="clr-namespace:PolyDoc.App.Services"
         mc:Ignorable="d"
         Title="{Binding WindowTitle}"
         Width="1200" Height="800"
@@ -32,61 +33,61 @@
 
         <!-- 메뉴 바 -->
         <Menu DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
-            <MenuItem Header="파일(_F)">
-                <MenuItem Header="새 파일(_N)" Command="{Binding NewCommand}" InputGestureText="Ctrl+N" />
-                <MenuItem Header="불러오기(_O)..." Command="{Binding OpenCommand}" InputGestureText="Ctrl+O" />
+            <MenuItem Header="{Binding MenuFile, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuFileNew, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding NewCommand}" InputGestureText="Ctrl+N" />
+                <MenuItem Header="{Binding MenuFileOpen, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding OpenCommand}" InputGestureText="Ctrl+O" />
                 <Separator />
-                <MenuItem Header="저장(_S)" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
-                <MenuItem Header="다른 이름으로 저장(_A)..." Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
+                <MenuItem Header="{Binding MenuFileSave, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
+                <MenuItem Header="{Binding MenuFileSaveAs, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
                 <Separator />
-                <MenuItem Header="미리보기(_V)" IsEnabled="False" />
-                <MenuItem Header="인쇄(_P)..." IsEnabled="False" InputGestureText="Ctrl+P" />
+                <MenuItem Header="{Binding MenuFilePreview, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" InputGestureText="Ctrl+P" />
                 <Separator />
-                <MenuItem Header="닫기(_C)" IsEnabled="False" />
-                <MenuItem Header="종료(_X)" Command="{Binding ExitCommand}" InputGestureText="Alt+F4" />
+                <MenuItem Header="{Binding MenuFileClose, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuFileExit, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding ExitCommand}" InputGestureText="Alt+F4" />
             </MenuItem>
 
-            <MenuItem Header="편집(_E)">
-                <MenuItem Header="복사(_C)" Command="ApplicationCommands.Copy" />
-                <MenuItem Header="잘라내기(_T)" Command="ApplicationCommands.Cut" />
-                <MenuItem Header="붙여넣기(_P)" Command="ApplicationCommands.Paste" />
-                <MenuItem Header="지우기(_D)" Command="ApplicationCommands.Delete" />
+            <MenuItem Header="{Binding MenuEdit, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuEditCopy, Source={x:Static svc:LocalizedStrings.Instance}}" Command="ApplicationCommands.Copy" />
+                <MenuItem Header="{Binding MenuEditCut, Source={x:Static svc:LocalizedStrings.Instance}}" Command="ApplicationCommands.Cut" />
+                <MenuItem Header="{Binding MenuEditPaste, Source={x:Static svc:LocalizedStrings.Instance}}" Command="ApplicationCommands.Paste" />
+                <MenuItem Header="{Binding MenuEditDelete, Source={x:Static svc:LocalizedStrings.Instance}}" Command="ApplicationCommands.Delete" />
                 <Separator />
-                <MenuItem Header="찾기/바꾸기(_F)..." Command="{Binding FindReplaceCommand}" InputGestureText="Ctrl+F" />
+                <MenuItem Header="{Binding MenuEditFindReplace, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding FindReplaceCommand}" InputGestureText="Ctrl+F" />
                 <Separator />
-                <MenuItem Header="문서 정보(_I)..." IsEnabled="False" />
+                <MenuItem Header="{Binding MenuEditDocInfo, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 
-            <MenuItem Header="입력(_I)">
-                <MenuItem Header="글상자(_T)" IsEnabled="False" />
-                <MenuItem Header="표(_B)" IsEnabled="False" />
-                <MenuItem Header="그래프(_G)" IsEnabled="False" />
-                <MenuItem Header="특수문자(_S)" IsEnabled="False" />
-                <MenuItem Header="수식(_E)" IsEnabled="False" />
-                <MenuItem Header="이모지(_M)" IsEnabled="False" />
-                <MenuItem Header="도형(_H)" IsEnabled="False" />
-                <MenuItem Header="그림(_P)" IsEnabled="False" />
-                <MenuItem Header="사인(_N)" IsEnabled="False" />
+            <MenuItem Header="{Binding MenuInsert, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuInsertTextBox, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertTable, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertGraph, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertSpecialChar, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertEquation, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertEmoji, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertShape, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertSign, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 
-            <MenuItem Header="서식(_R)">
-                <MenuItem Header="글자 서식(_F)" IsEnabled="False" />
-                <MenuItem Header="문단 서식(_P)" IsEnabled="False" />
-                <MenuItem Header="페이지 서식(_G)" IsEnabled="False" />
+            <MenuItem Header="{Binding MenuFormat, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuFormatChar, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuFormatPara, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuFormatPage, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 
-            <MenuItem Header="도구(_T)">
-                <MenuItem Header="설정(_O)..." Command="{Binding SettingsCommand}" />
-                <MenuItem Header="사전(_D)" IsEnabled="False" />
-                <MenuItem Header="맞춤법 검사(_S)" IsEnabled="False" />
-                <MenuItem Header="사인 만들기(_M)..." IsEnabled="False" />
+            <MenuItem Header="{Binding MenuTools, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuToolsSettings, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SettingsCommand}" />
+                <MenuItem Header="{Binding MenuToolsDict, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuToolsSpell, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuToolsSignMaker, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 
-            <MenuItem Header="도움말(_H)">
-                <MenuItem Header="사용 방법(_M)" IsEnabled="False" />
-                <MenuItem Header="라이선스(_L)" IsEnabled="False" />
+            <MenuItem Header="{Binding MenuHelp, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuHelpManual, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuHelpLicense, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
                 <Separator />
-                <MenuItem Header="PolyDoc 정보(_A)" Command="{Binding AboutCommand}" />
+                <MenuItem Header="{Binding MenuHelpAbout, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding AboutCommand}" />
             </MenuItem>
         </Menu>
 

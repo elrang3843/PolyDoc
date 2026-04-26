@@ -38,7 +38,9 @@
   <data name="MenuFileOpen" xml:space="preserve"><value>불러오기(_O)...</value></data>
   <data name="MenuFileSave" xml:space="preserve"><value>저장(_S)</value></data>
   <data name="MenuFileSaveAs" xml:space="preserve"><value>다른 이름으로 저장(_A)...</value></data>
+  <data name="MenuFilePreview" xml:space="preserve"><value>미리보기(_V)</value></data>
   <data name="MenuFilePrint" xml:space="preserve"><value>인쇄(_P)...</value></data>
+  <data name="MenuFileClose" xml:space="preserve"><value>닫기(_C)</value></data>
   <data name="MenuFileExit" xml:space="preserve"><value>종료(_X)</value></data>
 
   <!-- 메뉴: 편집 -->
@@ -87,6 +89,7 @@
   <data name="FindReplaceReplace" xml:space="preserve"><value>바꾸기(_R):</value></data>
   <data name="FindReplaceCaseSensitive" xml:space="preserve"><value>대소문자 구분(_C)</value></data>
   <data name="FindReplaceFindNext" xml:space="preserve"><value>다음 찾기(_N)</value></data>
+  <data name="FindReplaceReplaceOne" xml:space="preserve"><value>바꾸기(_E)</value></data>
   <data name="FindReplaceReplaceAll" xml:space="preserve"><value>모두 바꾸기(_A)</value></data>
   <data name="FindReplaceClose" xml:space="preserve"><value>닫기</value></data>
   <data name="FindReplaceEnterQuery" xml:space="preserve"><value>찾을 내용을 입력하세요.</value></data>
@@ -142,4 +145,7 @@
   <data name="SettingsThemeDark" xml:space="preserve"><value>다크</value></data>
   <data name="SettingsThemeSoft" xml:space="preserve"><value>소프트</value></data>
   <data name="SettingsApply" xml:space="preserve"><value>적용</value></data>
+  <data name="SettingsLanguage" xml:space="preserve"><value>언어:</value></data>
+  <data name="SettingsLangKorean" xml:space="preserve"><value>한국어 (기본)</value></data>
+  <data name="SettingsLangEnglish" xml:space="preserve"><value>English</value></data>
 </root>

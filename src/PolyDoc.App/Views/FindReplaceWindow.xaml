@@ -1,8 +1,9 @@
 <Window x:Class="PolyDoc.App.Views.FindReplaceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="찾기 / 바꾸기"
-        Width="440" SizeToContent="Height"
+        xmlns:svc="clr-namespace:PolyDoc.App.Services"
+        Title="{Binding FindReplaceTitle, Source={x:Static svc:LocalizedStrings.Instance}}"
+        Width="460" SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
@@ -12,23 +13,24 @@
 
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />  <!-- 0: 찾기 -->
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="8" />
-            <RowDefinition Height="Auto" />  <!-- 2: 바꾸기 -->
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="10" />
-            <RowDefinition Height="Auto" />  <!-- 4: 대소문자 -->
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="8" />
-            <RowDefinition Height="Auto" />  <!-- 6: 상태 메시지 -->
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="12" />
-            <RowDefinition Height="Auto" />  <!-- 8: 버튼 -->
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="80" />
+            <ColumnDefinition Width="90" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
         <!-- 찾기 -->
-        <Label Grid.Row="0" Grid.Column="0" Content="찾기(_F):"
+        <Label Grid.Row="0" Grid.Column="0"
+               Content="{Binding FindReplaceFind, Source={x:Static svc:LocalizedStrings.Instance}}"
                Target="{Binding ElementName=FindBox}"
                VerticalAlignment="Center" />
         <TextBox x:Name="FindBox"
@@ -37,7 +39,8 @@
                  KeyDown="OnKeyDown" />
 
         <!-- 바꾸기 -->
-        <Label Grid.Row="2" Grid.Column="0" Content="바꾸기(_R):"
+        <Label Grid.Row="2" Grid.Column="0"
+               Content="{Binding FindReplaceReplace, Source={x:Static svc:LocalizedStrings.Instance}}"
                Target="{Binding ElementName=ReplaceBox}"
                VerticalAlignment="Center" />
         <TextBox x:Name="ReplaceBox"
@@ -48,7 +51,7 @@
         <!-- 옵션 -->
         <CheckBox x:Name="CaseSensitiveBox"
                   Grid.Row="4" Grid.Column="1"
-                  Content="대소문자 구분(_C)"
+                  Content="{Binding FindReplaceCaseSensitive, Source={x:Static svc:LocalizedStrings.Instance}}"
                   VerticalAlignment="Center" />
 
         <!-- 상태 메시지 -->
@@ -63,17 +66,17 @@
         <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">
-            <Button Content="다음 찾기(_N)"
+            <Button Content="{Binding FindReplaceFindNext, Source={x:Static svc:LocalizedStrings.Instance}}"
                     Padding="12,5"
                     IsDefault="True"
                     Click="OnFindNext" />
-            <Button Content="바꾸기(_E)"
+            <Button Content="{Binding FindReplaceReplaceOne, Source={x:Static svc:LocalizedStrings.Instance}}"
                     Padding="12,5" Margin="8,0,0,0"
                     Click="OnReplace" />
-            <Button Content="모두 바꾸기(_A)"
+            <Button Content="{Binding FindReplaceReplaceAll, Source={x:Static svc:LocalizedStrings.Instance}}"
                     Padding="12,5" Margin="8,0,0,0"
                     Click="OnReplaceAll" />
-            <Button Content="닫기"
+            <Button Content="{Binding FindReplaceClose, Source={x:Static svc:LocalizedStrings.Instance}}"
                     Padding="12,5" Margin="8,0,0,0"
                     IsCancel="True"
                     Click="OnClose" />
