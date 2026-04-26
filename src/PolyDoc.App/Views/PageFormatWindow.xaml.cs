@@ -218,7 +218,7 @@ public partial class PageFormatWindow : Window
     {
         using var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true };
         if (TryParseWpfColor(TxtPaperColor.Text, out var cur))
-            dlg.Color = System.Drawing.WpfMedia.Color.FromArgb(cur.A, cur.R, cur.G, cur.B);
+            dlg.Color = System.Drawing.Color.FromArgb(cur.A, cur.R, cur.G, cur.B);
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
         {
             var p = dlg.Color;
@@ -344,7 +344,7 @@ public partial class PageFormatWindow : Window
                 Fill   = WpfMedia.Brushes.Transparent,
                 Stroke = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(180, 0x44, 0x88, 0xCC)),
                 StrokeThickness = 0.7,
-                StrokeDashArray = new DoubleCollection { 3, 2 },
+                StrokeDashArray = new WpfMedia.DoubleCollection { 3, 2 },
             };
             Canvas.SetLeft(margin, cx);
             Canvas.SetTop(margin, cy);
@@ -378,7 +378,7 @@ public partial class PageFormatWindow : Window
                         X1 = lx, Y1 = cy, X2 = lx, Y2 = cy + crh,
                         Stroke          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(100, 0xFF, 0x80, 0x00)),
                         StrokeThickness = 0.6,
-                        StrokeDashArray = new DoubleCollection { 3, 2 },
+                        StrokeDashArray = new WpfMedia.DoubleCollection { 3, 2 },
                     };
                     PreviewCanvas.Children.Add(vLine);
                 }
@@ -410,7 +410,7 @@ public partial class PageFormatWindow : Window
         X1 = x, Y1 = y, X2 = x + w, Y2 = y,
         Stroke          = new WpfMedia.SolidColorBrush(color),
         StrokeThickness = 0.6,
-        StrokeDashArray = new DoubleCollection { 4, 3 },
+        StrokeDashArray = new WpfMedia.DoubleCollection { 4, 3 },
     };
 
     // ── 버튼 ─────────────────────────────────────────────────────
