@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
 using PolyDoc.Core;
 using WpfMedia = System.Windows.Media;
@@ -322,7 +323,11 @@ public partial class TextBoxOverlay : UserControl
         while (source is not null)
         {
             if (source is RichTextBox) return true;
-            source = VisualTreeHelper.GetParent(source);
+            // Paragraph/Run 등 FrameworkContentElement 는 Visual 이 아니므로
+            // VisualTreeHelper 대신 LogicalTreeHelper 를 사용해야 한다.
+            source = source is Visual or Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
         }
         return false;
     }
