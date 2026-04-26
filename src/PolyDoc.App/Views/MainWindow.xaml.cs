@@ -122,17 +122,18 @@ public partial class MainWindow : Window
 
     private void OnDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
-            ? DragDropEffects.Copy
-            : DragDropEffects.None;
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        e.Effects = DragDropEffects.Copy;
         e.Handled = true;
     }
 
     private void OnDrop(object sender, DragEventArgs e)
     {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
             _viewModel?.OpenFile(files[0]);
         }
+        e.Handled = true;
     }
 }

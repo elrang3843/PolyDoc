@@ -12,8 +12,8 @@
         Background="{StaticResource Surface}"
         Foreground="{StaticResource OnSurface}"
         AllowDrop="True"
-        Drop="OnDrop"
-        DragOver="OnDragOver">
+        PreviewDrop="OnDrop"
+        PreviewDragOver="OnDragOver">
 
     <Window.DataContext>
         <vm:MainViewModel />
