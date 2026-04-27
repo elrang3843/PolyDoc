@@ -223,6 +223,14 @@ public partial class TextBoxOverlay : UserControl
 
     private bool _suppressTextChanged;
 
+    // U+202E Right-to-Left Override.
+    // WPF FlowDirection.RightToLeft 만으로는 한글/라틴 같은 Bidi-약방향 문자가
+    // LTR run 으로 묶여 시각 순서가 좌→우로 유지된다. paragraph 시작에 RLO 를
+    // 박아두면 문단 내 모든 글자가 강제로 RTL 방향으로 표시되어, 새로 입력한
+    // 글자가 시각적으로 기존 글자의 왼쪽에 붙는 진짜 "왼쪽 진행" 동작이 된다.
+    private const char RlOverrideChar = '\u202E';
+    private const string RtlOverrideMark = "\u202E";
+
     public TextBoxOverlay(TextBoxObject model)
     {
         Model = model ?? throw new ArgumentNullException(nameof(model));
@@ -354,10 +362,15 @@ public partial class TextBoxOverlay : UserControl
         InnerEditor.FlowDirection = newFlowDir;
         if (newFlowDir == FlowDirection.RightToLeft)
         {
+            EnsureRloInAllParagraphs();
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 FindVisualChild<ScrollViewer>(InnerEditor)?.ScrollToRightEnd();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+        else
+        {
+            RemoveRloFromAllParagraphs();
         }
 
         // ── 회전 ───────────────────────────────────────────────────────
@@ -392,17 +405,26 @@ public partial class TextBoxOverlay : UserControl
     private void LoadModelTextToEditor()
     {
         // 모델의 plain text → FlowDocument paragraphs
+        var isRtl = Model.TextOrientation == TextOrientation.Horizontal &&
+                    Model.TextProgression == TextProgression.Leftward;
+        var prefix = isRtl ? RtlOverrideMark : string.Empty;
+
         var doc = new System.Windows.Documents.FlowDocument();
         foreach (var block in Model.Content)
         {
             if (block is PolyDoc.Core.Paragraph cp)
             {
-                var para = new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run(cp.GetPlainText()));
+                var para = new System.Windows.Documents.Paragraph(
+                    new System.Windows.Documents.Run(prefix + cp.GetPlainText()));
                 doc.Blocks.Add(para);
             }
         }
         if (!doc.Blocks.Any())
-            doc.Blocks.Add(new System.Windows.Documents.Paragraph());
+        {
+            var p = new System.Windows.Documents.Paragraph();
+            if (isRtl) p.Inlines.Add(new System.Windows.Documents.Run(prefix));
+            doc.Blocks.Add(p);
+        }
 
         InnerEditor.Document = doc;
     }
@@ -418,7 +440,8 @@ public partial class TextBoxOverlay : UserControl
             {
                 var range = new System.Windows.Documents.TextRange(para.ContentStart, para.ContentEnd);
                 var cp = new PolyDoc.Core.Paragraph();
-                var text = range.Text.TrimEnd('\r', '\n');
+                // RLO override 마커는 디스플레이 전용 — 모델에 저장하지 않는다.
+                var text = range.Text.TrimEnd('\r', '\n').Replace(RtlOverrideMark, string.Empty);
                 if (text.Length > 0) cp.AddText(text);
                 Model.Content.Add(cp);
             }
@@ -432,9 +455,64 @@ public partial class TextBoxOverlay : UserControl
     private void OnInnerTextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged) return;
+        // RTL 모드면 새로 생긴 paragraph (Enter 등) 시작에 RLO 자동 보충.
+        if (InnerEditor.FlowDirection == FlowDirection.RightToLeft)
+            EnsureRloInAllParagraphs();
         SyncEditorToModel();
         Model.Status = NodeStatus.Modified;
         ContentChangedCommitted?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void EnsureRloInAllParagraphs()
+    {
+        _suppressTextChanged = true;
+        try
+        {
+            foreach (var block in InnerEditor.Document.Blocks)
+            {
+                if (block is System.Windows.Documents.Paragraph p)
+                    EnsureRloAtParagraphStart(p);
+            }
+        }
+        finally { _suppressTextChanged = false; }
+    }
+
+    private static void EnsureRloAtParagraphStart(System.Windows.Documents.Paragraph p)
+    {
+        var first = p.Inlines.FirstInline;
+        if (first is System.Windows.Documents.Run r)
+        {
+            if (r.Text.Length > 0 && r.Text[0] == RlOverrideChar) return;
+            r.Text = RtlOverrideMark + r.Text;
+        }
+        else if (first == null)
+        {
+            p.Inlines.Add(new System.Windows.Documents.Run(RtlOverrideMark));
+        }
+        else
+        {
+            p.Inlines.InsertBefore(first, new System.Windows.Documents.Run(RtlOverrideMark));
+        }
+    }
+
+    private void RemoveRloFromAllParagraphs()
+    {
+        _suppressTextChanged = true;
+        try
+        {
+            foreach (var block in InnerEditor.Document.Blocks)
+            {
+                if (block is System.Windows.Documents.Paragraph p)
+                {
+                    foreach (var inline in p.Inlines.ToList())
+                    {
+                        if (inline is System.Windows.Documents.Run r && r.Text.Contains(RlOverrideChar))
+                            r.Text = r.Text.Replace(RtlOverrideMark, string.Empty);
+                    }
+                }
+            }
+        }
+        finally { _suppressTextChanged = false; }
     }
 
     // ── 컨텍스트 메뉴 ────────────────────────────────────────────────

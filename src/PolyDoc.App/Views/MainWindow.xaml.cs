@@ -207,7 +207,44 @@ public partial class MainWindow : Window
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged) return;
+
+        // RTL 모드면 새 paragraph (Enter 등) 시작에 RLO 자동 보충 — 그래야 그 문단도
+        // 첫 글자부터 우→좌 방향으로 표시된다.
+        if (BodyEditor.FlowDirection == FlowDirection.RightToLeft)
+            EnsureRloInBodyEditorParagraphs();
+
         _viewModel?.MarkDirty();
+    }
+
+    private void EnsureRloInBodyEditorParagraphs()
+    {
+        const char rlo = '\u202E';
+        var rloStr = PolyDoc.App.Services.FlowDocumentBuilder.RtlOverrideMark;
+        _suppressTextChanged = true;
+        try
+        {
+            foreach (var block in BodyEditor.Document.Blocks)
+            {
+                if (block is System.Windows.Documents.Paragraph p)
+                {
+                    var first = p.Inlines.FirstInline;
+                    if (first is System.Windows.Documents.Run r)
+                    {
+                        if (r.Text.Length == 0 || r.Text[0] != rlo)
+                            r.Text = rloStr + r.Text;
+                    }
+                    else if (first == null)
+                    {
+                        p.Inlines.Add(new System.Windows.Documents.Run(rloStr));
+                    }
+                    else
+                    {
+                        p.Inlines.InsertBefore(first, new System.Windows.Documents.Run(rloStr));
+                    }
+                }
+            }
+        }
+        finally { _suppressTextChanged = false; }
     }
 
     private void OnFindReplaceRequested(object? sender, EventArgs e)

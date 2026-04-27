@@ -80,7 +80,73 @@ public static class FlowDocumentBuilder
         {
             BuildSection(fd, section, outlineStyles);
         }
+
+        // RTL 모드에서는 paragraph 시작에 U+202E (RLO, Right-to-Left Override) 를
+        // 박아두어 한글/라틴 같은 Bidi-약방향 문자도 강제로 RTL flow 로 표시되게 한다.
+        // FlowDirection.RightToLeft 만으로는 우측 정렬만 될 뿐 글자 입력 순서가
+        // 좌→우로 유지되어 사용자가 기대하는 "왼쪽 진행" 동작이 되지 않는다.
+        if (fd.FlowDirection == System.Windows.FlowDirection.RightToLeft)
+        {
+            InjectRtlOverrideMarks(fd);
+        }
         return fd;
+    }
+
+    /// <summary>RLO 마커 (U+202E). paragraph 시작에 두면 그 paragraph 내 모든 글자가
+    /// 강제로 RTL 시각 흐름으로 override 된다 — 새 글자가 기존 글자의 왼쪽에 붙음.</summary>
+    public const string RtlOverrideMark = "\u202E";
+
+    private static void InjectRtlOverrideMarks(Wpf.FlowDocument fd)
+    {
+        foreach (var p in EnumerateParagraphs(fd.Blocks))
+        {
+            EnsureRloAtParagraphStart(p);
+        }
+    }
+
+    private static System.Collections.Generic.IEnumerable<Wpf.Paragraph> EnumerateParagraphs(
+        Wpf.BlockCollection blocks)
+    {
+        foreach (var b in blocks)
+        {
+            switch (b)
+            {
+                case Wpf.Paragraph p:
+                    yield return p;
+                    break;
+                case Wpf.Section s:
+                    foreach (var nested in EnumerateParagraphs(s.Blocks)) yield return nested;
+                    break;
+                case Wpf.List l:
+                    foreach (var item in l.ListItems)
+                        foreach (var nested in EnumerateParagraphs(item.Blocks)) yield return nested;
+                    break;
+                case Wpf.Table t:
+                    foreach (var rg in t.RowGroups)
+                        foreach (var row in rg.Rows)
+                            foreach (var cell in row.Cells)
+                                foreach (var nested in EnumerateParagraphs(cell.Blocks)) yield return nested;
+                    break;
+            }
+        }
+    }
+
+    private static void EnsureRloAtParagraphStart(Wpf.Paragraph p)
+    {
+        var first = p.Inlines.FirstInline;
+        if (first is Wpf.Run r)
+        {
+            if (r.Text.Length > 0 && r.Text[0] == '\u202E') return;
+            r.Text = RtlOverrideMark + r.Text;
+        }
+        else if (first == null)
+        {
+            p.Inlines.Add(new Wpf.Run(RtlOverrideMark));
+        }
+        else
+        {
+            p.Inlines.InsertBefore(first, new Wpf.Run(RtlOverrideMark));
+        }
     }
 
     private static void BuildSection(Wpf.FlowDocument fd, Section section, OutlineStyleSet outlineStyles)
