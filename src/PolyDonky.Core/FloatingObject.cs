@@ -24,6 +24,8 @@ public enum TextBoxShape
     Cloud     = 2,
     Spiky     = 3,
     Lightning = 4,
+    Ellipse   = 5,
+    Pie       = 6,
 }
 
 /// <summary>말풍선 꼬리 방향 (8방향). 박스의 어느 변/모서리에서 꼬리가 뻗는지.</summary>
@@ -91,6 +93,12 @@ public sealed class TextBoxObject : FloatingObject
 
     /// <summary>번개상자(Lightning) 지그재그 꺽임 개수. 1~5 권장 (1=단순, 2=기본 볼트).</summary>
     public int LightningBendCount { get; set; } = 2;
+
+    /// <summary>파이(Pie) 시작 각도 (도, 시계방향, 0 = 오른쪽). -360~360.</summary>
+    public double PieStartAngleDeg { get; set; } = 0;
+
+    /// <summary>파이(Pie) 호 범위 (도). 5~355 로 클램프. 기본 270° = 3/4 원.</summary>
+    public double PieSweepAngleDeg { get; set; } = 270;
 
     /// <summary>본문 블록. 최소 1개의 빈 Paragraph 를 포함하도록 기본값 설정.</summary>
     public IList<Block> Content { get; set; } = new List<Block> { new Paragraph() };

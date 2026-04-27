@@ -181,6 +181,34 @@ public partial class TextBoxOverlay : UserControl
     }
 
     /// <summary>
+    /// 타원 PathGeometry. 4개의 cubic Bézier 호로 원을 근사하며,
+    /// Stretch="Fill" 로 인해 실제 박스 비율에 맞춰 타원으로 자동 스케일된다.
+    /// </summary>
+    private static string BuildEllipsePath()
+        => "M 50,0 C 77.6,0 100,22.4 100,50 C 100,77.6 77.6,100 50,100 C 22.4,100 0,77.6 0,50 C 0,22.4 22.4,0 50,0 Z";
+
+    /// <summary>
+    /// 파이(부채꼴) PathGeometry. 중심(50,50)에서 반경 50의 호를 그린 후 다시 중심으로 닫는다.
+    /// <paramref name="startAngleDeg"/>: 시계방향 시작 각도 (0 = 오른쪽).
+    /// <paramref name="sweepAngleDeg"/>: 시계방향 호 범위 (5~355).
+    /// </summary>
+    private static string BuildPiePath(double startAngleDeg, double sweepAngleDeg)
+    {
+        const double cx = 50, cy = 50, r = 50;
+        double sweep = Math.Clamp(sweepAngleDeg, 5, 355);
+        double startRad = startAngleDeg * Math.PI / 180.0;
+        double endRad   = (startAngleDeg + sweep) * Math.PI / 180.0;
+        double x1 = cx + r * Math.Cos(startRad);
+        double y1 = cy + r * Math.Sin(startRad);
+        double x2 = cx + r * Math.Cos(endRad);
+        double y2 = cy + r * Math.Sin(endRad);
+        int largeArc = sweep > 180 ? 1 : 0;
+        return string.Format(Inv,
+            "M {0:0.##},{1:0.##} L {2:0.##},{3:0.##} A {4},{4} 0 {5} 1 {6:0.##},{7:0.##} Z",
+            cx, cy, x1, y1, r, largeArc, x2, y2);
+    }
+
+    /// <summary>
     /// 번개상자 PathGeometry. 꺽임 개수에 따라 미리 정의된 템플릿을 선택.
     /// 1=단순(작은 V형), 2=기본 볼트(원래 모양), 3~5=촘촘한 지그재그.
     /// </summary>
@@ -300,6 +328,8 @@ public partial class TextBoxOverlay : UserControl
                 TextBoxShape.Cloud     => BuildCloudPath(Model.CloudPuffCount),
                 TextBoxShape.Spiky     => BuildSpikyPath(Model.SpikeCount),
                 TextBoxShape.Lightning => BuildLightningPath(Model.LightningBendCount),
+                TextBoxShape.Ellipse   => BuildEllipsePath(),
+                TextBoxShape.Pie       => BuildPiePath(Model.PieStartAngleDeg, Model.PieSweepAngleDeg),
                 _                      => BuildSpeechPath(Model.SpeechDirection),
             };
             ShapePath.Data = Geometry.Parse(pathData);
@@ -459,6 +489,8 @@ public partial class TextBoxOverlay : UserControl
             Model.CloudPuffCount     = dlg.ResultCloudPuffCount;
             Model.SpikeCount         = dlg.ResultSpikeCount;
             Model.LightningBendCount = dlg.ResultLightningBendCount;
+            Model.PieStartAngleDeg   = dlg.ResultPieStartAngleDeg;
+            Model.PieSweepAngleDeg   = dlg.ResultPieSweepAngleDeg;
             Model.RotationAngleDeg   = dlg.ResultRotationAngleDeg;
             Model.TextOrientation    = dlg.ResultTextOrientation;
             Model.TextProgression    = dlg.ResultTextProgression;
@@ -712,6 +744,12 @@ public partial class TextBoxOverlay : UserControl
             case TextBoxShape.Lightning:
                 // 번개는 중앙 폭이 좁아 텍스트가 잘 안 어울리지만, 최소 영역만 확보.
                 return (w * 0.15, h * 0.20, w * 0.15, h * 0.20);
+            case TextBoxShape.Ellipse:
+                // 타원의 내접 사각형은 각 변에서 약 15% 안쪽에 위치 (r / √2 ≈ 0.707r).
+                return (w * 0.15, h * 0.15, w * 0.15, h * 0.15);
+            case TextBoxShape.Pie:
+                // 부채꼴 — 각도에 따라 달라지므로 보수적으로 10% 인셋 적용.
+                return (w * 0.10, h * 0.10, w * 0.10, h * 0.10);
             default:
                 return (0, 0, 0, 0);
         }

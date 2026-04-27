@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — 글상자 모양에 **타원(Ellipse)** 과 **파이(Pie/부채꼴)** 추가. 타원은 박스 비율에 따라 자동 스케일되는 4-Bézier 근사 타원; 파이는 시작 각도(°)·호 범위(5~355°) 를 글상자 속성 창에서 조정 가능한 부채꼴 모양. 두 모양 모두 인셋 자동 계산 적용 (타원 15%, 파이 10%).
+
 ### Fixed
 - **Fixed** — **글자 속성 다이얼로그가 로드/복사된 글상자에서 색·폰트·볼드 등 변경을 시각적으로 반영하지 않던 핵심 버그**. `CharFormatWindow.ApplyToSelection` 의 마지막 단계인 `ApplyTypographicProps` 가 인라인의 `Tag` 가 가리키는 stale `PolyDonky.Run.Style` 로 `BuildInline` → `ReplaceInline` 을 수행하면서, 직전 `ApplyPropertyValue` 가 Wpf.Run 에 적용한 색·폰트·볼드 결과를 통째로 덮어 씌우고 있었다. 새로 그린 글상자는 WPF 가 자연 생성한 `Wpf.Run` 에 Tag 가 없어 `ExtractPolyRun(r)` 경로로 가서 현재 Wpf 속성을 정확히 추출 → 회귀가 발생하지 않았다. 두 단계 보강: 1) 글자폭/자간이 기본값(100%, 0px) 이면 `ApplyTypographicProps` 가 즉시 return — 재구성 자체를 건너뜀. 2) `Run` 케이스는 Tag 유무와 관계없이 `ExtractPolyRun(r)` 으로 현재 Wpf 속성을 우선 추출 — Tag.pr 의 stale 색·폰트가 ApplyPropertyValue 결과를 가리지 않도록.
 - **Fixed** — 메뉴/우클릭 **서식 → 글자 속성/문단 속성** 다이얼로그가 글상자 안쪽 selection 이 비어 있을 때 시각적 변화를 만들지 않던 문제.
