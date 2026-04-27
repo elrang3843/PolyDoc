@@ -405,6 +405,14 @@ public partial class CharFormatWindow : Window
         var sel = _editor!.Selection;
         if (sel.IsEmpty) return;
 
+        // 글자폭/자간이 모두 기본값(100%, 0px) 이면 ReplaceInline 으로 인라인을 교체할
+        // 이유가 없다. 직전 ApplyPropertyValue 가 Wpf.Run 에 적용한 색·폰트·볼드 결과를
+        // Tag 기반 stale RunStyle 로 다시 빌드해 덮어쓰는 회귀를 방지 (글상자 로드/복사
+        // 케이스에서 모든 글자속성 변경이 시각적으로 반영되지 않던 원인).
+        bool widthChanged   = Math.Abs(widthPercent - 100) > 0.5;
+        bool spacingChanged = Math.Abs(letterSpacingPx)    > 0.01;
+        if (!widthChanged && !spacingChanged) return;
+
         var inlines = CollectLeafInlines(sel);
 
         foreach (var inline in inlines)
@@ -413,10 +421,11 @@ public partial class CharFormatWindow : Window
             if (inline is InlineUIContainer { Tag: PolyDonky.Core.Run { LatexSource: { Length: > 0 } } })
                 continue;
 
-            // PolyDonky Run 추출 (Tag 우선, 없으면 WPF 속성에서 역산)
+            // PolyDonky Run 추출. Wpf.Run 의 경우 Tag 가 있어도 항상 현재 Wpf 속성에서
+            // 새로 추출한다 — 직전 ApplyPropertyValue 결과가 stale Tag.Style 로 덮이지 않도록.
+            // Span / IUC 는 per-char 구조라 Tag.pr 을 그대로 사용 (자체 형식이 의미 있음).
             PolyDonky.Core.Run polyRun = inline switch
             {
-                Run r when r.Tag is PolyDonky.Core.Run pr => pr,
                 Run r                                   => ExtractPolyRun(r),
                 Span sp when sp.Tag is PolyDonky.Core.Run pr => pr,
                 InlineUIContainer { Tag: PolyDonky.Core.Run pr } => pr,
