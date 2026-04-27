@@ -46,7 +46,8 @@ PolyDoc의 모든 의미 있는 변경 사항을 이 파일에 기록합니다.
 
 ### Added
 - **Added** — 입력 > **특수문자** 다이얼로그(`SpecialCharWindow`). 13개 카테고리(자주 쓰는 / 라틴 보충 / 그리스 / 키릴 / 화살표 / 수학기호 / 통화 / 숫자·위첨자 / 도형 / 표시 / 한글 자모 / 괄호·구두점 / 박스 그리기). 글자 그리드 클릭 시 미리보기(48pt) + 유니코드 코드포인트(`U+XXXX`) + Unicode 블록명 표시. 더블클릭 시 즉시 삽입. 유니코드 hex 직접 입력으로 임의 코드포인트 검색·삽입 가능(예: `03B1`, `2603`, `AC00`). 본문 캐럿 위치(또는 선택 영역 대체)에 단일 문자 삽입.
-- **Added** — 입력 > **수식** 다이얼로그(`EquationWindow`). LaTeX 소스 입력 + 인라인(`\(...\)`) / 별행(`\[...\]`) 모드 토글 + 빠른 삽입 팔레트 16개(α/β/γ/π/Σ/∏/∫/√/\frac/위첨자/아래첨자/≤/≥/≠/∞/→). 빠른 삽입 시 `{}` 그룹 안으로 자동 캐럿 이동. 미리보기는 현 단계 원본 LaTeX 텍스트 표시(정식 MathML/이미지 렌더러는 추후 단계 도입). 삽입 시 본문에 monospace(Cambria Math fallback Cambria/Consolas) 스타일이 적용된 텍스트로 들어가며, 추후 `EquationRun` 모델로 승격해 무손실 라운드트립을 보장할 예정.
+- **Added** — 입력 > **수식** 다이얼로그(`EquationWindow`). LaTeX 소스 입력 + 인라인(`\(...\)`) / 별행(`\[...\]`) 모드 토글 + 빠른 삽입 팔레트 16개(α/β/γ/π/Σ/∏/∫/√/\frac/위첨자/아래첨자/≤/≥/≠/∞/→). 빠른 삽입 시 `{}` 그룹 안으로 자동 캐럿 이동. 미리보기는 **WpfMath FormulaControl** 로 실시간 LaTeX 렌더링(파싱 오류 시 붉은 메시지 표시). 삽입 시 FormulaControl 을 오프스크린(`RenderTargetBitmap`) 렌더링 후 `Image`로 변환해 `InlineUIContainer`로 삽입 — `XamlWriter.Save()` undo 직렬화 충돌 방지. `Run.LatexSource` / `Run.IsDisplayEquation` 필드로 IWPF 라운드트립 보장.
+- **Fixed** — 수식 `InlineUIContainer` 포함 선택 영역에 글자 속성 적용 시 발생하던 `XamlParseException`(`AdornedElementPlaceholder는 Template의 일부로서만 사용할 수 있습니다`) 수정. WPF undo 시스템이 `XamlWriter.Save()` 호출 시 `FormulaControl` 템플릿의 `AdornedElementPlaceholder`에서 crash — `Image(BitmapSource)` 로 교체해 해결. 글자 속성 창에서 수식 IUC 를 글자폭/자간 재구성 대상에서 제외하는 안전 가드 추가.
 
 ### Security
 - **Security** — 라이선스를 Apache 2.0 에서 **Mozilla Public License 2.0** 으로 전환. 파일 수준 약(弱) 카피레프트로 PolyDoc 파일 자체의 수정 사항을 공유하도록 보장하면서 독점 확장 추가는 허용.

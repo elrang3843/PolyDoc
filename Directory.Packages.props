@@ -14,6 +14,9 @@
     <!-- Markdown -->
     <PackageVersion Include="Markdig" Version="0.42.0" />
 
+    <!-- LaTeX 수식 렌더러 -->
+    <PackageVersion Include="WpfMath" Version="0.11.0" />
+
     <!-- Test stack (xUnit only; FluentAssertions v8 is non-OSS, avoided) -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

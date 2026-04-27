@@ -409,6 +409,10 @@ public partial class CharFormatWindow : Window
 
         foreach (var inline in inlines)
         {
+            // 수식 IUC 는 글자폭/자간 재구성 대상에서 제외 (Image 로 렌더링된 수식은 변형 불필요)
+            if (inline is InlineUIContainer { Tag: PolyDoc.Core.Run { LatexSource: { Length: > 0 } } })
+                continue;
+
             // PolyDoc Run 추출 (Tag 우선, 없으면 WPF 속성에서 역산)
             PolyDoc.Core.Run polyRun = inline switch
             {

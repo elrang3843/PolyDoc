@@ -5,6 +5,12 @@ public sealed class Run
 {
     public string Text { get; set; } = string.Empty;
     public RunStyle Style { get; set; } = new();
+
+    /// <summary>LaTeX 수식 소스. null 이면 일반 텍스트 Run.</summary>
+    public string? LatexSource { get; set; }
+
+    /// <summary>별행(display) 수식 여부. LatexSource 가 null 이면 무시.</summary>
+    public bool IsDisplayEquation { get; set; }
 }
 
 public sealed class RunStyle

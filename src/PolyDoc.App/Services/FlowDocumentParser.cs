@@ -233,11 +233,18 @@ public static class FlowDocumentParser
             }
             case Wpf.InlineUIContainer iuc:
             {
-                // FlowDocumentBuilder 가 만든 글자폭·자간 시각화 컨테이너.
+                // FlowDocumentBuilder 가 만든 컨테이너.
                 // Tag 에 원본 PolyDoc Run 이 있으면 직접 회수. 없으면 시각 트리에서 추출.
                 if (iuc.Tag is Run origRun)
                 {
-                    p.AddText(origRun.Text, Clone(origRun.Style));
+                    // 수식 Run 은 LatexSource / IsDisplayEquation 보존
+                    p.Runs.Add(new Run
+                    {
+                        Text              = origRun.Text,
+                        Style             = Clone(origRun.Style),
+                        LatexSource       = origRun.LatexSource,
+                        IsDisplayEquation = origRun.IsDisplayEquation,
+                    });
                 }
                 else if (iuc.Child is System.Windows.Controls.StackPanel panel)
                 {

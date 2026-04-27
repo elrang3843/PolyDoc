@@ -354,9 +354,13 @@ public static class FlowDocumentBuilder
             wpfPara.LineHeight = wpfPara.FontSize * style.LineHeightFactor;
     }
 
-    /// <summary>글자폭 != 100% 또는 자간 != 0 이면 Span(per-char InlineUIContainer 들), 그 외에는 Run 반환.</summary>
+    /// <summary>글자폭 != 100% 또는 자간 != 0 이면 Span(per-char InlineUIContainer 들), 그 외에는 Run 반환.
+    /// LatexSource 가 있으면 WpfMath FormulaControl 로 렌더링.</summary>
     public static Wpf.Inline BuildInline(Run run)
     {
+        if (run.LatexSource is { Length: > 0 } latex)
+            return BuildEquationInline(run, latex);
+
         var s = run.Style;
         if (NeedsContainer(s))
             return BuildScaledContainer(run);
@@ -391,6 +395,59 @@ public static class FlowDocumentBuilder
 
         wpfRun.Tag = run;
         return wpfRun;
+    }
+
+    private static Wpf.Inline BuildEquationInline(Run run, string latex)
+    {
+        var img = RenderEquationToImage(latex, run.IsDisplayEquation ? 18.0 : 14.0);
+        if (img is null)
+            return new Wpf.Run(run.Text) { Tag = run };
+
+        return new Wpf.InlineUIContainer(img)
+        {
+            Tag               = run,
+            BaselineAlignment = BaselineAlignment.Center,
+        };
+    }
+
+    /// <summary>
+    /// FormulaControl 을 비주얼 트리 없이 오프스크린 렌더링하여 Image 로 반환.
+    /// Image(BitmapSource) 는 XamlWriter.Save() 에 안전하므로 RichTextBox undo 와 충돌하지 않는다.
+    /// 파싱·렌더링 실패 시 null 반환.
+    /// </summary>
+    public static System.Windows.Controls.Image? RenderEquationToImage(string latex, double scale)
+    {
+        try
+        {
+            var formula = new WpfMath.Controls.FormulaControl
+            {
+                Formula = latex,
+                Scale   = scale,
+            };
+
+            // 비주얼 트리 없이 레이아웃 패스를 강제 실행
+            formula.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            formula.Arrange(new Rect(formula.DesiredSize));
+
+            int w = Math.Max(1, (int)Math.Ceiling(formula.ActualWidth));
+            int h = Math.Max(1, (int)Math.Ceiling(formula.ActualHeight));
+
+            var rtb = new WpfMedia.Imaging.RenderTargetBitmap(w, h, 96, 96, WpfMedia.PixelFormats.Pbgra32);
+            rtb.Render(formula);
+            rtb.Freeze();
+
+            return new System.Windows.Controls.Image
+            {
+                Source  = rtb,
+                Width   = w,
+                Height  = h,
+                Stretch = WpfMedia.Stretch.None,
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool NeedsContainer(RunStyle s)

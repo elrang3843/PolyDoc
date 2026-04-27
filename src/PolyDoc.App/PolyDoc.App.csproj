@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="WpfMath" />
   </ItemGroup>
 
   <!-- UseWindowsForms 가 추가하는 implicit global using 이 WPF 타입과 충돌.
