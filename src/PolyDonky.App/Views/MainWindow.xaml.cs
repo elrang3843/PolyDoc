@@ -368,18 +368,29 @@ public partial class MainWindow : Window
 
     private void OnEmbeddedObjectContextMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs e)
     {
-        // RichTextBox 가 기본 컨텍스트 메뉴(잘라내기/복사/붙여넣기) 를 띄우기 직전에 가로채서
-        // 이모지·이미지 위에서 우클릭한 경우 속성 메뉴로 교체한다.
+        // 기본 컨텍스트 메뉴(잘라내기/복사/붙여넣기)를 그대로 두고,
+        // 이모지·이미지 위에서 우클릭한 경우에만 구분선 + 속성 항목을 동적으로 추가.
         var pt = System.Windows.Input.Mouse.GetPosition(BodyEditor);
         if (FindEmbeddedObjectAt(e.OriginalSource, pt) is not { } found) return;
 
-        var menu = BuildEmbeddedObjectMenu(found.img, found.container);
+        var menu = BodyEditor.ContextMenu;
         if (menu is null) return;
 
-        e.Handled = true;   // 기본 메뉴 억제
-        menu.PlacementTarget = BodyEditor;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
-        menu.IsOpen = true;
+        var sep  = new System.Windows.Controls.Separator();
+        var item = new System.Windows.Controls.MenuItem { Header = "속성(_P)..." };
+        item.Click += (_, _) => OpenEmbeddedObjectProperties(found.img, found.container);
+
+        menu.Items.Add(sep);
+        menu.Items.Add(item);
+
+        // 메뉴 닫힘 시 동적으로 추가한 항목을 제거 — 다음 일반 우클릭에 속성이 남지 않도록.
+        void Cleanup(object? s, System.Windows.RoutedEventArgs _ev)
+        {
+            menu.Closed -= Cleanup;
+            menu.Items.Remove(sep);
+            menu.Items.Remove(item);
+        }
+        menu.Closed += Cleanup;
     }
 
     private void OnEmbeddedObjectDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -420,16 +431,6 @@ public partial class MainWindow : Window
             dep = System.Windows.Media.VisualTreeHelper.GetParent(dep);
         }
         return null;
-    }
-
-    private System.Windows.Controls.ContextMenu? BuildEmbeddedObjectMenu(
-        System.Windows.Controls.Image imgControl, object container)
-    {
-        var menu = new System.Windows.Controls.ContextMenu();
-        var item = new System.Windows.Controls.MenuItem { Header = "속성(_P)..." };
-        item.Click += (_, _) => OpenEmbeddedObjectProperties(imgControl, container);
-        menu.Items.Add(item);
-        return menu;
     }
 
     private void OpenEmbeddedObjectProperties(System.Windows.Controls.Image imgControl, object container)

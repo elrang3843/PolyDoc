@@ -322,7 +322,15 @@
                                      Background="Transparent"
                                      Foreground="{DynamicResource OnSurface}"
                                      PreviewKeyDown="OnEditorPreviewKeyDown"
-                                     PreviewTextInput="OnEditorPreviewTextInput" />
+                                     PreviewTextInput="OnEditorPreviewTextInput">
+                            <RichTextBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Command="Cut"   Header="잘라내기(_T)" InputGestureText="Ctrl+X" />
+                                    <MenuItem Command="Copy"  Header="복사(_C)"     InputGestureText="Ctrl+C" />
+                                    <MenuItem Command="Paste" Header="붙여넣기(_P)" InputGestureText="Ctrl+V" />
+                                </ContextMenu>
+                            </RichTextBox.ContextMenu>
+                        </RichTextBox>
                         <!-- 부유 객체 (글상자 등) 오버레이.
                              Background 미설정 → 빈 영역은 hit-test 통과해 RichTextBox 가 받음.
                              각 자식(TextBoxOverlay) 만 마우스를 받는다. -->
