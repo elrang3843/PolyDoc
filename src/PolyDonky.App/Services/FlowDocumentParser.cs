@@ -244,13 +244,14 @@ public static class FlowDocumentParser
                 // Tag 에 원본 PolyDonky Run 이 있으면 직접 회수. 없으면 시각 트리에서 추출.
                 if (iuc.Tag is Run origRun)
                 {
-                    // 수식 Run 은 LatexSource / IsDisplayEquation 보존
+                    // 수식·이모지 Run 은 LatexSource / IsDisplayEquation / EmojiKey 보존
                     p.Runs.Add(new Run
                     {
                         Text              = origRun.Text,
                         Style             = Clone(origRun.Style),
                         LatexSource       = origRun.LatexSource,
                         IsDisplayEquation = origRun.IsDisplayEquation,
+                        EmojiKey          = origRun.EmojiKey,
                     });
                 }
                 else if (iuc.Child is System.Windows.Controls.StackPanel panel)

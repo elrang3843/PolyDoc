@@ -62,6 +62,15 @@
     <Resource Include="Resources\Icons\svg\**\*.svg" />
   </ItemGroup>
 
+  <!-- 이모지 — 80개 PNG (8개 섹션 × 10개), pack URI:
+       pack://application:,,,/Resources/Emojis/{Section}/{name}.png
+       FlowDocumentBuilder.BuildEmojiInline 이 EmojiKey 로 로드. -->
+  <ItemGroup>
+    <Resource Include="..\..\Resources\Emojis\**\*.png">
+      <Link>Resources\Emojis\%(RecursiveDir)%(FileName)%(Extension)</Link>
+    </Resource>
+  </ItemGroup>
+
   <!-- i18n: Properties/Resources.resx + en-US satellite
        Update (not Include) to avoid duplicate with SDK default glob. -->
   <ItemGroup>

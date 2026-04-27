@@ -417,8 +417,10 @@ public partial class CharFormatWindow : Window
 
         foreach (var inline in inlines)
         {
-            // 수식 IUC 는 글자폭/자간 재구성 대상에서 제외 (Image 로 렌더링된 수식은 변형 불필요)
+            // 수식·이모지 IUC 는 글자폭/자간 재구성 대상에서 제외 (Image 로 렌더링된 객체는 변형 불필요)
             if (inline is InlineUIContainer { Tag: PolyDonky.Core.Run { LatexSource: { Length: > 0 } } })
+                continue;
+            if (inline is InlineUIContainer { Tag: PolyDonky.Core.Run { EmojiKey: { Length: > 0 } } })
                 continue;
 
             // PolyDonky Run 추출. Wpf.Run 의 경우 Tag 가 있어도 항상 현재 Wpf 속성에서

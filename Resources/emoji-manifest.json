@@ -1,0 +1,642 @@
+[
+  {
+    "key": "Status_archive",
+    "section": "Status",
+    "name": "archive",
+    "label": "archive",
+    "png": "Resources/Emojis/Status/archive.png",
+    "svg": "Resources/Emojis/Status/archive.svg"
+  },
+  {
+    "key": "Status_blocked",
+    "section": "Status",
+    "name": "blocked",
+    "label": "blocked",
+    "png": "Resources/Emojis/Status/blocked.png",
+    "svg": "Resources/Emojis/Status/blocked.svg"
+  },
+  {
+    "key": "Status_done",
+    "section": "Status",
+    "name": "done",
+    "label": "done",
+    "png": "Resources/Emojis/Status/done.png",
+    "svg": "Resources/Emojis/Status/done.svg"
+  },
+  {
+    "key": "Status_draft",
+    "section": "Status",
+    "name": "draft",
+    "label": "draft",
+    "png": "Resources/Emojis/Status/draft.png",
+    "svg": "Resources/Emojis/Status/draft.svg"
+  },
+  {
+    "key": "Status_in_progress",
+    "section": "Status",
+    "name": "in_progress",
+    "label": "in progress",
+    "png": "Resources/Emojis/Status/in_progress.png",
+    "svg": "Resources/Emojis/Status/in_progress.svg"
+  },
+  {
+    "key": "Status_new",
+    "section": "Status",
+    "name": "new",
+    "label": "new",
+    "png": "Resources/Emojis/Status/new.png",
+    "svg": "Resources/Emojis/Status/new.svg"
+  },
+  {
+    "key": "Status_on_hold",
+    "section": "Status",
+    "name": "on_hold",
+    "label": "on hold",
+    "png": "Resources/Emojis/Status/on_hold.png",
+    "svg": "Resources/Emojis/Status/on_hold.svg"
+  },
+  {
+    "key": "Status_review",
+    "section": "Status",
+    "name": "review",
+    "label": "review",
+    "png": "Resources/Emojis/Status/review.png",
+    "svg": "Resources/Emojis/Status/review.svg"
+  },
+  {
+    "key": "Status_todo",
+    "section": "Status",
+    "name": "todo",
+    "label": "todo",
+    "png": "Resources/Emojis/Status/todo.png",
+    "svg": "Resources/Emojis/Status/todo.svg"
+  },
+  {
+    "key": "Status_waiting",
+    "section": "Status",
+    "name": "waiting",
+    "label": "waiting",
+    "png": "Resources/Emojis/Status/waiting.png",
+    "svg": "Resources/Emojis/Status/waiting.svg"
+  },
+  {
+    "key": "Reactions_celebrate",
+    "section": "Reactions",
+    "name": "celebrate",
+    "label": "celebrate",
+    "png": "Resources/Emojis/Reactions/celebrate.png",
+    "svg": "Resources/Emojis/Reactions/celebrate.svg"
+  },
+  {
+    "key": "Reactions_comment",
+    "section": "Reactions",
+    "name": "comment",
+    "label": "comment",
+    "png": "Resources/Emojis/Reactions/comment.png",
+    "svg": "Resources/Emojis/Reactions/comment.svg"
+  },
+  {
+    "key": "Reactions_eyes",
+    "section": "Reactions",
+    "name": "eyes",
+    "label": "eyes",
+    "png": "Resources/Emojis/Reactions/eyes.png",
+    "svg": "Resources/Emojis/Reactions/eyes.svg"
+  },
+  {
+    "key": "Reactions_heart",
+    "section": "Reactions",
+    "name": "heart",
+    "label": "heart",
+    "png": "Resources/Emojis/Reactions/heart.png",
+    "svg": "Resources/Emojis/Reactions/heart.svg"
+  },
+  {
+    "key": "Reactions_laugh",
+    "section": "Reactions",
+    "name": "laugh",
+    "label": "laugh",
+    "png": "Resources/Emojis/Reactions/laugh.png",
+    "svg": "Resources/Emojis/Reactions/laugh.svg"
+  },
+  {
+    "key": "Reactions_mind_blown",
+    "section": "Reactions",
+    "name": "mind_blown",
+    "label": "mind blown",
+    "png": "Resources/Emojis/Reactions/mind_blown.png",
+    "svg": "Resources/Emojis/Reactions/mind_blown.svg"
+  },
+  {
+    "key": "Reactions_raised_hand",
+    "section": "Reactions",
+    "name": "raised_hand",
+    "label": "raised hand",
+    "png": "Resources/Emojis/Reactions/raised_hand.png",
+    "svg": "Resources/Emojis/Reactions/raised_hand.svg"
+  },
+  {
+    "key": "Reactions_thinking",
+    "section": "Reactions",
+    "name": "thinking",
+    "label": "thinking",
+    "png": "Resources/Emojis/Reactions/thinking.png",
+    "svg": "Resources/Emojis/Reactions/thinking.svg"
+  },
+  {
+    "key": "Reactions_thumbs_down",
+    "section": "Reactions",
+    "name": "thumbs_down",
+    "label": "thumbs down",
+    "png": "Resources/Emojis/Reactions/thumbs_down.png",
+    "svg": "Resources/Emojis/Reactions/thumbs_down.svg"
+  },
+  {
+    "key": "Reactions_thumbs_up",
+    "section": "Reactions",
+    "name": "thumbs_up",
+    "label": "thumbs up",
+    "png": "Resources/Emojis/Reactions/thumbs_up.png",
+    "svg": "Resources/Emojis/Reactions/thumbs_up.svg"
+  },
+  {
+    "key": "Actions_copy",
+    "section": "Actions",
+    "name": "copy",
+    "label": "copy",
+    "png": "Resources/Emojis/Actions/copy.png",
+    "svg": "Resources/Emojis/Actions/copy.svg"
+  },
+  {
+    "key": "Actions_delete",
+    "section": "Actions",
+    "name": "delete",
+    "label": "delete",
+    "png": "Resources/Emojis/Actions/delete.png",
+    "svg": "Resources/Emojis/Actions/delete.svg"
+  },
+  {
+    "key": "Actions_download",
+    "section": "Actions",
+    "name": "download",
+    "label": "download",
+    "png": "Resources/Emojis/Actions/download.png",
+    "svg": "Resources/Emojis/Actions/download.svg"
+  },
+  {
+    "key": "Actions_edit",
+    "section": "Actions",
+    "name": "edit",
+    "label": "edit",
+    "png": "Resources/Emojis/Actions/edit.png",
+    "svg": "Resources/Emojis/Actions/edit.svg"
+  },
+  {
+    "key": "Actions_link",
+    "section": "Actions",
+    "name": "link",
+    "label": "link",
+    "png": "Resources/Emojis/Actions/link.png",
+    "svg": "Resources/Emojis/Actions/link.svg"
+  },
+  {
+    "key": "Actions_print",
+    "section": "Actions",
+    "name": "print",
+    "label": "print",
+    "png": "Resources/Emojis/Actions/print.png",
+    "svg": "Resources/Emojis/Actions/print.svg"
+  },
+  {
+    "key": "Actions_save",
+    "section": "Actions",
+    "name": "save",
+    "label": "save",
+    "png": "Resources/Emojis/Actions/save.png",
+    "svg": "Resources/Emojis/Actions/save.svg"
+  },
+  {
+    "key": "Actions_search",
+    "section": "Actions",
+    "name": "search",
+    "label": "search",
+    "png": "Resources/Emojis/Actions/search.png",
+    "svg": "Resources/Emojis/Actions/search.svg"
+  },
+  {
+    "key": "Actions_share",
+    "section": "Actions",
+    "name": "share",
+    "label": "share",
+    "png": "Resources/Emojis/Actions/share.png",
+    "svg": "Resources/Emojis/Actions/share.svg"
+  },
+  {
+    "key": "Actions_upload",
+    "section": "Actions",
+    "name": "upload",
+    "label": "upload",
+    "png": "Resources/Emojis/Actions/upload.png",
+    "svg": "Resources/Emojis/Actions/upload.svg"
+  },
+  {
+    "key": "Priority_bookmark",
+    "section": "Priority",
+    "name": "bookmark",
+    "label": "bookmark",
+    "png": "Resources/Emojis/Priority/bookmark.png",
+    "svg": "Resources/Emojis/Priority/bookmark.svg"
+  },
+  {
+    "key": "Priority_flagged",
+    "section": "Priority",
+    "name": "flagged",
+    "label": "flagged",
+    "png": "Resources/Emojis/Priority/flagged.png",
+    "svg": "Resources/Emojis/Priority/flagged.svg"
+  },
+  {
+    "key": "Priority_high",
+    "section": "Priority",
+    "name": "high",
+    "label": "high",
+    "png": "Resources/Emojis/Priority/high.png",
+    "svg": "Resources/Emojis/Priority/high.svg"
+  },
+  {
+    "key": "Priority_locked",
+    "section": "Priority",
+    "name": "locked",
+    "label": "locked",
+    "png": "Resources/Emojis/Priority/locked.png",
+    "svg": "Resources/Emojis/Priority/locked.svg"
+  },
+  {
+    "key": "Priority_low",
+    "section": "Priority",
+    "name": "low",
+    "label": "low",
+    "png": "Resources/Emojis/Priority/low.png",
+    "svg": "Resources/Emojis/Priority/low.svg"
+  },
+  {
+    "key": "Priority_medium",
+    "section": "Priority",
+    "name": "medium",
+    "label": "medium",
+    "png": "Resources/Emojis/Priority/medium.png",
+    "svg": "Resources/Emojis/Priority/medium.svg"
+  },
+  {
+    "key": "Priority_pinned",
+    "section": "Priority",
+    "name": "pinned",
+    "label": "pinned",
+    "png": "Resources/Emojis/Priority/pinned.png",
+    "svg": "Resources/Emojis/Priority/pinned.svg"
+  },
+  {
+    "key": "Priority_star",
+    "section": "Priority",
+    "name": "star",
+    "label": "star",
+    "png": "Resources/Emojis/Priority/star.png",
+    "svg": "Resources/Emojis/Priority/star.svg"
+  },
+  {
+    "key": "Priority_urgent",
+    "section": "Priority",
+    "name": "urgent",
+    "label": "urgent",
+    "png": "Resources/Emojis/Priority/urgent.png",
+    "svg": "Resources/Emojis/Priority/urgent.svg"
+  },
+  {
+    "key": "Priority_warning",
+    "section": "Priority",
+    "name": "warning",
+    "label": "warning",
+    "png": "Resources/Emojis/Priority/warning.png",
+    "svg": "Resources/Emojis/Priority/warning.svg"
+  },
+  {
+    "key": "People_assign",
+    "section": "People",
+    "name": "assign",
+    "label": "assign",
+    "png": "Resources/Emojis/People/assign.png",
+    "svg": "Resources/Emojis/People/assign.svg"
+  },
+  {
+    "key": "People_collaborators",
+    "section": "People",
+    "name": "collaborators",
+    "label": "collaborators",
+    "png": "Resources/Emojis/People/collaborators.png",
+    "svg": "Resources/Emojis/People/collaborators.svg"
+  },
+  {
+    "key": "People_group_chat",
+    "section": "People",
+    "name": "group_chat",
+    "label": "group chat",
+    "png": "Resources/Emojis/People/group_chat.png",
+    "svg": "Resources/Emojis/People/group_chat.svg"
+  },
+  {
+    "key": "People_handover",
+    "section": "People",
+    "name": "handover",
+    "label": "handover",
+    "png": "Resources/Emojis/People/handover.png",
+    "svg": "Resources/Emojis/People/handover.svg"
+  },
+  {
+    "key": "People_handshake",
+    "section": "People",
+    "name": "handshake",
+    "label": "handshake",
+    "png": "Resources/Emojis/People/handshake.png",
+    "svg": "Resources/Emojis/People/handshake.svg"
+  },
+  {
+    "key": "People_invite",
+    "section": "People",
+    "name": "invite",
+    "label": "invite",
+    "png": "Resources/Emojis/People/invite.png",
+    "svg": "Resources/Emojis/People/invite.svg"
+  },
+  {
+    "key": "People_mention",
+    "section": "People",
+    "name": "mention",
+    "label": "mention",
+    "png": "Resources/Emojis/People/mention.png",
+    "svg": "Resources/Emojis/People/mention.svg"
+  },
+  {
+    "key": "People_person",
+    "section": "People",
+    "name": "person",
+    "label": "person",
+    "png": "Resources/Emojis/People/person.png",
+    "svg": "Resources/Emojis/People/person.svg"
+  },
+  {
+    "key": "People_request",
+    "section": "People",
+    "name": "request",
+    "label": "request",
+    "png": "Resources/Emojis/People/request.png",
+    "svg": "Resources/Emojis/People/request.svg"
+  },
+  {
+    "key": "People_team",
+    "section": "People",
+    "name": "team",
+    "label": "team",
+    "png": "Resources/Emojis/People/team.png",
+    "svg": "Resources/Emojis/People/team.svg"
+  },
+  {
+    "key": "Tools_attachment",
+    "section": "Tools",
+    "name": "attachment",
+    "label": "attachment",
+    "png": "Resources/Emojis/Tools/attachment.png",
+    "svg": "Resources/Emojis/Tools/attachment.svg"
+  },
+  {
+    "key": "Tools_calendar",
+    "section": "Tools",
+    "name": "calendar",
+    "label": "calendar",
+    "png": "Resources/Emojis/Tools/calendar.png",
+    "svg": "Resources/Emojis/Tools/calendar.svg"
+  },
+  {
+    "key": "Tools_chart",
+    "section": "Tools",
+    "name": "chart",
+    "label": "chart",
+    "png": "Resources/Emojis/Tools/chart.png",
+    "svg": "Resources/Emojis/Tools/chart.svg"
+  },
+  {
+    "key": "Tools_clipboard",
+    "section": "Tools",
+    "name": "clipboard",
+    "label": "clipboard",
+    "png": "Resources/Emojis/Tools/clipboard.png",
+    "svg": "Resources/Emojis/Tools/clipboard.svg"
+  },
+  {
+    "key": "Tools_document",
+    "section": "Tools",
+    "name": "document",
+    "label": "document",
+    "png": "Resources/Emojis/Tools/document.png",
+    "svg": "Resources/Emojis/Tools/document.svg"
+  },
+  {
+    "key": "Tools_folder",
+    "section": "Tools",
+    "name": "folder",
+    "label": "folder",
+    "png": "Resources/Emojis/Tools/folder.png",
+    "svg": "Resources/Emojis/Tools/folder.svg"
+  },
+  {
+    "key": "Tools_image",
+    "section": "Tools",
+    "name": "image",
+    "label": "image",
+    "png": "Resources/Emojis/Tools/image.png",
+    "svg": "Resources/Emojis/Tools/image.svg"
+  },
+  {
+    "key": "Tools_pen",
+    "section": "Tools",
+    "name": "pen",
+    "label": "pen",
+    "png": "Resources/Emojis/Tools/pen.png",
+    "svg": "Resources/Emojis/Tools/pen.svg"
+  },
+  {
+    "key": "Tools_pencil",
+    "section": "Tools",
+    "name": "pencil",
+    "label": "pencil",
+    "png": "Resources/Emojis/Tools/pencil.png",
+    "svg": "Resources/Emojis/Tools/pencil.svg"
+  },
+  {
+    "key": "Tools_table",
+    "section": "Tools",
+    "name": "table",
+    "label": "table",
+    "png": "Resources/Emojis/Tools/table.png",
+    "svg": "Resources/Emojis/Tools/table.svg"
+  },
+  {
+    "key": "Pointers_callout",
+    "section": "Pointers",
+    "name": "callout",
+    "label": "callout",
+    "png": "Resources/Emojis/Pointers/callout.png",
+    "svg": "Resources/Emojis/Pointers/callout.svg"
+  },
+  {
+    "key": "Pointers_down",
+    "section": "Pointers",
+    "name": "down",
+    "label": "down",
+    "png": "Resources/Emojis/Pointers/down.png",
+    "svg": "Resources/Emojis/Pointers/down.svg"
+  },
+  {
+    "key": "Pointers_expand",
+    "section": "Pointers",
+    "name": "expand",
+    "label": "expand",
+    "png": "Resources/Emojis/Pointers/expand.png",
+    "svg": "Resources/Emojis/Pointers/expand.svg"
+  },
+  {
+    "key": "Pointers_left",
+    "section": "Pointers",
+    "name": "left",
+    "label": "left",
+    "png": "Resources/Emojis/Pointers/left.png",
+    "svg": "Resources/Emojis/Pointers/left.svg"
+  },
+  {
+    "key": "Pointers_point",
+    "section": "Pointers",
+    "name": "point",
+    "label": "point",
+    "png": "Resources/Emojis/Pointers/point.png",
+    "svg": "Resources/Emojis/Pointers/point.svg"
+  },
+  {
+    "key": "Pointers_redo",
+    "section": "Pointers",
+    "name": "redo",
+    "label": "redo",
+    "png": "Resources/Emojis/Pointers/redo.png",
+    "svg": "Resources/Emojis/Pointers/redo.svg"
+  },
+  {
+    "key": "Pointers_refresh",
+    "section": "Pointers",
+    "name": "refresh",
+    "label": "refresh",
+    "png": "Resources/Emojis/Pointers/refresh.png",
+    "svg": "Resources/Emojis/Pointers/refresh.svg"
+  },
+  {
+    "key": "Pointers_right",
+    "section": "Pointers",
+    "name": "right",
+    "label": "right",
+    "png": "Resources/Emojis/Pointers/right.png",
+    "svg": "Resources/Emojis/Pointers/right.svg"
+  },
+  {
+    "key": "Pointers_undo",
+    "section": "Pointers",
+    "name": "undo",
+    "label": "undo",
+    "png": "Resources/Emojis/Pointers/undo.png",
+    "svg": "Resources/Emojis/Pointers/undo.svg"
+  },
+  {
+    "key": "Pointers_up",
+    "section": "Pointers",
+    "name": "up",
+    "label": "up",
+    "png": "Resources/Emojis/Pointers/up.png",
+    "svg": "Resources/Emojis/Pointers/up.svg"
+  },
+  {
+    "key": "Decoration_award",
+    "section": "Decoration",
+    "name": "award",
+    "label": "award",
+    "png": "Resources/Emojis/Decoration/award.png",
+    "svg": "Resources/Emojis/Decoration/award.svg"
+  },
+  {
+    "key": "Decoration_confetti",
+    "section": "Decoration",
+    "name": "confetti",
+    "label": "confetti",
+    "png": "Resources/Emojis/Decoration/confetti.png",
+    "svg": "Resources/Emojis/Decoration/confetti.svg"
+  },
+  {
+    "key": "Decoration_crown",
+    "section": "Decoration",
+    "name": "crown",
+    "label": "crown",
+    "png": "Resources/Emojis/Decoration/crown.png",
+    "svg": "Resources/Emojis/Decoration/crown.svg"
+  },
+  {
+    "key": "Decoration_fire",
+    "section": "Decoration",
+    "name": "fire",
+    "label": "fire",
+    "png": "Resources/Emojis/Decoration/fire.png",
+    "svg": "Resources/Emojis/Decoration/fire.svg"
+  },
+  {
+    "key": "Decoration_gem",
+    "section": "Decoration",
+    "name": "gem",
+    "label": "gem",
+    "png": "Resources/Emojis/Decoration/gem.png",
+    "svg": "Resources/Emojis/Decoration/gem.svg"
+  },
+  {
+    "key": "Decoration_idea",
+    "section": "Decoration",
+    "name": "idea",
+    "label": "idea",
+    "png": "Resources/Emojis/Decoration/idea.png",
+    "svg": "Resources/Emojis/Decoration/idea.svg"
+  },
+  {
+    "key": "Decoration_rocket",
+    "section": "Decoration",
+    "name": "rocket",
+    "label": "rocket",
+    "png": "Resources/Emojis/Decoration/rocket.png",
+    "svg": "Resources/Emojis/Decoration/rocket.svg"
+  },
+  {
+    "key": "Decoration_sparkle",
+    "section": "Decoration",
+    "name": "sparkle",
+    "label": "sparkle",
+    "png": "Resources/Emojis/Decoration/sparkle.png",
+    "svg": "Resources/Emojis/Decoration/sparkle.svg"
+  },
+  {
+    "key": "Decoration_target",
+    "section": "Decoration",
+    "name": "target",
+    "label": "target",
+    "png": "Resources/Emojis/Decoration/target.png",
+    "svg": "Resources/Emojis/Decoration/target.svg"
+  },
+  {
+    "key": "Decoration_trophy",
+    "section": "Decoration",
+    "name": "trophy",
+    "label": "trophy",
+    "png": "Resources/Emojis/Decoration/trophy.png",
+    "svg": "Resources/Emojis/Decoration/trophy.svg"
+  }
+]
