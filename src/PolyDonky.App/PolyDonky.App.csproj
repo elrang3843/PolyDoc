@@ -7,7 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>PolyDonky.App</RootNamespace>
     <AssemblyName>PolyDonky</AssemblyName>
-    <ApplicationIcon>..\..\assets\Handtech.ico</ApplicationIcon>
+    <ApplicationIcon>..\..\assets\PolyDonky.ico</ApplicationIcon>
     <ApplicationTitle>PolyDonky</ApplicationTitle>
   </PropertyGroup>
 
@@ -43,8 +43,14 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- 회사 로고를 앱 리소스로 임베드 (About 다이얼로그에서 표시) -->
+  <!-- 앱 아이콘 / 회사 로고를 앱 리소스로 임베드 (About · 윈도우 타이틀바 표시) -->
   <ItemGroup>
+    <Resource Include="..\..\assets\PolyDonky.ico">
+      <Link>Assets\PolyDonky.ico</Link>
+    </Resource>
+    <Resource Include="..\..\assets\PolyDonky_1024.png">
+      <Link>Assets\PolyDonky_1024.png</Link>
+    </Resource>
     <Resource Include="..\..\assets\Handtech_1024.png">
       <Link>Assets\Handtech_1024.png</Link>
     </Resource>

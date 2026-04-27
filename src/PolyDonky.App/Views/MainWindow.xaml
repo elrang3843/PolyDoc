@@ -9,6 +9,7 @@
         Title="{Binding WindowTitle}"
         Width="1200" Height="800"
         MinWidth="640" MinHeight="480"
+        Icon="pack://application:,,,/Assets/PolyDonky.ico"
         FontFamily="{DynamicResource UiFont}"
         Background="{DynamicResource Surface}"
         Foreground="{DynamicResource OnSurface}"

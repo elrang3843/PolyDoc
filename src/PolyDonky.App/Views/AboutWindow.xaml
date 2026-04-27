@@ -6,6 +6,7 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
+        Icon="pack://application:,,,/Assets/PolyDonky.ico"
         FontFamily="{DynamicResource UiFont}"
         Background="{DynamicResource Surface}"
         Foreground="{DynamicResource OnSurface}">
@@ -21,7 +22,7 @@
         </Grid.RowDefinitions>
 
         <Image Grid.Row="0"
-               Source="pack://application:,,,/Assets/Handtech_1024.png"
+               Source="pack://application:,,,/Assets/PolyDonky_1024.png"
                Width="140" Height="140"
                HorizontalAlignment="Center" />
 

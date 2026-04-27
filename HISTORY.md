@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Changed
+- **Changed** — 앱 아이콘 및 About 다이얼로그 히어로 이미지를 신규 PolyDonky 브랜드 아트(`assets/PolyDonky.jpg` 원본 → 자동 크롭/멀티사이즈 ICO)로 교체. `assets/PolyDonky.ico`(16/24/32/48/64/128/256 멀티사이즈) 와 `assets/PolyDonky_1024.png`(1024×1024 RGBA) 추가. `PolyDonky.App.csproj` 의 `<ApplicationIcon>` 을 `Handtech.ico` → `PolyDonky.ico` 로 전환. `MainWindow` 와 `AboutWindow` 에 `Icon="pack://application:,,,/Assets/PolyDonky.ico"` 명시 — 작업 표시줄·Alt+Tab·다이얼로그 타이틀바 모두 동일 아이콘으로 통일. About 다이얼로그의 140×140 히어로 이미지가 `Handtech_1024.png` → `PolyDonky_1024.png` 로 변경되어 앱 아이덴티티(IWPF + 도키) 가 강조됨. 회사 로고(`Handtech_1024.png`)는 리소스로 유지 — 추후 다른 위치(예: 라이선스 다이얼로그)에서 재사용 가능.
+
 ### Internal
 - **Internal** — 프로젝트 전체 이름을 `PolyDoc` → `PolyDonky` 로 변경. 네임스페이스, 어셈블리명, `.csproj` 파일명, 솔루션 파일명, 소스 디렉터리명 일괄 변경. GitHub 레포지토리 이름은 사용자가 직접 Settings → General → Repository name 에서 변경 필요.
 
