@@ -134,13 +134,23 @@ public partial class MainWindow : Window
         try
         {
             BodyEditor.Document      = fd;
-            // FlowDirection 을 RichTextBox 컨테이너에도 반영 — 컨테이너와 FlowDocument 방향이
-            // 다르면 RTL 시작 위치(오른쪽)가 스크롤 뷰포트 밖에 위치해 초기 글자가 안 보임.
+            // FlowDirection 을 RichTextBox 컨테이너에도 반영 — 진정한 RTL 입력(새 글자가 *왼쪽* 에 붙음)을
+            // 얻으려면 컨테이너 자체가 RTL 이어야 한다. FlowDocument 만 RTL 이면 Latin/Hangul 같은
+            // Bidi-약방향 문자가 우측 정렬된 LTR run 으로 표시될 뿐 실제 입력 방향은 LTR.
             BodyEditor.FlowDirection = fd.FlowDirection;
         }
         finally
         {
             _suppressTextChanged = false;
+        }
+
+        // RTL 인 경우 레이아웃 패스 직후 스크롤 원점을 우측(텍스트 시작점)으로 이동.
+        if (fd.FlowDirection == FlowDirection.RightToLeft)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try { BodyEditor.ScrollToRightEnd(); } catch { }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         // 용지 크기·색상을 PaperBorder 에 반영

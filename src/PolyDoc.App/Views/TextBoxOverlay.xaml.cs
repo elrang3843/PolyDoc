@@ -341,15 +341,24 @@ public partial class TextBoxOverlay : UserControl
         };
 
         // ── 글자 방향 (가로 LTR/RTL 만 시각 적용; 세로는 모델 보존만, 다음 사이클에서 렌더링) ──
-        // FlowDirection 은 RichTextBox(컨테이너)와 FlowDocument(내용) 양쪽에 명시 설정.
-        // 컨테이너만 바꾸면 기존 LTR FlowDocument 와 방향이 충돌해 초기 문자들이 안 보이는 버그 발생.
+        // 진정한 RTL 입력(새 글자가 기존 글자 *왼쪽* 에 붙음)을 얻으려면 RichTextBox 자체를
+        // RightToLeft 로 두어야 한다. 문서에만 적용하면 Latin/Hangul 같은 Bidi-약방향 문자는
+        // 우→좌 흐름이 아닌 우측 정렬된 LTR run 으로 표시되기 때문.
+        // 단, 컨테이너만 RTL 로 두면 초기 스크롤 원점이 좌측이라 처음 몇 글자가 안 보이는
+        // 부작용이 있어 레이아웃 패스 직후 ScrollToRightEnd 로 원점을 우측으로 이동시킨다.
         var newFlowDir = (Model.TextOrientation == TextOrientation.Horizontal &&
                           Model.TextProgression == TextProgression.Leftward)
             ? FlowDirection.RightToLeft
             : FlowDirection.LeftToRight;
 
-        InnerEditor.FlowDirection          = newFlowDir;
-        InnerEditor.Document.FlowDirection = newFlowDir;
+        InnerEditor.FlowDirection = newFlowDir;
+        if (newFlowDir == FlowDirection.RightToLeft)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try { InnerEditor.ScrollToRightEnd(); } catch { }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
 
         // ── 회전 ───────────────────────────────────────────────────────
         // 박스 중심을 피벗으로 모양·본문 모두 함께 회전. 0이면 transform 제거.
@@ -396,8 +405,6 @@ public partial class TextBoxOverlay : UserControl
             doc.Blocks.Add(new System.Windows.Documents.Paragraph());
 
         InnerEditor.Document = doc;
-        // 현재 컨트롤 FlowDirection 을 새 문서에도 반영 (생성자에서는 아직 기본값 LTR)
-        doc.FlowDirection = InnerEditor.FlowDirection;
     }
 
     private void SyncEditorToModel()
