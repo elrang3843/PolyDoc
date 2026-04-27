@@ -44,6 +44,38 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — **그림(이미지) 삽입** 기능 구현. 입력 → 그림 메뉴로 `ImageWindow` 다이얼로그 열기: 파일 선택(PNG/JPEG/BMP/GIF/TIFF/WebP), 미리보기, 너비·높이(mm) 입력(비율 유지 옵션), 설명(alt-text) 입력. 삽입 시 SHA-256 해시를 자동 계산해 `ImageBlock` 에 기록, 캐럿 위치 블록 직후에 `BlockUIContainer`(`Tag = ImageBlock`) 로 삽입 — `FlowDocumentParser` 의 기존 라운드트립 경로로 IWPF 저장/재로드 정상 동작. A4 본문 너비(160mm) 초과 이미지는 자동 축소. `FlowDocumentBuilder.BuildImage` 를 `internal` 로 공개.
+- **Added** — 이모지 삽입 다이얼로그에 **크기 선택 콤보박스** 추가 (12/16/20/24/32/48pt, 기본 16pt). 선택한 크기를 `Run.Style.FontSizePt` 에 저장해 저장→재로드 후에도 동일 크기로 복원(라운드트립 보장). `FlowDocumentBuilder.BuildEmojiInline` 의 보정 계수(`× 1.4`) 를 제거해 삽입 크기와 로드 크기를 일치시킴.
+- **Added** — **이모지(Emoji) 입력** 활성화. 8개 섹션 × 10개 = 80개의 문서용 PNG 이모지(상태/반응/동작/우선순위/사람/도구/화살표/장식)를 카테고리별 또는 키워드 검색으로 골라 캐럿 위치에 삽입. 라운드트립용으로 `Run.EmojiKey` 를 신설 (수식 `LatexSource` 와 동일 패턴) — `FlowDocumentBuilder.BuildEmojiInline` 이 pack URI 로 PNG 를 로드해 `InlineUIContainer { Image }` 로 렌더링, `FlowDocumentParser` 가 `Tag` 의 EmojiKey 를 보존. PNG 80개는 `..\..\Resources\Emojis\**\*.png` 글롭으로 WPF Resource 임베드, 빌드 산출물에 포함. 메뉴 라우팅은 `GetActiveTextEditor()` 를 통해 글상자 안쪽 편집 중에도 정상 동작.
+- **Added** — 글상자 모양에 **타원(Ellipse)** 과 **파이(Pie/부채꼴)** 추가. 타원은 박스 비율에 따라 자동 스케일되는 4-Bézier 근사 타원; 파이는 시작 각도(°)·호 범위(5~355°) 를 글상자 속성 창에서 조정 가능한 부채꼴 모양. 두 모양 모두 인셋 자동 계산 적용 (타원 15%, 파이 10%). **입력 → 글상자** 메뉴와 `InsertTextBox` 커맨드 디스패처에도 두 모양 항목 추가 (타원 _E_, 파이 _I_).
+
+### Fixed
+- **Fixed** — **글자 속성 다이얼로그가 로드/복사된 글상자에서 색·폰트·볼드 등 변경을 시각적으로 반영하지 않던 핵심 버그**. `CharFormatWindow.ApplyToSelection` 의 마지막 단계인 `ApplyTypographicProps` 가 인라인의 `Tag` 가 가리키는 stale `PolyDonky.Run.Style` 로 `BuildInline` → `ReplaceInline` 을 수행하면서, 직전 `ApplyPropertyValue` 가 Wpf.Run 에 적용한 색·폰트·볼드 결과를 통째로 덮어 씌우고 있었다. 새로 그린 글상자는 WPF 가 자연 생성한 `Wpf.Run` 에 Tag 가 없어 `ExtractPolyRun(r)` 경로로 가서 현재 Wpf 속성을 정확히 추출 → 회귀가 발생하지 않았다. 두 단계 보강: 1) 글자폭/자간이 기본값(100%, 0px) 이면 `ApplyTypographicProps` 가 즉시 return — 재구성 자체를 건너뜀. 2) `Run` 케이스는 Tag 유무와 관계없이 `ExtractPolyRun(r)` 으로 현재 Wpf 속성을 우선 추출 — Tag.pr 의 stale 색·폰트가 ApplyPropertyValue 결과를 가리지 않도록.
+- **Fixed** — 메뉴/우클릭 **서식 → 글자 속성/문단 속성** 다이얼로그가 글상자 안쪽 selection 이 비어 있을 때 시각적 변화를 만들지 않던 문제.
+- **Fixed** — `GetActiveTextEditor()` 우선순위를 `_selectedOverlay?.InnerEditor → _lastTextEditor → BodyEditor` 로 강화. 사용자가 chrome 만 클릭해 글상자를 선택했을 때 (안쪽 본문에 한 번도 포커스가 들어간 적 없음) 도 정확히 그 글상자의 InnerEditor 로 포맷 다이얼로그를 라우팅. 이전 구현은 `_lastTextEditor` 만 보아, chrome-only 클릭 케이스에서 `BodyEditor` 로 폴백하던 회귀.
+- **Fixed** — 메뉴 **서식 → 글자 속성 / 문단 속성** 을 글상자 편집 중에 열어도 본문(`BodyEditor`) 에만 적용되던 버그(2차 수정). 1차 수정에서 `IsKeyboardFocusWithin` 검사를 추가했지만, 메뉴를 클릭하는 순간 포커스가 메뉴로 이동하면서 InnerEditor 의 `IsKeyboardFocusWithin` 이 false 로 떨어져 여전히 `BodyEditor` 로 폴백하던 회귀. `BodyEditor.GotKeyboardFocus` / 각 `TextBoxOverlay.InnerEditor.GotKeyboardFocus` 에 훅을 걸어 **마지막으로 키보드 포커스를 가졌던 RichTextBox** 를 `_lastTextEditor` 에 추적하고, `GetActiveTextEditor()` 가 이 값을 우선 사용하도록 변경. 메뉴 클릭으로 인한 일시적 포커스 이전이 있어도 직전 편집 컨텍스트가 보존된다. 글상자 삭제·문서 재로드 시 stale 참조는 자동 정리.
+- **Fixed** — `TryPasteFloatingObject` 가 `BodyEditor.IsKeyboardFocusWithin` 단독 검사로 본문 편집기에 캐럿이 있는 모든 경우 일반 텍스트 붙여넣기에 양보 → 사용자가 글상자를 복사한 직후 Ctrl+V 를 눌러도 plain-text fallback 만 본문에 들어가던 문제. **텍스트 선택이 있을 때만** 일반 붙여넣기에 양보하도록 수정 — 캐럿만 위치한 경우(BodyEditor / InnerEditor 무관) 는 글상자 클립보드 데이터를 우선 적용해 새 글상자 한 개를 캔버스에 띄운다.
+
+- **Fixed** — 글상자 안쪽 텍스트의 **글자 속성(폰트·크기·볼드·이탤릭·밑줄·글자색·배경색 등) 이 저장→재로드 시 사라지고, 로드 후 글자 속성 변경이 반영되지 않던 버그**. `TextBoxOverlay.LoadModelTextToEditor` 가 만드는 `Wpf.Run` 에 원본 `PolyDonky.Run` 을 `Tag` 로 심어, `FlowDocumentParser.ParseInline` 이 Tag 우선 시드(`Clone(original.Style)`) 로 라운드트립 — WPF 의 inheritance 로 인한 속성 drift(폰트 패밀리 자동 stamping 등) 와 비-Wpf 속성(LetterSpacingPx, WidthPercent) 까지 정확히 복원. 더불어 본문 라운드트립용 `FlowDocumentBuilder.BuildInline(Run)` / `FlowDocumentParser.Parse(FlowDocument)` 재사용 (이전 plain-text 전용 변환 → 글자 속성 통째 유실 문제도 해결).
+- **Fixed** — 글상자 chrome 을 선택한 뒤 **Ctrl+C / Ctrl+X / Ctrl+V** 가 안쪽 본문(InnerEditor)에 캐럿이 있다는 이유로 글상자가 아닌 안쪽 텍스트만 처리하던 문제. 안쪽에 **텍스트 선택이 있을 때만** 일반 텍스트 클립보드에 양보하고, 선택이 비어 있는 경우(=캐럿만 위치) 는 글상자 자체 복사/잘라내기/붙여넣기로 처리. Word/PowerPoint 와 동일한 mental model.
+- **Added/UX** — 글상자 안쪽 본문 편집 중 **Esc** 동작을 2단계로 변경: 1) 안쪽 편집 중 → chrome 만 선택된 상태로 전환(글상자 자체에 포커스), 2) chrome 선택 상태 → 완전 해제. 1단계에서 바로 Ctrl+C 로 글상자 통째 복사가 가능 — 사용자 발견성 개선.
+- **Fixed** — 글상자 안쪽에 **불필요한 세로 스크롤바**가 표시되던 문제. `RichTextBox.VerticalScrollBarVisibility` 를 `Auto` → `Hidden` 으로 변경. 글상자는 그래픽 객체이므로 내용이 박스보다 길어지면 스크롤이 아니라 박스를 키워야 한다 (Word·PowerPoint 와 동일한 UX).
+- **Fixed** — 비사각형 글상자(말풍선·구름·가시별·번개) 에서 안쪽 텍스트가 **외곽 돌출부(꼬리·뭉게·가시) 영역까지 침범**하던 문제. `ComputeShapeInset()` 이 박스 크기에 비례해 꼬리·돌출부 영역을 보호하는 추가 인셋을 계산 (말풍선 꼬리 15%, 구름 10%, 가시별 22%, 번개 15/20%). `SizeChanged` 시 자동 재계산. 사용자 padding 위에 더해진다.
+- **Fixed** — 글상자(부유 객체) 가 저장 후 다시 열면 사라지던 데이터 손실 버그. `FlowDocumentParser.Parse` 가 새 `Section` 을 만들면서 원본 섹션의 `FloatingObjects` 컬렉션을 인계하지 않아 발생. 글상자는 본문 흐름(`Section.Blocks`) 과 별도 레이어이므로 FlowDocument 에서 파싱되지 않는데, 저장 직전 rebuilt 문서에 누락되면 IWPF 직렬화 단계에서 통째로 사라졌다. `originalForMerge.Sections[0].FloatingObjects` 를 새 섹션으로 복사하도록 수정. 같은 경로에서 `Watermark` 와 `OutlineStyles` (문서 수준 상태) 도 누락되던 것을 함께 인계하도록 보정.
+
+### Changed
+- **Changed** — 새 글상자의 **기본 텍스트 정렬을 좌상단 → 가운데 정렬**(가로 Center / 세로 Middle) 로 변경. 글상자(특히 말풍선·구름·가시 등 비사각형 모양) 의 일반적 사용 패턴은 짧은 텍스트를 박스 한가운데 두는 것 — Word · PowerPoint 의 기본 텍스트 상자 동작과 일치. **마이그레이션 주의**: 이전에 기본값(Top/Left) 으로 저장된 IWPF 파일은 JSON 에 `hAlign`/`vAlign` 필드가 생략되므로, 새 코드로 다시 열면 가운데 정렬로 표시된다 (pre-1.0 단계라 허용).
+
+### Added
+- **Added** — 글상자(부유 객체) 자체의 복사/잘라내기/붙여넣기 지원. 글상자 chrome 이 선택된 상태(안쪽 본문 편집 중이 아님)에서 **Ctrl+C / Ctrl+X / Ctrl+V** 를 누르면 `TextBoxObject` 전체(모양·여백·정렬·색·내용 포함) 를 사용자 정의 클립보드 포맷 `PolyDonky.FloatingObject.v1` 로 직렬화/복원. 붙여넣기 시 위치를 (+5mm, +5mm) 오프셋해 원본 위에 겹치지 않게 복제. 안쪽 본문 또는 본문 편집기에 포커스가 있으면 가로채지 않고 일반 텍스트 클립보드 동작에 양보. plain-text 폴백을 함께 실어 다른 앱으로의 붙여넣기 시 안쪽 텍스트만 전달.
+
+### Docs
+- **Docs** — `PolyDonky` 작명 유래(**Poly**(gon) + **Donky**(당나귀): 다각형으로 거칠게 빚은 당나귀처럼 외형은 엉성해도 어떤 문서 포맷이든 가리지 않고 먹어치운다는 뜻) 를 한국어·영어 병기로 명문화. `README.md` 에 신규 섹션 "이름의 유래 (Name origin)" 추가 + 상단 인트로 직하단에 한·영 한 줄 요약. `CLAUDE.md` 의 프로젝트 개요 인용 블록으로 추가 — 향후 세션의 코드/UI 톤 일관성 가이드. `AboutWindow` 에 "Poly(gon) + Donky(당나귀)" 헤더 + 한·영 한 줄 설명을 새 섹션으로 노출.
+
+### Changed
+- **Changed** — 앱 아이콘 및 About 다이얼로그 히어로 이미지를 신규 PolyDonky 브랜드 아트(`assets/PolyDonky.jpg` 원본 → 자동 크롭/멀티사이즈 ICO)로 교체. `assets/PolyDonky.ico`(16/24/32/48/64/128/256 멀티사이즈) 와 `assets/PolyDonky_1024.png`(1024×1024 RGBA) 추가. `PolyDonky.App.csproj` 의 `<ApplicationIcon>` 을 `Handtech.ico` → `PolyDonky.ico` 로 전환. `MainWindow` 와 `AboutWindow` 에 `Icon="pack://application:,,,/Assets/PolyDonky.ico"` 명시 — 작업 표시줄·Alt+Tab·다이얼로그 타이틀바 모두 동일 아이콘으로 통일. About 다이얼로그의 140×140 히어로 이미지가 `Handtech_1024.png` → `PolyDonky_1024.png` 로 변경되어 앱 아이덴티티(IWPF + 도키) 가 강조됨. 회사 로고(`Handtech_1024.png`)는 리소스로 유지 — 추후 다른 위치(예: 라이선스 다이얼로그)에서 재사용 가능.
+
 ### Internal
 - **Internal** — 프로젝트 전체 이름을 `PolyDoc` → `PolyDonky` 로 변경. 네임스페이스, 어셈블리명, `.csproj` 파일명, 솔루션 파일명, 소스 디렉터리명 일괄 변경. GitHub 레포지토리 이름은 사용자가 직접 Settings → General → Repository name 에서 변경 필요.
 

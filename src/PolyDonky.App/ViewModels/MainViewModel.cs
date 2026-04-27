@@ -567,6 +567,8 @@ public partial class MainViewModel : ObservableObject
             "Cloud"     => PolyDonky.Core.TextBoxShape.Cloud,
             "Spiky"     => PolyDonky.Core.TextBoxShape.Spiky,
             "Lightning" => PolyDonky.Core.TextBoxShape.Lightning,
+            "Ellipse"   => PolyDonky.Core.TextBoxShape.Ellipse,
+            "Pie"       => PolyDonky.Core.TextBoxShape.Pie,
             _           => PolyDonky.Core.TextBoxShape.Rectangle,
         };
         InsertTextBoxRequested?.Invoke(this, shape);

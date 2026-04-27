@@ -11,6 +11,10 @@ public sealed class Run
 
     /// <summary>별행(display) 수식 여부. LatexSource 가 null 이면 무시.</summary>
     public bool IsDisplayEquation { get; set; }
+
+    /// <summary>이모지 키 ("{Section}_{name}", 예: "Status_done"). null 이면 일반 텍스트 Run.
+    /// Resources/Emojis/{Section}/{name}.png 와 일대일 대응. 라운드트립 시 보존.</summary>
+    public string? EmojiKey { get; set; }
 }
 
 public sealed class RunStyle

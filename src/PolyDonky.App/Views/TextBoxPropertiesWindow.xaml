@@ -25,6 +25,8 @@
             <ComboBoxItem Content="구름풍선" />
             <ComboBoxItem Content="가시풍선" />
             <ComboBoxItem Content="번개상자" />
+            <ComboBoxItem Content="타원" />
+            <ComboBoxItem Content="파이" />
         </ComboBox>
 
         <!-- ── 말풍선: 꼬리 방향 (8방향 그리드) ── -->
@@ -72,6 +74,33 @@
             <TextBlock Grid.Column="0" Text="가시 개수 (5~24)" VerticalAlignment="Center" />
             <TextBox x:Name="TxtSpikeCount"
                      Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
+        </Grid>
+
+        <!-- ── 파이: 시작 각도 / 호 범위 ── -->
+        <Grid x:Name="PnlPie" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="6" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="130" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="시작 각도 (°)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtPieStartAngle"
+                     Grid.Row="0" Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="호 범위 (5~355°)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtPieSweepAngle"
+                     Grid.Row="2" Grid.Column="1"
                      Padding="4,3"
                      Background="{DynamicResource SurfaceAlt}"
                      Foreground="{DynamicResource OnSurface}"

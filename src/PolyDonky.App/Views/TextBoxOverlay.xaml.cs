@@ -181,6 +181,34 @@ public partial class TextBoxOverlay : UserControl
     }
 
     /// <summary>
+    /// 타원 PathGeometry. 4개의 cubic Bézier 호로 원을 근사하며,
+    /// Stretch="Fill" 로 인해 실제 박스 비율에 맞춰 타원으로 자동 스케일된다.
+    /// </summary>
+    private static string BuildEllipsePath()
+        => "M 50,0 C 77.6,0 100,22.4 100,50 C 100,77.6 77.6,100 50,100 C 22.4,100 0,77.6 0,50 C 0,22.4 22.4,0 50,0 Z";
+
+    /// <summary>
+    /// 파이(부채꼴) PathGeometry. 중심(50,50)에서 반경 50의 호를 그린 후 다시 중심으로 닫는다.
+    /// <paramref name="startAngleDeg"/>: 시계방향 시작 각도 (0 = 오른쪽).
+    /// <paramref name="sweepAngleDeg"/>: 시계방향 호 범위 (5~355).
+    /// </summary>
+    private static string BuildPiePath(double startAngleDeg, double sweepAngleDeg)
+    {
+        const double cx = 50, cy = 50, r = 50;
+        double sweep = Math.Clamp(sweepAngleDeg, 5, 355);
+        double startRad = startAngleDeg * Math.PI / 180.0;
+        double endRad   = (startAngleDeg + sweep) * Math.PI / 180.0;
+        double x1 = cx + r * Math.Cos(startRad);
+        double y1 = cy + r * Math.Sin(startRad);
+        double x2 = cx + r * Math.Cos(endRad);
+        double y2 = cy + r * Math.Sin(endRad);
+        int largeArc = sweep > 180 ? 1 : 0;
+        return string.Format(Inv,
+            "M {0:0.##},{1:0.##} L {2:0.##},{3:0.##} A {4},{4} 0 {5} 1 {6:0.##},{7:0.##} Z",
+            cx, cy, x1, y1, r, largeArc, x2, y2);
+    }
+
+    /// <summary>
     /// 번개상자 PathGeometry. 꺽임 개수에 따라 미리 정의된 템플릿을 선택.
     /// 1=단순(작은 V형), 2=기본 볼트(원래 모양), 3~5=촘촘한 지그재그.
     /// </summary>
@@ -235,7 +263,13 @@ public partial class TextBoxOverlay : UserControl
 
         ApplyShapeFromModel();
         Loaded += (_, _) => UpdateHandlePositions();
-        SizeChanged += (_, _) => UpdateHandlePositions();
+        SizeChanged += (_, _) =>
+        {
+            UpdateHandlePositions();
+            // 비사각형 모양은 인셋이 박스 크기에 비례하므로 크기 변경 시 재계산.
+            if (Model.Shape != TextBoxShape.Rectangle)
+                UpdateInnerEditorMargin();
+        };
     }
 
     // ── 선택 상태 ────────────────────────────────────────────────────
@@ -294,6 +328,8 @@ public partial class TextBoxOverlay : UserControl
                 TextBoxShape.Cloud     => BuildCloudPath(Model.CloudPuffCount),
                 TextBoxShape.Spiky     => BuildSpikyPath(Model.SpikeCount),
                 TextBoxShape.Lightning => BuildLightningPath(Model.LightningBendCount),
+                TextBoxShape.Ellipse   => BuildEllipsePath(),
+                TextBoxShape.Pie       => BuildPiePath(Model.PieStartAngleDeg, Model.PieSweepAngleDeg),
                 _                      => BuildSpeechPath(Model.SpeechDirection),
             };
             ShapePath.Data = Geometry.Parse(pathData);
@@ -310,12 +346,8 @@ public partial class TextBoxOverlay : UserControl
                 ShapePath.Fill = Brushes.White;
         }
 
-        // ── 안쪽 여백 (Margin = padding) ──────────────────────────────
-        InnerEditor.Margin = new Thickness(
-            Model.PaddingLeftMm   * DipsPerMm,
-            Model.PaddingTopMm    * DipsPerMm,
-            Model.PaddingRightMm  * DipsPerMm,
-            Model.PaddingBottomMm * DipsPerMm);
+        // ── 안쪽 여백 (Margin = padding + shape inset) ────────────────
+        UpdateInnerEditorMargin();
 
         // ── 가로 정렬 ─────────────────────────────────────────────────
         var ta = Model.HAlign switch
@@ -375,13 +407,29 @@ public partial class TextBoxOverlay : UserControl
     private void LoadModelTextToEditor()
     {
         // 글자 방향은 추후 지원 예정 — 현재 항상 LTR.
+        // 본문(MainWindow) 와 동일한 Run 빌더를 써서 글자 속성(폰트·크기·볼드·이탤릭·
+        // 색·밑줄 등) 을 그대로 FlowDocument 에 반영한다.
+        // 추가로 각 Wpf.Run.Tag 에 원본 PolyDonky.Run 을 심어둔다 — 라운드트립 시
+        // FlowDocumentParser 가 Tag 를 우선 시드로 사용해 비-Wpf 속성(LetterSpacingPx,
+        // WidthPercent 등) 까지 정확히 복원하고, WPF 의 inheritance 로 인한 미세한
+        // 속성 drift(폰트 패밀리 자동 stamping 등) 도 막을 수 있다.
         var doc = new System.Windows.Documents.FlowDocument();
         foreach (var block in Model.Content)
         {
             if (block is PolyDonky.Core.Paragraph cp)
             {
-                doc.Blocks.Add(new System.Windows.Documents.Paragraph(
-                    new System.Windows.Documents.Run(cp.GetPlainText())));
+                var wpfPara = new System.Windows.Documents.Paragraph
+                {
+                    Margin = new Thickness(0),
+                };
+                foreach (var run in cp.Runs)
+                {
+                    var inline = PolyDonky.App.Services.FlowDocumentBuilder.BuildInline(run);
+                    if (inline is System.Windows.Documents.Run wpfRun && wpfRun.Tag is null)
+                        wpfRun.Tag = run;
+                    wpfPara.Inlines.Add(inline);
+                }
+                doc.Blocks.Add(wpfPara);
             }
         }
         if (!doc.Blocks.Any())
@@ -392,20 +440,12 @@ public partial class TextBoxOverlay : UserControl
 
     private void SyncEditorToModel()
     {
-        // RichTextBox의 plain text를 모델에 동기화 (단락 유지)
-        var doc = InnerEditor.Document;
+        // 본문 파서를 재사용해 InnerEditor 의 FlowDocument 를 PolyDonky.Core.Block
+        // 트리로 변환 — 글자 속성(폰트·볼드·이탤릭·색·밑줄 등) 과 단락 구조를 그대로 보존.
+        var parsed = PolyDonky.App.Services.FlowDocumentParser.Parse(InnerEditor.Document);
         Model.Content.Clear();
-        foreach (var block in doc.Blocks)
-        {
-            if (block is System.Windows.Documents.Paragraph para)
-            {
-                var range = new System.Windows.Documents.TextRange(para.ContentStart, para.ContentEnd);
-                var cp = new PolyDonky.Core.Paragraph();
-                var text = range.Text.TrimEnd('\r', '\n');
-                if (text.Length > 0) cp.AddText(text);
-                Model.Content.Add(cp);
-            }
-        }
+        foreach (var b in parsed.Sections.FirstOrDefault()?.Blocks ?? new List<PolyDonky.Core.Block>())
+            Model.Content.Add(b);
         if (Model.Content.Count == 0)
             Model.Content.Add(new PolyDonky.Core.Paragraph());
     }
@@ -449,6 +489,8 @@ public partial class TextBoxOverlay : UserControl
             Model.CloudPuffCount     = dlg.ResultCloudPuffCount;
             Model.SpikeCount         = dlg.ResultSpikeCount;
             Model.LightningBendCount = dlg.ResultLightningBendCount;
+            Model.PieStartAngleDeg   = dlg.ResultPieStartAngleDeg;
+            Model.PieSweepAngleDeg   = dlg.ResultPieSweepAngleDeg;
             Model.RotationAngleDeg   = dlg.ResultRotationAngleDeg;
             Model.TextOrientation    = dlg.ResultTextOrientation;
             Model.TextProgression    = dlg.ResultTextProgression;
@@ -463,6 +505,9 @@ public partial class TextBoxOverlay : UserControl
         // Focus 를 미리 복귀시키면 inactive selection 이 collapse 되므로
         // 다이얼로그에 InnerEditor 를 그대로 전달 — Selection 포인터는 포커스
         // 없이도 유효하게 유지된다.
+        // selection 이 비어 있으면 안쪽 텍스트 전체에 적용 — chrome 우클릭 흐름에서
+        // 사용자가 아무것도 선택 안 했어도 시각적으로 결과가 나오도록.
+        if (InnerEditor.Selection.IsEmpty) InnerEditor.SelectAll();
         var dlg = new CharFormatWindow(InnerEditor) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() == true)
         {
@@ -475,6 +520,7 @@ public partial class TextBoxOverlay : UserControl
 
     private void OnContextMenuParaFormat(object sender, RoutedEventArgs e)
     {
+        if (InnerEditor.Selection.IsEmpty) InnerEditor.SelectAll();
         var dlg = new ParaFormatWindow(InnerEditor) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() == true)
         {
@@ -644,6 +690,68 @@ public partial class TextBoxOverlay : UserControl
         {
             DeleteRequested?.Invoke(this, EventArgs.Empty);
             e.Handled = true;
+        }
+    }
+
+    // ── 안쪽 편집기 여백 (사용자 padding + 비사각형 모양의 인셋) ────────
+    private void UpdateInnerEditorMargin()
+    {
+        double padL = Model.PaddingLeftMm   * DipsPerMm;
+        double padT = Model.PaddingTopMm    * DipsPerMm;
+        double padR = Model.PaddingRightMm  * DipsPerMm;
+        double padB = Model.PaddingBottomMm * DipsPerMm;
+
+        var (sl, st, sr, sb) = ComputeShapeInset();
+        InnerEditor.Margin = new Thickness(padL + sl, padT + st, padR + sr, padB + sb);
+    }
+
+    /// <summary>
+    /// 비사각형 모양(Speech/Cloud/Spiky/Lightning) 의 외곽 돌출부(꼬리·뭉게·가시)에
+    /// 텍스트가 침범하지 않도록 박스 크기에 비례한 추가 인셋을 반환한다. 사각형은 0.
+    /// 박스 크기 변경 시 SizeChanged 핸들러가 다시 호출해 재계산한다.
+    /// </summary>
+    private (double Left, double Top, double Right, double Bottom) ComputeShapeInset()
+    {
+        if (Model.Shape == TextBoxShape.Rectangle) return (0, 0, 0, 0);
+
+        double w = ActualWidth;
+        double h = ActualHeight;
+        if (double.IsNaN(w) || double.IsNaN(h) || w <= 0 || h <= 0) return (0, 0, 0, 0);
+
+        switch (Model.Shape)
+        {
+            case TextBoxShape.Speech:
+            {
+                // BuildSpeechPath 의 꼬리 여백(m=15 / 100) 과 일치.
+                const double pct = 0.15;
+                double l = 0, t = 0, r = 0, b = 0;
+                bool tL = Model.SpeechDirection is SpeechPointerDirection.Left  or SpeechPointerDirection.TopLeft  or SpeechPointerDirection.BottomLeft;
+                bool tR = Model.SpeechDirection is SpeechPointerDirection.Right or SpeechPointerDirection.TopRight or SpeechPointerDirection.BottomRight;
+                bool tT = Model.SpeechDirection is SpeechPointerDirection.Top   or SpeechPointerDirection.TopLeft  or SpeechPointerDirection.TopRight;
+                bool tB = Model.SpeechDirection is SpeechPointerDirection.Bottom or SpeechPointerDirection.BottomLeft or SpeechPointerDirection.BottomRight;
+                if (tL) l = w * pct;
+                if (tR) r = w * pct;
+                if (tT) t = h * pct;
+                if (tB) b = h * pct;
+                return (l, t, r, b);
+            }
+            case TextBoxShape.Cloud:
+                // 베지어 뭉게가 사방으로 약간 돌출 — 10% 인셋.
+                return (w * 0.10, h * 0.10, w * 0.10, h * 0.10);
+            case TextBoxShape.Spiky:
+                // 가시별의 외곽 정점 → 내접원 영역만 안전. 약 22% 인셋.
+                return (w * 0.22, h * 0.22, w * 0.22, h * 0.22);
+            case TextBoxShape.Lightning:
+                // 번개는 중앙 폭이 좁아 텍스트가 잘 안 어울리지만, 최소 영역만 확보.
+                return (w * 0.15, h * 0.20, w * 0.15, h * 0.20);
+            case TextBoxShape.Ellipse:
+                // 타원의 내접 사각형은 각 변에서 약 15% 안쪽에 위치 (r / √2 ≈ 0.707r).
+                return (w * 0.15, h * 0.15, w * 0.15, h * 0.15);
+            case TextBoxShape.Pie:
+                // 부채꼴 — 각도에 따라 달라지므로 보수적으로 10% 인셋 적용.
+                return (w * 0.10, h * 0.10, w * 0.10, h * 0.10);
+            default:
+                return (0, 0, 0, 0);
         }
     }
 

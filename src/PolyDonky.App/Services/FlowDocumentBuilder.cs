@@ -180,7 +180,7 @@ public static class FlowDocumentBuilder
         return wtable;
     }
 
-    private static Wpf.BlockUIContainer BuildImage(ImageBlock image)
+    internal static Wpf.BlockUIContainer BuildImage(ImageBlock image)
     {
         var container = new Wpf.BlockUIContainer { Tag = image };
 
@@ -355,11 +355,15 @@ public static class FlowDocumentBuilder
     }
 
     /// <summary>글자폭 != 100% 또는 자간 != 0 이면 Span(per-char InlineUIContainer 들), 그 외에는 Run 반환.
-    /// LatexSource 가 있으면 WpfMath FormulaControl 로 렌더링.</summary>
+    /// LatexSource 가 있으면 WpfMath FormulaControl 로 렌더링.
+    /// EmojiKey 가 있으면 Resources/Emojis/{Section}/{name}.png 를 Image 로 렌더링.</summary>
     public static Wpf.Inline BuildInline(Run run)
     {
         if (run.LatexSource is { Length: > 0 } latex)
             return BuildEquationInline(run, latex);
+
+        if (run.EmojiKey is { Length: > 0 } emojiKey)
+            return BuildEmojiInline(run, emojiKey);
 
         var s = run.Style;
         if (NeedsContainer(s))
@@ -408,6 +412,67 @@ public static class FlowDocumentBuilder
             Tag               = run,
             BaselineAlignment = BaselineAlignment.Center,
         };
+    }
+
+    /// <summary>
+    /// 이모지 PNG 를 Image 로 렌더링. 키 형식: "{Section}_{name}" → pack URI 로 해석.
+    /// 본문 폰트 크기에 비례한 정사각 크기로 표시 (기본 ~1.4em).
+    /// 로드 실패 시 plain-text Run("[Section_name]") 으로 폴백 — 라운드트립용 EmojiKey 는 Tag 로 보존.
+    /// </summary>
+    private static Wpf.Inline BuildEmojiInline(Run run, string emojiKey)
+    {
+        double sizePt  = run.Style.FontSizePt > 0 ? run.Style.FontSizePt : 16.0;
+        double sizeDip = PtToDip(sizePt);
+
+        var img = LoadEmojiImage(emojiKey, sizeDip);
+        if (img is null)
+            return new Wpf.Run($"[{emojiKey}]") { Tag = run };
+
+        return new Wpf.InlineUIContainer(img)
+        {
+            Tag               = run,
+            BaselineAlignment = BaselineAlignment.Center,
+        };
+    }
+
+    /// <summary>
+    /// EmojiKey ("{Section}_{name}") → pack URI Image. 키가 잘못됐거나 리소스가 없으면 null.
+    /// </summary>
+    public static System.Windows.Controls.Image? LoadEmojiImage(string emojiKey, double sizeDip)
+    {
+        var (section, name) = SplitEmojiKey(emojiKey);
+        if (section is null || name is null) return null;
+
+        try
+        {
+            var uri = new Uri($"pack://application:,,,/Resources/Emojis/{section}/{name}.png", UriKind.Absolute);
+            var bmp = new WpfMedia.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.UriSource   = uri;
+            bmp.CacheOption = WpfMedia.Imaging.BitmapCacheOption.OnLoad;
+            bmp.EndInit();
+            bmp.Freeze();
+            return new System.Windows.Controls.Image
+            {
+                Source  = bmp,
+                Width   = sizeDip,
+                Height  = sizeDip,
+                Stretch = WpfMedia.Stretch.Uniform,
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>"Status_done" → ("Status", "done"). 잘못된 형식이면 (null, null).
+    /// 이름에 밑줄이 포함될 수 있으므로 첫 번째 '_' 만 분리자로 사용한다 (예: "Status_in_progress").</summary>
+    private static (string? Section, string? Name) SplitEmojiKey(string key)
+    {
+        int idx = key.IndexOf('_');
+        if (idx <= 0 || idx >= key.Length - 1) return (null, null);
+        return (key[..idx], key[(idx + 1)..]);
     }
 
     /// <summary>

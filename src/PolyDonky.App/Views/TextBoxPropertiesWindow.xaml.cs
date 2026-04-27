@@ -24,6 +24,8 @@ public partial class TextBoxPropertiesWindow : Window
     public int                    ResultCloudPuffCount     { get; private set; }
     public int                    ResultSpikeCount         { get; private set; }
     public int                    ResultLightningBendCount { get; private set; }
+    public double                 ResultPieStartAngleDeg   { get; private set; }
+    public double                 ResultPieSweepAngleDeg   { get; private set; }
     public double                 ResultRotationAngleDeg   { get; private set; }
     public TextOrientation        ResultTextOrientation    { get; private set; }
     public TextProgression        ResultTextProgression    { get; private set; }
@@ -50,6 +52,8 @@ public partial class TextBoxPropertiesWindow : Window
         TxtCloudPuffs.Text     = model.CloudPuffCount.ToString();
         TxtSpikeCount.Text     = model.SpikeCount.ToString();
         TxtLightningBends.Text = model.LightningBendCount.ToString();
+        TxtPieStartAngle.Text  = model.PieStartAngleDeg.ToString("0.##");
+        TxtPieSweepAngle.Text  = model.PieSweepAngleDeg.ToString("0.##");
         TxtRotationAngle.Text  = model.RotationAngleDeg.ToString("0.##");
 
         CboTextOrientation.SelectedIndex = (int)model.TextOrientation;
@@ -68,11 +72,12 @@ public partial class TextBoxPropertiesWindow : Window
 
     private void UpdateShapePanelVisibility()
     {
-        var shape = (TextBoxShape)System.Math.Clamp(CboShape.SelectedIndex, 0, 4);
+        var shape = (TextBoxShape)System.Math.Clamp(CboShape.SelectedIndex, 0, 6);
         PnlSpeech.Visibility    = shape == TextBoxShape.Speech    ? Visibility.Visible : Visibility.Collapsed;
         PnlCloud.Visibility     = shape == TextBoxShape.Cloud     ? Visibility.Visible : Visibility.Collapsed;
         PnlSpiky.Visibility     = shape == TextBoxShape.Spiky     ? Visibility.Visible : Visibility.Collapsed;
         PnlLightning.Visibility = shape == TextBoxShape.Lightning ? Visibility.Visible : Visibility.Collapsed;
+        PnlPie.Visibility       = shape == TextBoxShape.Pie       ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void SelectSpeechDirection(SpeechPointerDirection dir)
@@ -163,7 +168,7 @@ public partial class TextBoxPropertiesWindow : Window
 
     private void OnOk(object sender, RoutedEventArgs e)
     {
-        ResultShape = (TextBoxShape)System.Math.Clamp(CboShape.SelectedIndex, 0, 4);
+        ResultShape = (TextBoxShape)System.Math.Clamp(CboShape.SelectedIndex, 0, 6);
 
         ResultBorderColor = string.IsNullOrWhiteSpace(TxtBorderColor.Text)
             ? null : TxtBorderColor.Text.Trim();
@@ -186,6 +191,8 @@ public partial class TextBoxPropertiesWindow : Window
         ResultCloudPuffCount     = ParseInt(TxtCloudPuffs.Text,     10, 6, 32);
         ResultSpikeCount         = ParseInt(TxtSpikeCount.Text,     12, 5, 24);
         ResultLightningBendCount = ParseInt(TxtLightningBends.Text,  2, 1,  5);
+        ResultPieStartAngleDeg   = ParseAngle(TxtPieStartAngle.Text);
+        ResultPieSweepAngleDeg   = ParsePieSweep(TxtPieSweepAngle.Text);
         ResultRotationAngleDeg   = ParseAngle(TxtRotationAngle.Text);
         ResultTextOrientation    = (TextOrientation)System.Math.Clamp(CboTextOrientation.SelectedIndex, 0, 1);
         ResultTextProgression    = (TextProgression)System.Math.Clamp(CboTextProgression.SelectedIndex, 0, 1);
@@ -195,6 +202,9 @@ public partial class TextBoxPropertiesWindow : Window
 
     private static double ParseAngle(string? s)
         => double.TryParse(s?.Trim(), out var v) ? System.Math.Clamp(v, -360, 360) : 0;
+
+    private static double ParsePieSweep(string? s)
+        => double.TryParse(s?.Trim(), out var v) ? System.Math.Clamp(v, 5, 355) : 270;
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 

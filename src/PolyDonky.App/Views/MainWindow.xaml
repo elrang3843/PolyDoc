@@ -9,6 +9,7 @@
         Title="{Binding WindowTitle}"
         Width="1200" Height="800"
         MinWidth="640" MinHeight="480"
+        Icon="pack://application:,,,/Assets/PolyDonky.ico"
         FontFamily="{DynamicResource UiFont}"
         Background="{DynamicResource Surface}"
         Foreground="{DynamicResource OnSurface}"
@@ -80,6 +81,8 @@
                     <MenuItem Header="구름풍선(_C)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Cloud" />
                     <MenuItem Header="가시풍선(_K)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Spiky" />
                     <MenuItem Header="번개상자(_L)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Lightning" />
+                    <MenuItem Header="타원(_E)"     Command="{Binding InsertTextBoxCommand}" CommandParameter="Ellipse" />
+                    <MenuItem Header="파이(_I)"     Command="{Binding InsertTextBoxCommand}" CommandParameter="Pie" />
                 </MenuItem>
                 <MenuItem Header="{Binding MenuInsertTable, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
                 <MenuItem Header="{Binding MenuInsertGraph, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
@@ -87,9 +90,11 @@
                           Click="OnInsertSpecialChar" />
                 <MenuItem Header="{Binding MenuInsertEquation, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertEquation" />
-                <MenuItem Header="{Binding MenuInsertEmoji, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertEmoji, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertEmoji" />
                 <MenuItem Header="{Binding MenuInsertShape, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
-                <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertImage" />
                 <MenuItem Header="{Binding MenuInsertSign, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 

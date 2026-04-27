@@ -46,7 +46,7 @@
                      BorderThickness="0"
                      AcceptsReturn="True"
                      AcceptsTab="True"
-                     VerticalScrollBarVisibility="Auto"
+                     VerticalScrollBarVisibility="Hidden"
                      HorizontalScrollBarVisibility="Disabled"
                      Margin="6"
                      VerticalAlignment="Stretch"

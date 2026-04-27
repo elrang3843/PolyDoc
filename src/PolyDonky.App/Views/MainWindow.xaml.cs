@@ -35,7 +35,13 @@ public partial class MainWindow : Window
         BodyEditor.TextChanged += OnEditorTextChanged;
         // 상태 표시줄 Insert/CapsLock/NumLock 갱신을 위해 윈도우 레벨 키 입력 가로채기.
         PreviewKeyDown += OnPreviewKeyDown;
+        // 마지막으로 키보드 포커스를 가졌던 텍스트 편집기를 추적 — 메뉴 클릭 시 포커스가
+        // 메뉴로 옮겨가도 직전 편집 컨텍스트(BodyEditor 또는 글상자 InnerEditor) 를 잃지 않게.
+        BodyEditor.GotKeyboardFocus += (_, _) => _lastTextEditor = BodyEditor;
     }
+
+    /// <summary>가장 최근에 키보드 포커스를 가졌던 RichTextBox.</summary>
+    private RichTextBox? _lastTextEditor;
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -104,9 +110,33 @@ public partial class MainWindow : Window
                 }
                 else if (_selectedOverlay is not null)
                 {
-                    DeselectAllOverlays();
+                    // 1단계: 안쪽 본문 편집 중이면 chrome 만 선택 상태로 전환 (포커스를 overlay 로 이동).
+                    //        이후 Ctrl+C 가 글상자 자체를 복사하도록 해주는 진입점.
+                    // 2단계: chrome 만 선택된 상태에서 다시 누르면 완전 해제.
+                    if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin)
+                    {
+                        _selectedOverlay.Focus();
+                        Keyboard.Focus(_selectedOverlay);
+                    }
+                    else
+                    {
+                        DeselectAllOverlays();
+                    }
                     e.Handled = true;
                 }
+                break;
+
+            // 글상자(부유 객체) 자체의 복사/잘라내기/붙여넣기.
+            // 안쪽 본문(InnerEditor)이 포커스 중이면 가로채지 않고 RichTextBox 의
+            // 일반 텍스트 클립보드 동작으로 넘긴다.
+            case Key.C when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryCopySelectedFloatingObject()) e.Handled = true;
+                break;
+            case Key.X when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryCutSelectedFloatingObject()) e.Handled = true;
+                break;
+            case Key.V when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryPasteFloatingObject()) e.Handled = true;
                 break;
         }
     }
@@ -221,23 +251,53 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
+    /// <summary>
+    /// 글자/문단 속성 다이얼로그가 적용해야 할 활성 RichTextBox 를 결정한다.
+    /// 우선순위:
+    /// 1) 글상자가 선택된 상태(`_selectedOverlay != null`) — 사용자가 chrome 만 선택했든
+    ///    안쪽 본문을 편집 중이었든 의도는 그 글상자에 작업하는 것. 해당 InnerEditor 사용.
+    /// 2) 마지막으로 키보드 포커스를 가졌던 RichTextBox — 메뉴 클릭으로 포커스가 일시
+    ///    이동한 경우에도 직전 편집 대상을 보존.
+    /// 3) BodyEditor — 기본 폴백.
+    /// </summary>
+    private RichTextBox GetActiveTextEditor()
+        => _selectedOverlay?.InnerEditor ?? _lastTextEditor ?? BodyEditor;
+
+    /// <summary>
+    /// 글상자 InnerEditor 를 다이얼로그 대상으로 잡았는데 안쪽 selection 이 비어 있으면
+    /// 전체 선택해서 적용 — chrome 만 선택한 사용자도 눈에 보이는 결과를 얻을 수 있게.
+    /// 본문(BodyEditor) 에는 적용하지 않는다 — 본문에서 빈 selection 은 "다음 입력에
+    /// 적용" 의미가 명확.
+    /// </summary>
+    private static void EnsureInnerSelectionForDialog(RichTextBox editor, TextBoxOverlay? overlay)
+    {
+        if (overlay is null) return;
+        if (!ReferenceEquals(editor, overlay.InnerEditor)) return;
+        if (!editor.Selection.IsEmpty) return;
+        editor.SelectAll();
+    }
+
     private void OnFormatChar(object sender, RoutedEventArgs e)
     {
-        var dlg = new CharFormatWindow(BodyEditor) { Owner = this };
+        var editor = GetActiveTextEditor();
+        EnsureInnerSelectionForDialog(editor, _selectedOverlay);
+        var dlg = new CharFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             _viewModel?.MarkDirty();
-            BodyEditor.Focus();
+            editor.Focus();
         }
     }
 
     private void OnFormatPara(object sender, RoutedEventArgs e)
     {
-        var dlg = new ParaFormatWindow(BodyEditor) { Owner = this };
+        var editor = GetActiveTextEditor();
+        EnsureInnerSelectionForDialog(editor, _selectedOverlay);
+        var dlg = new ParaFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             _viewModel?.MarkDirty();
-            BodyEditor.Focus();
+            editor.Focus();
         }
     }
 
@@ -268,6 +328,31 @@ public partial class MainWindow : Window
     private void OnInsertEquation(object sender, RoutedEventArgs e)
     {
         var dlg = new EquationWindow(BodyEditor) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _viewModel?.MarkDirty();
+            BodyEditor.Focus();
+        }
+    }
+
+    private void OnInsertEmoji(object sender, RoutedEventArgs e)
+    {
+        // 글상자가 선택되어 있으면 안쪽 InnerEditor 로, 아니면 본문으로 라우팅.
+        // 글상자 안쪽 selection 비어 있을 때 SelectAll 강제는 하지 않는다 — 이모지는 캐럿
+        // 위치에 삽입되는 객체이므로 의도치 않게 본문 전체를 대체하면 안 된다.
+        var editor = GetActiveTextEditor();
+        var dlg = new EmojiWindow(editor) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _viewModel?.MarkDirty();
+            editor.Focus();
+        }
+    }
+
+    private void OnInsertImage(object sender, RoutedEventArgs e)
+    {
+        // 그림은 블록 단위 삽입 — 본문 편집기에만 삽입하고 글상자 안은 지원하지 않는다.
+        var dlg = new ImageWindow(BodyEditor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             _viewModel?.MarkDirty();
@@ -491,11 +576,87 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    // ── 글상자(부유 객체) 복사/잘라내기/붙여넣기 ──────────────────────
+    private const string FloatingObjectClipboardFormat = "PolyDonky.FloatingObject.v1";
+
+    /// <summary>
+    /// 선택된 글상자를 복사한다. 안쪽 본문에 포커스가 있어도 텍스트 선택이 비어 있으면
+    /// "글상자 자체 복사" 의도로 간주 — Word/PowerPoint 와 동일한 mental model.
+    /// 안쪽 본문에 텍스트 선택이 있으면 가로채지 않고 일반 복사에 양보.
+    /// </summary>
+    private bool TryCopySelectedFloatingObject()
+    {
+        if (_selectedOverlay is null) return false;
+        if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin
+            && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
+            return false;
+
+        var json = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
+            _selectedOverlay.Model, JsonDefaults.Options);
+        var dataObj = new System.Windows.DataObject();
+        dataObj.SetData(FloatingObjectClipboardFormat, json);
+        // Plain-text 폴백 — 다른 앱으로 붙여넣기 시 안쪽 텍스트만 가도록.
+        dataObj.SetText(_selectedOverlay.Model.GetPlainText());
+        Clipboard.SetDataObject(dataObj, copy: true);
+        return true;
+    }
+
+    private bool TryCutSelectedFloatingObject()
+    {
+        if (!TryCopySelectedFloatingObject()) return false;
+        var overlay = _selectedOverlay!;
+        FloatingCanvas.Children.Remove(overlay);
+        _viewModel?.RemoveFloatingObject(overlay.Model);
+        _selectedOverlay = null;
+        BodyEditor.Focus();
+        return true;
+    }
+
+    private bool TryPasteFloatingObject()
+    {
+        if (!Clipboard.ContainsData(FloatingObjectClipboardFormat)) return false;
+        // 텍스트 선택이 있을 때만 일반 텍스트 붙여넣기에 양보 (사용자 의도가 텍스트 교체).
+        // 캐럿만 위치한 경우(=텍스트 선택 없음) 는 BodyEditor 든 InnerEditor 든
+        // 글상자 클립보드 데이터를 우선 적용 — 사용자가 방금 글상자를 복사했다면
+        // Ctrl+V 의 자연스러운 결과는 새 글상자 한 개를 캔버스에 띄우는 것.
+        if (BodyEditor.IsKeyboardFocusWithin && !BodyEditor.Selection.IsEmpty) return false;
+        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true
+            && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
+            return false;
+
+        var json = Clipboard.GetData(FloatingObjectClipboardFormat) as string;
+        if (string.IsNullOrEmpty(json)) return false;
+
+        FloatingObject? clone;
+        try
+        {
+            clone = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(json, JsonDefaults.Options);
+        }
+        catch
+        {
+            return false;
+        }
+        if (clone is not TextBoxObject tb) return false;
+
+        // 새 인스턴스 표시 — Id 재발급, 위치는 살짝 오프셋.
+        tb.Id = null;
+        tb.XMm += 5;
+        tb.YMm += 5;
+        tb.Status = NodeStatus.Modified;
+
+        _viewModel?.AddFloatingObjectToCurrentSection(tb);
+        var overlay = AddTextBoxOverlay(tb);
+        SelectOverlay(overlay);
+        return true;
+    }
+
     /// <summary>현재 섹션의 FloatingObjects 를 캔버스에 다시 채워 그린다 (문서 로드 시).</summary>
     private void RebuildFloatingObjects()
     {
         FloatingCanvas.Children.Clear();
         _selectedOverlay = null;
+        // 옛 InnerEditor 참조는 기각 — 다시 만들 overlay 의 InnerEditor 가 GotKeyboardFocus 시 갱신.
+        _lastTextEditor = null;
         var section = _viewModel?.Document.Sections.FirstOrDefault();
         if (section is null) return;
         foreach (var obj in section.FloatingObjects.OfType<TextBoxObject>())
@@ -513,6 +674,10 @@ public partial class MainWindow : Window
         overlay.Height = model.HeightMm * TextBoxOverlay.DipsPerMm;
 
         overlay.Selected += (_, _) => SelectOverlay(overlay);
+        // 마지막 포커스 추적 — 사용자가 메뉴(서식 → 글자 속성 등) 를 누르면 포커스가 메뉴로
+        // 이동해 IsKeyboardFocusWithin 이 false 가 된다. _lastTextEditor 에 미리 기억해두면
+        // 메뉴에서 연 다이얼로그가 정확한 편집 대상을 잡을 수 있다.
+        overlay.InnerEditor.GotKeyboardFocus += (_, _) => _lastTextEditor = overlay.InnerEditor;
 
         overlay.BringForwardRequested += (_, _) =>
         {
@@ -560,6 +725,7 @@ public partial class MainWindow : Window
             FloatingCanvas.Children.Remove(overlay);
             _viewModel?.RemoveFloatingObject(model);
             if (ReferenceEquals(_selectedOverlay, overlay)) _selectedOverlay = null;
+            if (ReferenceEquals(_lastTextEditor, overlay.InnerEditor)) _lastTextEditor = null;
             BodyEditor.Focus();
         };
 
