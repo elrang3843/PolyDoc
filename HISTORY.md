@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Fixed
+- **Fixed** — 이모지·그림 위에서 우클릭/더블클릭해도 **속성 다이얼로그가 열리지 않고 RichTextBox 기본 메뉴(잘라내기/복사/붙여넣기) 만 뜨던 버그**. 두 가지 원인을 함께 수정: 1) `PreviewMouseRightButtonDown` 으로 e.Handled = true 를 세팅해도 RichTextBox 의 기본 컨텍스트 메뉴는 `ContextMenuOpening` 시점에 결정되므로 막을 수 없었음 — 핸들러를 `ContextMenuOpening` 로 옮기고 그 시점에 e.Handled = true 로 기본 메뉴 억제. 2) `e.OriginalSource` 가 RichTextBox 내부 호스팅으로 Image 까지 닿지 않는 경우가 있었음 — `BodyEditor.InputHitTest(마우스위치)` 폴백 추가해 두 경로 모두에서 Image 를 찾도록 보강.
+
 ### Added
 - **Added** — **이모지·그림 속성 편집** (`EmojiPropertiesWindow`, `ImagePropertiesWindow`). 이모지/그림 우클릭 → 속성 메뉴, 더블클릭 → 속성 다이얼로그 직접 열기. 이모지: 크기(pt) + 기준선 정렬(위/가운데/아래/기준선) — 변경 즉시 Image 컨트롤에 반영, `Run.EmojiAlignment` 에 저장해 라운드트립 보장. 그림: 크기(mm·비율 유지), 정렬(왼쪽/가운데/오른쪽), 위아래 여백(mm), 테두리(색상·두께 pt), 설명 — 확인 시 `ImageBlock` 갱신 후 `BlockUIContainer` 재빌드해 FlowDocument 교체. `ImageBlock` 에 `HAlign`/`MarginTopMm`/`MarginBottomMm`/`BorderColor`/`BorderThicknessPt` 추가; `Run` 에 `EmojiAlignment` 추가.
 - **Added** — **그림(이미지) 삽입** 기능 구현. 입력 → 그림 메뉴로 `ImageWindow` 다이얼로그 열기: 파일 선택(PNG/JPEG/BMP/GIF/TIFF/WebP), 미리보기, 너비·높이(mm) 입력(비율 유지 옵션), 설명(alt-text) 입력. 삽입 시 SHA-256 해시를 자동 계산해 `ImageBlock` 에 기록, 캐럿 위치 블록 직후에 `BlockUIContainer`(`Tag = ImageBlock`) 로 삽입 — `FlowDocumentParser` 의 기존 라운드트립 경로로 IWPF 저장/재로드 정상 동작. A4 본문 너비(160mm) 초과 이미지는 자동 축소. `FlowDocumentBuilder.BuildImage` 를 `internal` 로 공개.

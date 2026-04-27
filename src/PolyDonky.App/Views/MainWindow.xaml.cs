@@ -65,8 +65,8 @@ public partial class MainWindow : Window
         };
 
         // 이모지·이미지 우클릭 → 속성 컨텍스트 메뉴, 더블클릭 → 속성 다이얼로그
-        BodyEditor.PreviewMouseRightButtonDown += OnEmbeddedObjectRightClick;
-        BodyEditor.PreviewMouseDoubleClick     += OnEmbeddedObjectDoubleClick;
+        BodyEditor.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
+        BodyEditor.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
 
         _statusTimer = new DispatcherTimer
         {
@@ -366,41 +366,53 @@ public partial class MainWindow : Window
 
     // ── 이모지·이미지 속성 편집 ─────────────────────────────────────────
 
-    private void OnEmbeddedObjectRightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private void OnEmbeddedObjectContextMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs e)
     {
-        if (FindEmbeddedObjectAtSource(e.OriginalSource) is not var (imgControl, container))
-            return;
+        // RichTextBox 가 기본 컨텍스트 메뉴(잘라내기/복사/붙여넣기) 를 띄우기 직전에 가로채서
+        // 이모지·이미지 위에서 우클릭한 경우 속성 메뉴로 교체한다.
+        var pt = System.Windows.Input.Mouse.GetPosition(BodyEditor);
+        if (FindEmbeddedObjectAt(e.OriginalSource, pt) is not { } found) return;
 
-        var menu = BuildEmbeddedObjectMenu(imgControl, container);
+        var menu = BuildEmbeddedObjectMenu(found.img, found.container);
         if (menu is null) return;
 
+        e.Handled = true;   // 기본 메뉴 억제
         menu.PlacementTarget = BodyEditor;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
         menu.IsOpen = true;
-        e.Handled = true;
     }
 
     private void OnEmbeddedObjectDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (FindEmbeddedObjectAtSource(e.OriginalSource) is not var (imgControl, container))
-            return;
+        var pt = e.GetPosition(BodyEditor);
+        if (FindEmbeddedObjectAt(e.OriginalSource, pt) is not { } found) return;
 
-        OpenEmbeddedObjectProperties(imgControl, container);
+        OpenEmbeddedObjectProperties(found.img, found.container);
         e.Handled = true;
     }
 
-    /// <summary>OriginalSource 에서 이모지·이미지 Image 컨트롤과 컨테이너(IUC/BUC) 를 탐색한다.</summary>
-    private static (System.Windows.Controls.Image img, object container)? FindEmbeddedObjectAtSource(object source)
+    /// <summary>
+    /// OriginalSource 비주얼 트리 + 마우스 위치 InputHitTest 양쪽으로 이모지·이미지 Image 컨트롤을 찾는다.
+    /// RichTextBox 내부 hosting 으로 OriginalSource 가 Image 까지 닿지 않는 경우의 폴백.
+    /// </summary>
+    private (System.Windows.Controls.Image img, object container)? FindEmbeddedObjectAt(
+        object? originalSource, System.Windows.Point pt)
     {
-        var dep = source as System.Windows.DependencyObject;
+        if (TryWalkUpToImage(originalSource as System.Windows.DependencyObject) is { } a) return a;
+        if (TryWalkUpToImage(BodyEditor.InputHitTest(pt) as System.Windows.DependencyObject) is { } b) return b;
+        return null;
+    }
+
+    private static (System.Windows.Controls.Image img, object container)? TryWalkUpToImage(
+        System.Windows.DependencyObject? dep)
+    {
         while (dep is not null)
         {
             if (dep is System.Windows.Controls.Image img)
             {
-                // 이미지 블록: img.Tag = BlockUIContainer, buc.Tag = ImageBlock
-                if (img.Tag is System.Windows.Documents.BlockUIContainer buc && buc.Tag is PolyDonky.Core.ImageBlock)
+                if (img.Tag is System.Windows.Documents.BlockUIContainer buc &&
+                    buc.Tag is PolyDonky.Core.ImageBlock)
                     return (img, buc);
-                // 이모지 인라인: img.Tag = InlineUIContainer, iuc.Tag = CoreRun
                 if (img.Tag is System.Windows.Documents.InlineUIContainer iuc &&
                     iuc.Tag is PolyDonky.Core.Run { EmojiKey: { Length: > 0 } })
                     return (img, iuc);
