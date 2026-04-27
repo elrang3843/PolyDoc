@@ -1,15 +1,15 @@
-# Third-Party Notices — PolyDoc
+# Third-Party Notices — PolyDonky
 
-PolyDoc includes or links against the following third-party software.
+PolyDonky includes or links against the following third-party software.
 Each component is distributed under its own license, reproduced in full below.
-The presence of a component in this list does not imply that PolyDoc is
+The presence of a component in this list does not imply that PolyDonky is
 endorsed by its authors.
 
 ---
 
 ## Shipped Dependencies
 
-These libraries are bundled with or linked into the PolyDoc executable.
+These libraries are bundled with or linked into the PolyDonky executable.
 
 ---
 
@@ -148,7 +148,7 @@ SOFTWARE.
 ## Test-Only Dependencies
 
 The following packages are used only during development and testing.
-They are **not** bundled with or distributed as part of the PolyDoc executable.
+They are **not** bundled with or distributed as part of the PolyDonky executable.
 
 | Package | Version | License |
 |---------|---------|---------|

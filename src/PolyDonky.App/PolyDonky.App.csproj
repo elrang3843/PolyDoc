@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>PolyDonky.App</RootNamespace>
+    <AssemblyName>PolyDonky</AssemblyName>
+    <ApplicationIcon>..\..\assets\Handtech.ico</ApplicationIcon>
+    <ApplicationTitle>PolyDonky</ApplicationTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="WpfMath" />
+  </ItemGroup>
+
+  <!-- UseWindowsForms 가 추가하는 implicit global using 이 WPF 타입과 충돌.
+       System.Windows.Forms / System.Drawing 은 OutlineStyleWindow 에서
+       완전한 네임스페이스(System.Windows.Forms.ColorDialog 등)로만 사용. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyDonky.Core\PolyDonky.Core.csproj" />
+    <ProjectReference Include="..\PolyDonky.Iwpf\PolyDonky.Iwpf.csproj" />
+    <ProjectReference Include="..\PolyDonky.Codecs.Text\PolyDonky.Codecs.Text.csproj" />
+    <ProjectReference Include="..\PolyDonky.Codecs.Markdown\PolyDonky.Codecs.Markdown.csproj" />
+    <ProjectReference Include="..\PolyDonky.Codecs.Docx\PolyDonky.Codecs.Docx.csproj" />
+    <ProjectReference Include="..\PolyDonky.Codecs.Hwpx\PolyDonky.Codecs.Hwpx.csproj" />
+  </ItemGroup>
+
+  <!-- LICENSE 및 THIRD_PARTY_NOTICES.md 를 어셈블리에 내장 (라이선스 다이얼로그용) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\LICENSE">
+      <LogicalName>PolyDonky.App.LICENSE</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\THIRD_PARTY_NOTICES.md">
+      <LogicalName>PolyDonky.App.THIRD_PARTY_NOTICES.md</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- 회사 로고를 앱 리소스로 임베드 (About 다이얼로그에서 표시) -->
+  <ItemGroup>
+    <Resource Include="..\..\assets\Handtech_1024.png">
+      <Link>Assets\Handtech_1024.png</Link>
+    </Resource>
+  </ItemGroup>
+
+  <!-- 툴바 아이콘 — SVG 원본은 후속 SvgImage 로딩용으로 임베드,
+       현재는 Resources/ToolbarIcons.xaml 의 DrawingImage 만 App.xaml 에 머지해 사용. -->
+  <ItemGroup>
+    <Resource Include="Resources\Icons\svg\**\*.svg" />
+  </ItemGroup>
+
+  <!-- i18n: Properties/Resources.resx + en-US satellite
+       Update (not Include) to avoid duplicate with SDK default glob. -->
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Properties\Resources.en-US.resx" />
+  </ItemGroup>
+
+</Project>

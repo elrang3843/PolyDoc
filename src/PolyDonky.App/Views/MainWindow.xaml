@@ -1,0 +1,347 @@
+<Window x:Class="PolyDonky.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:PolyDonky.App.ViewModels"
+        xmlns:svc="clr-namespace:PolyDonky.App.Services"
+        mc:Ignorable="d"
+        Title="{Binding WindowTitle}"
+        Width="1200" Height="800"
+        MinWidth="640" MinHeight="480"
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}"
+        AllowDrop="True"
+        PreviewDrop="OnDrop"
+        PreviewDragOver="OnDragOver">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Window.InputBindings>
+        <KeyBinding Modifiers="Control" Key="N" Command="{Binding NewCommand}" />
+        <KeyBinding Modifiers="Control" Key="O" Command="{Binding OpenCommand}" />
+        <KeyBinding Modifiers="Control" Key="S" Command="{Binding SaveCommand}" />
+        <KeyBinding Modifiers="Control+Shift" Key="S" Command="{Binding SaveAsCommand}" />
+        <KeyBinding Modifiers="Control" Key="F" Command="{Binding FindReplaceCommand}" />
+        <KeyBinding Modifiers="Control" Key="H" Command="{Binding FindReplaceCommand}" />
+    </Window.InputBindings>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- 메뉴 바 -->
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
+            <MenuItem Header="{Binding MenuFile, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuFileNew, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding NewCommand}" InputGestureText="Ctrl+N" />
+                <MenuItem Header="{Binding MenuFileOpen, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding OpenCommand}" InputGestureText="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="{Binding MenuFileSave, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
+                <MenuItem Header="{Binding MenuFileSaveAs, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
+                <Separator />
+                <MenuItem Header="{Binding MenuFilePreview, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" InputGestureText="Ctrl+P" />
+                <Separator />
+                <MenuItem Header="{Binding MenuFileClose, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding CloseCommand}" />
+                <MenuItem Header="{Binding MenuFileExit, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding ExitCommand}" InputGestureText="Alt+F4" />
+            </MenuItem>
+
+            <MenuItem Header="{Binding MenuEdit, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuEditCopy, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Command="ApplicationCommands.Copy"
+                          CommandTarget="{Binding ElementName=BodyEditor}"
+                          InputGestureText="Ctrl+C" />
+                <MenuItem Header="{Binding MenuEditCut, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Command="ApplicationCommands.Cut"
+                          CommandTarget="{Binding ElementName=BodyEditor}"
+                          InputGestureText="Ctrl+X" />
+                <MenuItem Header="{Binding MenuEditPaste, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Command="ApplicationCommands.Paste"
+                          CommandTarget="{Binding ElementName=BodyEditor}"
+                          InputGestureText="Ctrl+V" />
+                <MenuItem Header="{Binding MenuEditDelete, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditDelete"
+                          InputGestureText="Del" />
+                <Separator />
+                <MenuItem Header="{Binding MenuEditFindReplace, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding FindReplaceCommand}" InputGestureText="Ctrl+F" />
+                <Separator />
+                <MenuItem Header="{Binding MenuEditDocInfo, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding DocInfoCommand}" />
+            </MenuItem>
+
+            <MenuItem Header="{Binding MenuInsert, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuInsertTextBox, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <MenuItem Header="사각형(_R)"   Command="{Binding InsertTextBoxCommand}" CommandParameter="Rectangle" />
+                    <MenuItem Header="말풍선(_S)"   Command="{Binding InsertTextBoxCommand}" CommandParameter="Speech" />
+                    <MenuItem Header="구름풍선(_C)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Cloud" />
+                    <MenuItem Header="가시풍선(_K)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Spiky" />
+                    <MenuItem Header="번개상자(_L)" Command="{Binding InsertTextBoxCommand}" CommandParameter="Lightning" />
+                </MenuItem>
+                <MenuItem Header="{Binding MenuInsertTable, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertGraph, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertSpecialChar, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertSpecialChar" />
+                <MenuItem Header="{Binding MenuInsertEquation, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertEquation" />
+                <MenuItem Header="{Binding MenuInsertEmoji, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertShape, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertSign, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+            </MenuItem>
+
+            <MenuItem Header="{Binding MenuFormat, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuFormatChar, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnFormatChar" />
+                <MenuItem Header="{Binding MenuFormatPara, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnFormatPara" />
+                <MenuItem Header="{Binding MenuFormatPage, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnFormatPage" />
+                <Separator />
+                <MenuItem Header="{Binding MenuFormatOutline, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Command="{Binding OutlineStyleCommand}" />
+            </MenuItem>
+
+            <MenuItem Header="{Binding MenuTools, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuToolsSettings, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SettingsCommand}" />
+                <MenuItem Header="{Binding MenuToolsDict, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuToolsSpell, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuToolsSignMaker, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+            </MenuItem>
+
+            <MenuItem Header="{Binding MenuHelp, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuHelpManual, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuHelpLicense, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding LicenseInfoCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding MenuHelpAbout, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding AboutCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- 메인 툴바 행 — 좌: 파일 그룹 / 우: 확대·축소 조절기 -->
+        <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 파일 그룹 7버튼 -->
+            <ToolBarTray Grid.Column="0" Background="Transparent" IsLocked="True">
+                <ToolBar Background="Transparent"
+                         Foreground="{DynamicResource OnSurface}"
+                         ToolBarTray.IsLocked="True">
+                    <Button Command="{Binding NewCommand}"
+                            ToolTip="{Binding MenuFileNew, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FileNew}" Width="20" Height="20" />
+                    </Button>
+                    <Button Command="{Binding OpenCommand}"
+                            ToolTip="{Binding MenuFileOpen, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FileOpen}" Width="20" Height="20" />
+                    </Button>
+                    <Button Command="{Binding SaveCommand}"
+                            ToolTip="{Binding MenuFileSave, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FileSave}" Width="20" Height="20" />
+                    </Button>
+                    <Button Command="{Binding SaveAsCommand}"
+                            ToolTip="{Binding MenuFileSaveAs, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FileSaveAs}" Width="20" Height="20" />
+                    </Button>
+                    <Separator />
+                    <Button IsEnabled="False"
+                            ToolTip="{Binding MenuFilePreview, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FilePreview}" Width="20" Height="20" />
+                    </Button>
+                    <Button IsEnabled="False"
+                            ToolTip="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FilePrint}" Width="20" Height="20" />
+                    </Button>
+                    <Separator />
+                    <Button Command="{Binding CloseCommand}"
+                            ToolTip="{Binding MenuFileClose, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FileClose}" Width="20" Height="20" />
+                    </Button>
+                </ToolBar>
+            </ToolBarTray>
+
+            <!-- 확대/축소 조절기 — 오른쪽 끝 -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                        Margin="0,0,8,0">
+                <Separator Width="1" Margin="0,4" />
+                <Button Content="{Binding ToolbarFitWidth, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        ToolTip="{Binding ToolbarFitWidth, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        Click="OnFitToWidth"
+                        Padding="6,2" Margin="4,0,2,0"
+                        Foreground="{DynamicResource OnSurface}" />
+                <Button Content="{Binding ToolbarFitPage, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        ToolTip="{Binding ToolbarFitPage, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        Click="OnFitToPage"
+                        Padding="6,2" Margin="0,0,4,0"
+                        Foreground="{DynamicResource OnSurface}" />
+                <Separator Width="1" Margin="0,4" />
+                <Button Content="−"
+                        Command="{Binding ZoomOutCommand}"
+                        ToolTip="{Binding ToolbarZoomOut, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        Width="24" Height="24" Padding="0" Margin="4,0,2,0"
+                        Foreground="{DynamicResource OnSurface}"
+                        FontSize="14" FontWeight="Bold" />
+                <TextBox x:Name="TxtZoom"
+                         Width="50" Margin="2,0"
+                         Padding="3,1"
+                         TextAlignment="Center"
+                         VerticalContentAlignment="Center"
+                         Background="{DynamicResource SurfaceAlt}"
+                         Foreground="{DynamicResource OnSurface}"
+                         BorderBrush="{DynamicResource Divider}"
+                         BorderThickness="1"
+                         Text="{Binding ZoomPercent, StringFormat='{}{0:0}', Mode=OneWay}"
+                         KeyDown="OnZoomTextBoxKeyDown"
+                         LostFocus="OnZoomTextBoxLostFocus" />
+                <TextBlock Text="%"
+                           VerticalAlignment="Center" Margin="1,0,2,0"
+                           Foreground="{DynamicResource OnSurfaceMuted}" />
+                <Button Content="+"
+                        Command="{Binding ZoomInCommand}"
+                        ToolTip="{Binding ToolbarZoomIn, Source={x:Static svc:LocalizedStrings.Instance}}"
+                        Width="24" Height="24" Padding="0" Margin="2,0,4,0"
+                        Foreground="{DynamicResource OnSurface}"
+                        FontSize="14" FontWeight="Bold" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 상태 바 — 좌측: 상태 메시지 (가변 너비) / 우측: 파일경로·메모리·Insert·Caps·Num 고정 그룹.
+             ItemsPanel 을 DockPanel 로 교체하고 상태 메시지만 Left dock, 나머지는 Right dock 으로 우측에 모은다.
+             자식 순서대로 우측에서부터 stacking 되므로 XAML 작성 순서 = 시각상 좌→우. -->
+        <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceAlt}">
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <DockPanel HorizontalAlignment="Stretch" LastChildFill="True" />
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
+
+            <!-- 우측 그룹: NumLock 이 가장 우측 -->
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding NumLockText}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           ToolTip="Num Lock"
+                           MinWidth="40" TextAlignment="Center"
+                           FontFamily="Consolas, D2Coding" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding CapsLockText}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           ToolTip="Caps Lock"
+                           MinWidth="40" TextAlignment="Center"
+                           FontFamily="Consolas, D2Coding" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding InsertModeText}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           ToolTip="Insert 키로 삽입/수정 토글"
+                           MinWidth="40" TextAlignment="Center" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding MemoryUsage}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           ToolTip="이 문서의 데이터 크기 (텍스트 + 이미지 + opaque)"
+                           MinWidth="80" TextAlignment="Right" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding CurrentFilePath}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           ToolTip="{Binding CurrentFilePath}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="600" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right" />
+
+            <!-- 쓰기 보호 표시 — IsWriteProtected 일 때만 보임. 상태 메시지 우측, 파일 경로 좌측. -->
+            <StatusBarItem DockPanel.Dock="Right"
+                           Visibility="{Binding IsWriteProtected, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding StatusWriteProtected, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           Foreground="#E67E22"
+                           FontWeight="SemiBold"
+                           ToolTip="{Binding PwdWritePromptMessage, Source={x:Static svc:LocalizedStrings.Instance}}" />
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right"
+                       Visibility="{Binding IsWriteProtected, Converter={StaticResource BoolToVis}}" />
+
+            <!-- 좌측 — 가변 너비. LastChildFill=True 로 남은 가로 공간을 모두 차지. -->
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           ToolTip="{Binding StatusMessage}"
+                           TextTrimming="CharacterEllipsis" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- 본문 영역 — 페이지 뷰: 종이가 캔버스 위에 떠 있는 형태.
+             ScrollViewer 가 스크롤을 담당하고 RichTextBox 는 내부 스크롤 없이 콘텐츠 높이로 늘어난다.
+             PaperBorder.Width / Background 는 code-behind 에서 PageSettings 에 맞춰 갱신한다. -->
+        <ScrollViewer x:Name="EditorScrollViewer"
+                      VerticalScrollBarVisibility="Visible"
+                      HorizontalScrollBarVisibility="Visible"
+                      Background="{DynamicResource EditorCanvasBg}"
+                      Focusable="False">
+            <StackPanel x:Name="PaperStackPanel" HorizontalAlignment="Center" Margin="32,28,32,48">
+                <StackPanel.LayoutTransform>
+                    <ScaleTransform ScaleX="{Binding ZoomScale}" ScaleY="{Binding ZoomScale}" />
+                </StackPanel.LayoutTransform>
+                <Border x:Name="PaperBorder"
+                        Background="{DynamicResource Surface}"
+                        BorderBrush="{DynamicResource Divider}"
+                        BorderThickness="0.5"
+                        PreviewMouseLeftButtonDown="OnPaperPreviewMouseLeftButtonDown"
+                        PreviewMouseMove="OnPaperPreviewMouseMove"
+                        PreviewMouseLeftButtonUp="OnPaperPreviewMouseLeftButtonUp">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="18" ShadowDepth="6"
+                                          Opacity="0.38" Direction="270" Color="Black" />
+                    </Border.Effect>
+                    <Grid>
+                        <RichTextBox x:Name="BodyEditor"
+                                     AcceptsReturn="True"
+                                     AcceptsTab="True"
+                                     VerticalScrollBarVisibility="Disabled"
+                                     HorizontalScrollBarVisibility="Disabled"
+                                     IsDocumentEnabled="True"
+                                     IsReadOnly="{Binding IsWriteProtected}"
+                                     SpellCheck.IsEnabled="False"
+                                     Padding="0"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     PreviewKeyDown="OnEditorPreviewKeyDown"
+                                     PreviewTextInput="OnEditorPreviewTextInput" />
+                        <!-- 부유 객체 (글상자 등) 오버레이.
+                             Background 미설정 → 빈 영역은 hit-test 통과해 RichTextBox 가 받음.
+                             각 자식(TextBoxOverlay) 만 마우스를 받는다. -->
+                        <Canvas x:Name="FloatingCanvas" />
+                        <!-- 드래그 생성 미리보기. 본 객체 위에 그려짐. -->
+                        <Canvas x:Name="DrawPreviewCanvas" IsHitTestVisible="False">
+                            <Rectangle x:Name="DrawPreviewRect"
+                                       Stroke="#4A90E2" StrokeThickness="1"
+                                       StrokeDashArray="4,3"
+                                       Fill="#224A90E2"
+                                       Visibility="Collapsed" />
+                        </Canvas>
+                        <!-- 여백 안내선 오버레이 — IsHitTestVisible=False 로 편집 방해 없이 표시 -->
+                        <Rectangle x:Name="MarginGuideRect"
+                                   Stroke="#660078D4"
+                                   StrokeThickness="0.7"
+                                   StrokeDashArray="4,3"
+                                   Fill="Transparent"
+                                   IsHitTestVisible="False"
+                                   Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+</Window>

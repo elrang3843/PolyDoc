@@ -1,0 +1,76 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- PolyDonky Dark Theme -->
+
+    <Color x:Key="BrandPrimaryColor">#6EA8E8</Color>
+    <Color x:Key="BrandPrimaryDarkColor">#4D8CD4</Color>
+    <Color x:Key="SurfaceColor">#1E1E1E</Color>
+    <Color x:Key="SurfaceAltColor">#2D2D2D</Color>
+    <Color x:Key="OnSurfaceColor">#E8E8E8</Color>
+    <Color x:Key="OnSurfaceMutedColor">#A0A0A0</Color>
+    <Color x:Key="DividerColor">#444444</Color>
+    <Color x:Key="EditorCanvasBgColor">#111111</Color>
+
+    <SolidColorBrush x:Key="BrandPrimary"     Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="BrandPrimaryDark" Color="{StaticResource BrandPrimaryDarkColor}" />
+    <SolidColorBrush x:Key="Surface"          Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="SurfaceAlt"       Color="{StaticResource SurfaceAltColor}" />
+    <SolidColorBrush x:Key="OnSurface"        Color="{StaticResource OnSurfaceColor}" />
+    <SolidColorBrush x:Key="OnSurfaceMuted"   Color="{StaticResource OnSurfaceMutedColor}" />
+    <SolidColorBrush x:Key="Divider"          Color="{StaticResource DividerColor}" />
+    <SolidColorBrush x:Key="EditorCanvasBg" Color="{StaticResource EditorCanvasBgColor}" />
+
+    <FontFamily x:Key="UiFont">맑은 고딕, Malgun Gothic, Segoe UI</FontFamily>
+
+    <!-- WPF menu/chrome templates reference SystemColors directly; override them here -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"         Color="{StaticResource OnSurfaceColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"             Color="{StaticResource SurfaceAltColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"          Color="{StaticResource SurfaceAltColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuHighlightBrushKey}"    Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}"      Color="{StaticResource OnSurfaceColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}"          Color="{StaticResource SurfaceAltColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}"           Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}"       Color="{StaticResource OnSurfaceColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}"         Color="{StaticResource OnSurfaceMutedColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"        Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"    Color="{StaticResource OnSurfaceColor}" />
+
+    <!-- Implicit styles: Foreground/Background for UI chrome elements -->
+    <Style TargetType="Menu" BasedOn="{StaticResource {x:Type Menu}}">
+        <Setter Property="Background" Value="{StaticResource SurfaceAlt}" />
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="StatusBar" BasedOn="{StaticResource {x:Type StatusBar}}">
+        <Setter Property="Background" Value="{StaticResource SurfaceAlt}" />
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="StatusBarItem" BasedOn="{StaticResource {x:Type StatusBarItem}}">
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="Label" BasedOn="{StaticResource {x:Type Label}}">
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}">
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="Background"   Value="{StaticResource SurfaceAlt}" />
+        <Setter Property="Foreground"   Value="{StaticResource OnSurface}" />
+        <Setter Property="CaretBrush"   Value="{StaticResource OnSurface}" />
+        <Setter Property="BorderBrush"  Value="{StaticResource Divider}" />
+    </Style>
+    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+    </Style>
+    <Style TargetType="Separator" BasedOn="{StaticResource {x:Type Separator}}">
+        <Setter Property="Background" Value="{StaticResource Divider}" />
+    </Style>
+
+</ResourceDictionary>

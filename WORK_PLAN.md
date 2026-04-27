@@ -1,4 +1,4 @@
-# Work Plan — PolyDoc
+# Work Plan — PolyDonky
 
 이 문서는 **세션을 가로질러 작업을 이어받기 위한 운영 계획서**입니다.
 한 세션이 끝나도 다음 세션이 이 문서를 읽고 동일한 맥락에서 이어 갈 수 있도록 갱신합니다.
@@ -19,7 +19,7 @@
 | .NET SDK | **10.0.107** (apt: `dotnet-sdk-10.0`) |
 | GUI/Display | 없음 — WPF UI 빌드·실행·스크린샷 불가 |
 | 타겟 OS | Windows 10/11 x64 |
-| Git remote | `elrang3843/PolyDoc` |
+| Git remote | `elrang3843/PolyDonky` |
 | **NuGet.org** | **정상** (이전 503 차단 풀림). xUnit·Markdig·OpenXml SDK 등 외부 패키지 복원 가능 |
 
 **핵심 제약**:
@@ -50,25 +50,25 @@
 ## 솔루션 레이아웃
 
 ```
-PolyDoc/
-├── PolyDoc.sln
+PolyDonky/
+├── PolyDonky.sln
 ├── Directory.Build.props
 ├── Directory.Packages.props      # central package management
 ├── global.json                   # SDK pin (10.0.x)
 ├── .gitignore                    # .NET 표준 + IDE
 ├── src/
-│   ├── PolyDoc.Core/             # 공통 문서 모델 (POCO)
-│   ├── PolyDoc.Iwpf/             # IWPF 패키지 codec (ZIP+JSON)
-│   ├── PolyDoc.Codecs.Text/      # TXT codec
-│   ├── PolyDoc.Codecs.Markdown/  # MD codec (Markdig)
-│   ├── PolyDoc.Codecs.Docx/      # (Phase C) DOCX codec
-│   ├── PolyDoc.Codecs.Hwpx/      # (Phase C) HWPX codec
-│   └── PolyDoc.App/              # (Phase B) WPF UI shell — Windows-only
+│   ├── PolyDonky.Core/             # 공통 문서 모델 (POCO)
+│   ├── PolyDonky.Iwpf/             # IWPF 패키지 codec (ZIP+JSON)
+│   ├── PolyDonky.Codecs.Text/      # TXT codec
+│   ├── PolyDonky.Codecs.Markdown/  # MD codec (Markdig)
+│   ├── PolyDonky.Codecs.Docx/      # (Phase C) DOCX codec
+│   ├── PolyDonky.Codecs.Hwpx/      # (Phase C) HWPX codec
+│   └── PolyDonky.App/              # (Phase B) WPF UI shell — Windows-only
 ├── tests/
-│   ├── PolyDoc.Core.Tests/
-│   ├── PolyDoc.Iwpf.Tests/
-│   ├── PolyDoc.Codecs.Text.Tests/
-│   └── PolyDoc.Codecs.Markdown.Tests/
+│   ├── PolyDonky.Core.Tests/
+│   ├── PolyDonky.Iwpf.Tests/
+│   ├── PolyDonky.Codecs.Text.Tests/
+│   └── PolyDonky.Codecs.Markdown.Tests/
 └── samples/
     └── corpus/                   # 골든 테스트 코퍼스
 ```
@@ -80,19 +80,19 @@ PolyDoc/
 체크박스: ☐ 미진행 / ◑ 진행중 / ✅ 완료
 
 ### Phase A — Core 라이브러리 (Linux 전수 가능)
-- ✅ A1 솔루션 스캐폴딩 (PolyDoc.sln, .NET 10, CPM, 4 src + 4 tests + tools/SmokeTest)
-- ✅ A2 PolyDoc.Core (공통 문서 모델)
-- ✅ A3 PolyDoc.Iwpf (reader/writer, ZIP+JSON, SHA-256 검증, 위변조 거부)
-- ✅ A4 PolyDoc.Codecs.Text (TXT in/out, BOM 감지)
-- ✅ A5 PolyDoc.Codecs.Markdown (Markdig 없이 BCL 서브셋: 헤더·리스트·강조)
+- ✅ A1 솔루션 스캐폴딩 (PolyDonky.sln, .NET 10, CPM, 4 src + 4 tests + tools/SmokeTest)
+- ✅ A2 PolyDonky.Core (공통 문서 모델)
+- ✅ A3 PolyDonky.Iwpf (reader/writer, ZIP+JSON, SHA-256 검증, 위변조 거부)
+- ✅ A4 PolyDonky.Codecs.Text (TXT in/out, BOM 감지)
+- ✅ A5 PolyDonky.Codecs.Markdown (Markdig 없이 BCL 서브셋: 헤더·리스트·강조)
 - ◑ A6 단위 테스트 — xUnit 코드 작성 완료, **NuGet 차단으로 본 환경 미실행**. Windows 에서 G2 시 `dotnet test` 로 검증.
 - ✅ A6b 콘솔 스모크 러너 4/4 통과 (라운드트립 3종 + 위변조 검출)
 - ✅ A7 커밋·푸시
 
 ### Phase B — WPF UI 셸 (Windows 필수)
-- ✅ B1 PolyDoc.App 스캐폴딩 (`net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0, ApplicationIcon=Handtech.ico, Handtech_1024.png 임베드)
+- ✅ B1 PolyDonky.App 스캐폴딩 (`net10.0-windows` + WPF + CommunityToolkit.Mvvm 8.4.0, ApplicationIcon=Handtech.ico, Handtech_1024.png 임베드)
 - ✅ B2 메인 메뉴 6단(파일/편집/입력/서식/도구/도움말) + 본문 편집기 + 상태 바 + About 다이얼로그
-- ✅ B2.5 본문 편집기를 **RichTextBox + FlowDocument** 로 업그레이드. FlowDocumentBuilder/Parser 로 PolyDocument 와 양방향 동기화, 한글 조판 등 비-FlowDocument 속성은 Tag 머지로 비파괴 보존. PolyDoc.App.Tests 프로젝트(net10.0-windows + xUnit) 신설, 9 라운드트립 테스트 작성.
+- ✅ B2.5 본문 편집기를 **RichTextBox + FlowDocument** 로 업그레이드. FlowDocumentBuilder/Parser 로 PolyDonkyument 와 양방향 동기화, 한글 조판 등 비-FlowDocument 속성은 Tag 머지로 비파괴 보존. PolyDonky.App.Tests 프로젝트(net10.0-windows + xUnit) 신설, 9 라운드트립 테스트 작성.
 - ◑ B3 i18n 한/영 — 1차 사이클은 한국어 하드코딩, `.resx` 리소스 분리는 다음 사이클로 이연
 - ◑ B4 테마 시스템 — 1차 사이클은 Light 단일 테마(핸텍 브랜드 블루), 다중 테마는 다음 사이클
 - ✅ B5 **G2** — Windows 머신에서 첫 `dotnet build` / `dotnet run` 통과. 메뉴 동작·About 표시·IWPF/MD/TXT/DOCX 열고 저장 정상 (사용자 보고).
@@ -105,16 +105,16 @@ PolyDoc/
 - ✅ C2.5 비텍스트 객체 (표·이미지·OpaqueBlock) 1차 — Core 모델 + DOCX/IWPF 라운드트립 + WPF 시각화
 - ✅ C3 HWPX reader (KS X 6101) — 자체 구현 1차 (단락·런·정렬·강조·헤더 H1~H6)
 - ✅ C4 HWPX writer + 라운드트립 테스트 (xUnit 6건 + 스모크 1건)
-- ✅ C4.5 한컴 hwpx 변종 호환 — ZIP entry path 정규화, BOM-aware StreamReader, OPF spine .xml 필터, header.xml 의 charPr/paraPr/style ID → PolyDoc 모델 매핑
+- ✅ C4.5 한컴 hwpx 변종 호환 — ZIP entry path 정규화, BOM-aware StreamReader, OPF spine .xml 필터, header.xml 의 charPr/paraPr/style ID → PolyDonky 모델 매핑
 - ✅ C5 HWPX 표·이미지 양방향 (`<hp:tbl>` ↔ Table, `<hp:pic>`+BinData ↔ ImageBlock, SHA-256 dedupe). OpaqueBlock 은 다음 사이클
 - ☐ C6 HWPX writer 의 한컴 호환 향상 — header.xml 에 사용자별 RunStyle/ParagraphStyle 마다 동적 charPr/paraPr 생성, hp:linesegarray 보강
 - ☐ G3 (DOCX 측): 사용자가 Word 에서 시각 검증 — 통과 (직접 처리·라운드트립 정상 보고)
 - ◑ G3 (HWPX 측 reader): 한컴 hwpx 4건 본문·서식 정상 표시 — 통과 (사용자 보고 OK)
-- ☐ G3 (HWPX 측 writer): PolyDoc 가 만든 .hwpx 를 한컴 오피스에서 정상 표시 — 사용자 검증 필요
+- ☐ G3 (HWPX 측 writer): PolyDonky 가 만든 .hwpx 를 한컴 오피스에서 정상 표시 — 사용자 검증 필요
 
 ### Phase D — 외부 CLI 컨버터 분리
-- ☐ D1 PolyDoc.Cli.Docx 분리
-- ☐ D2 PolyDoc.Cli.Hwpx 분리
+- ☐ D1 PolyDonky.Cli.Docx 분리
+- ☐ D2 PolyDonky.Cli.Hwpx 분리
 - ☐ D3 메인 앱 ↔ CLI IPC (인자/표준입출력/exit code)
 - ☐ G4: LibreOffice 의존 vs 자체 결정
 
@@ -166,27 +166,27 @@ PolyDoc/
 
 ### 완료
 - Phase A: src 4 + tests 4 + tools/SmokeTest. **G1 통과 확인** (사용자 보고: build/test/smoke 모두 OK).
-- Phase B 첫 사이클: PolyDoc.App WPF (메인 윈도우, 메뉴 6단, About, Light 테마). 핸텍 로고/아이콘 통합. **G2 통과 확인** (사용자 보고: build/run/UI 모두 OK).
+- Phase B 첫 사이클: PolyDonky.App WPF (메인 윈도우, 메뉴 6단, About, Light 테마). 핸텍 로고/아이콘 통합. **G2 통과 확인** (사용자 보고: build/run/UI 모두 OK).
 - Phase C C1·C2: DOCX reader/writer + 라운드트립 테스트 6건 + 스모크. DOCX 가 외부 컨버터 위탁에서 직접 처리 대상으로 승격.
 - Phase C C2b: Markdown reader 를 Markdig 0.42.0 로 교체. CommonMark 풀 파싱 + 추가 테스트 5건.
 
 ### 현재 테스트 현황 (Linux 환경)
 | 프로젝트 | 테스트 수 | 상태 |
 |---|---|---|
-| PolyDoc.Core.Tests | 9 | ✅ |
-| PolyDoc.Iwpf.Tests | 9 | ✅ |
-| PolyDoc.Codecs.Text.Tests | 5 | ✅ |
-| PolyDoc.Codecs.Markdown.Tests | 11 | ✅ |
-| PolyDoc.Codecs.Docx.Tests | 9 | ✅ |
-| PolyDoc.Codecs.Hwpx.Tests | 9 | ✅ |
+| PolyDonky.Core.Tests | 9 | ✅ |
+| PolyDonky.Iwpf.Tests | 9 | ✅ |
+| PolyDonky.Codecs.Text.Tests | 5 | ✅ |
+| PolyDonky.Codecs.Markdown.Tests | 11 | ✅ |
+| PolyDonky.Codecs.Docx.Tests | 9 | ✅ |
+| PolyDonky.Codecs.Hwpx.Tests | 9 | ✅ |
 | **합계** | **52** | **All green** |
-| PolyDoc.SmokeTest 콘솔 | 6 | ✅ |
+| PolyDonky.SmokeTest 콘솔 | 6 | ✅ |
 
 ### 사용자(노진문) 작업이 필요한 항목 — RichTextBox 업그레이드 검증 (G2.5)
 - [ ] Windows 에서 `git pull` 후 `dotnet restore`
-- [ ] `dotnet build PolyDoc.sln` — App + 새 PolyDoc.App.Tests 까지 포함해 0 error
-- [ ] `dotnet test PolyDoc.sln` — 기존 36건 + 신규 9건 = **xUnit 45건 모두 그린**
-- [ ] `dotnet run --project src/PolyDoc.App`
+- [ ] `dotnet build PolyDonky.sln` — App + 새 PolyDonky.App.Tests 까지 포함해 0 error
+- [ ] `dotnet test PolyDonky.sln` — 기존 36건 + 신규 9건 = **xUnit 45건 모두 그린**
+- [ ] `dotnet run --project src/PolyDonky.App`
 - [ ] **시각 검증**: Word 에서 만든 `.docx` (제목·본문·굵게·색·정렬 섞인) 를 열어 → 화면에 서식이 그대로 보여야 함
 - [ ] **편집 후 저장**: 본문 일부 수정 → 저장 → 다시 Word 에서 열어 서식 보존 확인 (G3 일부)
 - [ ] `.iwpf` 라운드트립도 동일하게 시각 보존되는지
@@ -205,7 +205,7 @@ PolyDoc/
 4. **드래그 & 드롭** — 파일을 윈도우에 끌어 놓으면 즉시 열기.
 
 ### 알려진 한계 (코드 베이스 전반)
-- Block 다형성을 `JsonDerivedType` 로 처리 — 현재 `Paragraph` 만 등록. `Table`, `Image`, `TextBox` 등 추가 시 같은 위치에 등록 (`src/PolyDoc.Core/Block.cs`).
+- Block 다형성을 `JsonDerivedType` 로 처리 — 현재 `Paragraph` 만 등록. `Table`, `Image`, `TextBox` 등 추가 시 같은 위치에 등록 (`src/PolyDonky.Core/Block.cs`).
 - IWPF document.json 본문은 Phase A 에서 JSON. 후속 단계에서 IWPF 사양에 맞춰 일부를 XML 로 전환 가능 (`document.xml`, `styles.xml`).
 - 본문 편집기가 RichTextBox + FlowDocument. FlowDocument 가 표현 못 하는 모델 속성(장평·자간·Provenance)은 ViewModel 의 `_document` 머지 베이스로 비파괴 보존. 편집 후에도 유지되는지는 Save 시 `FlowDocumentParser.Parse(fd, originalForMerge: _document)` 호출이 정상 동작에 의존.
 - WPF 빌드 검증을 본 환경(Linux)에서 못 함. App 코드 변경 직후엔 (1) csproj `<ProjectReference>` 누락 점검, (2) 새 NuGet 패키지의 namespace 와 우리 type 이름이 충돌하는지 점검 — 두 가지를 매번 확인 사이클로 돌릴 것 (DocumentFormat.OpenXml 충돌로 두 차례 빌드 실패한 lessons-learned).
