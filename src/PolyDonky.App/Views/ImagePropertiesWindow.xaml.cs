@@ -75,7 +75,7 @@ public partial class ImagePropertiesWindow : Window
     {
         try
         {
-            var c = (Color)ColorConverter.ConvertFromString(BorderColorBox.Text)!;
+            var c = (System.Windows.Media.Color)ColorConverter.ConvertFromString(BorderColorBox.Text)!;
             BorderColorPreview.Fill = new SolidColorBrush(c);
         }
         catch
