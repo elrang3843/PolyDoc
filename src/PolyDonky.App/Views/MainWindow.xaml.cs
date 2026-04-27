@@ -104,7 +104,18 @@ public partial class MainWindow : Window
                 }
                 else if (_selectedOverlay is not null)
                 {
-                    DeselectAllOverlays();
+                    // 1단계: 안쪽 본문 편집 중이면 chrome 만 선택 상태로 전환 (포커스를 overlay 로 이동).
+                    //        이후 Ctrl+C 가 글상자 자체를 복사하도록 해주는 진입점.
+                    // 2단계: chrome 만 선택된 상태에서 다시 누르면 완전 해제.
+                    if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin)
+                    {
+                        _selectedOverlay.Focus();
+                        Keyboard.Focus(_selectedOverlay);
+                    }
+                    else
+                    {
+                        DeselectAllOverlays();
+                    }
                     e.Handled = true;
                 }
                 break;
@@ -507,10 +518,17 @@ public partial class MainWindow : Window
     // ── 글상자(부유 객체) 복사/잘라내기/붙여넣기 ──────────────────────
     private const string FloatingObjectClipboardFormat = "PolyDonky.FloatingObject.v1";
 
+    /// <summary>
+    /// 선택된 글상자를 복사한다. 안쪽 본문에 포커스가 있어도 텍스트 선택이 비어 있으면
+    /// "글상자 자체 복사" 의도로 간주 — Word/PowerPoint 와 동일한 mental model.
+    /// 안쪽 본문에 텍스트 선택이 있으면 가로채지 않고 일반 복사에 양보.
+    /// </summary>
     private bool TryCopySelectedFloatingObject()
     {
         if (_selectedOverlay is null) return false;
-        if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin) return false;
+        if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin
+            && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
+            return false;
 
         var json = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
             _selectedOverlay.Model, JsonDefaults.Options);
@@ -535,10 +553,13 @@ public partial class MainWindow : Window
 
     private bool TryPasteFloatingObject()
     {
-        // 안쪽 편집기에 포커스가 있으면 일반 텍스트 붙여넣기에 양보.
-        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true) return false;
-        // BodyEditor(본문 RichTextBox) 에 포커스가 있으면 본문 붙여넣기에 양보.
+        // 안쪽 본문에 텍스트 선택이 있거나 캐럿 위치에 일반 텍스트를 넣고 있으면
+        // (즉, BodyEditor 가 활성) 일반 붙여넣기에 양보. 글상자 chrome 만 선택된
+        // 상태(InnerEditor 포커스 무관) 에서는 글상자 클립보드 데이터를 우선 적용.
         if (BodyEditor.IsKeyboardFocusWithin) return false;
+        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true
+            && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
+            return false;
         if (!Clipboard.ContainsData(FloatingObjectClipboardFormat)) return false;
 
         var json = Clipboard.GetData(FloatingObjectClipboardFormat) as string;

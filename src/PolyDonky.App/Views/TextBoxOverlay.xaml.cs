@@ -378,8 +378,11 @@ public partial class TextBoxOverlay : UserControl
     {
         // 글자 방향은 추후 지원 예정 — 현재 항상 LTR.
         // 본문(MainWindow) 와 동일한 Run 빌더를 써서 글자 속성(폰트·크기·볼드·이탤릭·
-        // 색·밑줄 등) 을 그대로 FlowDocument 에 반영한다 — plain-text 전용 변환 시
-        // 모든 글자 속성이 유실되던 문제를 해결.
+        // 색·밑줄 등) 을 그대로 FlowDocument 에 반영한다.
+        // 추가로 각 Wpf.Run.Tag 에 원본 PolyDonky.Run 을 심어둔다 — 라운드트립 시
+        // FlowDocumentParser 가 Tag 를 우선 시드로 사용해 비-Wpf 속성(LetterSpacingPx,
+        // WidthPercent 등) 까지 정확히 복원하고, WPF 의 inheritance 로 인한 미세한
+        // 속성 drift(폰트 패밀리 자동 stamping 등) 도 막을 수 있다.
         var doc = new System.Windows.Documents.FlowDocument();
         foreach (var block in Model.Content)
         {
@@ -392,6 +395,8 @@ public partial class TextBoxOverlay : UserControl
                 foreach (var run in cp.Runs)
                 {
                     var inline = PolyDonky.App.Services.FlowDocumentBuilder.BuildInline(run);
+                    if (inline is System.Windows.Documents.Run wpfRun && wpfRun.Tag is null)
+                        wpfRun.Tag = run;
                     wpfPara.Inlines.Add(inline);
                 }
                 doc.Blocks.Add(wpfPara);
