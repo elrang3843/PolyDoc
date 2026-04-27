@@ -93,7 +93,8 @@
                 <MenuItem Header="{Binding MenuInsertEmoji, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertEmoji" />
                 <MenuItem Header="{Binding MenuInsertShape, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
-                <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertImage" />
                 <MenuItem Header="{Binding MenuInsertSign, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 

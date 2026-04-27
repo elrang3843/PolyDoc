@@ -349,6 +349,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnInsertImage(object sender, RoutedEventArgs e)
+    {
+        // 그림은 블록 단위 삽입 — 본문 편집기에만 삽입하고 글상자 안은 지원하지 않는다.
+        var dlg = new ImageWindow(BodyEditor) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _viewModel?.MarkDirty();
+            BodyEditor.Focus();
+        }
+    }
+
     // 편집 > 지우기: RichTextBox 는 ApplicationCommands.Delete 를 자체 바인딩하지 않으므로
     // 메뉴에서 직접 호출 시 동작하도록 선택 영역을 지운다. 선택이 비어 있으면 캐럿 직후
     // 한 글자(EditingCommands.Delete) 를 지우는 일반 워드프로세서 동작을 따른다.

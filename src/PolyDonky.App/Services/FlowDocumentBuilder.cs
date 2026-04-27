@@ -180,7 +180,7 @@ public static class FlowDocumentBuilder
         return wtable;
     }
 
-    private static Wpf.BlockUIContainer BuildImage(ImageBlock image)
+    internal static Wpf.BlockUIContainer BuildImage(ImageBlock image)
     {
         var container = new Wpf.BlockUIContainer { Tag = image };
 
