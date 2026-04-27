@@ -162,12 +162,13 @@ public partial class EmojiWindow : Window
             return;
         }
 
+        // img.Tag 에 iuc 를 저장하지 말 것 — iuc.Child = img 와 함께 순환 참조가 되어
+        // XamlWriter.Save() 가 StackOverflow 로 폭주한다 (글자 속성 적용 시 undo 스냅샷에서 발생).
         var iuc = new InlineUIContainer(img, insertPos)
         {
             Tag               = modelRun,
             BaselineAlignment = BaselineAlignment.Center,
         };
-        img.Tag = iuc;   // 우클릭 속성 라우팅: Image → InlineUIContainer → Run
         editor.CaretPosition = iuc.ElementEnd;
         editor.Focus();
     }

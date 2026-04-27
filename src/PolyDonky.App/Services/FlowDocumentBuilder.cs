@@ -212,11 +212,13 @@ public static class FlowDocumentBuilder
         bitmap.EndInit();
         bitmap.Freeze();
 
+        // Image.Tag 에 container 를 저장하지 말 것 — container.Child = image 와 함께 순환 참조가 되어
+        // WPF undo 스냅샷의 XamlWriter.Save() 가 StackOverflowException 으로 폭주한다.
+        // 우클릭 속성 라우팅은 LogicalTreeHelper 로 image 의 부모를 찾는 방식으로 처리한다.
         var control = new System.Windows.Controls.Image
         {
             Source  = bitmap,
             Stretch = WpfMedia.Stretch.Uniform,
-            Tag     = container,   // 우클릭 속성 다이얼로그 라우팅: Image → BlockUIContainer → ImageBlock
         };
         if (image.WidthMm > 0)  control.Width  = MmToDip(image.WidthMm);
         if (image.HeightMm > 0) control.Height = MmToDip(image.HeightMm);
@@ -446,7 +448,9 @@ public static class FlowDocumentBuilder
         if (img is null)
             return new Wpf.Run($"[{emojiKey}]") { Tag = run };
 
-        var iuc = new Wpf.InlineUIContainer(img)
+        // img.Tag 에 iuc 를 저장하지 말 것 — iuc.Child = img 와 함께 순환 참조가 되어
+        // WPF undo 의 XamlWriter.Save() 가 StackOverflow 로 폭주한다 (수식 IUC 와 동일 이슈).
+        return new Wpf.InlineUIContainer(img)
         {
             Tag               = run,
             BaselineAlignment = run.EmojiAlignment switch
@@ -457,8 +461,6 @@ public static class FlowDocumentBuilder
                 _                         => BaselineAlignment.Center,
             },
         };
-        img.Tag = iuc;   // 우클릭 속성 라우팅: Image → InlineUIContainer → Run
-        return iuc;
     }
 
     /// <summary>

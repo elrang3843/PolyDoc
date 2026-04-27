@@ -417,16 +417,26 @@ public partial class MainWindow : Window
     private static (System.Windows.Controls.Image img, object container)? TryWalkUpToImage(
         System.Windows.DependencyObject? dep)
     {
+        // 1단계: 비주얼 트리에서 Image 찾기.
         while (dep is not null)
         {
             if (dep is System.Windows.Controls.Image img)
             {
-                if (img.Tag is System.Windows.Documents.BlockUIContainer buc &&
-                    buc.Tag is PolyDonky.Core.ImageBlock)
-                    return (img, buc);
-                if (img.Tag is System.Windows.Documents.InlineUIContainer iuc &&
-                    iuc.Tag is PolyDonky.Core.Run { EmojiKey: { Length: > 0 } })
-                    return (img, iuc);
+                // 2단계: Image 의 logical tree 부모를 따라 올라가며 BUC/IUC 컨테이너 찾기.
+                // (Image.Tag 에 컨테이너를 저장하면 container.Child = image 와 순환 참조가 되어
+                //  WPF undo 의 XamlWriter.Save() 가 StackOverflow 로 폭주한다.)
+                System.Windows.DependencyObject? logical = img;
+                while (logical is not null)
+                {
+                    if (logical is System.Windows.Documents.BlockUIContainer buc &&
+                        buc.Tag is PolyDonky.Core.ImageBlock)
+                        return (img, buc);
+                    if (logical is System.Windows.Documents.InlineUIContainer iuc &&
+                        iuc.Tag is PolyDonky.Core.Run { EmojiKey: { Length: > 0 } })
+                        return (img, iuc);
+                    logical = System.Windows.LogicalTreeHelper.GetParent(logical);
+                }
+                return null;
             }
             dep = System.Windows.Media.VisualTreeHelper.GetParent(dep);
         }
