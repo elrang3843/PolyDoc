@@ -27,13 +27,33 @@ public partial class EmojiWindow : Window
         Loaded += OnLoaded;
     }
 
+    private static readonly (double Pt, string Label)[] SizeOptions =
+    {
+        (12, "12pt — 소형"),
+        (16, "16pt — 중형"),
+        (20, "20pt — 보통"),
+        (24, "24pt — 대형"),
+        (32, "32pt — 특대"),
+        (48, "48pt — 초대"),
+    };
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         foreach (var c in Categories)
             CategoryList.Items.Add(c.DisplayName);
         CategoryList.SelectedIndex = 0;
+
+        foreach (var (_, label) in SizeOptions)
+            SizeCombo.Items.Add(label);
+        SizeCombo.SelectedIndex = 1; // 16pt 기본
+
         SearchInput.Focus();
     }
+
+    private double SelectedSizePt =>
+        SizeCombo.SelectedIndex >= 0 && SizeCombo.SelectedIndex < SizeOptions.Length
+            ? SizeOptions[SizeCombo.SelectedIndex].Pt
+            : 16.0;
 
     private void OnCategoryChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -106,18 +126,20 @@ public partial class EmojiWindow : Window
     private void InsertSelectedAndClose()
     {
         if (_selected is null) return;
-        InsertEmojiInline(_editor, _selected.Key);
+        InsertEmojiInline(_editor, _selected.Key, SelectedSizePt);
         DialogResult = true;
         Close();
     }
 
     /// <summary>
     /// 활성 편집기의 캐럿 위치에 이모지를 InlineUIContainer 로 삽입한다.
-    /// Tag 에 EmojiKey 가 들어간 PolyDonky.Core.Run 을 심어 라운드트립 보장.
+    /// Tag 에 EmojiKey 와 FontSizePt 가 들어간 PolyDonky.Core.Run 을 심어 라운드트립 보장.
     /// </summary>
-    public static void InsertEmojiInline(RichTextBox editor, string emojiKey)
+    /// <param name="sizePt">이모지 표시 크기(포인트). 0 이하면 16pt 로 대체.</param>
+    public static void InsertEmojiInline(RichTextBox editor, string emojiKey, double sizePt = 16.0)
     {
         if (string.IsNullOrEmpty(emojiKey)) return;
+        if (sizePt <= 0) sizePt = 16.0;
 
         if (!editor.Selection.IsEmpty)
             editor.Selection.Text = string.Empty;
@@ -129,14 +151,13 @@ public partial class EmojiWindow : Window
         {
             Text     = $"[{emojiKey}]",
             EmojiKey = emojiKey,
+            Style    = new PolyDonky.Core.RunStyle { FontSizePt = sizePt },
         };
 
-        // 본문 폰트에 비례한 크기로 이미지를 만들어 baseline 정렬.
-        double sizeDip = FlowDocumentBuilder.PtToDip(11.0) * 1.4;
+        double sizeDip = FlowDocumentBuilder.PtToDip(sizePt);
         var img = FlowDocumentBuilder.LoadEmojiImage(emojiKey, sizeDip);
         if (img is null)
         {
-            // 리소스 누락 폴백: plain text 로 키 삽입
             SpecialCharWindow.InsertAtCaret(editor, modelRun.Text);
             return;
         }

@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — 이모지 삽입 다이얼로그에 **크기 선택 콤보박스** 추가 (12/16/20/24/32/48pt, 기본 16pt). 선택한 크기를 `Run.Style.FontSizePt` 에 저장해 저장→재로드 후에도 동일 크기로 복원(라운드트립 보장). `FlowDocumentBuilder.BuildEmojiInline` 의 보정 계수(`× 1.4`) 를 제거해 삽입 크기와 로드 크기를 일치시킴.
 - **Added** — **이모지(Emoji) 입력** 활성화. 8개 섹션 × 10개 = 80개의 문서용 PNG 이모지(상태/반응/동작/우선순위/사람/도구/화살표/장식)를 카테고리별 또는 키워드 검색으로 골라 캐럿 위치에 삽입. 라운드트립용으로 `Run.EmojiKey` 를 신설 (수식 `LatexSource` 와 동일 패턴) — `FlowDocumentBuilder.BuildEmojiInline` 이 pack URI 로 PNG 를 로드해 `InlineUIContainer { Image }` 로 렌더링, `FlowDocumentParser` 가 `Tag` 의 EmojiKey 를 보존. PNG 80개는 `..\..\Resources\Emojis\**\*.png` 글롭으로 WPF Resource 임베드, 빌드 산출물에 포함. 메뉴 라우팅은 `GetActiveTextEditor()` 를 통해 글상자 안쪽 편집 중에도 정상 동작.
 - **Added** — 글상자 모양에 **타원(Ellipse)** 과 **파이(Pie/부채꼴)** 추가. 타원은 박스 비율에 따라 자동 스케일되는 4-Bézier 근사 타원; 파이는 시작 각도(°)·호 범위(5~355°) 를 글상자 속성 창에서 조정 가능한 부채꼴 모양. 두 모양 모두 인셋 자동 계산 적용 (타원 15%, 파이 10%). **입력 → 글상자** 메뉴와 `InsertTextBox` 커맨드 디스패처에도 두 모양 항목 추가 (타원 _E_, 파이 _I_).
 

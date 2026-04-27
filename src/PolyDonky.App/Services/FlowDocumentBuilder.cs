@@ -421,8 +421,8 @@ public static class FlowDocumentBuilder
     /// </summary>
     private static Wpf.Inline BuildEmojiInline(Run run, string emojiKey)
     {
-        double sizePt = run.Style.FontSizePt > 0 ? run.Style.FontSizePt : 11.0;
-        double sizeDip = PtToDip(sizePt) * 1.4;
+        double sizePt  = run.Style.FontSizePt > 0 ? run.Style.FontSizePt : 16.0;
+        double sizeDip = PtToDip(sizePt);
 
         var img = LoadEmojiImage(emojiKey, sizeDip);
         if (img is null)

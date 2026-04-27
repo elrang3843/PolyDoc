@@ -102,20 +102,28 @@
             </Grid>
         </Border>
 
-        <!-- 버튼 -->
-        <StackPanel Grid.Row="3"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,12,0,0">
-            <Button Content="삽입(_I)"
-                    Width="96" Height="32"
-                    Click="OnInsertClick"
-                    IsDefault="True"
-                    Margin="0,0,8,0" />
-            <Button Content="닫기"
-                    Width="96" Height="32"
-                    Click="OnCloseClick"
-                    IsCancel="True" />
-        </StackPanel>
+        <!-- 크기 선택 + 버튼 -->
+        <Grid Grid.Row="3" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center">
+                <TextBlock Text="크기:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox x:Name="SizeCombo"
+                          Width="100"
+                          VerticalContentAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Content="삽입(_I)"
+                        Width="96" Height="32"
+                        Click="OnInsertClick"
+                        IsDefault="True"
+                        Margin="0,0,8,0" />
+                <Button Content="닫기"
+                        Width="96" Height="32"
+                        Click="OnCloseClick"
+                        IsCancel="True" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>
