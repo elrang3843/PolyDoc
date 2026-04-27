@@ -19,6 +19,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -41,7 +42,28 @@
                    HorizontalAlignment="Center"
                    Margin="0,4,0,0" />
 
-        <StackPanel Grid.Row="3" Margin="0,16,0,0" HorizontalAlignment="Center">
+        <StackPanel Grid.Row="3" Margin="24,16,24,0" HorizontalAlignment="Center">
+            <TextBlock Text="Poly(gon) + Donky(당나귀)"
+                       FontSize="12" FontWeight="SemiBold"
+                       Foreground="{DynamicResource OnSurfaceMuted}"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="다각형으로 거칠게 빚은 당나귀 — 외형은 엉성해도 어떤 문서 포맷이든 가리지 않고 먹어치운다."
+                       FontSize="11" FontStyle="Italic"
+                       Foreground="{DynamicResource OnSurfaceMuted}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,0" />
+            <TextBlock Text="A donkey roughly sculpted from polygons — clumsy on the outside, with a voracious appetite for any document format."
+                       FontSize="11" FontStyle="Italic"
+                       Foreground="{DynamicResource OnSurfaceMuted}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Margin="0,2,0,0" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Margin="0,16,0,0" HorizontalAlignment="Center">
             <TextBlock Text="핸텍 (HANDTECH)"
                        FontSize="14" FontWeight="SemiBold"
                        HorizontalAlignment="Center" />
@@ -55,7 +77,7 @@
                        Margin="0,4,0,0" />
         </StackPanel>
 
-        <Button Grid.Row="5"
+        <Button Grid.Row="6"
                 Content="확인"
                 Width="96" Height="32"
                 HorizontalAlignment="Right"

@@ -10,6 +10,11 @@
 </p>
 
 <p align="center">
+  <i>"Polygon 으로 거칠게 빚은 Donky(당나귀) — 외형은 엉성해도 어떤 문서 포맷이든 가리지 않고 먹어치운다."</i><br/>
+  <i>"A donkey roughly sculpted from polygons — clumsy on the outside, with a voracious appetite for any document format."</i>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0"/></a>
   <a href="#시스템-요구사항"><img src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078D6.svg" alt="Platform: Windows 10+"/></a>
   <a href="#프로젝트-상태"><img src="https://img.shields.io/badge/Status-Pre--alpha-orange.svg" alt="Status: Pre-alpha"/></a>
@@ -24,6 +29,7 @@
 ---
 
 ## 목차
+- [이름의 유래 (Name origin)](#이름의-유래-name-origin)
 - [PolyDonky이 해결하는 문제](#polydoc이-해결하는-문제)
 - [주요 특징](#주요-특징)
 - [지원 포맷](#지원-포맷)
@@ -40,6 +46,20 @@
 - [버그 리포트 / 기능 요청](#버그-리포트--기능-요청)
 - [라이선스](#라이선스)
 - [참고 문서](#참고-문서)
+
+---
+
+## 이름의 유래 (Name origin)
+
+**PolyDonky** = **Poly**(gon) + **Donky**(당나귀).
+
+다각형(polygon) 으로 거칠게 빚어 외형은 엉성해도, 당나귀처럼 어떤 짐(문서 포맷)이든
+가리지 않고 묵묵히 먹어치우고 운반한다 — 라는 뜻으로 지은 이름입니다. 멀티 포맷
+ingest(HWP / HWPX / DOC / DOCX / HTML / MD / TXT) 라는 프로젝트 정체성을 그대로 담았습니다.
+
+> _A donkey roughly sculpted from polygons — clumsy on the outside, but with a
+> voracious appetite for any document format. The name reflects the project's
+> identity as a multi-format ingest editor._
 
 ---
 
