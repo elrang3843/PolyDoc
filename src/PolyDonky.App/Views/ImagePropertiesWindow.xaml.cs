@@ -16,6 +16,13 @@ public partial class ImagePropertiesWindow : Window
     private readonly ImageBlock _image;
     private bool _suppressSync;
 
+    private static readonly (ImageWrapMode Value, string Label)[] WrapOptions =
+    {
+        (ImageWrapMode.Inline,    "본문 흐름 (텍스트 위·아래)"),
+        (ImageWrapMode.WrapLeft,  "왼쪽 배치 — 텍스트가 오른쪽으로 흐름"),
+        (ImageWrapMode.WrapRight, "오른쪽 배치 — 텍스트가 왼쪽으로 흐름"),
+    };
+
     public ImagePropertiesWindow(ImageBlock image)
     {
         InitializeComponent();
@@ -33,6 +40,10 @@ public partial class ImagePropertiesWindow : Window
         AlignLeft.IsChecked   = _image.HAlign == ImageHAlign.Left;
         AlignCenter.IsChecked = _image.HAlign == ImageHAlign.Center;
         AlignRight.IsChecked  = _image.HAlign == ImageHAlign.Right;
+
+        foreach (var (_, label) in WrapOptions)
+            WrapCombo.Items.Add(label);
+        WrapCombo.SelectedIndex = Array.FindIndex(WrapOptions, w => w.Value == _image.WrapMode) is var i and >= 0 ? i : 0;
 
         MarginTopBox.Text    = _image.MarginTopMm.ToString("F1");
         MarginBottomBox.Text = _image.MarginBottomMm.ToString("F1");
@@ -103,6 +114,8 @@ public partial class ImagePropertiesWindow : Window
         _image.HAlign   = AlignCenter.IsChecked == true ? ImageHAlign.Center
                         : AlignRight.IsChecked  == true ? ImageHAlign.Right
                         : ImageHAlign.Left;
+        if (WrapCombo.SelectedIndex >= 0)
+            _image.WrapMode = WrapOptions[WrapCombo.SelectedIndex].Value;
         _image.MarginTopMm    = Math.Max(0, mt);
         _image.MarginBottomMm = Math.Max(0, mb);
 

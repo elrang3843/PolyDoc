@@ -428,9 +428,15 @@ public partial class MainWindow : Window
                 System.Windows.DependencyObject? logical = img;
                 while (logical is not null)
                 {
+                    // BlockUIContainer (인라인 모드 그림)
                     if (logical is System.Windows.Documents.BlockUIContainer buc &&
                         buc.Tag is PolyDonky.Core.ImageBlock)
                         return (img, buc);
+                    // Paragraph (래핑 모드 그림 — Floater 가 든 단락의 Tag 에 ImageBlock 보존)
+                    if (logical is System.Windows.Documents.Paragraph wrappedPara &&
+                        wrappedPara.Tag is PolyDonky.Core.ImageBlock)
+                        return (img, wrappedPara);
+                    // InlineUIContainer (이모지)
                     if (logical is System.Windows.Documents.InlineUIContainer iuc &&
                         iuc.Tag is PolyDonky.Core.Run { EmojiKey: { Length: > 0 } })
                         return (img, iuc);
@@ -452,21 +458,30 @@ public partial class MainWindow : Window
             if (dlg.ShowDialog() == true)
                 _viewModel?.MarkDirty();
         }
-        else if (container is System.Windows.Documents.BlockUIContainer buc &&
-                 buc.Tag is PolyDonky.Core.ImageBlock imageBlock)
+        else if (container is System.Windows.Documents.Block oldBlock &&
+                 GetImageBlockFromBlock(oldBlock) is { } imageBlock)
         {
             var dlg = new ImagePropertiesWindow(imageBlock) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                // 속성 변경 → BlockUIContainer 재빌드 후 교체
-                var newBuc = Services.FlowDocumentBuilder.BuildImage(imageBlock);
-                var doc    = BodyEditor.Document;
-                doc.Blocks.InsertBefore(buc, newBuc);
-                doc.Blocks.Remove(buc);
+                // WrapMode 변경 시 컨테이너 종류가 달라질 수 있음 (BlockUIContainer ↔ Paragraph+Floater).
+                // BuildImage 가 적절한 Block 타입을 반환하므로 그걸 그대로 교체.
+                var newBlock = Services.FlowDocumentBuilder.BuildImage(imageBlock);
+                var doc      = BodyEditor.Document;
+                doc.Blocks.InsertBefore(oldBlock, newBlock);
+                doc.Blocks.Remove(oldBlock);
                 _viewModel?.MarkDirty();
             }
         }
     }
+
+    private static PolyDonky.Core.ImageBlock? GetImageBlockFromBlock(System.Windows.Documents.Block block) =>
+        block switch
+        {
+            System.Windows.Documents.BlockUIContainer buc when buc.Tag is PolyDonky.Core.ImageBlock ib => ib,
+            System.Windows.Documents.Paragraph p          when p.Tag   is PolyDonky.Core.ImageBlock ib => ib,
+            _ => null,
+        };
 
     // 편집 > 지우기: RichTextBox 는 ApplicationCommands.Delete 를 자체 바인딩하지 않으므로
     // 메뉴에서 직접 호출 시 동작하도록 선택 영역을 지운다. 선택이 비어 있으면 캐럿 직후

@@ -141,16 +141,17 @@ public partial class ImageWindow : Window
     /// </summary>
     public static void InsertImageBlock(RichTextBox editor, ImageBlock image)
     {
-        var buc      = FlowDocumentBuilder.BuildImage(image);
-        var flowDoc  = editor.Document;
-        var current  = FindEnclosingBlock(editor.CaretPosition, flowDoc);
+        // WrapMode 에 따라 BlockUIContainer 또는 Paragraph(Floater 포함) 가 반환된다.
+        var imageBlock = FlowDocumentBuilder.BuildImage(image);
+        var flowDoc    = editor.Document;
+        var current    = FindEnclosingBlock(editor.CaretPosition, flowDoc);
 
         if (current is not null)
-            flowDoc.Blocks.InsertAfter(current, buc);
+            flowDoc.Blocks.InsertAfter(current, imageBlock);
         else
-            flowDoc.Blocks.Add(buc);
+            flowDoc.Blocks.Add(imageBlock);
 
-        try { editor.CaretPosition = buc.ContentEnd; }
+        try { editor.CaretPosition = imageBlock.ContentEnd; }
         catch { /* 포지션 이동 실패는 무시 */ }
 
         editor.Focus();

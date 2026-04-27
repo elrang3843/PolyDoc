@@ -3,6 +3,17 @@ namespace PolyDonky.Core;
 /// <summary>블록 단위 이미지 정렬.</summary>
 public enum ImageHAlign { Left, Center, Right }
 
+/// <summary>그림과 본문 텍스트의 배치 관계.</summary>
+public enum ImageWrapMode
+{
+    /// <summary>블록 단위 — 그림이 자체 줄을 차지하고 텍스트가 위/아래로만 배치.</summary>
+    Inline,
+    /// <summary>왼쪽 정렬 + 오른쪽으로 텍스트 흐름.</summary>
+    WrapLeft,
+    /// <summary>오른쪽 정렬 + 왼쪽으로 텍스트 흐름.</summary>
+    WrapRight,
+}
+
 /// <summary>
 /// 임베드된 이미지(블록 단위). 인라인 이미지는 후속 사이클에서 Run 추상화 확장 후 추가된다.
 /// 바이너리는 <see cref="Data"/> 에 직접 보관되지만, IWPF 패키징 시
@@ -28,8 +39,11 @@ public sealed class ImageBlock : Block
     /// <summary>접근성·검색용 대체 텍스트.</summary>
     public string? Description { get; set; }
 
-    /// <summary>블록 내 가로 정렬.</summary>
+    /// <summary>블록 내 가로 정렬 (WrapMode 가 Inline 일 때만 적용).</summary>
     public ImageHAlign HAlign { get; set; } = ImageHAlign.Left;
+
+    /// <summary>그림과 본문 텍스트의 배치 관계.</summary>
+    public ImageWrapMode WrapMode { get; set; } = ImageWrapMode.Inline;
 
     /// <summary>위 여백 (mm).</summary>
     public double MarginTopMm { get; set; }

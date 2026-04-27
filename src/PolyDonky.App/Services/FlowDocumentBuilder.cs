@@ -180,34 +180,31 @@ public static class FlowDocumentBuilder
         return wtable;
     }
 
-    internal static Wpf.BlockUIContainer BuildImage(ImageBlock image)
+    /// <summary>
+    /// ImageBlock 을 WPF Block 으로 빌드한다.
+    /// - WrapMode = Inline   → BlockUIContainer (자체 줄 차지, 가로 정렬만 적용)
+    /// - WrapMode = WrapLeft → Paragraph + Floater(왼쪽), 텍스트가 오른쪽으로 흐름
+    /// - WrapMode = WrapRight → Paragraph + Floater(오른쪽), 텍스트가 왼쪽으로 흐름
+    /// 반환된 Block 의 Tag 에 ImageBlock 이 심어져 라운드트립과 우클릭 라우팅에 사용된다.
+    /// </summary>
+    internal static Wpf.Block BuildImage(ImageBlock image)
     {
-        var container = new Wpf.BlockUIContainer
-        {
-            Tag           = image,
-            Margin        = new Thickness(0, MmToDip(image.MarginTopMm), 0, MmToDip(image.MarginBottomMm)),
-            TextAlignment = image.HAlign switch
-            {
-                ImageHAlign.Center => TextAlignment.Center,
-                ImageHAlign.Right  => TextAlignment.Right,
-                _                  => TextAlignment.Left,
-            },
-        };
-
+        // ── 미사용 Image 폴백 ────────────────────────────────────────
         if (image.Data.Length == 0)
         {
-            container.Child = new System.Windows.Controls.TextBlock
+            var emptyBuc = new Wpf.BlockUIContainer { Tag = image };
+            emptyBuc.Child = new System.Windows.Controls.TextBlock
             {
                 Text = $"[이미지 누락 — {image.MediaType}]",
                 Foreground = WpfMedia.Brushes.Gray,
                 FontStyle = FontStyles.Italic,
             };
-            return container;
+            return emptyBuc;
         }
 
         var bitmap = new WpfMedia.Imaging.BitmapImage();
         bitmap.BeginInit();
-        bitmap.CacheOption = WpfMedia.Imaging.BitmapCacheOption.OnLoad;
+        bitmap.CacheOption  = WpfMedia.Imaging.BitmapCacheOption.OnLoad;
         bitmap.StreamSource = new MemoryStream(image.Data, writable: false);
         bitmap.EndInit();
         bitmap.Freeze();
@@ -224,8 +221,8 @@ public static class FlowDocumentBuilder
         if (image.HeightMm > 0) control.Height = MmToDip(image.HeightMm);
         if (!string.IsNullOrEmpty(image.Description)) control.ToolTip = image.Description;
 
-        // 테두리
-        UIElement child = control;
+        // 테두리 래퍼
+        UIElement visual = control;
         if (!string.IsNullOrEmpty(image.BorderColor) && image.BorderThicknessPt > 0)
         {
             WpfMedia.Brush borderBrush;
@@ -233,7 +230,7 @@ public static class FlowDocumentBuilder
                     (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(image.BorderColor)!); }
             catch { borderBrush = WpfMedia.Brushes.Black; }
 
-            child = new System.Windows.Controls.Border
+            visual = new System.Windows.Controls.Border
             {
                 Child           = control,
                 BorderBrush     = borderBrush,
@@ -241,8 +238,51 @@ public static class FlowDocumentBuilder
             };
         }
 
-        container.Child = child;
-        return container;
+        var marginTopDip    = MmToDip(image.MarginTopMm);
+        var marginBottomDip = MmToDip(image.MarginBottomMm);
+
+        // ── 래핑 없음(Inline) — BlockUIContainer 를 그대로 추가 ────────
+        if (image.WrapMode == ImageWrapMode.Inline)
+        {
+            return new Wpf.BlockUIContainer(visual)
+            {
+                Tag           = image,
+                Margin        = new Thickness(0, marginTopDip, 0, marginBottomDip),
+                TextAlignment = image.HAlign switch
+                {
+                    ImageHAlign.Center => TextAlignment.Center,
+                    ImageHAlign.Right  => TextAlignment.Right,
+                    _                  => TextAlignment.Left,
+                },
+            };
+        }
+
+        // ── 래핑 있음(WrapLeft/WrapRight) — Floater 가 든 Paragraph ────
+        // Floater 는 Inline 이라 Paragraph 안에 들어가야 하며,
+        // 인접한 본문 Paragraph 와 같은 흐름 안에 있어야 텍스트가 주변으로 흐른다.
+        var floater = new Wpf.Floater
+        {
+            HorizontalAlignment = image.WrapMode == ImageWrapMode.WrapRight
+                ? HorizontalAlignment.Right
+                : HorizontalAlignment.Left,
+            Padding = new Thickness(0),
+            Margin  = new Thickness(
+                image.WrapMode == ImageWrapMode.WrapRight ? PtToDip(8) : 0,   // 텍스트와의 좌측 간격
+                marginTopDip,
+                image.WrapMode == ImageWrapMode.WrapLeft  ? PtToDip(8) : 0,   // 텍스트와의 우측 간격
+                marginBottomDip),
+        };
+        if (image.WidthMm > 0) floater.Width = MmToDip(image.WidthMm);
+        floater.Blocks.Add(new Wpf.BlockUIContainer(visual));
+
+        // Paragraph 는 비어 있어도 되지만, Tag 로 ImageBlock 을 보존해 라운드트립 가능.
+        // 안에 Floater 만 두고 텍스트가 없으면 다음 Paragraph 의 텍스트가 자동으로 주변에 흐른다.
+        var paragraph = new Wpf.Paragraph(floater)
+        {
+            Tag    = image,
+            Margin = new Thickness(0),
+        };
+        return paragraph;
     }
 
     private static Wpf.Paragraph BuildOpaquePlaceholder(OpaqueBlock opaque)

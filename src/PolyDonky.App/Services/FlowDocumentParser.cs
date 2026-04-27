@@ -99,6 +99,11 @@ public static class FlowDocumentParser
                     target.Add(image);
                     break;
 
+                // 래핑 모드(WrapLeft/WrapRight) 그림은 Floater 가 든 Paragraph 로 빌드됨 — Tag 로 회수.
+                case Wpf.Paragraph wrappedImagePara when wrappedImagePara.Tag is ImageBlock wrappedImage:
+                    target.Add(wrappedImage);
+                    break;
+
                 case Wpf.Section nested:
                     ParseInto(target, nested.Blocks);
                     break;
