@@ -495,6 +495,9 @@ public partial class MainWindow : Window
         System.Windows.DependencyObject? dep)
     {
         // 1단계: 비주얼 트리에서 Image 찾기.
+        // VisualTreeHelper.GetParent 는 Visual/Visual3D 만 허용. InputHitTest 는
+        // ContentElement(Run, Paragraph, FlowDocument 등)를 반환할 수 있으므로
+        // Visual 인지 확인 후 진행한다.
         while (dep is not null)
         {
             if (dep is System.Windows.Controls.Image img)
@@ -521,7 +524,10 @@ public partial class MainWindow : Window
                 }
                 return null;
             }
-            dep = System.Windows.Media.VisualTreeHelper.GetParent(dep);
+            // ContentElement (FlowDocument, Paragraph, Run …) 는 Visual 이 아니므로
+            // VisualTreeHelper.GetParent 를 호출하면 InvalidOperationException 이 발생한다.
+            if (dep is not Visual) return null;
+            dep = VisualTreeHelper.GetParent(dep);
         }
         return null;
     }

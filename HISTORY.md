@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Fixed
+- **Fixed** — 본문에서 우클릭 시 `System.InvalidOperationException: 'FlowDocument' is not a Visual or Visual3D` 크래시. `TryWalkUpToImage` 의 비주얼 트리 탐색 루프가 `BodyEditor.InputHitTest` 가 반환한 `ContentElement`(Run·Paragraph·FlowDocument 등 — Visual 이 아님) 에 대해 `VisualTreeHelper.GetParent` 를 호출해 예외 발생. Visual 여부를 먼저 확인해 non-Visual 이면 즉시 null 반환하도록 수정.
 - **Fixed** — 이모지·그림 위에서 우클릭/더블클릭해도 **속성 다이얼로그가 열리지 않고 RichTextBox 기본 메뉴(잘라내기/복사/붙여넣기) 만 뜨던 버그**. 두 가지 원인을 함께 수정: 1) `PreviewMouseRightButtonDown` 으로 e.Handled = true 를 세팅해도 RichTextBox 의 기본 컨텍스트 메뉴는 `ContextMenuOpening` 시점에 결정되므로 막을 수 없었음 — 핸들러를 `ContextMenuOpening` 로 옮기고 그 시점에 e.Handled = true 로 기본 메뉴 억제. 2) `e.OriginalSource` 가 RichTextBox 내부 호스팅으로 Image 까지 닿지 않는 경우가 있었음 — `BodyEditor.InputHitTest(마우스위치)` 폴백 추가해 두 경로 모두에서 Image 를 찾도록 보강.
 
 ### Added
