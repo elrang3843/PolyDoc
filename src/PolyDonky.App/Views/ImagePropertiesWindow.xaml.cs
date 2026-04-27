@@ -19,6 +19,7 @@ public partial class ImagePropertiesWindow : Window
     private static readonly (ImageWrapMode Value, string Label)[] WrapOptions =
     {
         (ImageWrapMode.Inline,        "본문 흐름 (텍스트 위·아래)"),
+        (ImageWrapMode.AsText,        "텍스트로 처리 — 글자처럼 한 줄에 인라인"),
         (ImageWrapMode.WrapLeft,      "왼쪽 배치 — 텍스트가 오른쪽으로 흐름"),
         (ImageWrapMode.WrapRight,     "오른쪽 배치 — 텍스트가 왼쪽으로 흐름"),
         (ImageWrapMode.InFrontOfText, "텍스트 앞으로 — 그림이 위에 겹침"),

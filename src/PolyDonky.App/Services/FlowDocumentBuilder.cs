@@ -25,6 +25,7 @@ public static class FlowDocumentBuilder
     public static double PtToDip(double pt) => pt * (DipsPerInch / PointsPerInch);
     public static double DipToPt(double dip) => dip * (PointsPerInch / DipsPerInch);
     public static double MmToDip(double mm) => mm * (DipsPerInch / MmPerInch);
+    public static double DipToMm(double dip) => dip * (MmPerInch / DipsPerInch);
 
     public static Wpf.FlowDocument Build(PolyDonkyument document)
     {
@@ -268,6 +269,29 @@ public static class FlowDocumentBuilder
                     _                  => TextAlignment.Left,
                 },
             };
+        }
+
+        // ── 텍스트 캐릭터처럼(AsText) — Paragraph 안에 InlineUIContainer 로 ────
+        // 한 단락 안에서 글자처럼 흐르므로 같은 단락의 텍스트 런과 같은 줄에 들어갈 수 있다.
+        // 사용자는 이후 이 단락에 텍스트를 추가해 그림과 같은 줄에 글자를 둘 수 있다.
+        if (image.WrapMode == ImageWrapMode.AsText)
+        {
+            var asTextPara = new Wpf.Paragraph
+            {
+                Tag           = image,
+                Margin        = new Thickness(0, marginTopDip, 0, marginBottomDip),
+                TextAlignment = image.HAlign switch
+                {
+                    ImageHAlign.Center => TextAlignment.Center,
+                    ImageHAlign.Right  => TextAlignment.Right,
+                    _                  => TextAlignment.Left,
+                },
+            };
+            asTextPara.Inlines.Add(new Wpf.InlineUIContainer(visual)
+            {
+                BaselineAlignment = BaselineAlignment.Bottom,
+            });
+            return asTextPara;
         }
 
         // ── 래핑 있음(WrapLeft/WrapRight) — Floater 가 든 Paragraph ────

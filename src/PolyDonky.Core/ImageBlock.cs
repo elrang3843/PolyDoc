@@ -8,6 +8,8 @@ public enum ImageWrapMode
 {
     /// <summary>블록 단위 — 그림이 자체 줄을 차지하고 텍스트가 위/아래로만 배치.</summary>
     Inline,
+    /// <summary>텍스트 캐릭터처럼 인라인 — 한 단락 안에서 글자처럼 흐름. (InlineUIContainer)</summary>
+    AsText,
     /// <summary>왼쪽 정렬 + 오른쪽으로 텍스트 흐름.</summary>
     WrapLeft,
     /// <summary>오른쪽 정렬 + 왼쪽으로 텍스트 흐름.</summary>

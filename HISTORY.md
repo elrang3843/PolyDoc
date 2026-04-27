@@ -49,6 +49,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Fixed** — 이모지·그림 위에서 우클릭/더블클릭해도 **속성 다이얼로그가 열리지 않고 RichTextBox 기본 메뉴(잘라내기/복사/붙여넣기) 만 뜨던 버그**. 두 가지 원인을 함께 수정: 1) `PreviewMouseRightButtonDown` 으로 e.Handled = true 를 세팅해도 RichTextBox 의 기본 컨텍스트 메뉴는 `ContextMenuOpening` 시점에 결정되므로 막을 수 없었음 — 핸들러를 `ContextMenuOpening` 로 옮기고 그 시점에 e.Handled = true 로 기본 메뉴 억제. 2) `e.OriginalSource` 가 RichTextBox 내부 호스팅으로 Image 까지 닿지 않는 경우가 있었음 — `BodyEditor.InputHitTest(마우스위치)` 폴백 추가해 두 경로 모두에서 Image 를 찾도록 보강.
 
 ### Added
+- **Added** — **그림을 텍스트처럼 처리** (`ImageWrapMode.AsText`). 그림 속성 → 배치에 6번째 옵션 '텍스트로 처리 — 글자처럼 한 줄에 인라인' 추가. `BlockUIContainer` 대신 `Paragraph` 안의 `InlineUIContainer` 로 빌드되어 그림이 본문 텍스트와 같은 줄에 글자처럼 흐른다 (사용자가 같은 단락에 텍스트를 추가하면 그림 옆/뒤에 텍스트가 나란히 배치). FlowDocumentParser 가 `Paragraph.Tag = ImageBlock` 케이스를 이미 인식하므로 라운드트립 자동 보장.
+- **Added** — **오버레이 그림(InFrontOfText / BehindText) 드래그 이동**. 캔버스 위 그림을 마우스로 끌어 위치를 바꿀 수 있다 — 드래그 종료 시 `OverlayXMm`/`OverlayYMm` 가 업데이트되고 dirty 마킹. 단일 클릭 = 드래그 시작, 더블클릭 = 속성 다이얼로그, 우클릭 = 속성 컨텍스트 메뉴로 분기. 글상자(`TextBoxOverlay`) 는 기존 드래그 동작 유지. `FlowDocumentBuilder` 에 `DipToMm` 헬퍼 추가.
 - **Added** — **그림 텍스트 배치 모드 5종**. ImageBlock 에 `WrapMode` enum 신설 (Inline / WrapLeft / WrapRight / InFrontOfText / BehindText). 그림 속성 다이얼로그에 '배치' 콤보박스 추가:
   1. **본문 흐름** — BlockUIContainer (자체 줄, 가로 정렬만 적용; 기본값)
   2. **왼쪽 배치** — Paragraph + Floater(Left), 텍스트가 오른쪽으로 흐름

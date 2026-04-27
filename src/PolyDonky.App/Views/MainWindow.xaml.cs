@@ -211,10 +211,11 @@ public partial class MainWindow : Window
             ctrl.Tag = img;   // 우클릭 → 속성 라우팅용
             System.Windows.Controls.Canvas.SetLeft(ctrl, Services.FlowDocumentBuilder.MmToDip(img.OverlayXMm));
             System.Windows.Controls.Canvas.SetTop(ctrl,  Services.FlowDocumentBuilder.MmToDip(img.OverlayYMm));
+            ctrl.Cursor = System.Windows.Input.Cursors.SizeAll;
 
             // 우클릭 → 속성 다이얼로그
             ctrl.MouseRightButtonDown += OnOverlayImageRightClick;
-            // 더블클릭 → 속성 다이얼로그
+            // 좌클릭 → 드래그 시작 또는 더블클릭 시 속성 다이얼로그
             ctrl.MouseLeftButtonDown += OnOverlayImageMouseDown;
 
             var canvas = img.WrapMode == PolyDonky.Core.ImageWrapMode.BehindText
@@ -223,6 +224,13 @@ public partial class MainWindow : Window
             canvas.Children.Add(ctrl);
         }
     }
+
+    // ── 오버레이 그림 드래그 이동 상태 ────────────────────────────────
+    private System.Windows.FrameworkElement? _draggingOverlayImage;
+    private Point  _overlayDragStart;
+    private double _overlayDragStartLeft;
+    private double _overlayDragStartTop;
+    private bool   _overlayDragMoved;
 
     private void OnOverlayImageRightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -241,12 +249,68 @@ public partial class MainWindow : Window
 
     private void OnOverlayImageMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (e.ClickCount != 2) return;
-        if (sender is System.Windows.FrameworkElement { Tag: PolyDonky.Core.ImageBlock img })
+        if (sender is not System.Windows.FrameworkElement fe) return;
+
+        // 더블클릭 → 속성 다이얼로그
+        if (e.ClickCount == 2 && fe.Tag is PolyDonky.Core.ImageBlock dblImg)
         {
-            OpenOverlayImageProperties(img);
+            OpenOverlayImageProperties(dblImg);
             e.Handled = true;
+            return;
         }
+
+        // 단일 클릭 → 드래그 시작 (마우스 캡처)
+        if (fe.Parent is not System.Windows.Controls.Canvas canvas) return;
+        _draggingOverlayImage   = fe;
+        _overlayDragStart       = e.GetPosition(canvas);
+        _overlayDragStartLeft   = System.Windows.Controls.Canvas.GetLeft(fe);
+        _overlayDragStartTop    = System.Windows.Controls.Canvas.GetTop(fe);
+        if (double.IsNaN(_overlayDragStartLeft)) _overlayDragStartLeft = 0;
+        if (double.IsNaN(_overlayDragStartTop))  _overlayDragStartTop  = 0;
+        _overlayDragMoved = false;
+        fe.CaptureMouse();
+        fe.MouseMove         += OnOverlayImageDragMove;
+        fe.MouseLeftButtonUp += OnOverlayImageDragUp;
+        e.Handled = true;
+    }
+
+    private void OnOverlayImageDragMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not System.Windows.FrameworkElement fe ||
+            !ReferenceEquals(_draggingOverlayImage, fe)) return;
+        if (fe.Parent is not System.Windows.Controls.Canvas canvas) return;
+
+        var pos = e.GetPosition(canvas);
+        double dx = pos.X - _overlayDragStart.X;
+        double dy = pos.Y - _overlayDragStart.Y;
+        if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5) _overlayDragMoved = true;
+
+        // 페이지 좌상단 기준 음수 좌표는 허용하지 않는다.
+        System.Windows.Controls.Canvas.SetLeft(fe, Math.Max(0, _overlayDragStartLeft + dx));
+        System.Windows.Controls.Canvas.SetTop (fe, Math.Max(0, _overlayDragStartTop  + dy));
+    }
+
+    private void OnOverlayImageDragUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is not System.Windows.FrameworkElement fe ||
+            !ReferenceEquals(_draggingOverlayImage, fe)) return;
+
+        fe.ReleaseMouseCapture();
+        fe.MouseMove         -= OnOverlayImageDragMove;
+        fe.MouseLeftButtonUp -= OnOverlayImageDragUp;
+        _draggingOverlayImage = null;
+
+        if (_overlayDragMoved && fe.Tag is PolyDonky.Core.ImageBlock img)
+        {
+            double left = System.Windows.Controls.Canvas.GetLeft(fe);
+            double top  = System.Windows.Controls.Canvas.GetTop(fe);
+            if (double.IsNaN(left)) left = 0;
+            if (double.IsNaN(top))  top  = 0;
+            img.OverlayXMm = Math.Max(0, Services.FlowDocumentBuilder.DipToMm(left));
+            img.OverlayYMm = Math.Max(0, Services.FlowDocumentBuilder.DipToMm(top));
+            _viewModel?.MarkDirty();
+        }
+        e.Handled = true;
     }
 
     private void OpenOverlayImageProperties(PolyDonky.Core.ImageBlock img)
