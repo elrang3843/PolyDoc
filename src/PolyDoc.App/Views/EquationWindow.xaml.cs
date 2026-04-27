@@ -112,12 +112,8 @@ public partial class EquationWindow : Window
 
         var caret = editor.CaretPosition;
         var insertPos = caret.GetInsertionPosition(LogicalDirection.Forward) ?? caret;
-        var endPos = insertPos.InsertTextInRun(text);
-        if (endPos is null)
-        {
-            editor.Focus();
-            return;
-        }
+        insertPos.InsertTextInRun(text);
+        var endPos = insertPos.GetPositionAtOffset(text.Length) ?? insertPos;
 
         // 삽입한 범위에 수식 스타일을 적용.
         var range = new TextRange(insertPos, endPos);

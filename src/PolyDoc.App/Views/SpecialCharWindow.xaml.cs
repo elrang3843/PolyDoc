@@ -122,8 +122,8 @@ public partial class SpecialCharWindow : Window
         var caret = editor.CaretPosition;
         // CaretPosition 이 텍스트 컨텍스트가 아닐 수 있으므로 가장 가까운 삽입 가능한 지점으로 보정.
         var insertPos = caret.GetInsertionPosition(LogicalDirection.Forward) ?? caret;
-        var newPos = insertPos.InsertTextInRun(text);
-        editor.CaretPosition = newPos ?? insertPos;
+        insertPos.InsertTextInRun(text);
+        editor.CaretPosition = insertPos.GetPositionAtOffset(text.Length) ?? insertPos;
         editor.Focus();
     }
 
