@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
@@ -340,17 +341,15 @@ public partial class TextBoxOverlay : UserControl
         };
 
         // ── 글자 방향 (가로 LTR/RTL 만 시각 적용; 세로는 모델 보존만, 다음 사이클에서 렌더링) ──
-        if (Model.TextOrientation == TextOrientation.Horizontal)
-        {
-            InnerEditor.FlowDirection = Model.TextProgression == TextProgression.Leftward
-                ? FlowDirection.RightToLeft
-                : FlowDirection.LeftToRight;
-        }
-        else
-        {
-            // 세로쓰기: 일단 LTR 로 두고 모델만 저장. (커스텀 세로 레이아웃 도입 시 교체)
-            InnerEditor.FlowDirection = FlowDirection.LeftToRight;
-        }
+        // FlowDirection 은 RichTextBox(컨테이너)와 FlowDocument(내용) 양쪽에 명시 설정.
+        // 컨테이너만 바꾸면 기존 LTR FlowDocument 와 방향이 충돌해 초기 문자들이 안 보이는 버그 발생.
+        var newFlowDir = (Model.TextOrientation == TextOrientation.Horizontal &&
+                          Model.TextProgression == TextProgression.Leftward)
+            ? FlowDirection.RightToLeft
+            : FlowDirection.LeftToRight;
+
+        InnerEditor.FlowDirection          = newFlowDir;
+        InnerEditor.Document.FlowDirection = newFlowDir;
 
         // ── 회전 ───────────────────────────────────────────────────────
         // 박스 중심을 피벗으로 모양·본문 모두 함께 회전. 0이면 transform 제거.
@@ -397,6 +396,8 @@ public partial class TextBoxOverlay : UserControl
             doc.Blocks.Add(new System.Windows.Documents.Paragraph());
 
         InnerEditor.Document = doc;
+        // 현재 컨트롤 FlowDirection 을 새 문서에도 반영 (생성자에서는 아직 기본값 LTR)
+        doc.FlowDirection = InnerEditor.FlowDirection;
     }
 
     private void SyncEditorToModel()
@@ -652,6 +653,34 @@ public partial class TextBoxOverlay : UserControl
         {
             DeleteRequested?.Invoke(this, EventArgs.Empty);
             e.Handled = true;
+        }
+    }
+
+    // ── RTL 모드 화살표 키 방향 교정 ────────────────────────────────────
+    // WPF RTL 에서 Left 키 = 논리 이전(시각 오른쪽), Right 키 = 논리 다음(시각 왼쪽).
+    // 사용자는 시각 방향 이동을 기대하므로 Left↔Right 커맨드를 뒤집는다.
+    private void OnInnerEditorPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (InnerEditor.FlowDirection != FlowDirection.RightToLeft) return;
+        if (e.Key != Key.Left && e.Key != Key.Right) return;
+
+        e.Handled = true;
+        var shift = (Keyboard.Modifiers & ModifierKeys.Shift)   != 0;
+        var ctrl  = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+
+        if (e.Key == Key.Left)   // 시각 왼쪽 이동 = RTL 논리 다음 = Right 계열 커맨드
+        {
+            if (ctrl && shift) EditingCommands.SelectRightByWord.Execute(null, InnerEditor);
+            else if (ctrl)     EditingCommands.MoveRightByWord.Execute(null, InnerEditor);
+            else if (shift)    EditingCommands.SelectRightByCharacter.Execute(null, InnerEditor);
+            else               EditingCommands.MoveRightByCharacter.Execute(null, InnerEditor);
+        }
+        else                     // 시각 오른쪽 이동 = RTL 논리 이전 = Left 계열 커맨드
+        {
+            if (ctrl && shift) EditingCommands.SelectLeftByWord.Execute(null, InnerEditor);
+            else if (ctrl)     EditingCommands.MoveLeftByWord.Execute(null, InnerEditor);
+            else if (shift)    EditingCommands.SelectLeftByCharacter.Execute(null, InnerEditor);
+            else               EditingCommands.MoveLeftByCharacter.Execute(null, InnerEditor);
         }
     }
 

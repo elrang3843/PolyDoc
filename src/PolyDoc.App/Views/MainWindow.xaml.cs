@@ -133,7 +133,10 @@ public partial class MainWindow : Window
         _suppressTextChanged = true;
         try
         {
-            BodyEditor.Document = fd;
+            BodyEditor.Document      = fd;
+            // FlowDirection 을 RichTextBox 컨테이너에도 반영 — 컨테이너와 FlowDocument 방향이
+            // 다르면 RTL 시작 위치(오른쪽)가 스크롤 뷰포트 밖에 위치해 초기 글자가 안 보임.
+            BodyEditor.FlowDirection = fd.FlowDirection;
         }
         finally
         {
@@ -281,6 +284,30 @@ public partial class MainWindow : Window
 
     private void OnEditorPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // RTL 모드: Left↔Right 커맨드를 뒤집어 시각 방향 이동이 되도록 교정
+        if (BodyEditor.FlowDirection == FlowDirection.RightToLeft &&
+            (e.Key == Key.Left || e.Key == Key.Right))
+        {
+            e.Handled = true;
+            var shift = (Keyboard.Modifiers & ModifierKeys.Shift)   != 0;
+            var ctrl  = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            if (e.Key == Key.Left)
+            {
+                if (ctrl && shift) System.Windows.Documents.EditingCommands.SelectRightByWord.Execute(null, BodyEditor);
+                else if (ctrl)     System.Windows.Documents.EditingCommands.MoveRightByWord.Execute(null, BodyEditor);
+                else if (shift)    System.Windows.Documents.EditingCommands.SelectRightByCharacter.Execute(null, BodyEditor);
+                else               System.Windows.Documents.EditingCommands.MoveRightByCharacter.Execute(null, BodyEditor);
+            }
+            else
+            {
+                if (ctrl && shift) System.Windows.Documents.EditingCommands.SelectLeftByWord.Execute(null, BodyEditor);
+                else if (ctrl)     System.Windows.Documents.EditingCommands.MoveLeftByWord.Execute(null, BodyEditor);
+                else if (shift)    System.Windows.Documents.EditingCommands.SelectLeftByCharacter.Execute(null, BodyEditor);
+                else               System.Windows.Documents.EditingCommands.MoveLeftByCharacter.Execute(null, BodyEditor);
+            }
+            return;
+        }
+
         if (_viewModel?.IsWriteProtected != true) return;
         if (!IsEditingIntent(e)) return;
         e.Handled = true;
