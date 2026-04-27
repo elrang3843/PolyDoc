@@ -44,6 +44,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Fixed
+- **Fixed** — 글상자(부유 객체) 가 저장 후 다시 열면 사라지던 데이터 손실 버그. `FlowDocumentParser.Parse` 가 새 `Section` 을 만들면서 원본 섹션의 `FloatingObjects` 컬렉션을 인계하지 않아 발생. 글상자는 본문 흐름(`Section.Blocks`) 과 별도 레이어이므로 FlowDocument 에서 파싱되지 않는데, 저장 직전 rebuilt 문서에 누락되면 IWPF 직렬화 단계에서 통째로 사라졌다. `originalForMerge.Sections[0].FloatingObjects` 를 새 섹션으로 복사하도록 수정. 같은 경로에서 `Watermark` 와 `OutlineStyles` (문서 수준 상태) 도 누락되던 것을 함께 인계하도록 보정.
+
+### Added
+- **Added** — 글상자(부유 객체) 자체의 복사/잘라내기/붙여넣기 지원. 글상자 chrome 이 선택된 상태(안쪽 본문 편집 중이 아님)에서 **Ctrl+C / Ctrl+X / Ctrl+V** 를 누르면 `TextBoxObject` 전체(모양·여백·정렬·색·내용 포함) 를 사용자 정의 클립보드 포맷 `PolyDonky.FloatingObject.v1` 로 직렬화/복원. 붙여넣기 시 위치를 (+5mm, +5mm) 오프셋해 원본 위에 겹치지 않게 복제. 안쪽 본문 또는 본문 편집기에 포커스가 있으면 가로채지 않고 일반 텍스트 클립보드 동작에 양보. plain-text 폴백을 함께 실어 다른 앱으로의 붙여넣기 시 안쪽 텍스트만 전달.
+
 ### Docs
 - **Docs** — `PolyDonky` 작명 유래(**Poly**(gon) + **Donky**(당나귀): 다각형으로 거칠게 빚은 당나귀처럼 외형은 엉성해도 어떤 문서 포맷이든 가리지 않고 먹어치운다는 뜻) 를 한국어·영어 병기로 명문화. `README.md` 에 신규 섹션 "이름의 유래 (Name origin)" 추가 + 상단 인트로 직하단에 한·영 한 줄 요약. `CLAUDE.md` 의 프로젝트 개요 인용 블록으로 추가 — 향후 세션의 코드/UI 톤 일관성 가이드. `AboutWindow` 에 "Poly(gon) + Donky(당나귀)" 헤더 + 한·영 한 줄 설명을 새 섹션으로 노출.
 

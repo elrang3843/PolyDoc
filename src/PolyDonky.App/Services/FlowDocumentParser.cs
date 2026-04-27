@@ -22,16 +22,23 @@ public static class FlowDocumentParser
         var doc = new PolyDonkyument();
         if (originalForMerge is not null)
         {
-            // 메타데이터·스타일·provenance 는 원본을 인계 (편집 후에도 유지).
+            // 메타데이터·스타일·provenance·워터마크·개요 스타일은 본문 흐름에 들어가지 않는
+            // 문서 수준 상태이므로 원본을 그대로 인계해야 save/load 시 보존된다.
             doc.Metadata = originalForMerge.Metadata;
             doc.Styles = originalForMerge.Styles;
             doc.Provenance = originalForMerge.Provenance;
+            doc.Watermark = originalForMerge.Watermark;
+            doc.OutlineStyles = originalForMerge.OutlineStyles;
         }
 
         var section = new Section();
         if (originalForMerge?.Sections.FirstOrDefault() is { } origSection)
         {
             section.Page = origSection.Page;
+            // 부유 객체(글상자 등) 는 본문 흐름과 분리된 레이어이므로 FlowDocument 에서
+            // 파싱되지 않는다 — 원본 섹션의 컬렉션을 인계하지 않으면 저장 시 사라진다.
+            foreach (var fo in origSection.FloatingObjects)
+                section.FloatingObjects.Add(fo);
         }
         doc.Sections.Add(section);
 

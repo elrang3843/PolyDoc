@@ -108,6 +108,19 @@ public partial class MainWindow : Window
                     e.Handled = true;
                 }
                 break;
+
+            // 글상자(부유 객체) 자체의 복사/잘라내기/붙여넣기.
+            // 안쪽 본문(InnerEditor)이 포커스 중이면 가로채지 않고 RichTextBox 의
+            // 일반 텍스트 클립보드 동작으로 넘긴다.
+            case Key.C when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryCopySelectedFloatingObject()) e.Handled = true;
+                break;
+            case Key.X when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryCutSelectedFloatingObject()) e.Handled = true;
+                break;
+            case Key.V when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryPasteFloatingObject()) e.Handled = true;
+                break;
         }
     }
 
@@ -489,6 +502,69 @@ public partial class MainWindow : Window
         overlay.BeginEditing();
 
         e.Handled = true;
+    }
+
+    // ── 글상자(부유 객체) 복사/잘라내기/붙여넣기 ──────────────────────
+    private const string FloatingObjectClipboardFormat = "PolyDonky.FloatingObject.v1";
+
+    private bool TryCopySelectedFloatingObject()
+    {
+        if (_selectedOverlay is null) return false;
+        if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin) return false;
+
+        var json = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
+            _selectedOverlay.Model, JsonDefaults.Options);
+        var dataObj = new System.Windows.DataObject();
+        dataObj.SetData(FloatingObjectClipboardFormat, json);
+        // Plain-text 폴백 — 다른 앱으로 붙여넣기 시 안쪽 텍스트만 가도록.
+        dataObj.SetText(_selectedOverlay.Model.GetPlainText());
+        Clipboard.SetDataObject(dataObj, copy: true);
+        return true;
+    }
+
+    private bool TryCutSelectedFloatingObject()
+    {
+        if (!TryCopySelectedFloatingObject()) return false;
+        var overlay = _selectedOverlay!;
+        FloatingCanvas.Children.Remove(overlay);
+        _viewModel?.RemoveFloatingObject(overlay.Model);
+        _selectedOverlay = null;
+        BodyEditor.Focus();
+        return true;
+    }
+
+    private bool TryPasteFloatingObject()
+    {
+        // 안쪽 편집기에 포커스가 있으면 일반 텍스트 붙여넣기에 양보.
+        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true) return false;
+        // BodyEditor(본문 RichTextBox) 에 포커스가 있으면 본문 붙여넣기에 양보.
+        if (BodyEditor.IsKeyboardFocusWithin) return false;
+        if (!Clipboard.ContainsData(FloatingObjectClipboardFormat)) return false;
+
+        var json = Clipboard.GetData(FloatingObjectClipboardFormat) as string;
+        if (string.IsNullOrEmpty(json)) return false;
+
+        FloatingObject? clone;
+        try
+        {
+            clone = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(json, JsonDefaults.Options);
+        }
+        catch
+        {
+            return false;
+        }
+        if (clone is not TextBoxObject tb) return false;
+
+        // 새 인스턴스 표시 — Id 재발급, 위치는 살짝 오프셋.
+        tb.Id = null;
+        tb.XMm += 5;
+        tb.YMm += 5;
+        tb.Status = NodeStatus.Modified;
+
+        _viewModel?.AddFloatingObjectToCurrentSection(tb);
+        var overlay = AddTextBoxOverlay(tb);
+        SelectOverlay(overlay);
+        return true;
     }
 
     /// <summary>현재 섹션의 FloatingObjects 를 캔버스에 다시 채워 그린다 (문서 로드 시).</summary>
