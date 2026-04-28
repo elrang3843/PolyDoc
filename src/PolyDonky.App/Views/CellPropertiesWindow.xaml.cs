@@ -131,7 +131,7 @@ public partial class CellPropertiesWindow : Window
         if (string.IsNullOrWhiteSpace(hex)) return null;
         try
         {
-            var c = (Color)ColorConverter.ConvertFromString(hex)!;
+            var c = (System.Windows.Media.Color)ColorConverter.ConvertFromString(hex)!;
             return new SolidColorBrush(c);
         }
         catch { return null; }
