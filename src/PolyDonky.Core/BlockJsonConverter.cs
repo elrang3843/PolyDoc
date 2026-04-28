@@ -72,8 +72,10 @@ public sealed class BlockJsonConverter : JsonConverter<Block>
         writer.WriteString("$type", discriminator);
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
-            // 구체 타입 직렬화에는 discriminator 가 없지만 안전장치로 중복 제거.
-            if (prop.NameEquals("$type") || prop.NameEquals("kind")) continue;
+            // "$type" 만 중복 방지. "kind" 는 ShapeObject.Kind / OpaqueBlock.Kind 등
+            // 실제 도메인 속성 이름이므로 스킵하면 안 됨.
+            // (읽기 경로에서 "$type" 이 "kind" 보다 우선하므로 레거시 파일 호환에도 문제 없음.)
+            if (prop.NameEquals("$type")) continue;
             prop.WriteTo(writer);
         }
         writer.WriteEndObject();

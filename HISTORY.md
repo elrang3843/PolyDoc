@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Fixed
+- **Fixed** — **저장→불러오기 후 모든 도형이 사각형으로 표시되던 버그**. `BlockJsonConverter.Write()` 에서 레거시 `"kind"` discriminator 제거를 위해 `"kind"` 이름의 JSON 필드를 전부 스킵했는데, `ShapeObject.Kind` 와 `OpaqueBlock.Kind` 도 camelCase 직렬화 시 `"kind"` 가 되어 함께 누락됨. `"$type"` 중복만 방지하도록 수정 (읽기 경로에서 `"$type"` 이 `"kind"` 보다 우선하므로 레거시 호환 유지).
 - **Fixed** — **그림 "본문 흐름" 모드에서 정렬(왼쪽/가운데/오른쪽)을 바꿔도 위치가 변하지 않던 버그**. `BlockUIContainer.TextAlignment`는 텍스트 Glyph 정렬이며 UIElement 위치에 무효. 명시적 `Width`가 있는 `Image`의 기본 `HorizontalAlignment`(Stretch)가 WPF 레이아웃에서 중앙 배치처럼 동작하므로, 정렬을 Left로 바꿔도 이미지가 항상 가운데에 그려졌다. 이미지(Image) 및 테두리 래퍼(Border) 생성 시 `HorizontalAlignment = imgHA`를 명시적으로 설정해 수정.
 - **Fixed** — **그림 속성 다이얼로그에서 "오른쪽 배치" 선택 시 그림 사라지던 버그** (근본 원인 수정). 기존 코드는 `FlowDocument.PageWidth = 종이 전체 폭`으로 설정하고 `BodyEditor.Padding`으로 좌우 여백을 별도 적용했다. 이로 인해 FlowDocument 오른쪽 끝이 가시 영역 밖(`padLeft + padRight` 만큼)으로 밀려, `HorizontalAlignment.Right` Floater를 비롯한 모든 우측 정렬 객체가 클리핑되어 사라졌다. `FlowDocumentBuilder.ComputeContentWidthDip` 헬퍼를 추가하고 `PageWidth = 종이 폭 − 좌여백 − 우여백(본문 폭)`으로 수정. 여백 변경 시에도 `ApplyPageSettings`가 `Document.PageWidth`를 즉시 갱신. anchor `Run`의 문자도 빈 문자열 → 비줄바꿈 공백(U+00A0)으로 교체해 WPF TextFormatter가 라인을 유효하게 처리하도록 보강.
 - **Fixed** — **그림을 "텍스트 앞으로/뒤로" 모드로 처음 전환 시 페이지 좌상단(0,0) 으로 점프하던 버그**. 모드 전환 직전 `imgControl.TransformToVisual(PaperBorder)` 로 현재 화면 좌표를 캡처하고, 전환 후 `OverlayXMm/OverlayYMm` 가 기본값(0,0) 인 경우에만 캡처한 좌표를 mm 로 변환해 적용 — 사용자가 의도적으로 0,0 을 입력한 경우와 충돌하지 않는다.
