@@ -77,6 +77,14 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
+                // Fallback: 붙여넣기로 Tag 가 사라진 AsText/WrapLeft/WrapRight 이미지 단락.
+                // WPF XamlPackage 클립보드 포맷은 BitmapSource 를 보존하므로 시각 트리에서 ImageBlock 을 재구성한다.
+                // 반드시 일반 'case Wpf.Paragraph' 보다 먼저 위치해야 한다.
+                case Wpf.Paragraph pastedImgPara
+                    when pastedImgPara.Tag is null && TryRecoverImageFromPara(pastedImgPara, out var pastedWrapImg):
+                    target.Add(pastedWrapImg!);
+                    break;
+
                 case Wpf.Paragraph wpfPara:
                     target.Add(ParseParagraph(wpfPara, listMarker: null));
                     break;
@@ -116,6 +124,13 @@ public static class FlowDocumentParser
 
                 case Wpf.BlockUIContainer container when container.Tag is ShapeObject shapeInline:
                     target.Add(shapeInline);
+                    break;
+
+                // Fallback: 붙여넣기로 Tag 가 사라진 Inline 모드 이미지.
+                // BitmapSource 는 XamlPackage 포맷에 보존되므로 시각 트리에서 ImageBlock 을 재구성한다.
+                case Wpf.BlockUIContainer pastedBuc
+                    when pastedBuc.Tag is null && TryRecoverImageFromBUC(pastedBuc, out var pastedInlineImg):
+                    target.Add(pastedInlineImg!);
                     break;
 
                 case Wpf.Section nested:
@@ -468,6 +483,119 @@ public static class FlowDocumentParser
         {
             s.Background = new Color(bg.Color.R, bg.Color.G, bg.Color.B, bg.Color.A);
         }
+    }
+
+    // ── 붙여넣기 후 Tag 가 없는 이미지 재구성 헬퍼 ─────────────────────────
+
+    /// <summary>
+    /// Tag=null 인 BlockUIContainer(Inline 모드 이미지)에서 ImageBlock 을 재구성한다.
+    /// WPF XamlPackage 클립보드 포맷은 BitmapSource 를 온전히 보존하므로 크기·정렬·테두리를 복구할 수 있다.
+    /// </summary>
+    private static bool TryRecoverImageFromBUC(Wpf.BlockUIContainer buc, out ImageBlock? img)
+    {
+        img = null;
+        var (wpfImg, border) = FindImageInVisual(buc.Child);
+        if (wpfImg?.Source is not System.Windows.Media.Imaging.BitmapSource) return false;
+
+        var ha = (border?.HorizontalAlignment ?? wpfImg.HorizontalAlignment) switch
+        {
+            System.Windows.HorizontalAlignment.Center => ImageHAlign.Center,
+            System.Windows.HorizontalAlignment.Right  => ImageHAlign.Right,
+            _                                          => ImageHAlign.Left,
+        };
+        img = BuildRecoveredImageBlock(wpfImg, border, buc.Margin, ImageWrapMode.Inline, ha);
+        return true;
+    }
+
+    /// <summary>
+    /// Tag=null 인 Paragraph 에서 AsText / WrapLeft / WrapRight 이미지 단락을 재구성한다.
+    /// </summary>
+    private static bool TryRecoverImageFromPara(Wpf.Paragraph para, out ImageBlock? img)
+    {
+        img = null;
+
+        // AsText 모드: 단 하나의 InlineUIContainer(Image 또는 Border>Image)
+        if (para.Inlines.Count == 1
+            && para.Inlines.FirstOrDefault() is Wpf.InlineUIContainer iuc)
+        {
+            var (wpfImg, border) = FindImageInVisual(iuc.Child);
+            if (wpfImg?.Source is System.Windows.Media.Imaging.BitmapSource)
+            {
+                var ha = (border?.HorizontalAlignment ?? wpfImg.HorizontalAlignment) switch
+                {
+                    System.Windows.HorizontalAlignment.Center => ImageHAlign.Center,
+                    System.Windows.HorizontalAlignment.Right  => ImageHAlign.Right,
+                    _                                          => ImageHAlign.Left,
+                };
+                img = BuildRecoveredImageBlock(wpfImg, border, para.Margin, ImageWrapMode.AsText, ha);
+                return true;
+            }
+        }
+
+        // WrapLeft / WrapRight 모드: Floater > BlockUIContainer > Image
+        var floater = para.Inlines.OfType<Wpf.Floater>().FirstOrDefault();
+        if (floater is null) return false;
+        var innerBuc = floater.Blocks.OfType<Wpf.BlockUIContainer>().FirstOrDefault();
+        if (innerBuc is null) return false;
+        {
+            var (wpfImg, border) = FindImageInVisual(innerBuc.Child);
+            if (wpfImg?.Source is not System.Windows.Media.Imaging.BitmapSource) return false;
+            var mode = floater.HorizontalAlignment == System.Windows.HorizontalAlignment.Right
+                       ? ImageWrapMode.WrapRight
+                       : ImageWrapMode.WrapLeft;
+            var ha = mode == ImageWrapMode.WrapRight ? ImageHAlign.Right : ImageHAlign.Left;
+            img = BuildRecoveredImageBlock(wpfImg, border, para.Margin, mode, ha);
+            return true;
+        }
+    }
+
+    private static (System.Windows.Controls.Image? img, System.Windows.Controls.Border? border)
+        FindImageInVisual(System.Windows.UIElement? child) => child switch
+    {
+        System.Windows.Controls.Image i => (i, null),
+        System.Windows.Controls.Border b when b.Child is System.Windows.Controls.Image bi => (bi, b),
+        _ => (null, null),
+    };
+
+    private static ImageBlock BuildRecoveredImageBlock(
+        System.Windows.Controls.Image wpfImg,
+        System.Windows.Controls.Border? border,
+        System.Windows.Thickness margin,
+        ImageWrapMode mode,
+        ImageHAlign hAlign)
+    {
+        var ib = new ImageBlock { WrapMode = mode, HAlign = hAlign };
+
+        if (!double.IsNaN(wpfImg.Width)  && wpfImg.Width  > 0)
+            ib.WidthMm  = FlowDocumentBuilder.DipToMm(wpfImg.Width);
+        if (!double.IsNaN(wpfImg.Height) && wpfImg.Height > 0)
+            ib.HeightMm = FlowDocumentBuilder.DipToMm(wpfImg.Height);
+
+        if (margin.Top    > 0) ib.MarginTopMm    = FlowDocumentBuilder.DipToMm(margin.Top);
+        if (margin.Bottom > 0) ib.MarginBottomMm = FlowDocumentBuilder.DipToMm(margin.Bottom);
+
+        if (border is not null && border.BorderThickness.Left > 0)
+        {
+            ib.BorderThicknessPt = FlowDocumentBuilder.DipToPt(border.BorderThickness.Left);
+            if (border.BorderBrush is WpfMedia.SolidColorBrush scb)
+                ib.BorderColor = $"#{scb.Color.R:X2}{scb.Color.G:X2}{scb.Color.B:X2}";
+        }
+
+        if (wpfImg.Source is System.Windows.Media.Imaging.BitmapSource bmp)
+        {
+            try
+            {
+                using var ms = new System.IO.MemoryStream();
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                encoder.Save(ms);
+                ib.Data      = ms.ToArray();
+                ib.MediaType = "image/png";
+            }
+            catch { /* 인코딩 실패 시 Data 비워둠 — [이미지 누락] 플레이스홀더로 표시됨 */ }
+        }
+
+        return ib;
     }
 
     private static RunStyle Clone(RunStyle s) => new()

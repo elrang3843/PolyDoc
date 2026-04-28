@@ -330,6 +330,10 @@ public partial class MainWindow : Window
         BodyEditor.ContextMenu             = new System.Windows.Controls.ContextMenu();
         BodyEditor.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
         BodyEditor.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
+
+        // 붙여넣기 직후 FlowDocument 내 새로 삽입된 표에 EnsureCoreTable 을 적용한다.
+        // (이미지/도형은 FlowDocumentParser 의 fallback 이 저장 시점에 재구성하므로 별도 처리 불필요)
+        DataObject.AddPastingHandler(BodyEditor, OnBodyEditorPasting);
         BodyEditor.MouseLeave += (_, _) =>
         {
             if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
@@ -341,6 +345,28 @@ public partial class MainWindow : Window
         };
         _statusTimer.Tick += OnStatusTimerTick;
         _statusTimer.Start();
+    }
+
+    /// <summary>
+    /// 붙여넣기 완료 직후 FlowDocument 를 순회해 Tag=null 인 Wpf.Table 에 Core.Table 을 부착한다.
+    /// 이 시점에 EnsureCoreTable 을 호출해두면 우클릭 메뉴·열 리사이즈가 즉시 정상 동작한다.
+    /// DataObject.AddPastingHandler 는 실제 삽입 전에 발화하므로, 삽입 완료 후 처리를 위해
+    /// Dispatcher.BeginInvoke(DispatcherPriority.Background) 로 지연 실행한다.
+    /// </summary>
+    private void OnBodyEditorPasting(object sender, DataObjectPastingEventArgs e)
+    {
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+        {
+            foreach (var block in BodyEditor.Document.Blocks)
+            {
+                if (block is System.Windows.Documents.Table wpfTable && wpfTable.Tag is null)
+                    EnsureCoreTable(wpfTable);
+                // 중첩 섹션 등 다단 구조도 처리
+                else if (block is System.Windows.Documents.Section sec)
+                    foreach (var inner in sec.Blocks.OfType<System.Windows.Documents.Table>())
+                        if (inner.Tag is null) EnsureCoreTable(inner);
+            }
+        });
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
