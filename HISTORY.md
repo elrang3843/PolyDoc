@@ -53,6 +53,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Fixed** — **멀티-선택 복사 시 도형·이미지 개수가 증가(중복)되던 버그**. `CopyMultiSelectedToClipboard`에서 `ExtractCoreSelection()`이 반환한 항목 중 `ShapeObject`·`ImageBlock`·`Table`을 skip해 `_multiSelectedControls` 루프에서 이미 수집한 항목이 중복 직렬화되지 않도록 수정.
 
 ### Added
+- **Added** — **파일 > 미리보기 — 인쇄 미리보기**. Core 문서를 FlowDocumentBuilder 로 재빌드 후 XPS(메모리 스트림)로 변환해 DocumentViewer 에 표시. 총 페이지 수 표시 및 인쇄 버튼 제공. 메뉴와 툴바 버튼 모두 활성화.
 - **Added** — **도구 > 사전 — WebView2 미니 웹뷰어**. 네이버 국어사전·영한사전, 다음 사전, 표준국어대사전을 ComboBox로 선택해 사전 사이트를 임베드 브라우저(Microsoft.Web.WebView2)로 표시하는 비모달 플로팅 창 추가. 에디터에서 텍스트를 선택한 채 메뉴를 열면 선택 단어가 자동 검색어로 입력됨. 창 닫기는 숨김 처리(Hide)로 WebView2 세션 유지, 앱 종료 시 실제 해제.
 - **Added** — **편집용지 페이지 구분선 시각화**. 본문 내용이 한 페이지 높이를 초과하면 `PageBreakCanvas`에 페이지 경계마다 파선 구분선과 "─── N페이지 ───" 레이블을 표시. `PaperBorder.SizeChanged` 이벤트로 내용 길이 변화 시 자동 갱신.
 

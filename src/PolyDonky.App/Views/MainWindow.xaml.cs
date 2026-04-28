@@ -1134,6 +1134,14 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
+    private void OnPreviewClick(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var snapshot = _viewModel.GetPreviewDocument();
+        var wnd = new PrintPreviewWindow(snapshot) { Owner = this };
+        wnd.Show();
+    }
+
     private void OnDictMenuClick(object sender, System.Windows.RoutedEventArgs e)
     {
         var query = BodyEditor.Selection?.IsEmpty == false

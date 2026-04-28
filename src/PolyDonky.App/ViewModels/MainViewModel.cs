@@ -558,6 +558,10 @@ public partial class MainViewModel : ObservableObject
         RebuildFlowDocument();
     }
 
+    /// <summary>미리보기·인쇄용 — 현재 live FlowDocument 를 Core 로 동기화한 스냅샷을 반환.</summary>
+    public PolyDonkyument GetPreviewDocument()
+        => FlowDocumentParser.Parse(FlowDocument, _document);
+
     // ── 도형 (Insert > Shape) ────────────────────────────────────────────
     // 메뉴 클릭 → ViewModel 이 이벤트 발생 → View 가 드래그 생성 모드 진입.
     // 모델 갱신은 View 가 AddShapeToCurrentSection 으로 위임.
