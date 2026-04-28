@@ -19,6 +19,32 @@ public partial class MainWindow : Window
     private bool _suppressTextChanged;
     private DispatcherTimer? _statusTimer;
 
+    // ── 임베드 객체(이미지·이모지) WPF 드래그 이동 억제 ──────────────────
+    // WrapLeft/WrapRight 모드 그림은 FlowDocument Floater 로 렌더링되는데,
+    // RichTextBox 에서 Floater 위를 드래그하면 WPF 가 HorizontalAlignment 를 바꿔버린다.
+    // PreviewMouseMove 를 가로채 임베드 객체 위 드래그를 차단한다.
+    private bool _suppressEmbeddedObjectDrag;
+
+    private void OnEditorPreviewMouseDownTrackDrag(object sender, MouseButtonEventArgs e)
+    {
+        if (!_drawingTextBox) DeselectAllOverlays();
+        var pt = e.GetPosition(BodyEditor);
+        _suppressEmbeddedObjectDrag =
+            FindEmbeddedObjectAt(e.OriginalSource as System.Windows.DependencyObject, pt) is not null;
+    }
+
+    private void OnEditorPreviewMouseMoveBlockDrag(object sender, MouseEventArgs e)
+    {
+        if (!_suppressEmbeddedObjectDrag) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _suppressEmbeddedObjectDrag = false;
+            return;
+        }
+        // 드래그 임계거리 이상이면 WPF 기본 드래그(Floater 위치 변경 등) 억제.
+        e.Handled = true;
+    }
+
     // ── 글상자 드래그 생성 / 선택 상태 ────────────────────────────
     private bool _drawingTextBox;
     private bool _drawingInProgress;
@@ -59,10 +85,10 @@ public partial class MainWindow : Window
         }
 
         // RichTextBox 클릭 = 본문 편집 의도. 드래그 생성 모드가 아니면 글상자 선택 해제.
-        BodyEditor.PreviewMouseLeftButtonDown += (_, _) =>
-        {
-            if (!_drawingTextBox) DeselectAllOverlays();
-        };
+        // 동시에 임베드 객체(이미지·이모지) 위에서 드래그를 시작하는지 추적한다.
+        BodyEditor.PreviewMouseLeftButtonDown += OnEditorPreviewMouseDownTrackDrag;
+        BodyEditor.PreviewMouseMove           += OnEditorPreviewMouseMoveBlockDrag;
+        BodyEditor.PreviewMouseLeftButtonUp   += (_, _) => { _suppressEmbeddedObjectDrag = false; };
 
         // 이모지·이미지 우클릭 → 속성 컨텍스트 메뉴, 더블클릭 → 속성 다이얼로그
         BodyEditor.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;

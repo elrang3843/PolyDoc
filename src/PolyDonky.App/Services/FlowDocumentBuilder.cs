@@ -320,10 +320,14 @@ public static class FlowDocumentBuilder
 
         // Paragraph 는 비어 있어도 되지만, Tag 로 ImageBlock 을 보존해 라운드트립 가능.
         // 안에 Floater 만 두고 텍스트가 없으면 다음 Paragraph 의 텍스트가 자동으로 주변에 흐른다.
+        // FontSize=0.1 + Transparent 로 선택 하이라이트(파란 가로줄)가 보이지 않도록 억제.
         var paragraph = new Wpf.Paragraph(floater)
         {
-            Tag    = image,
-            Margin = new Thickness(0),
+            Tag        = image,
+            Margin     = new Thickness(0),
+            FontSize   = 0.1,
+            Foreground = WpfMedia.Brushes.Transparent,
+            Background = WpfMedia.Brushes.Transparent,
         };
         return paragraph;
     }
