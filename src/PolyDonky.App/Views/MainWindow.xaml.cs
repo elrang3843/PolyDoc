@@ -825,6 +825,8 @@ public partial class MainWindow : Window
         return wpfTable is not null;
     }
 
+    // ── 표 컨텍스트 메뉴 조립 ──────────────────────────────────────────────
+    // 새 표 전용 기능을 추가할 때는 이 메서드 안에만 항목을 추가하면 된다.
     private void AppendTablePropertyMenuItems(
         System.Windows.Controls.ContextMenu menu,
         System.Windows.Documents.Table wpfTable,
@@ -832,7 +834,6 @@ public partial class MainWindow : Window
         System.Windows.Documents.TableCell wpfCell,
         PolyDonky.Core.Table coreTable)
     {
-        // 행/열 인덱스로 코어 셀 찾기
         var rowGroup = wpfTable.RowGroups.FirstOrDefault();
         int rowIdx  = wpfRow  is not null && rowGroup is not null ? rowGroup.Rows.IndexOf(wpfRow) : -1;
         int cellIdx = wpfRow  is not null ? wpfRow.Cells.IndexOf(wpfCell) : -1;
@@ -842,9 +843,54 @@ public partial class MainWindow : Window
             ? coreTable.Rows[rowIdx].Cells[cellIdx]
             : null;
 
+        bool hasNextCell  = wpfRow is not null && cellIdx + 1 < wpfRow.Cells.Count;
+        bool hasNextRow   = rowIdx + 1 < coreTable.Rows.Count;
+        bool canSplit     = (coreCell?.ColumnSpan ?? 1) > 1 || (coreCell?.RowSpan ?? 1) > 1;
+
+        var items = new List<System.Windows.Controls.Control>();
+
+        // ── 행 ─────────────────────────────────────────────────────────
+        items.Add(new System.Windows.Controls.Separator());
+        items.Add(MakeMenuItem("위에 행 삽입(_A)",   () => TableOp_InsertRow(wpfTable, coreTable, rowIdx, above: true)));
+        items.Add(MakeMenuItem("아래에 행 삽입(_B)", () => TableOp_InsertRow(wpfTable, coreTable, rowIdx, above: false)));
+        var delRow = MakeMenuItem("행 삭제(_R)", () => TableOp_DeleteRow(wpfTable, coreTable, rowIdx));
+        delRow.IsEnabled = rowIdx >= 0;
+        items.Add(delRow);
+
+        // ── 열 ─────────────────────────────────────────────────────────
+        items.Add(new System.Windows.Controls.Separator());
+        items.Add(MakeMenuItem("왼쪽에 열 삽입(_L)",  () => TableOp_InsertColumn(wpfTable, coreTable, cellIdx, left: true)));
+        items.Add(MakeMenuItem("오른쪽에 열 삽입(_G)", () => TableOp_InsertColumn(wpfTable, coreTable, cellIdx, left: false)));
+        var delCol = MakeMenuItem("열 삭제(_C)", () => TableOp_DeleteColumn(wpfTable, coreTable, cellIdx));
+        delCol.IsEnabled = cellIdx >= 0;
+        items.Add(delCol);
+
+        // ── 셀 병합·분할 ────────────────────────────────────────────────
+        if (coreCell is not null && wpfRow is not null)
+        {
+            items.Add(new System.Windows.Controls.Separator());
+
+            var mergeRight = MakeMenuItem("우측 셀과 병합(_M)",
+                () => TableOp_MergeRight(wpfTable, coreTable, rowIdx, cellIdx, wpfRow, wpfCell, coreCell));
+            mergeRight.IsEnabled = hasNextCell;
+            items.Add(mergeRight);
+
+            var mergeBelow = MakeMenuItem("아래 셀과 병합(_D)",
+                () => TableOp_MergeBelow(wpfTable, coreTable, rowIdx, cellIdx, wpfRow, wpfCell, coreCell));
+            mergeBelow.IsEnabled = hasNextRow;
+            items.Add(mergeBelow);
+
+            var split = MakeMenuItem("셀 분할(_S)",
+                () => TableOp_SplitCell(wpfTable, coreTable, rowIdx, cellIdx, wpfRow, wpfCell, coreCell));
+            split.IsEnabled = canSplit;
+            items.Add(split);
+        }
+
+        // ── 속성 / 표 삭제 ──────────────────────────────────────────────
+        items.Add(new System.Windows.Controls.Separator());
         if (coreCell is not null)
         {
-            AppendPropertyMenuItem(menu, () =>
+            items.Add(MakeMenuItem("셀 속성(_P)...", () =>
             {
                 var dlg = new CellPropertiesWindow(coreCell) { Owner = this };
                 if (dlg.ShowDialog() == true)
@@ -854,19 +900,33 @@ public partial class MainWindow : Window
                         wpfCell, coreCell, isHeader);
                     _viewModel?.MarkDirty();
                 }
-            }, "셀 속성(_C)...");
+            }));
         }
-
-        AppendPropertyMenuItem(menu, () =>
+        items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
             var dlg = new TablePropertiesWindow(coreTable) { Owner = this };
-            if (dlg.ShowDialog() == true)
-                _viewModel?.MarkDirty();
-        }, "표 속성(_T)...");
+            if (dlg.ShowDialog() == true) _viewModel?.MarkDirty();
+        }));
+        items.Add(MakeMenuItem("표 삭제(_X)", () => TableOp_DeleteTable(wpfTable)));
+
+        // 메뉴에 추가 후 닫힘 시 자동 제거
+        foreach (var item in items) menu.Items.Add(item);
+        void Cleanup(object? s, System.Windows.RoutedEventArgs _ev)
+        {
+            menu.Closed -= Cleanup;
+            foreach (var ctrl in items) menu.Items.Remove(ctrl);
+        }
+        menu.Closed += Cleanup;
     }
 
-    /// <summary>BodyEditor 의 컨텍스트 메뉴에 구분선 + 속성 항목을 추가하고,
-    /// 메뉴 닫힘 시 자동으로 제거해 다음 일반 우클릭에 속성이 남지 않게 한다.</summary>
+    private static System.Windows.Controls.MenuItem MakeMenuItem(string header, Action onClick)
+    {
+        var item = new System.Windows.Controls.MenuItem { Header = header };
+        item.Click += (_, _) => onClick();
+        return item;
+    }
+
+    /// <summary>BodyEditor 컨텍스트 메뉴에 구분선 + 항목 하나를 추가하고 닫힘 시 제거.</summary>
     private static void AppendPropertyMenuItem(
         System.Windows.Controls.ContextMenu menu, Action onClick, string header)
     {
@@ -882,6 +942,217 @@ public partial class MainWindow : Window
             menu.Items.Remove(item);
         }
         menu.Closed += Cleanup;
+    }
+
+    // ── 표 구조 편집 연산 ────────────────────────────────────────────────
+    // 모델(coreTable)과 WPF 표(wpfTable)를 항상 동시에 갱신해 동기화를 유지한다.
+
+    private void TableOp_InsertRow(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable,
+        int rowIdx, bool above)
+    {
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+        if (rowGroup is null) return;
+
+        int colCount = coreTable.Columns.Count > 0 ? coreTable.Columns.Count
+            : (coreTable.Rows.Count > 0 ? coreTable.Rows.Max(r => r.Cells.Count) : 1);
+        int insertAt = above ? Math.Max(rowIdx, 0) : Math.Min(rowIdx + 1, coreTable.Rows.Count);
+
+        var newCoreRow = new PolyDonky.Core.TableRow();
+        for (int c = 0; c < colCount; c++)
+            newCoreRow.Cells.Add(new PolyDonky.Core.TableCell { Blocks = { Paragraph.Of(string.Empty) } });
+        coreTable.Rows.Insert(insertAt, newCoreRow);
+
+        var newWpfRow = new System.Windows.Documents.TableRow();
+        for (int c = 0; c < colCount; c++)
+            newWpfRow.Cells.Add(MakeEmptyWpfCell());
+        rowGroup.Rows.Insert(insertAt, newWpfRow);
+
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_DeleteRow(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable, int rowIdx)
+    {
+        if (rowIdx < 0 || rowIdx >= coreTable.Rows.Count) return;
+        if (coreTable.Rows.Count <= 1)
+        {
+            MessageBox.Show(this, "마지막 행은 삭제할 수 없습니다.", "행 삭제",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        coreTable.Rows.RemoveAt(rowIdx);
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+        if (rowGroup is not null && rowIdx < rowGroup.Rows.Count)
+            rowGroup.Rows.RemoveAt(rowIdx);
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_InsertColumn(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable,
+        int cellIdx, bool left)
+    {
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+        if (rowGroup is null) return;
+
+        int insertAt    = left ? Math.Max(cellIdx, 0) : cellIdx + 1;
+        double colWidth = coreTable.Columns.Count > 0 ? coreTable.Columns.Average(c => c.WidthMm) : 0;
+
+        coreTable.Columns.Insert(
+            Math.Min(insertAt, coreTable.Columns.Count),
+            new PolyDonky.Core.TableColumn { WidthMm = colWidth });
+        wpfTable.Columns.Insert(
+            Math.Min(insertAt, wpfTable.Columns.Count),
+            new System.Windows.Documents.TableColumn { Width = GridLength.Auto });
+
+        for (int r = 0; r < coreTable.Rows.Count; r++)
+        {
+            var coreRow = coreTable.Rows[r];
+            coreRow.Cells.Insert(
+                Math.Min(insertAt, coreRow.Cells.Count),
+                new PolyDonky.Core.TableCell { Blocks = { Paragraph.Of(string.Empty) } });
+
+            if (r < rowGroup.Rows.Count)
+            {
+                var wpfRow = rowGroup.Rows[r];
+                wpfRow.Cells.Insert(Math.Min(insertAt, wpfRow.Cells.Count), MakeEmptyWpfCell());
+            }
+        }
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_DeleteColumn(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable, int cellIdx)
+    {
+        if (cellIdx < 0 || coreTable.Columns.Count <= 1)
+        {
+            if (coreTable.Columns.Count <= 1)
+                MessageBox.Show(this, "마지막 열은 삭제할 수 없습니다.", "열 삭제",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+
+        if (cellIdx < coreTable.Columns.Count) coreTable.Columns.RemoveAt(cellIdx);
+        if (cellIdx < wpfTable.Columns.Count)  wpfTable.Columns.RemoveAt(cellIdx);
+
+        for (int r = 0; r < coreTable.Rows.Count; r++)
+        {
+            var coreRow = coreTable.Rows[r];
+            if (cellIdx < coreRow.Cells.Count) coreRow.Cells.RemoveAt(cellIdx);
+
+            if (rowGroup is not null && r < rowGroup.Rows.Count)
+            {
+                var wpfRow = rowGroup.Rows[r];
+                if (cellIdx < wpfRow.Cells.Count) wpfRow.Cells.RemoveAt(cellIdx);
+            }
+        }
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_MergeRight(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable,
+        int rowIdx, int cellIdx,
+        System.Windows.Documents.TableRow wpfRow, System.Windows.Documents.TableCell wpfCell,
+        PolyDonky.Core.TableCell coreCell)
+    {
+        if (cellIdx + 1 >= wpfRow.Cells.Count) return;
+
+        coreCell.ColumnSpan = Math.Max(coreCell.ColumnSpan, 1) + 1;
+        wpfCell.ColumnSpan  = coreCell.ColumnSpan;
+
+        int nextIdx = cellIdx + 1;
+        if (nextIdx < wpfRow.Cells.Count) wpfRow.Cells.RemoveAt(nextIdx);
+        if (rowIdx < coreTable.Rows.Count && nextIdx < coreTable.Rows[rowIdx].Cells.Count)
+            coreTable.Rows[rowIdx].Cells.RemoveAt(nextIdx);
+
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_MergeBelow(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable,
+        int rowIdx, int cellIdx,
+        System.Windows.Documents.TableRow wpfRow, System.Windows.Documents.TableCell wpfCell,
+        PolyDonky.Core.TableCell coreCell)
+    {
+        var rowGroup  = wpfTable.RowGroups.FirstOrDefault();
+        int nextRowIdx = rowIdx + 1;
+        if (nextRowIdx >= coreTable.Rows.Count) return;
+
+        coreCell.RowSpan = Math.Max(coreCell.RowSpan, 1) + 1;
+        wpfCell.RowSpan  = coreCell.RowSpan;
+
+        var nextCoreRow = coreTable.Rows[nextRowIdx];
+        if (cellIdx < nextCoreRow.Cells.Count) nextCoreRow.Cells.RemoveAt(cellIdx);
+
+        if (rowGroup is not null && nextRowIdx < rowGroup.Rows.Count)
+        {
+            var nextWpfRow = rowGroup.Rows[nextRowIdx];
+            if (cellIdx < nextWpfRow.Cells.Count) nextWpfRow.Cells.RemoveAt(cellIdx);
+        }
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_SplitCell(
+        System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable,
+        int rowIdx, int cellIdx,
+        System.Windows.Documents.TableRow wpfRow, System.Windows.Documents.TableCell wpfCell,
+        PolyDonky.Core.TableCell coreCell)
+    {
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+
+        if (coreCell.ColumnSpan > 1)
+        {
+            coreCell.ColumnSpan--;
+            wpfCell.ColumnSpan = coreCell.ColumnSpan;
+
+            var newCoreCell = new PolyDonky.Core.TableCell { Blocks = { Paragraph.Of(string.Empty) } };
+            if (rowIdx < coreTable.Rows.Count)
+                coreTable.Rows[rowIdx].Cells.Insert(cellIdx + 1, newCoreCell);
+            wpfRow.Cells.Insert(cellIdx + 1, MakeEmptyWpfCell());
+        }
+        else if (coreCell.RowSpan > 1)
+        {
+            coreCell.RowSpan--;
+            wpfCell.RowSpan = coreCell.RowSpan;
+
+            int nextRowIdx = rowIdx + 1;
+            if (nextRowIdx < coreTable.Rows.Count)
+            {
+                var newCoreCell = new PolyDonky.Core.TableCell { Blocks = { Paragraph.Of(string.Empty) } };
+                coreTable.Rows[nextRowIdx].Cells.Insert(
+                    Math.Min(cellIdx, coreTable.Rows[nextRowIdx].Cells.Count), newCoreCell);
+
+                if (rowGroup is not null && nextRowIdx < rowGroup.Rows.Count)
+                    rowGroup.Rows[nextRowIdx].Cells.Insert(
+                        Math.Min(cellIdx, rowGroup.Rows[nextRowIdx].Cells.Count), MakeEmptyWpfCell());
+            }
+        }
+        _viewModel?.MarkDirty();
+    }
+
+    private void TableOp_DeleteTable(System.Windows.Documents.Table wpfTable)
+    {
+        var block = BodyEditor.Document.Blocks
+            .FirstOrDefault(b => ReferenceEquals(b, wpfTable));
+        if (block is not null) BodyEditor.Document.Blocks.Remove(block);
+        _viewModel?.MarkDirty();
+    }
+
+    private static System.Windows.Documents.TableCell MakeEmptyWpfCell()
+    {
+        double borderDip = PolyDonky.App.Services.FlowDocumentBuilder.PtToDip(0.75);
+        double padLR     = PolyDonky.App.Services.FlowDocumentBuilder.MmToDip(1.5);
+        double padTB     = PolyDonky.App.Services.FlowDocumentBuilder.MmToDip(1.0);
+        var wcell = new System.Windows.Documents.TableCell
+        {
+            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8)),
+            BorderThickness = new Thickness(borderDip),
+            Padding         = new Thickness(padLR, padTB, padLR, padTB),
+        };
+        wcell.Blocks.Add(new System.Windows.Documents.Paragraph(
+            new System.Windows.Documents.Run(string.Empty)));
+        return wcell;
     }
 
 

@@ -44,6 +44,11 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — **표 삽입 기능 (1단계)**: 입력 → 표 메뉴에서 표 삽입 다이얼로그(행 수·열 수·너비·머리행 여부)를 통해 본문 커서 위치에 표를 삽입. 머리행(첫 행)은 회색 배경·굵은 글꼴로 표시.
+- **Added** — **표·셀 속성 편집 (3단계)**: 표 우클릭 메뉴에서 "셀 속성" / "표 속성" 다이얼로그 제공. 셀 속성 — 배경색(헥스+스와치), 텍스트 정렬(왼쪽·가운데·오른쪽·양쪽 맞춤), 여백(상하좌우 mm), 테두리(두께 pt + 색상). 표 속성 — 수평 정렬(왼쪽·가운데·오른쪽). 변경 즉시 FlowDocument에 반영.
+- **Added** — **표 구조 편집 (2단계)**: 표 우클릭 메뉴에서 행·열 삽입/삭제, 셀 병합(우측·아래), 셀 분할, 표 삭제 기능 제공. 핵심 모델(Core.Table)과 WPF FlowDocument 표를 동시에 업데이트해 별도 재빌드 없이 즉시 반영.
+
 ### Fixed
 - **Fixed** — **직선(Line) 도형이 저장→불러오기 후 사각형으로 표시되던 버그**. `ShapeKind.Line = 0` 이 enum 의 default(0) 이라 `JsonIgnoreCondition.WhenWritingDefault` 정책에 의해 `"kind"` 필드가 JSON 에서 누락되었고, 역직렬화 시 ShapeObject.Kind 의 C# 기본값(Rectangle) 으로 복원되었음. `ShapeObject.Kind` 에 `[JsonIgnore(Condition = JsonIgnoreCondition.Never)]` 를 명시해 항상 직렬화하도록 수정.
 
