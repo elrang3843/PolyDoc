@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — **맞춤법 검사 (도구 > 맞춤법 검사)**. Windows Spell Checking API 기반. 외부 의존성 없이 OS 설치 언어팩(한국어·영어 등)을 그대로 사용. 본문 편집기 및 글상자 내부 편집기 모두 적용. 도구 메뉴에서 켜기/끄기 토글(기본값: 켜짐). 앱 UI 언어 전환 시 검사 언어도 자동 갱신(`ko-KR` ↔ `en-US`).
+
 ### Fixed
 - **Fixed** — **인라인(본문 흐름) 모드 그림·도형이 멀티-선택 복사에서 누락되던 버그**. `CopyMultiSelectedToClipboard` 의 dedup 가드가 `ExtractCoreSelection` 결과에서 `ShapeObject`/`ImageBlock`/`Table` 을 모조리 스킵해, 오버레이 캔버스가 아닌 FlowDocument 내부 BlockUIContainer 로 존재하는 인라인 이미지/도형까지 함께 클립보드에서 떨어졌음. 수정: `_multiSelectedControls` 에서 수집한 Core 객체 참조를 `HashSet<object>(ReferenceEqualityComparer.Instance)` 로 기억해 두고, 본문 텍스트 선택 추출 시 **WPF Block.Tag 가 collectedRefs 와 동일한 참조** 인 경우만 스킵 — 인라인 그림·도형은 별도 Core 객체이므로 정상 포함된다. `ExtractCoreSelection` 호출이 아닌 동등 로직을 인라인으로 재구현해 `wpfBlock.Tag` 비교로 dedup.
 - **Fixed** — **직선(Line) 그리기 직후 끝점에서 더블클릭 시 크래시**. 직선은 2점 입력이 완료되면 `ClickCount=1` 핸들러 내부에서 `FinishPolylineShape()`(→ `_drawingPolyline_active = false`)가 자동 호출된다. 이후 WPF가 같은 클릭 이벤트의 `ClickCount=2` 이벤트를 별도 라우팅으로 발생시킬 때 `_drawingPolyline_active == false` 상태에서 예기치 않은 핸들러 분기로 크래시가 발생했다. `_suppressNextClickAfterLineFinish` 플래그를 추가해 자동마감 직후의 ClickCount≥2 이벤트를 `PaperBorder.PreviewMouseLeftButtonDown` 진입 즉시 소비·차단하도록 수정.

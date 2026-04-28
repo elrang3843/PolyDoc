@@ -262,7 +262,12 @@ public partial class TextBoxOverlay : UserControl
         _suppressTextChanged = false;
 
         ApplyShapeFromModel();
-        Loaded += (_, _) => UpdateHandlePositions();
+        Loaded += (_, _) =>
+        {
+            UpdateHandlePositions();
+            ApplySpellCheckLanguage();
+        };
+        Services.LanguageService.LanguageChanged += (_, _) => ApplySpellCheckLanguage();
         SizeChanged += (_, _) =>
         {
             UpdateHandlePositions();
@@ -295,6 +300,13 @@ public partial class TextBoxOverlay : UserControl
         IsSelected = true;
         InnerEditor.Focus();
         Keyboard.Focus(InnerEditor);
+    }
+
+    private void ApplySpellCheckLanguage()
+    {
+        var tag = Services.LanguageService.Current == Services.LanguageService.Language.English
+            ? "en-US" : "ko-KR";
+        InnerEditor.Language = System.Windows.Markup.XmlLanguage.GetLanguage(tag);
     }
 
     // ── 모양/배경/테두리 적용 ────────────────────────────────────────

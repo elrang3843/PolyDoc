@@ -91,6 +91,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string _numLockText = "Num";
 
+    [ObservableProperty]
+    private bool _isSpellCheckEnabled = true;
+
+    [RelayCommand]
+    private void ToggleSpellCheck() => IsSpellCheckEnabled = !IsSpellCheckEnabled;
+
     /// <summary>true 면 Overwrite (수정) 모드. 표시 외 실제 overwrite 동작은 후속 사이클.</summary>
     public bool IsOverwriteMode { get; private set; }
 

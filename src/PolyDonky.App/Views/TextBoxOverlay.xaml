@@ -51,7 +51,7 @@
                      Margin="6"
                      VerticalAlignment="Stretch"
                      HorizontalAlignment="Stretch"
-                     SpellCheck.IsEnabled="False"
+                     SpellCheck.IsEnabled="True"
                      TextChanged="OnInnerTextChanged"
                      FontFamily="{DynamicResource UiFont}">
             <RichTextBox.Resources>
