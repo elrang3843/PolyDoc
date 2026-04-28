@@ -27,6 +27,19 @@ public static class FlowDocumentBuilder
     public static double MmToDip(double mm) => mm * (DipsPerInch / MmPerInch);
     public static double DipToMm(double dip) => dip * (MmPerInch / DipsPerInch);
 
+    /// <summary>
+    /// FlowDocument 레이아웃 폭 = 종이 폭 − 좌여백 − 우여백 (최소 10 DIP).
+    /// BodyEditor.Padding 이 좌우 여백을 담당하므로 FlowDocument 는 본문 폭만 책임진다.
+    /// ApplyPageSettings 에서도 동일 공식으로 Document.PageWidth 를 갱신해야 한다.
+    /// </summary>
+    public static double ComputeContentWidthDip(PageSettings page)
+    {
+        double paperDip = MmToDip(page.EffectiveWidthMm);
+        double leftDip  = MmToDip(page.MarginLeftMm);
+        double rightDip = MmToDip(page.MarginRightMm);
+        return Math.Max(10.0, paperDip - leftDip - rightDip);
+    }
+
     public static Wpf.FlowDocument Build(PolyDonkyument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -36,13 +49,18 @@ public static class FlowDocumentBuilder
         // 첫 번째 섹션의 PageSettings 를 FlowDocument 기본으로 사용
         var page = document.Sections.FirstOrDefault()?.Page ?? new PageSettings();
 
-        double wDip = MmToDip(page.EffectiveWidthMm);
+        double wDip       = MmToDip(page.EffectiveWidthMm);
+        // BodyEditor.Padding 이 좌우 여백을 차지하므로 FlowDocument 의 레이아웃 폭은
+        // 본문 폭(종이 폭 − 좌여백 − 우여백)으로 설정해야 한다.
+        // PageWidth = 종이 전체 폭으로 두면 HorizontalAlignment.Right Floater 를 비롯한
+        // 모든 우측 정렬 객체가 '우측 여백' 만큼 오른쪽으로 밀려 클리핑된다.
+        double contentWDip = ComputeContentWidthDip(page);
 
         var fd = new Wpf.FlowDocument
         {
             FontFamily  = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
             FontSize    = PtToDip(11),
-            PageWidth   = wDip,
+            PageWidth   = contentWDip,
             PagePadding = new Thickness(0),
         };
 
@@ -64,9 +82,8 @@ public static class FlowDocumentBuilder
         // (RichTextBox 에서는 시각적 효과가 제한적이나 PageViewer/Print 에서 적용됨)
         if (page.ColumnCount > 1)
         {
-            double gapDip     = MmToDip(page.ColumnGapMm);
-            double contentDip = wDip - MmToDip(page.MarginLeftMm) - MmToDip(page.MarginRightMm);
-            fd.ColumnWidth = Math.Max(10, (contentDip - gapDip * (page.ColumnCount - 1)) / page.ColumnCount);
+            double gapDip = MmToDip(page.ColumnGapMm);
+            fd.ColumnWidth = Math.Max(10, (contentWDip - gapDip * (page.ColumnCount - 1)) / page.ColumnCount);
             fd.ColumnGap   = gapDip;
         }
 

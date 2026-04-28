@@ -558,6 +558,12 @@ public partial class MainWindow : Window
         {
             PaperBorder.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "Surface");
         }
+
+        // FlowDocument.PageWidth 를 본문 폭(종이 폭 − 좌여백 − 우여백)으로 갱신.
+        // Build() 에서 초기값을 설정하지만, 여백 변경 시에도 즉시 반영되어야
+        // 우측 정렬 객체(WrapRight Floater 등)가 정확한 위치에 그려진다.
+        BodyEditor.Document.PageWidth =
+            PolyDonky.App.Services.FlowDocumentBuilder.ComputeContentWidthDip(page);
     }
 
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
