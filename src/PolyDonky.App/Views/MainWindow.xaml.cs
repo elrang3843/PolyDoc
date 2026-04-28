@@ -41,6 +41,16 @@ public partial class MainWindow : Window
         if (!_drawingTextBox) DeselectAllOverlays();
         var pt = e.GetPosition(BodyEditor);
 
+        // Alt + 클릭 → BehindText 그림(BodyEditor 뒤 UnderlayImageCanvas) 드래그 시작.
+        // 일반 클릭은 본문 텍스트 선택을 위해 양보 — 텍스트 위에 그림이 깔린 영역에서도 편집 가능.
+        if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0 &&
+            FindUnderlayImageAt(pt) is { } underlayCtrl)
+        {
+            StartUnderlayImageDrag(underlayCtrl, e);
+            e.Handled = true;
+            return;
+        }
+
         var found = FindEmbeddedObjectAt(e.OriginalSource as System.Windows.DependencyObject, pt);
         if (found is { container: System.Windows.Documents.Block blk } &&
             GetImageBlockFromBlock(blk) is { } imgModel)
@@ -54,6 +64,65 @@ public partial class MainWindow : Window
         {
             _suppressEmbeddedObjectDrag = false;
         }
+    }
+
+    // ── BehindText 그림 Alt+드래그 ───────────────────────────────────────
+    // UnderlayImageCanvas 자식은 BodyEditor 뒤에 있어 일반적으로 마우스를 받을 수 없다.
+    // BodyEditor 가 mouse capture 를 가지고 이벤트를 underlay 그림에 직접 라우팅한다.
+    private void StartUnderlayImageDrag(System.Windows.FrameworkElement fe, MouseButtonEventArgs e)
+    {
+        if (fe.Parent is not System.Windows.Controls.Canvas canvas) return;
+
+        // 더블클릭 → 속성 다이얼로그
+        if (e.ClickCount == 2 && fe.Tag is PolyDonky.Core.ImageBlock dblImg)
+        {
+            OpenOverlayImageProperties(dblImg);
+            return;
+        }
+
+        _draggingOverlayImage = fe;
+        _overlayDragStart     = e.GetPosition(canvas);
+        _overlayDragStartLeft = System.Windows.Controls.Canvas.GetLeft(fe);
+        _overlayDragStartTop  = System.Windows.Controls.Canvas.GetTop(fe);
+        if (double.IsNaN(_overlayDragStartLeft)) _overlayDragStartLeft = 0;
+        if (double.IsNaN(_overlayDragStartTop))  _overlayDragStartTop  = 0;
+        _overlayDragMoved = false;
+        BodyEditor.CaptureMouse();
+        BodyEditor.MouseMove         += OnUnderlayImageDragMove;
+        BodyEditor.MouseLeftButtonUp += OnUnderlayImageDragUp;
+    }
+
+    private void OnUnderlayImageDragMove(object sender, MouseEventArgs e)
+    {
+        if (_draggingOverlayImage is not { } fe) return;
+        if (fe.Parent is not System.Windows.Controls.Canvas canvas) return;
+        var pos = e.GetPosition(canvas);
+        double dx = pos.X - _overlayDragStart.X;
+        double dy = pos.Y - _overlayDragStart.Y;
+        if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5) _overlayDragMoved = true;
+        System.Windows.Controls.Canvas.SetLeft(fe, _overlayDragStartLeft + dx);
+        System.Windows.Controls.Canvas.SetTop (fe, _overlayDragStartTop  + dy);
+    }
+
+    private void OnUnderlayImageDragUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_draggingOverlayImage is not { } fe) return;
+        BodyEditor.ReleaseMouseCapture();
+        BodyEditor.MouseMove         -= OnUnderlayImageDragMove;
+        BodyEditor.MouseLeftButtonUp -= OnUnderlayImageDragUp;
+        _draggingOverlayImage = null;
+
+        if (_overlayDragMoved && fe.Tag is PolyDonky.Core.ImageBlock img)
+        {
+            double left = System.Windows.Controls.Canvas.GetLeft(fe);
+            double top  = System.Windows.Controls.Canvas.GetTop(fe);
+            if (double.IsNaN(left)) left = 0;
+            if (double.IsNaN(top))  top  = 0;
+            img.OverlayXMm = Services.FlowDocumentBuilder.DipToMm(left);
+            img.OverlayYMm = Services.FlowDocumentBuilder.DipToMm(top);
+            _viewModel?.MarkDirty();
+        }
+        e.Handled = true;
     }
 
     private void OnEditorPreviewMouseMoveBlockDrag(object sender, MouseEventArgs e)
@@ -639,19 +708,32 @@ public partial class MainWindow : Window
         // 기본 컨텍스트 메뉴(잘라내기/복사/붙여넣기)를 그대로 두고,
         // 이모지·이미지 위에서 우클릭한 경우에만 구분선 + 속성 항목을 동적으로 추가.
         var pt = System.Windows.Input.Mouse.GetPosition(BodyEditor);
-        if (FindEmbeddedObjectAt(e.OriginalSource, pt) is not { } found) return;
 
         var menu = BodyEditor.ContextMenu;
         if (menu is null) return;
 
-        var sep  = new System.Windows.Controls.Separator();
-        var item = new System.Windows.Controls.MenuItem { Header = "속성(_P)..." };
-        item.Click += (_, _) => OpenEmbeddedObjectProperties(found.img, found.container);
+        // BehindText 그림은 BodyEditor 뒤(UnderlayImageCanvas)에 있어 일반 hit-test 로 찾을 수 없다.
+        // BodyEditor 우클릭 시 마우스 위치 아래 underlay 그림이 있으면 그 그림 속성으로 라우팅.
+        if (FindUnderlayImageAt(pt) is { Tag: PolyDonky.Core.ImageBlock underlayImg })
+        {
+            AppendPropertyMenuItem(menu, () => OpenOverlayImageProperties(underlayImg), "그림 속성(_P)...");
+            return;
+        }
 
+        if (FindEmbeddedObjectAt(e.OriginalSource, pt) is not { } found) return;
+        AppendPropertyMenuItem(menu, () => OpenEmbeddedObjectProperties(found.img, found.container), "속성(_P)...");
+    }
+
+    /// <summary>BodyEditor 의 컨텍스트 메뉴에 구분선 + 속성 항목을 추가하고,
+    /// 메뉴 닫힘 시 자동으로 제거해 다음 일반 우클릭에 속성이 남지 않게 한다.</summary>
+    private static void AppendPropertyMenuItem(
+        System.Windows.Controls.ContextMenu menu, Action onClick, string header)
+    {
+        var sep  = new System.Windows.Controls.Separator();
+        var item = new System.Windows.Controls.MenuItem { Header = header };
+        item.Click += (_, _) => onClick();
         menu.Items.Add(sep);
         menu.Items.Add(item);
-
-        // 메뉴 닫힘 시 동적으로 추가한 항목을 제거 — 다음 일반 우클릭에 속성이 남지 않도록.
         void Cleanup(object? s, System.Windows.RoutedEventArgs _ev)
         {
             menu.Closed -= Cleanup;
@@ -659,6 +741,28 @@ public partial class MainWindow : Window
             menu.Items.Remove(item);
         }
         menu.Closed += Cleanup;
+    }
+
+    /// <summary>UnderlayImageCanvas 자식 중 주어진 점(BodyEditor / PaperBorder 좌표) 아래에 있는 첫 객체를 반환.
+    /// BehindText 그림은 BodyEditor 뒤에 있어 일반 hit-test 로 찾을 수 없으므로 직접 bbox 검사로 라우팅한다.</summary>
+    private System.Windows.FrameworkElement? FindUnderlayImageAt(Point pt)
+    {
+        foreach (var child in UnderlayImageCanvas.Children)
+        {
+            if (child is not System.Windows.FrameworkElement fe) continue;
+            double left = System.Windows.Controls.Canvas.GetLeft(fe);
+            double top  = System.Windows.Controls.Canvas.GetTop(fe);
+            if (double.IsNaN(left)) left = 0;
+            if (double.IsNaN(top))  top  = 0;
+            double w = fe.ActualWidth  > 0 ? fe.ActualWidth  : fe.Width;
+            double h = fe.ActualHeight > 0 ? fe.ActualHeight : fe.Height;
+            if (double.IsNaN(w) || w <= 0) continue;
+            if (double.IsNaN(h) || h <= 0) continue;
+            if (pt.X >= left && pt.X <= left + w &&
+                pt.Y >= top  && pt.Y <= top  + h)
+                return fe;
+        }
+        return null;
     }
 
     private void OnEmbeddedObjectDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -735,9 +839,29 @@ public partial class MainWindow : Window
         else if (container is System.Windows.Documents.Block oldBlock &&
                  GetImageBlockFromBlock(oldBlock) is { } imageBlock)
         {
+            // 모드 전환 전 화면 위치 캡처 — overlay 모드(InFrontOfText/BehindText) 로 전환 시
+            // 페이지 좌상단(0,0) 으로 점프하지 않고 현재 위치를 그대로 유지하도록 한다.
+            // PaperBorder 기준 좌표 = OverlayImageCanvas/UnderlayImageCanvas 좌표.
+            var prevMode = imageBlock.WrapMode;
+            Point currentPos;
+            try { currentPos = imgControl.TransformToVisual(PaperBorder).Transform(new Point(0, 0)); }
+            catch { currentPos = new Point(0, 0); }
+
             var dlg = new ImagePropertiesWindow(imageBlock) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
+                // 모드 전환 (non-overlay → overlay) 이고 좌표가 기본값(0,0)이면 캡처한 위치 적용.
+                bool toOverlay =
+                    prevMode is not (PolyDonky.Core.ImageWrapMode.InFrontOfText
+                                  or PolyDonky.Core.ImageWrapMode.BehindText)
+                    && imageBlock.WrapMode is (PolyDonky.Core.ImageWrapMode.InFrontOfText
+                                            or PolyDonky.Core.ImageWrapMode.BehindText);
+                if (toOverlay && imageBlock.OverlayXMm == 0 && imageBlock.OverlayYMm == 0)
+                {
+                    imageBlock.OverlayXMm = Services.FlowDocumentBuilder.DipToMm(currentPos.X);
+                    imageBlock.OverlayYMm = Services.FlowDocumentBuilder.DipToMm(currentPos.Y);
+                }
+
                 // WrapMode 변경 시 컨테이너 종류가 달라질 수 있음
                 // (BlockUIContainer ↔ Paragraph+Floater ↔ 빈 placeholder for overlay).
                 // BuildImage 가 적절한 Block 타입을 반환하므로 그걸 그대로 교체.
