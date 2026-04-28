@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Documents;
+using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Xps.Packaging;
 using PolyDonky.Core;
@@ -45,8 +48,14 @@ public partial class PrintPreviewWindow : Window
 
             _tmpXpsPath = Path.Combine(Path.GetTempPath(), $"pdpreview_{Guid.NewGuid():N}.xps");
 
-            var paginator = ((System.Windows.Documents.IDocumentPaginatorSource)fd).DocumentPaginator;
-            paginator.PageSize = new Size(_pageWidthDip, _pageHeightDip);
+            var innerPaginator = ((System.Windows.Documents.IDocumentPaginatorSource)fd).DocumentPaginator;
+            innerPaginator.PageSize = new Size(_pageWidthDip, _pageHeightDip);
+
+            // 글상자·오버레이 도형/그림/표는 FlowDocument 가 표현 못 하므로 첫 페이지에 합성한다.
+            var overlays = BuildOverlays(doc);
+            var paginator = overlays.Count > 0
+                ? new OverlayCompositingPaginator(innerPaginator, overlays, new Size(_pageWidthDip, _pageHeightDip))
+                : innerPaginator;
 
             using (var xpsWrite = new XpsDocument(_tmpXpsPath, FileAccess.ReadWrite))
                 XpsDocument.CreateXpsDocumentWriter(xpsWrite).Write(paginator);
@@ -143,6 +152,133 @@ public partial class PrintPreviewWindow : Window
 
     private void OnCloseClick(object sender, RoutedEventArgs e)
         => Close();
+
+    // ── 오버레이 합성 ────────────────────────────────────────────────────
+
+    private readonly record struct OverlayItem(UIElement Element, double X, double Y, bool Behind);
+
+    /// <summary>
+    /// 모델에서 글상자·오버레이 그림/도형/표를 추출해 페이지 좌표(DIP)와 함께 반환한다.
+    /// (XMm/YMm, OverlayXMm/OverlayYMm 모두 페이지 좌상단 원점 기준이므로 단순 단위 변환만 한다.)
+    /// </summary>
+    private static List<OverlayItem> BuildOverlays(PolyDonkyument doc)
+    {
+        var list = new List<OverlayItem>();
+        var section = doc.Sections.FirstOrDefault();
+        if (section is null) return list;
+
+        // 글상자
+        foreach (var tb in section.FloatingObjects.OfType<TextBoxObject>())
+        {
+            var ctrl = new TextBoxOverlay(tb)
+            {
+                Width  = Fdb.MmToDip(tb.WidthMm),
+                Height = Fdb.MmToDip(tb.HeightMm),
+            };
+            list.Add(new OverlayItem(ctrl, Fdb.MmToDip(tb.XMm), Fdb.MmToDip(tb.YMm), Behind: false));
+        }
+
+        // 본문 블록 중 오버레이 모드 항목
+        foreach (var block in section.Blocks)
+        {
+            switch (block)
+            {
+                case ImageBlock img when img.WrapMode is ImageWrapMode.InFrontOfText
+                                                       or ImageWrapMode.BehindText:
+                {
+                    var ctrl = Fdb.BuildOverlayImageControl(img);
+                    if (ctrl is null) break;
+                    list.Add(new OverlayItem(ctrl,
+                        Fdb.MmToDip(img.OverlayXMm), Fdb.MmToDip(img.OverlayYMm),
+                        Behind: img.WrapMode == ImageWrapMode.BehindText));
+                    break;
+                }
+                case ShapeObject shape when shape.WrapMode is ImageWrapMode.InFrontOfText
+                                                            or ImageWrapMode.BehindText:
+                {
+                    var ctrl = Fdb.BuildOverlayShapeControl(shape);
+                    list.Add(new OverlayItem(ctrl,
+                        Fdb.MmToDip(shape.OverlayXMm), Fdb.MmToDip(shape.OverlayYMm),
+                        Behind: shape.WrapMode == ImageWrapMode.BehindText));
+                    break;
+                }
+                case Table tbl when tbl.WrapMode != TableWrapMode.Block:
+                {
+                    var ctrl = Fdb.BuildOverlayTableControl(tbl);
+                    if (ctrl is null) break;
+                    list.Add(new OverlayItem(ctrl,
+                        Fdb.MmToDip(tbl.OverlayXMm), Fdb.MmToDip(tbl.OverlayYMm),
+                        Behind: tbl.WrapMode == TableWrapMode.BehindText));
+                    break;
+                }
+            }
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// FlowDocument paginator 를 래핑해 첫 페이지에 오버레이 비주얼을 합성한다.
+    /// BehindText 항목은 본문 뒤, InFrontOfText 항목은 본문 위에 그린다.
+    /// (현재 모델은 오버레이의 페이지 인덱스를 보관하지 않아 전부 첫 페이지에 합성)
+    /// </summary>
+    private sealed class OverlayCompositingPaginator : DocumentPaginator
+    {
+        private readonly DocumentPaginator _inner;
+        private readonly IReadOnlyList<OverlayItem> _overlays;
+        private readonly Size _pageSize;
+
+        public OverlayCompositingPaginator(DocumentPaginator inner,
+            IReadOnlyList<OverlayItem> overlays, Size pageSize)
+        {
+            _inner    = inner;
+            _overlays = overlays;
+            _pageSize = pageSize;
+        }
+
+        public override DocumentPage GetPage(int pageNumber)
+        {
+            var inner = _inner.GetPage(pageNumber);
+            if (pageNumber != 0 || _overlays.Count == 0) return inner;
+
+            var container = new ContainerVisual();
+
+            // BehindText 먼저
+            foreach (var ov in _overlays)
+                if (ov.Behind) AddElementAt(container, ov);
+
+            // 본문 페이지 visual — 다른 visual 부모를 가지지 않도록 ContainerVisual 로 한 번 더 감싼다.
+            var bodyHost = new ContainerVisual();
+            bodyHost.Children.Add(inner.Visual);
+            container.Children.Add(bodyHost);
+
+            // InFrontOfText 마지막
+            foreach (var ov in _overlays)
+                if (!ov.Behind) AddElementAt(container, ov);
+
+            return new DocumentPage(container, _pageSize, inner.BleedBox, inner.ContentBox);
+        }
+
+        private static void AddElementAt(ContainerVisual host, OverlayItem ov)
+        {
+            var e = ov.Element;
+            double w = ov.Element is FrameworkElement fe && !double.IsNaN(fe.Width)  && fe.Width  > 0 ? fe.Width  : double.PositiveInfinity;
+            double h = ov.Element is FrameworkElement fe2 && !double.IsNaN(fe2.Height) && fe2.Height > 0 ? fe2.Height : double.PositiveInfinity;
+            e.Measure(new Size(w, h));
+            var sz = new Size(
+                double.IsInfinity(w) ? e.DesiredSize.Width  : w,
+                double.IsInfinity(h) ? e.DesiredSize.Height : h);
+            e.Arrange(new Rect(ov.X, ov.Y, sz.Width, sz.Height));
+            host.Children.Add(e);
+        }
+
+        public override bool                       IsPageCountValid    => _inner.IsPageCountValid;
+        public override int                        PageCount           => _inner.PageCount;
+        public override Size                       PageSize            { get => _inner.PageSize; set => _inner.PageSize = value; }
+        public override IDocumentPaginatorSource   Source              => _inner.Source;
+        public override void                       ComputePageCount()  => _inner.ComputePageCount();
+    }
+
+    // ── Window lifecycle ─────────────────────────────────────────────────
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
