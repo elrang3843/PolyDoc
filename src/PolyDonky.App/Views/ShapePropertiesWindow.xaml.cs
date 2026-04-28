@@ -32,13 +32,13 @@ public partial class ShapePropertiesWindow : Window
         TxtOverlayY.Text = _shape.OverlayYMm.ToString("0.##");
 
         // ── 선 ────────────────────────────────────────────────────────────
-        TxtStrokeColor.Text = _shape.StrokeColor ?? "#000000";
-        TxtStrokePt.Text    = _shape.StrokeThicknessPt.ToString("0.##");
+        StrokeColorPicker.ColorText = _shape.StrokeColor ?? "#000000";
+        TxtStrokePt.Text            = _shape.StrokeThicknessPt.ToString("0.##");
         SelectComboByTag(CboStrokeDash, _shape.StrokeDash.ToString());
 
         // ── 채우기 ────────────────────────────────────────────────────────
-        TxtFillColor.Text   = _shape.FillColor ?? string.Empty;
-        TxtFillOpacity.Text = _shape.FillOpacity.ToString("0.##");
+        FillColorPicker.ColorText = _shape.FillColor ?? string.Empty;
+        TxtFillOpacity.Text       = _shape.FillOpacity.ToString("0.##");
 
         // ── 화살촉 ────────────────────────────────────────────────────────
         SelectComboByTag(CboStartArrow, _shape.StartArrow.ToString());
@@ -63,10 +63,10 @@ public partial class ShapePropertiesWindow : Window
         TxtCornerRadius.IsEnabled = hasCornerRad;
 
         // ── 레이블 ────────────────────────────────────────────────────────
-        TxtLabelText.Text  = _shape.LabelText  ?? string.Empty;
-        TxtLabelFont.Text  = _shape.LabelFontFamily ?? string.Empty;
-        TxtLabelSize.Text  = _shape.LabelFontSizePt.ToString("0.##");
-        TxtLabelColor.Text = _shape.LabelColor ?? string.Empty;
+        TxtLabelText.Text             = _shape.LabelText  ?? string.Empty;
+        TxtLabelFont.Text             = _shape.LabelFontFamily ?? string.Empty;
+        TxtLabelSize.Text             = _shape.LabelFontSizePt.ToString("0.##");
+        LabelColorPicker.ColorText    = _shape.LabelColor ?? string.Empty;
         ChkLabelBold.IsChecked   = _shape.LabelBold;
         ChkLabelItalic.IsChecked = _shape.LabelItalic;
     }
@@ -97,14 +97,14 @@ public partial class ShapePropertiesWindow : Window
         if (double.TryParse(TxtOverlayY.Text, out double oy)) _shape.OverlayYMm = oy;
 
         // ── 선 ────────────────────────────────────────────────────────────
-        _shape.StrokeColor = string.IsNullOrWhiteSpace(TxtStrokeColor.Text) ? "#000000" : TxtStrokeColor.Text.Trim();
+        _shape.StrokeColor = string.IsNullOrWhiteSpace(StrokeColorPicker.ColorText) ? "#000000" : StrokeColorPicker.ColorText.Trim();
         if (double.TryParse(TxtStrokePt.Text, out double sp) && sp >= 0) _shape.StrokeThicknessPt = sp;
         if (GetComboTag(CboStrokeDash) is string dashStr &&
             Enum.TryParse<StrokeDash>(dashStr, out var dash))
             _shape.StrokeDash = dash;
 
         // ── 채우기 ────────────────────────────────────────────────────────
-        _shape.FillColor = string.IsNullOrWhiteSpace(TxtFillColor.Text) ? null : TxtFillColor.Text.Trim();
+        _shape.FillColor = string.IsNullOrWhiteSpace(FillColorPicker.ColorText) ? null : FillColorPicker.ColorText.Trim();
         if (double.TryParse(TxtFillOpacity.Text, out double fo))
             _shape.FillOpacity = Math.Clamp(fo, 0, 1);
 
@@ -125,7 +125,7 @@ public partial class ShapePropertiesWindow : Window
         _shape.LabelText       = string.IsNullOrWhiteSpace(TxtLabelText.Text) ? null : TxtLabelText.Text;
         _shape.LabelFontFamily = string.IsNullOrWhiteSpace(TxtLabelFont.Text) ? null : TxtLabelFont.Text.Trim();
         if (double.TryParse(TxtLabelSize.Text, out double ls) && ls > 0) _shape.LabelFontSizePt = ls;
-        _shape.LabelColor  = string.IsNullOrWhiteSpace(TxtLabelColor.Text) ? null : TxtLabelColor.Text.Trim();
+        _shape.LabelColor  = string.IsNullOrWhiteSpace(LabelColorPicker.ColorText) ? null : LabelColorPicker.ColorText.Trim();
         _shape.LabelBold   = ChkLabelBold.IsChecked   == true;
         _shape.LabelItalic = ChkLabelItalic.IsChecked == true;
 

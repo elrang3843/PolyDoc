@@ -1,6 +1,7 @@
 <Window x:Class="PolyDonky.App.Views.ShapePropertiesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctrl="clr-namespace:PolyDonky.App.Controls"
         Title="도형 속성"
         Width="480" SizeToContent="Height"
         ResizeMode="NoResize"
@@ -99,16 +100,22 @@
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Label Grid.Row="0" Grid.Column="0" Content="색상 (hex):" VerticalAlignment="Center" />
-                        <TextBox x:Name="TxtStrokeColor" Grid.Row="0" Grid.Column="1" Margin="4,2" />
-                        <Label Grid.Row="0" Grid.Column="2" Content="두께 (pt):" VerticalAlignment="Center" />
-                        <TextBox x:Name="TxtStrokePt" Grid.Row="0" Grid.Column="3" Margin="4,2" />
+                        <Label Grid.Row="0" Grid.Column="0" Content="색상:" VerticalAlignment="Center" />
+                        <ctrl:ColorPickerBox x:Name="StrokeColorPicker"
+                                             Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3"
+                                             AllowEmpty="False" Margin="4,2" />
 
-                        <Label Grid.Row="1" Grid.Column="0" Content="선 종류:" VerticalAlignment="Center" />
-                        <ComboBox x:Name="CboStrokeDash" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3"
+                        <Label Grid.Row="2" Grid.Column="0" Content="두께 (pt):" VerticalAlignment="Center" />
+                        <TextBox x:Name="TxtStrokePt" Grid.Row="2" Grid.Column="1" Margin="4,2" />
+
+                        <Label Grid.Row="4" Grid.Column="0" Content="선 종류:" VerticalAlignment="Center" />
+                        <ComboBox x:Name="CboStrokeDash" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3"
                                   Margin="4,2">
                             <ComboBoxItem Tag="Solid">실선</ComboBoxItem>
                             <ComboBoxItem Tag="Dashed">파선</ComboBoxItem>
@@ -127,11 +134,20 @@
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Label Grid.Column="0" Content="색상 (hex):" VerticalAlignment="Center" />
-                        <TextBox x:Name="TxtFillColor" Grid.Column="1" Margin="4,2"
-                                 ToolTip="비워두면 채우기 없음(투명)" />
-                        <Label Grid.Column="2" Content="불투명도:" VerticalAlignment="Center" />
-                        <TextBox x:Name="TxtFillOpacity" Grid.Column="3" Margin="4,2"
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Row="0" Grid.Column="0" Content="색상:" VerticalAlignment="Center" />
+                        <ctrl:ColorPickerBox x:Name="FillColorPicker"
+                                             Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3"
+                                             AllowEmpty="True" Margin="4,2"
+                                             ToolTip="비워두면 채우기 없음(투명)" />
+
+                        <Label Grid.Row="2" Grid.Column="0" Content="불투명도:" VerticalAlignment="Center" />
+                        <TextBox x:Name="TxtFillOpacity" Grid.Row="2" Grid.Column="1" Margin="4,2"
                                  ToolTip="0.0 ~ 1.0" />
                     </Grid>
                 </GroupBox>
@@ -220,8 +236,10 @@
                         <Label Grid.Row="1" Grid.Column="2" Content="크기 (pt):" VerticalAlignment="Center" />
                         <TextBox x:Name="TxtLabelSize" Grid.Row="1" Grid.Column="3" Margin="4,2" />
 
-                        <Label Grid.Row="2" Grid.Column="0" Content="색상 (hex):" VerticalAlignment="Center" />
-                        <TextBox x:Name="TxtLabelColor" Grid.Row="2" Grid.Column="1" Margin="4,2" />
+                        <Label Grid.Row="2" Grid.Column="0" Content="색상:" VerticalAlignment="Center" />
+                        <ctrl:ColorPickerBox x:Name="LabelColorPicker"
+                                             Grid.Row="2" Grid.Column="1"
+                                             AllowEmpty="True" Margin="4,2" />
                         <StackPanel Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2"
                                     Orientation="Horizontal" Margin="4,2">
                             <CheckBox x:Name="ChkLabelBold"   Content="굵게"   VerticalAlignment="Center" Margin="0,0,8,0" />
