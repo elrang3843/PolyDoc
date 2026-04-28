@@ -48,14 +48,11 @@ namespace PolyDonky.App.Properties
         internal static string MenuInsert            => Get(nameof(MenuInsert));
         internal static string MenuInsertTextBox     => Get(nameof(MenuInsertTextBox));
         internal static string MenuInsertTable       => Get(nameof(MenuInsertTable));
-        internal static string MenuInsertGraph       => Get(nameof(MenuInsertGraph));
         internal static string MenuInsertSpecialChar => Get(nameof(MenuInsertSpecialChar));
         internal static string MenuInsertEquation    => Get(nameof(MenuInsertEquation));
         internal static string MenuInsertEmoji       => Get(nameof(MenuInsertEmoji));
         internal static string MenuInsertShape       => Get(nameof(MenuInsertShape));
         internal static string MenuInsertImage       => Get(nameof(MenuInsertImage));
-        internal static string MenuInsertSign        => Get(nameof(MenuInsertSign));
-
         // ── 메뉴: 서식 ─────────────────────────────────────────────
         internal static string MenuFormat            => Get(nameof(MenuFormat));
         internal static string MenuFormatChar        => Get(nameof(MenuFormatChar));
@@ -67,8 +64,6 @@ namespace PolyDonky.App.Properties
         internal static string MenuToolsSettings     => Get(nameof(MenuToolsSettings));
         internal static string MenuToolsDict         => Get(nameof(MenuToolsDict));
         internal static string MenuToolsSpell        => Get(nameof(MenuToolsSpell));
-        internal static string MenuToolsSignMaker    => Get(nameof(MenuToolsSignMaker));
-
         // ── 메뉴: 도움말 ────────────────────────────────────────────
         internal static string MenuHelp              => Get(nameof(MenuHelp));
         internal static string MenuHelpManual        => Get(nameof(MenuHelpManual));

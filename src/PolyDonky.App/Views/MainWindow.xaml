@@ -86,8 +86,7 @@
                 </MenuItem>
                 <MenuItem Header="{Binding MenuInsertTable, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertTable" />
-                <MenuItem Header="{Binding MenuInsertGraph, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
-                <MenuItem Header="{Binding MenuInsertSpecialChar, Source={x:Static svc:LocalizedStrings.Instance}}"
+<MenuItem Header="{Binding MenuInsertSpecialChar, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertSpecialChar" />
                 <MenuItem Header="{Binding MenuInsertEquation, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertEquation" />
@@ -109,7 +108,6 @@
                 </MenuItem>
                 <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertImage" />
-                <MenuItem Header="{Binding MenuInsertSign, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuFormat, Source={x:Static svc:LocalizedStrings.Instance}}">
@@ -128,7 +126,6 @@
                 <MenuItem Header="{Binding MenuToolsSettings, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SettingsCommand}" />
                 <MenuItem Header="{Binding MenuToolsDict, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
                 <MenuItem Header="{Binding MenuToolsSpell, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
-                <MenuItem Header="{Binding MenuToolsSignMaker, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuHelp, Source={x:Static svc:LocalizedStrings.Instance}}">

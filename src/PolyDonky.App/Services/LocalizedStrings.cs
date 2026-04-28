@@ -44,14 +44,11 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string MenuInsert          => SR.MenuInsert;
     public string MenuInsertTextBox   => SR.MenuInsertTextBox;
     public string MenuInsertTable     => SR.MenuInsertTable;
-    public string MenuInsertGraph     => SR.MenuInsertGraph;
     public string MenuInsertSpecialChar => SR.MenuInsertSpecialChar;
     public string MenuInsertEquation  => SR.MenuInsertEquation;
     public string MenuInsertEmoji     => SR.MenuInsertEmoji;
     public string MenuInsertShape     => SR.MenuInsertShape;
     public string MenuInsertImage     => SR.MenuInsertImage;
-    public string MenuInsertSign      => SR.MenuInsertSign;
-
     // ── 메뉴: 서식 ──────────────────────────────────────────────
     public string MenuFormat     => SR.MenuFormat;
     public string MenuFormatChar => SR.MenuFormatChar;
@@ -63,8 +60,6 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string MenuToolsSettings  => SR.MenuToolsSettings;
     public string MenuToolsDict      => SR.MenuToolsDict;
     public string MenuToolsSpell     => SR.MenuToolsSpell;
-    public string MenuToolsSignMaker => SR.MenuToolsSignMaker;
-
     // ── 메뉴: 도움말 ────────────────────────────────────────────
     public string MenuHelp        => SR.MenuHelp;
     public string MenuHelpManual  => SR.MenuHelpManual;

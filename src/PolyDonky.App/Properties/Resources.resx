@@ -56,13 +56,11 @@
   <data name="MenuInsert" xml:space="preserve"><value>입력(_I)</value></data>
   <data name="MenuInsertTextBox" xml:space="preserve"><value>글상자(_T)</value></data>
   <data name="MenuInsertTable" xml:space="preserve"><value>표(_B)</value></data>
-  <data name="MenuInsertGraph" xml:space="preserve"><value>그래프(_G)</value></data>
   <data name="MenuInsertSpecialChar" xml:space="preserve"><value>특수문자(_S)</value></data>
   <data name="MenuInsertEquation" xml:space="preserve"><value>수식(_E)</value></data>
   <data name="MenuInsertEmoji" xml:space="preserve"><value>이모지(_M)</value></data>
   <data name="MenuInsertShape" xml:space="preserve"><value>도형(_H)</value></data>
   <data name="MenuInsertImage" xml:space="preserve"><value>그림(_P)</value></data>
-  <data name="MenuInsertSign" xml:space="preserve"><value>사인(_N)</value></data>
 
   <!-- 메뉴: 서식 -->
   <data name="MenuFormat" xml:space="preserve"><value>서식(_R)</value></data>
@@ -75,7 +73,6 @@
   <data name="MenuToolsSettings" xml:space="preserve"><value>설정(_O)...</value></data>
   <data name="MenuToolsDict" xml:space="preserve"><value>사전(_D)</value></data>
   <data name="MenuToolsSpell" xml:space="preserve"><value>맞춤법 검사(_S)</value></data>
-  <data name="MenuToolsSignMaker" xml:space="preserve"><value>사인 만들기(_M)...</value></data>
 
   <!-- 메뉴: 도움말 -->
   <data name="MenuHelp" xml:space="preserve"><value>도움말(_H)</value></data>

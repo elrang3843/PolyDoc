@@ -56,13 +56,11 @@
   <data name="MenuInsert" xml:space="preserve"><value>_Insert</value></data>
   <data name="MenuInsertTextBox" xml:space="preserve"><value>_Text Box</value></data>
   <data name="MenuInsertTable" xml:space="preserve"><value>Ta_ble</value></data>
-  <data name="MenuInsertGraph" xml:space="preserve"><value>_Graph</value></data>
   <data name="MenuInsertSpecialChar" xml:space="preserve"><value>_Special Character</value></data>
   <data name="MenuInsertEquation" xml:space="preserve"><value>_Equation</value></data>
   <data name="MenuInsertEmoji" xml:space="preserve"><value>E_moji</value></data>
   <data name="MenuInsertShape" xml:space="preserve"><value>S_hape</value></data>
   <data name="MenuInsertImage" xml:space="preserve"><value>_Image</value></data>
-  <data name="MenuInsertSign" xml:space="preserve"><value>Sig_n</value></data>
 
   <!-- Menu: Format -->
   <data name="MenuFormat" xml:space="preserve"><value>F_ormat</value></data>
@@ -75,7 +73,6 @@
   <data name="MenuToolsSettings" xml:space="preserve"><value>_Settings...</value></data>
   <data name="MenuToolsDict" xml:space="preserve"><value>_Dictionary</value></data>
   <data name="MenuToolsSpell" xml:space="preserve"><value>_Spell Check</value></data>
-  <data name="MenuToolsSignMaker" xml:space="preserve"><value>Sign _Maker...</value></data>
 
   <!-- Menu: Help -->
   <data name="MenuHelp" xml:space="preserve"><value>_Help</value></data>
