@@ -249,10 +249,23 @@ public static class FlowDocumentBuilder
         // Image.Tag 에 container 를 저장하지 말 것 — container.Child = image 와 함께 순환 참조가 되어
         // WPF undo 스냅샷의 XamlWriter.Save() 가 StackOverflowException 으로 폭주한다.
         // 우클릭 속성 라우팅은 LogicalTreeHelper 로 image 의 부모를 찾는 방식으로 처리한다.
+
+        // BlockUIContainer 안에서 UIElement 의 가로 위치는 FrameworkElement.HorizontalAlignment 로만
+        // 결정된다. BlockUIContainer.TextAlignment 는 텍스트 glyph 정렬이며 UIElement 에는 무효.
+        // 명시적 Width 가 있는 UIElement 의 기본 HorizontalAlignment(Stretch) 는 중앙 배치처럼
+        // 동작하므로, 의도한 정렬이 Left 여도 가운데에 놓이는 버그가 생긴다.
+        var imgHA = image.HAlign switch
+        {
+            ImageHAlign.Center => HorizontalAlignment.Center,
+            ImageHAlign.Right  => HorizontalAlignment.Right,
+            _                  => HorizontalAlignment.Left,
+        };
+
         var control = new System.Windows.Controls.Image
         {
-            Source  = bitmap,
-            Stretch = WpfMedia.Stretch.Uniform,
+            Source              = bitmap,
+            Stretch             = WpfMedia.Stretch.Uniform,
+            HorizontalAlignment = imgHA,
         };
         if (image.WidthMm > 0)  control.Width  = MmToDip(image.WidthMm);
         if (image.HeightMm > 0) control.Height = MmToDip(image.HeightMm);
@@ -267,11 +280,14 @@ public static class FlowDocumentBuilder
                     (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(image.BorderColor)!); }
             catch { borderBrush = WpfMedia.Brushes.Black; }
 
+            // Border 가 BlockUIContainer 의 직접 자식일 때 HorizontalAlignment 가 없으면
+            // Stretch 로 처리되어 Image 의 정렬이 무시된다 — imgHA 를 함께 지정.
             visual = new System.Windows.Controls.Border
             {
-                Child           = control,
-                BorderBrush     = borderBrush,
-                BorderThickness = new Thickness(PtToDip(image.BorderThicknessPt)),
+                Child               = control,
+                BorderBrush         = borderBrush,
+                BorderThickness     = new Thickness(PtToDip(image.BorderThicknessPt)),
+                HorizontalAlignment = imgHA,
             };
         }
 
