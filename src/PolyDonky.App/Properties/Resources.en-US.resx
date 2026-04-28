@@ -338,4 +338,8 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="ToolbarZoomOut"              xml:space="preserve"><value>Zoom Out (5%)</value></data>
   <data name="ToolbarFitWidth"             xml:space="preserve"><value>Fit to Width</value></data>
   <data name="ToolbarFitPage"              xml:space="preserve"><value>Fit to Page</value></data>
+  <data name="DictWindowTitle"             xml:space="preserve"><value>Dictionary</value></data>
+  <data name="DictWindowSearchHint"        xml:space="preserve"><value>Enter a word</value></data>
+  <data name="DictWindowSearch"            xml:space="preserve"><value>Search</value></data>
+  <data name="DictWindowErrNoRuntime"      xml:space="preserve"><value>Could not load WebView2 runtime. Make sure Microsoft Edge is installed.</value></data>
 </root>

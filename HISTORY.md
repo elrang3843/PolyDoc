@@ -53,6 +53,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Fixed** — **멀티-선택 복사 시 도형·이미지 개수가 증가(중복)되던 버그**. `CopyMultiSelectedToClipboard`에서 `ExtractCoreSelection()`이 반환한 항목 중 `ShapeObject`·`ImageBlock`·`Table`을 skip해 `_multiSelectedControls` 루프에서 이미 수집한 항목이 중복 직렬화되지 않도록 수정.
 
 ### Added
+- **Added** — **도구 > 사전 — WebView2 미니 웹뷰어**. 네이버 국어사전·영한사전, 다음 사전, 표준국어대사전을 ComboBox로 선택해 사전 사이트를 임베드 브라우저(Microsoft.Web.WebView2)로 표시하는 비모달 플로팅 창 추가. 에디터에서 텍스트를 선택한 채 메뉴를 열면 선택 단어가 자동 검색어로 입력됨. 창 닫기는 숨김 처리(Hide)로 WebView2 세션 유지, 앱 종료 시 실제 해제.
 - **Added** — **편집용지 페이지 구분선 시각화**. 본문 내용이 한 페이지 높이를 초과하면 `PageBreakCanvas`에 페이지 경계마다 파선 구분선과 "─── N페이지 ───" 레이블을 표시. `PaperBorder.SizeChanged` 이벤트로 내용 길이 변화 시 자동 갱신.
 
 - **Fixed** — **오버레이 개체(글상자/도형/그림/표) Ctrl+클릭 멀티-선택이 작동하지 않던 버그 + Ctrl+A 통합 선택 추가**. 원인: 오버레이 컨트롤은 BodyEditor 의 형제(같은 Grid)이므로 BodyEditor.PreviewMouseLeftButtonDown 의 tunneling 경로에 들어오지 않아, 거기에 등록한 Ctrl+클릭 토글 핸들러가 절대 호출되지 않았음. 수정: Ctrl+클릭 핸들러를 PaperBorder.PreviewMouseLeftButtonDown(공통 부모) 으로 이동 — 모든 자식(BodyEditor + 오버레이 Canvas)을 포괄하는 tunneling 경로. 추가로 Ctrl+A 를 가로채 본문 텍스트 + 모든 오버레이를 한 번에 선택하는 SelectAllIncludingOverlays 구현.

@@ -124,7 +124,7 @@
 
             <MenuItem Header="{Binding MenuTools, Source={x:Static svc:LocalizedStrings.Instance}}">
                 <MenuItem Header="{Binding MenuToolsSettings, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SettingsCommand}" />
-                <MenuItem Header="{Binding MenuToolsDict, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuToolsDict, Source={x:Static svc:LocalizedStrings.Instance}}" Click="OnDictMenuClick" />
                 <MenuItem Header="{Binding MenuToolsSpell, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
             </MenuItem>
 

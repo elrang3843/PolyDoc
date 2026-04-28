@@ -319,5 +319,9 @@ namespace PolyDonky.App.Properties
         internal static string ToolbarZoomOut              => Get(nameof(ToolbarZoomOut));
         internal static string ToolbarFitWidth             => Get(nameof(ToolbarFitWidth));
         internal static string ToolbarFitPage              => Get(nameof(ToolbarFitPage));
+        internal static string DictWindowTitle             => Get(nameof(DictWindowTitle));
+        internal static string DictWindowSearchHint        => Get(nameof(DictWindowSearchHint));
+        internal static string DictWindowSearch            => Get(nameof(DictWindowSearch));
+        internal static string DictWindowErrNoRuntime      => Get(nameof(DictWindowErrNoRuntime));
     }
 }
