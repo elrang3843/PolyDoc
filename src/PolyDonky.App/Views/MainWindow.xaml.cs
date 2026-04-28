@@ -3804,6 +3804,10 @@ public partial class MainWindow : Window
     private bool CopyMultiSelectedToClipboard()
     {
         var blocks = new List<PolyDonky.Core.Block>();
+        // _multiSelectedControls 에서 이미 수집한 Core 객체 (참조 ID 기준)
+        // — 같은 객체가 BodyEditor 텍스트 선택을 통해 ExtractCoreSelection 에서 다시 반환되어도 중복 추가되지 않게 한다.
+        var collectedRefs = new System.Collections.Generic.HashSet<object>(
+            ReferenceEqualityComparer.Instance);
 
         // 오버레이 개체: Tag 에서 Core.Block 추출 (TextBoxOverlay 는 FloatingObject 라 스킵)
         foreach (var fe in _multiSelectedControls)
@@ -3816,6 +3820,7 @@ public partial class MainWindow : Window
                 _                                => null,
             };
             if (coreBlock is null) continue;
+            collectedRefs.Add(coreBlock);  // 원본 참조 기억 (clone 이 아니라 fe.Tag 자체)
             try
             {
                 var jsonClone = System.Text.Json.JsonSerializer.Serialize(coreBlock, PolyDonky.Core.JsonDefaults.Options);
@@ -3825,18 +3830,50 @@ public partial class MainWindow : Window
             catch { }
         }
 
-        // 본문 텍스트 선택도 포함
-        // 오버레이 앵커 블록(ShapeObject/ImageBlock/Table)은 위 루프에서 이미 수집했으므로
-        // ExtractCoreSelection 에서 중복 제거 — 같은 도형이 두 번 붙여넣기되는 것 방지.
-        if (!BodyEditor.Selection.IsEmpty)
+        // 본문 텍스트 선택도 포함.
+        // ExtractCoreSelection 의 동작을 인라인으로 재현하되, **Wpf Block.Tag** 가
+        // collectedRefs(이미 _multiSelectedControls 로 수집한 Core 객체)와 같으면 스킵한다.
+        // → 같은 오버레이 도형/이미지/표가 두 번 직렬화되는 것을 방지하면서,
+        //   Inline 모드 이미지/도형(별도 BlockUIContainer.Tag) 은 정상 포함된다.
+        var sel = BodyEditor.Selection;
+        if (!sel.IsEmpty)
         {
-            var textBlocks = ExtractCoreSelection();
-            foreach (var b in textBlocks)
+            foreach (var wpfBlock in BodyEditor.Document.Blocks)
             {
-                if (b is PolyDonky.Core.ShapeObject || b is PolyDonky.Core.ImageBlock || b is PolyDonky.Core.Table)
-                    continue;
-                ResetCoreBlockId(b);
-                blocks.Add(b);
+                if (wpfBlock.ContentEnd.CompareTo(sel.Start) <= 0) continue;
+                if (wpfBlock.ContentStart.CompareTo(sel.End) >= 0) break;
+
+                // 멀티-선택 컨트롤이 이미 가리키는 Core 객체와 동일하면 스킵.
+                if (wpfBlock.Tag is object tag && collectedRefs.Contains(tag)) continue;
+
+                if (wpfBlock is System.Windows.Documents.Table wpfTable)
+                    EnsureCoreTable(wpfTable);
+
+                PolyDonky.Core.Block? core;
+                if (wpfBlock is System.Windows.Documents.Paragraph wpfPara
+                    && wpfBlock.Tag is not PolyDonky.Core.Table
+                    && wpfBlock.Tag is not PolyDonky.Core.ImageBlock
+                    && wpfBlock.Tag is not PolyDonky.Core.ShapeObject)
+                {
+                    bool clippedAtStart = wpfBlock.ContentStart.CompareTo(sel.Start) < 0;
+                    bool clippedAtEnd   = wpfBlock.ContentEnd.CompareTo(sel.End)     > 0;
+                    core = (clippedAtStart || clippedAtEnd)
+                        ? PolyDonky.App.Services.FlowDocumentParser.ParseParagraphClipped(wpfPara, sel.Start, sel.End)
+                        : PolyDonky.App.Services.FlowDocumentParser.ParseSingleBlock(wpfBlock);
+                }
+                else
+                {
+                    core = PolyDonky.App.Services.FlowDocumentParser.ParseSingleBlock(wpfBlock);
+                }
+                if (core is null) continue;
+
+                try
+                {
+                    var jsonClone = System.Text.Json.JsonSerializer.Serialize(core, PolyDonky.Core.JsonDefaults.Options);
+                    var clone = System.Text.Json.JsonSerializer.Deserialize<PolyDonky.Core.Block>(jsonClone, PolyDonky.Core.JsonDefaults.Options);
+                    if (clone != null) { ResetCoreBlockId(clone); blocks.Add(clone); }
+                }
+                catch { }
             }
         }
 
