@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Fixed
+- **Fixed** — **오버레이 개체(글상자/도형/그림/표) Ctrl+클릭 멀티-선택이 작동하지 않던 버그 + Ctrl+A 통합 선택 추가**. 원인: 오버레이 컨트롤은 BodyEditor 의 형제(같은 Grid)이므로 BodyEditor.PreviewMouseLeftButtonDown 의 tunneling 경로에 들어오지 않아, 거기에 등록한 Ctrl+클릭 토글 핸들러가 절대 호출되지 않았음. 수정: Ctrl+클릭 핸들러를 PaperBorder.PreviewMouseLeftButtonDown(공통 부모) 으로 이동 — 모든 자식(BodyEditor + 오버레이 Canvas)을 포괄하는 tunneling 경로. 추가로 Ctrl+A 를 가로채 본문 텍스트 + 모든 오버레이를 한 번에 선택하는 SelectAllIncludingOverlays 구현.
+
 ### Added
 - **Added** — **페이지 범위 마퀴(범위 드래그) 멀티-선택 + Ctrl+클릭 오버레이 토글**: 용지 여백 영역을 드래그하거나 Ctrl+드래그로 마퀴 사각형을 그리면 그 안의 텍스트 블록·오버레이 이미지/도형/표/글상자가 한꺼번에 선택됨. Ctrl+클릭으로 오버레이 개체를 선택에 추가/제거(토글). 선택된 개체들은 Ctrl+C/X(복사/잘라내기) 로 PolyDonky.FlowSelection.v1 + PolyDonky.FloatingObject.v1 포맷으로 클립보드 저장, Delete 로 일괄 삭제. Escape 로 선택 해제. 재구축(RebuildOverlayImages/Shapes/Tables/FloatingObjects) 시 stale 참조 방지.
 - **Added** — **오버레이 표 드래그 이동 (F단계)**: InFrontOfText·BehindText·Fixed 배치 모드인 표를 캔버스 위에서 드래그해 위치를 변경할 수 있음. 마우스를 떼면 Core.Table.OverlayXMm/OverlayYMm 에 반영. Block 모드 표는 드래그 불가.

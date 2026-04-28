@@ -70,29 +70,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Ctrl+클릭 → 오버레이 개체 멀티-선택 토글
-        // 오버레이(InFrontOfText) 개체 위에서 Ctrl+클릭하면 해당 개체를 선택에 추가/제거한다.
-        // WPF 기본 Ctrl+클릭(캐럿 이동)은 차단하지 않고, 오버레이 위일 때만 가로챈다.
-        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
-            (Keyboard.Modifiers & ModifierKeys.Alt) == 0 &&
-            !_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active)
-        {
-            var hitCtrl = FindAnyOverlayControlAt(pt);
-            if (hitCtrl != null)
-            {
-                ToggleMultiSelectControl(hitCtrl);
-                BodyEditor.Focus();
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // 일반 클릭 — 멀티-선택이 활성화되어 있으면 오버레이 위가 아닌 경우 해제
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0 && _multiSelectedControls.Count > 0)
-        {
-            var hitCtrl = FindAnyOverlayControlAt(pt);
-            if (hitCtrl == null) ClearMultiSelect();
-        }
+        // (Ctrl+클릭 오버레이 토글·멀티-선택 해제는 PaperBorder.PreviewMouseLeftButtonDown
+        //  통합 핸들러가 처리 — 오버레이 컨트롤은 BodyEditor 의 형제라 여기로는 안 옴.)
 
         var found = FindEmbeddedObjectAt(e.OriginalSource as System.Windows.DependencyObject, pt);
         if (found is { container: System.Windows.Documents.Block blk } &&
@@ -787,6 +766,14 @@ public partial class MainWindow : Window
             case Key.Delete:
                 // 선택된 객체(도형/글상자)가 있을 때만 가로채기. 본문 텍스트 삭제는 양보.
                 if (TryDeleteSelectedObject()) e.Handled = true;
+                break;
+
+            case Key.A when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                // Ctrl+A — 본문 텍스트 + 모든 오버레이(이미지/도형/표/글상자) 통합 선택.
+                // 본문 InnerEditor(글상자 안쪽) 포커스 중이면 양보 (글상자 안쪽 텍스트만 SelectAll).
+                if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true) break;
+                SelectAllIncludingOverlays();
+                e.Handled = true;
                 break;
 
             case Key.Return:
@@ -2412,6 +2399,41 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ── Ctrl+클릭 → 오버레이 개체 멀티-선택 토글 (그리기 모드 아닐 때) ──────────
+        // 오버레이(이미지/도형/표/글상자) 컨트롤은 BodyEditor 의 형제(같은 Grid)이므로
+        // BodyEditor.PreviewMouseLeftButtonDown 으로는 잡히지 않는다. PaperBorder 의
+        // tunneling preview 가 부모이므로 여기서 가로채야 한다.
+        // e.Handled = true 로 마킹하면 오버레이 자신의 bubbling MouseLeftButtonDown 핸들러
+        // (드래그 시작 등) 가 호출되지 않는다 — `+=` 로 등록된 핸들러 기본 동작.
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active &&
+            (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
+            (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
+        {
+            var ptForHit = e.GetPosition(BodyEditor);
+            var hitOverlay = FindAnyOverlayControlAt(ptForHit);
+            if (hitOverlay != null)
+            {
+                ToggleMultiSelectControl(hitOverlay);
+                Focus();
+                Keyboard.Focus(this);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // ── 일반 클릭 — 멀티-선택된 개체를 클릭하면 유지, 그 외엔 해제 ──────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active &&
+            (Keyboard.Modifiers & ModifierKeys.Control) == 0 &&
+            _multiSelectedControls.Count > 0)
+        {
+            var ptForHit = e.GetPosition(BodyEditor);
+            var hitOverlay = FindAnyOverlayControlAt(ptForHit);
+            // 멀티-선택된 개체 위 클릭: 유지(드래그 등 일반 동작 양보)
+            // 멀티-선택 외 영역 클릭: 멀티-선택 해제
+            if (hitOverlay == null || !_multiSelectedControls.Contains(hitOverlay))
+                ClearMultiSelect();
+        }
+
         // ── 마퀴(범위 드래그) 시작 — 그리기 모드 아닐 때 ──────────────────────────
         // 마퀴가 시작되는 조건:
         //   A) 용지 여백(Padding) 안쪽이고 오버레이 개체가 없을 때 (무수정자 클릭)
@@ -3472,6 +3494,37 @@ public partial class MainWindow : Window
                   Opacity     = 0.9,
               }
             : null;
+    }
+
+    /// <summary>Ctrl+A — 본문 텍스트 + 모든 오버레이(이미지/도형/표/글상자) 통합 선택.</summary>
+    private void SelectAllIncludingOverlays()
+    {
+        ClearMultiSelect();
+
+        // 본문 텍스트 전체 선택
+        BodyEditor.SelectAll();
+
+        // 모든 오버레이 Canvas 자식을 멀티-선택에 추가
+        Canvas[] canvases = { OverlayImageCanvas, OverlayShapeCanvas, OverlayTableCanvas,
+                               FloatingCanvas,
+                               UnderlayImageCanvas, UnderlayShapeCanvas, UnderlayTableCanvas };
+        foreach (var canvas in canvases)
+        {
+            foreach (UIElement child in canvas.Children)
+            {
+                if (child is not FrameworkElement fe) continue;
+                _multiSelectedControls.Add(fe);
+                SetMultiSelectHighlight(fe, true);
+            }
+        }
+
+        if (_multiSelectedControls.Count > 0)
+        {
+            // 단일 선택과 공존하지 않도록 해제
+            DeselectAllOverlays();
+            Focus();
+            Keyboard.Focus(this);
+        }
     }
 
     /// <summary>모든 멀티-선택 해제.</summary>
