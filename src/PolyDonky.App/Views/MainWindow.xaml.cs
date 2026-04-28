@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private MainViewModel? _viewModel;
     private bool _suppressTextChanged;
     private DispatcherTimer? _statusTimer;
+    private DictionaryWindow? _dictWindow;
 
     // ── 임베드 이미지 사용자 드래그 ───────────────────────────────────────
     // WPF 의 Floater 드래그는 HorizontalAlignment 를 조용히 바꾸고, 클립보드 직렬화 과정에서
@@ -714,6 +715,9 @@ public partial class MainWindow : Window
             _statusTimer.Tick -= OnStatusTimerTick;
             _statusTimer = null;
         }
+
+        _dictWindow?.ForceClose();
+        _dictWindow = null;
     }
 
     private void OnStatusTimerTick(object? sender, EventArgs e)
@@ -1128,6 +1132,23 @@ public partial class MainWindow : Window
     {
         var dlg = new SettingsWindow { Owner = this };
         dlg.ShowDialog();
+    }
+
+    private void OnDictMenuClick(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var query = BodyEditor.Selection?.IsEmpty == false
+            ? BodyEditor.Selection.Text.Trim()
+            : null;
+
+        if (_dictWindow is null)
+            _dictWindow = new DictionaryWindow(query) { Owner = this };
+        else if (!string.IsNullOrWhiteSpace(query))
+            _dictWindow.SearchFor(query);
+
+        if (!_dictWindow.IsVisible)
+            _dictWindow.Show();
+        else
+            _dictWindow.Activate();
     }
 
     private void OnOutlineStyleRequested(object? sender, EventArgs e)

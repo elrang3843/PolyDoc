@@ -342,4 +342,8 @@
   <data name="ToolbarZoomOut"              xml:space="preserve"><value>축소 (5%)</value></data>
   <data name="ToolbarFitWidth"             xml:space="preserve"><value>폭 맞춤</value></data>
   <data name="ToolbarFitPage"              xml:space="preserve"><value>쪽 맞춤</value></data>
+  <data name="DictWindowTitle"             xml:space="preserve"><value>사전</value></data>
+  <data name="DictWindowSearchHint"        xml:space="preserve"><value>단어를 입력하세요</value></data>
+  <data name="DictWindowSearch"            xml:space="preserve"><value>검색</value></data>
+  <data name="DictWindowErrNoRuntime"      xml:space="preserve"><value>WebView2 런타임을 불러올 수 없습니다. Microsoft Edge가 설치되어 있는지 확인하세요.</value></data>
 </root>

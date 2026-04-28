@@ -256,4 +256,10 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string ToolbarZoomOut     => SR.ToolbarZoomOut;
     public string ToolbarFitWidth    => SR.ToolbarFitWidth;
     public string ToolbarFitPage     => SR.ToolbarFitPage;
+
+    // ── 사전 창 ─────────────────────────────────────────────────
+    public string DictWindowTitle        => SR.DictWindowTitle;
+    public string DictWindowSearchHint   => SR.DictWindowSearchHint;
+    public string DictWindowSearch       => SR.DictWindowSearch;
+    public string DictWindowErrNoRuntime => SR.DictWindowErrNoRuntime;
 }
