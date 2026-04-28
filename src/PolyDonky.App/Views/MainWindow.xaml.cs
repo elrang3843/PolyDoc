@@ -288,6 +288,12 @@ public partial class MainWindow : Window
     private ShapeKind          _drawingPolyline_kind = ShapeKind.Polyline;
     private List<Point>        _drawingPolyline_points = new();
     private WpfShapes.Polyline? _polylinePreview;        // DrawPreviewCanvas 위의 고무줄 미리보기
+    // 직선(Line) 자동마감 직후 발생하는 ClickCount==2 이벤트를 억제하기 위한 플래그.
+    // ClickCount==1 에서 2점 도달→자동마감 시 true 로 설정, 다음 PreviewMouseLeftButtonDown 에서 소비.
+    private bool _suppressNextClickAfterLineFinish;
+
+    // ── 페이지 구분선 ────────────────────────────────────────────────
+    private double _pageHeightDip;  // 한 페이지 높이(DIP). 0이면 표시 안 함.
 
     // ── 글상자 드래그 생성 / 선택 상태 ────────────────────────────
     private bool _drawingTextBox;
@@ -509,6 +515,14 @@ public partial class MainWindow : Window
         bool hasOverlay = false;
         foreach (var coreBlock in blocks)
         {
+            // 오버레이 블록은 원본 위치에 겹쳐 붙여넣기되지 않도록 5mm 오프셋 적용
+            if (coreBlock is PolyDonky.Core.ShapeObject sh &&
+                sh.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
+            { sh.OverlayXMm += 5; sh.OverlayYMm += 5; }
+            else if (coreBlock is PolyDonky.Core.ImageBlock imgBlk &&
+                imgBlk.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
+            { imgBlk.OverlayXMm += 5; imgBlk.OverlayYMm += 5; }
+
             var wpfBlock = BuildWpfBlockFromCore(coreBlock);
             if (wpfBlock is null) continue;
             if (anchor is null) doc.Blocks.Add(wpfBlock);
@@ -1011,7 +1025,12 @@ public partial class MainWindow : Window
         // 용지 너비·높이 (세로·가로 방향 보정).
         // Height 는 MinHeight 로 지정해 빈 문서도 한 페이지 분량으로 보이고, 본문이 길어지면 늘어난다.
         PaperBorder.Width     = PolyDonky.App.Services.FlowDocumentBuilder.MmToDip(page.EffectiveWidthMm);
-        PaperBorder.MinHeight = PolyDonky.App.Services.FlowDocumentBuilder.MmToDip(page.EffectiveHeightMm);
+        _pageHeightDip        = PolyDonky.App.Services.FlowDocumentBuilder.MmToDip(page.EffectiveHeightMm);
+        PaperBorder.MinHeight = _pageHeightDip;
+
+        // 페이지 구분선을 위해 PaperBorder 크기 변화를 구독 (중복 등록 방지).
+        PaperBorder.SizeChanged -= OnPaperBorderSizeChanged;
+        PaperBorder.SizeChanged += OnPaperBorderSizeChanged;
 
         // 여백을 RichTextBox Padding 으로 반영 — FlowDocument.PagePadding 은 RichTextBox 컨텍스트에서 무시됨
         BodyEditor.Padding = new Thickness(padL, padT, padR, padB);
@@ -1046,6 +1065,51 @@ public partial class MainWindow : Window
         // 우측 정렬 객체(WrapRight Floater 등)가 정확한 위치에 그려진다.
         BodyEditor.Document.PageWidth =
             PolyDonky.App.Services.FlowDocumentBuilder.ComputeContentWidthDip(page);
+    }
+
+    private void OnPaperBorderSizeChanged(object sender, SizeChangedEventArgs e)
+        => UpdatePageBreakLines();
+
+    private void UpdatePageBreakLines()
+    {
+        PageBreakCanvas.Children.Clear();
+        if (_pageHeightDip <= 0) return;
+
+        double totalHeight = PaperBorder.ActualHeight;
+        if (totalHeight <= _pageHeightDip) return;
+
+        double paperWidth = PaperBorder.ActualWidth;
+
+        // 페이지 경계마다 구분선 그리기. 첫 페이지 하단부터 시작.
+        for (double y = _pageHeightDip; y < totalHeight; y += _pageHeightDip)
+        {
+            // 구분선 (회색 실선)
+            var line = new System.Windows.Shapes.Line
+            {
+                X1 = 0,
+                Y1 = y,
+                X2 = paperWidth,
+                Y2 = y,
+                Stroke = new SolidColorBrush(WpfMedia.Color.FromArgb(160, 100, 100, 200)),
+                StrokeThickness = 1.5,
+                StrokeDashArray = new System.Windows.Media.DoubleCollection { 6, 3 },
+                SnapsToDevicePixels = true,
+            };
+            PageBreakCanvas.Children.Add(line);
+
+            // "--- 2페이지 ---" 레이블
+            int pageNum = (int)Math.Round(y / _pageHeightDip) + 1;
+            var label = new System.Windows.Controls.TextBlock
+            {
+                Text = $"─── {pageNum}페이지 ───",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(WpfMedia.Color.FromArgb(160, 80, 80, 180)),
+                IsHitTestVisible = false,
+            };
+            System.Windows.Controls.Canvas.SetLeft(label, 4);
+            System.Windows.Controls.Canvas.SetTop(label, y + 2);
+            PageBreakCanvas.Children.Add(label);
+        }
     }
 
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
@@ -2367,6 +2431,18 @@ public partial class MainWindow : Window
 
     private void OnPaperPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        // 직선 자동마감 직후 ClickCount==2 이벤트 억제
+        // (끝점에서 더블클릭 시 ClickCount==1 로 선이 완성되고, ClickCount==2 가 뒤따라 발생하므로 무시)
+        if (_suppressNextClickAfterLineFinish)
+        {
+            _suppressNextClickAfterLineFinish = false;
+            if (e.ClickCount >= 2)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
         // ── 폴리선/스플라인 클릭 입력 모드 ──────────────────────────────
         if (_drawingPolyline_active)
         {
@@ -2391,8 +2467,12 @@ public partial class MainWindow : Window
                 UpdatePolylinePreview(pos);
 
                 // 직선은 2점 도달 시 자동 마감 (사용자: 시작점 클릭 → 끝점 클릭 → 끝)
+                // 자동마감 직후 ClickCount==2 이벤트가 뒤따르므로 억제 플래그 설정.
                 if (_drawingPolyline_kind == ShapeKind.Line && _drawingPolyline_points.Count >= 2)
+                {
                     FinishPolylineShape();
+                    _suppressNextClickAfterLineFinish = true;
+                }
             }
 
             e.Handled = true;
@@ -3131,7 +3211,8 @@ public partial class MainWindow : Window
     }
 
     // ── 글상자(부유 객체) 복사/잘라내기/붙여넣기 ──────────────────────
-    private const string FloatingObjectClipboardFormat = "PolyDonky.FloatingObject.v1";
+    private const string FloatingObjectClipboardFormat  = "PolyDonky.FloatingObject.v1";
+    private const string FloatingObjectsClipboardFormat = "PolyDonky.FloatingObjects.v1";
 
     /// <summary>
     /// 선택된 글상자를 복사한다. 안쪽 본문에 포커스가 있어도 텍스트 선택이 비어 있으면
@@ -3169,11 +3250,9 @@ public partial class MainWindow : Window
     private bool TryPasteFloatingObject()
     {
         if (!Clipboard.ContainsData(FloatingObjectClipboardFormat)) return false;
-        // 텍스트 선택이 있을 때만 일반 텍스트 붙여넣기에 양보 (사용자 의도가 텍스트 교체).
-        // 캐럿만 위치한 경우(=텍스트 선택 없음) 는 BodyEditor 든 InnerEditor 든
-        // 글상자 클립보드 데이터를 우선 적용 — 사용자가 방금 글상자를 복사했다면
-        // Ctrl+V 의 자연스러운 결과는 새 글상자 한 개를 캔버스에 띄우는 것.
-        if (BodyEditor.IsKeyboardFocusWithin && !BodyEditor.Selection.IsEmpty) return false;
+        // 글상자 InnerEditor 가 포커스 중이고 텍스트가 선택된 경우에만 텍스트 붙여넣기에 양보.
+        // BodyEditor 선택 여부는 판단 기준에서 제외 — 사용자가 명시적으로 글상자를 복사했다면
+        // Ctrl+V 는 항상 새 글상자를 삽입해야 한다.
         if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true
             && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
             return false;
@@ -3202,6 +3281,52 @@ public partial class MainWindow : Window
         var overlay = AddTextBoxOverlay(tb);
         SelectOverlay(overlay);
         return true;
+    }
+
+    /// <summary>선택 가드 없이 FloatingObject 클립보드에서 글상자를 붙여넣는다.
+    /// 멀티-선택 붙여넣기 경로에서 사용 — 사용자가 명시적으로 복사한 글상자를 항상 삽입.</summary>
+    private bool TryPasteFloatingObjectNoGuard()
+    {
+        var json = Clipboard.GetData(FloatingObjectClipboardFormat) as string;
+        if (string.IsNullOrEmpty(json)) return false;
+        FloatingObject? clone;
+        try { clone = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(json, JsonDefaults.Options); }
+        catch { return false; }
+        if (clone is not TextBoxObject tb) return false;
+        tb.Id = null;
+        tb.XMm += 5;
+        tb.YMm += 5;
+        tb.Status = NodeStatus.Modified;
+        _viewModel?.AddFloatingObjectToCurrentSection(tb);
+        AddTextBoxOverlay(tb);
+        _viewModel?.MarkDirty();
+        return true;
+    }
+
+    /// <summary>FloatingObjects.v1 포맷 (글상자 리스트)을 클립보드에서 붙여넣는다.</summary>
+    private bool TryPasteFloatingObjects()
+    {
+        var json = Clipboard.GetData(FloatingObjectsClipboardFormat) as string;
+        if (string.IsNullOrEmpty(json)) return false;
+        List<FloatingObject>? items;
+        try { items = System.Text.Json.JsonSerializer.Deserialize<List<FloatingObject>>(json, JsonDefaults.Options); }
+        catch { return false; }
+        if (items is null || items.Count == 0) return false;
+
+        bool any = false;
+        foreach (var item in items)
+        {
+            if (item is not TextBoxObject tb) continue;
+            tb.Id = null;
+            tb.XMm += 5;
+            tb.YMm += 5;
+            tb.Status = NodeStatus.Modified;
+            _viewModel?.AddFloatingObjectToCurrentSection(tb);
+            AddTextBoxOverlay(tb);
+            any = true;
+        }
+        if (any) _viewModel?.MarkDirty();
+        return any;
     }
 
     /// <summary>현재 섹션의 FloatingObjects 를 캔버스에 다시 채워 그린다 (문서 로드 시).</summary>
@@ -3398,11 +3523,23 @@ public partial class MainWindow : Window
         return TryCutSelectedFloatingObject();
     }
 
-    /// <summary>붙여넣기는 클립보드 포맷에 따라 자동 분기 — 도형 → 글상자 순.</summary>
+    /// <summary>붙여넣기는 클립보드 포맷에 따라 자동 분기.</summary>
     private bool TryPasteSelectedObject()
     {
-        if (Clipboard.ContainsData(BlockClipboardFormat))   return TryPasteBlockFromClipboard();
-        if (Clipboard.ContainsData(FloatingObjectClipboardFormat)) return TryPasteFloatingObject();
+        // 멀티-선택 복사 포맷 (도형·이미지·표·텍스트 블록 리스트)
+        if (Clipboard.ContainsData(FlowSelectionClipboardFormat))
+        {
+            bool ok = TryPasteFlowSelection();
+            // 함께 저장된 글상자 리스트도 붙여넣기
+            if (Clipboard.ContainsData(FloatingObjectsClipboardFormat))
+                TryPasteFloatingObjects();
+            else if (Clipboard.ContainsData(FloatingObjectClipboardFormat))
+                TryPasteFloatingObjectNoGuard();
+            return ok;
+        }
+        if (Clipboard.ContainsData(BlockClipboardFormat))           return TryPasteBlockFromClipboard();
+        if (Clipboard.ContainsData(FloatingObjectsClipboardFormat)) return TryPasteFloatingObjects();
+        if (Clipboard.ContainsData(FloatingObjectClipboardFormat))  return TryPasteFloatingObject();
         return false;
     }
 
@@ -3689,10 +3826,18 @@ public partial class MainWindow : Window
         }
 
         // 본문 텍스트 선택도 포함
+        // 오버레이 앵커 블록(ShapeObject/ImageBlock/Table)은 위 루프에서 이미 수집했으므로
+        // ExtractCoreSelection 에서 중복 제거 — 같은 도형이 두 번 붙여넣기되는 것 방지.
         if (!BodyEditor.Selection.IsEmpty)
         {
             var textBlocks = ExtractCoreSelection();
-            foreach (var b in textBlocks) { ResetCoreBlockId(b); blocks.Add(b); }
+            foreach (var b in textBlocks)
+            {
+                if (b is PolyDonky.Core.ShapeObject || b is PolyDonky.Core.ImageBlock || b is PolyDonky.Core.Table)
+                    continue;
+                ResetCoreBlockId(b);
+                blocks.Add(b);
+            }
         }
 
         // TextBoxOverlay 는 FloatingObject — 별도 슬롯으로 저장
@@ -3704,11 +3849,34 @@ public partial class MainWindow : Window
         var dataObj = new DataObject();
         dataObj.SetData(FlowSelectionClipboardFormat, json);
 
-        if (floatingOverlays.Count == 1)
+        if (floatingOverlays.Count > 0)
         {
-            var tbJson = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
-                floatingOverlays[0].Model, PolyDonky.Core.JsonDefaults.Options);
-            dataObj.SetData(FloatingObjectClipboardFormat, tbJson);
+            // 모든 글상자를 리스트 포맷으로 저장 (여러 개 동시 복사 지원)
+            var models = floatingOverlays.Select(o =>
+            {
+                try
+                {
+                    var j2 = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(o.Model, PolyDonky.Core.JsonDefaults.Options);
+                    var m2 = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(j2, PolyDonky.Core.JsonDefaults.Options);
+                    if (m2 != null) { m2.Id = null; return m2; }
+                }
+                catch { }
+                return (FloatingObject?)null;
+            }).Where(m => m != null).Select(m => m!).ToList();
+
+            if (models.Count > 0)
+            {
+                var tbListJson = System.Text.Json.JsonSerializer.Serialize<List<FloatingObject>>(models, PolyDonky.Core.JsonDefaults.Options);
+                dataObj.SetData(FloatingObjectsClipboardFormat, tbListJson);
+            }
+
+            // 단일 글상자 호환: 기존 단일 포맷도 유지
+            if (floatingOverlays.Count == 1)
+            {
+                var tbJson = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
+                    floatingOverlays[0].Model, PolyDonky.Core.JsonDefaults.Options);
+                dataObj.SetData(FloatingObjectClipboardFormat, tbJson);
+            }
         }
 
         // plain-text 폴백

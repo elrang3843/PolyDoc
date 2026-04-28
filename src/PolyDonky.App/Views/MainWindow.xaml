@@ -370,6 +370,9 @@
                                    Fill="Transparent"
                                    IsHitTestVisible="False"
                                    Visibility="Collapsed" />
+                        <!-- 페이지 구분선 — 본문이 한 페이지를 넘을 때 경계를 시각적으로 표시.
+                             IsHitTestVisible=False 로 편집 방해 없음. -->
+                        <Canvas x:Name="PageBreakCanvas" IsHitTestVisible="False" />
                     </Grid>
                 </Border>
             </StackPanel>

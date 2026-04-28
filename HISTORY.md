@@ -45,6 +45,15 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Fixed
+- **Fixed** — **직선(Line) 그리기 직후 끝점에서 더블클릭 시 크래시**. 직선은 2점 입력이 완료되면 `ClickCount=1` 핸들러 내부에서 `FinishPolylineShape()`(→ `_drawingPolyline_active = false`)가 자동 호출된다. 이후 WPF가 같은 클릭 이벤트의 `ClickCount=2` 이벤트를 별도 라우팅으로 발생시킬 때 `_drawingPolyline_active == false` 상태에서 예기치 않은 핸들러 분기로 크래시가 발생했다. `_suppressNextClickAfterLineFinish` 플래그를 추가해 자동마감 직후의 ClickCount≥2 이벤트를 `PaperBorder.PreviewMouseLeftButtonDown` 진입 즉시 소비·차단하도록 수정.
+- **Fixed** — **멀티-선택 복사 시 텍스트 상자가 클립보드에 포함되지 않던 버그**. `CopyMultiSelectedToClipboard`가 `_multiSelectedControls` 내 `TextBoxOverlay`를 `FloatingObjectsClipboardFormat`("PolyDonky.FloatingObjects.v1") 리스트 포맷으로 직렬화해 저장. 붙여넣기(`TryPasteSelectedObject`) 시 `FlowSelectionClipboardFormat`과 함께 `FloatingObjectsClipboardFormat`도 읽어 모든 글상자를 +5mm 오프셋으로 재생성.
+- **Fixed** — **멀티-선택 복사 붙여넣기 시 도형·이미지가 원본 위치에 겹쳐 붙여넣어지던 버그**. `TryPasteFlowSelection` 내부에서 `InFrontOfText`/`BehindText` 모드인 `ShapeObject`·`ImageBlock`의 `OverlayXMm`/`OverlayYMm`에 +5mm 오프셋을 적용.
+- **Fixed** — **Ctrl+클릭으로 글상자를 선택한 뒤 Ctrl+V 붙여넣기 시 글상자 자체가 아닌 내용만 본문에 삽입되던 버그**. `TryPasteSelectedObject`가 `FlowSelectionClipboardFormat` 우선 처리 후 `FloatingObjectsClipboardFormat`/`FloatingObjectClipboardFormat`을 순차 처리하도록 재구성. `TryPasteFloatingObject`의 과도한 `BodyEditor.Selection.IsEmpty` 가드를 제거해, 캐럿만 위치한 경우에도 글상자 클립보드 데이터가 최우선 적용되도록 수정.
+- **Fixed** — **멀티-선택 복사 시 도형·이미지 개수가 증가(중복)되던 버그**. `CopyMultiSelectedToClipboard`에서 `ExtractCoreSelection()`이 반환한 항목 중 `ShapeObject`·`ImageBlock`·`Table`을 skip해 `_multiSelectedControls` 루프에서 이미 수집한 항목이 중복 직렬화되지 않도록 수정.
+
+### Added
+- **Added** — **편집용지 페이지 구분선 시각화**. 본문 내용이 한 페이지 높이를 초과하면 `PageBreakCanvas`에 페이지 경계마다 파선 구분선과 "─── N페이지 ───" 레이블을 표시. `PaperBorder.SizeChanged` 이벤트로 내용 길이 변화 시 자동 갱신.
+
 - **Fixed** — **오버레이 개체(글상자/도형/그림/표) Ctrl+클릭 멀티-선택이 작동하지 않던 버그 + Ctrl+A 통합 선택 추가**. 원인: 오버레이 컨트롤은 BodyEditor 의 형제(같은 Grid)이므로 BodyEditor.PreviewMouseLeftButtonDown 의 tunneling 경로에 들어오지 않아, 거기에 등록한 Ctrl+클릭 토글 핸들러가 절대 호출되지 않았음. 수정: Ctrl+클릭 핸들러를 PaperBorder.PreviewMouseLeftButtonDown(공통 부모) 으로 이동 — 모든 자식(BodyEditor + 오버레이 Canvas)을 포괄하는 tunneling 경로. 추가로 Ctrl+A 를 가로채 본문 텍스트 + 모든 오버레이를 한 번에 선택하는 SelectAllIncludingOverlays 구현.
 
 ### Added
