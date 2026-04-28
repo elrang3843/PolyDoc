@@ -34,6 +34,11 @@ public partial class MainWindow : Window
     private bool                            _embeddedDragActive;
     private Point                           _embeddedDragOrigin;
 
+    // ── 표 셀 Ctrl+클릭 멀티-선택 앵커 ──────────────────────────────────────
+    // Ctrl+클릭 시 WPF 기본 동작(캐럿 이동 → 선택 해제)을 차단하고,
+    // 최초 클릭 위치(앵커)에서 이번 클릭 위치까지 선택을 확장한다.
+    private System.Windows.Documents.TextPointer? _tableCtrlClickAnchor;
+
     private void OnEditorPreviewMouseDownTrackDrag(object sender, MouseButtonEventArgs e)
     {
         _embeddedDragModel  = null;
@@ -48,6 +53,7 @@ public partial class MainWindow : Window
             TryHitTableColumnBorder(pt, out var rcWpf, out var rcCore, out int rcIdx, out _))
         {
             _suppressEmbeddedObjectDrag = false;
+            _tableCtrlClickAnchor = null;
             StartTableColumnResize(rcWpf!, rcCore!, rcIdx, pt.X);
             e.Handled = true;
             return;
@@ -58,9 +64,61 @@ public partial class MainWindow : Window
         if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0 &&
             FindCanvasChildAt(UnderlayImageCanvas, pt) is { } underlayCtrl)
         {
+            _tableCtrlClickAnchor = null;
             StartUnderlayImageDrag(underlayCtrl, e);
             e.Handled = true;
             return;
+        }
+
+        // Ctrl+클릭 → 표 셀 범위 선택 확장 (첫 클릭에서 이번 클릭 셀까지 사각형 선택)
+        // WPF 기본 동작은 Ctrl+클릭이 캐럿을 이동해 선택을 해제하므로 여기서 차단 후 직접 처리.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
+            (Keyboard.Modifiers & ModifierKeys.Shift) == 0 &&
+            (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
+        {
+            var clickTp   = BodyEditor.GetPositionFromPoint(pt, snapToText: true);
+            var clickCell = FindAncestorCell(clickTp);
+            if (clickCell != null && clickTp != null)
+            {
+                try
+                {
+                    // 앵커 확정: 기존 선택 범위의 시작 셀이 있으면 그것을 앵커로, 없으면 이번 클릭을 앵커로.
+                    bool anchorValid = _tableCtrlClickAnchor != null
+                        && !BodyEditor.Selection.IsEmpty
+                        && FindAncestorCell(_tableCtrlClickAnchor) != null;
+
+                    if (!anchorValid)
+                    {
+                        _tableCtrlClickAnchor = clickTp;
+                        BodyEditor.Selection.Select(clickCell.ContentStart, clickCell.ContentEnd);
+                    }
+                    else
+                    {
+                        // 앵커 → 이번 셀 끝까지 선택 확장
+                        var anchor = _tableCtrlClickAnchor!;
+                        if (anchor.CompareTo(clickTp) <= 0)
+                            BodyEditor.Selection.Select(anchor, clickCell.ContentEnd);
+                        else
+                            BodyEditor.Selection.Select(clickCell.ContentStart, anchor);
+                    }
+                }
+                catch
+                {
+                    _tableCtrlClickAnchor = clickTp;
+                    BodyEditor.Selection.Select(clickCell.ContentStart, clickCell.ContentEnd);
+                }
+                _suppressEmbeddedObjectDrag = false;
+                BodyEditor.Focus();
+                e.Handled = true;   // WPF 캐럿 이동 차단
+                return;
+            }
+            // 표 셀 밖 Ctrl+클릭: 앵커 초기화 후 WPF 기본 동작으로 양보
+            _tableCtrlClickAnchor = null;
+        }
+        else
+        {
+            // Ctrl 없는 일반 클릭: 앵커 초기화
+            _tableCtrlClickAnchor = null;
         }
 
         var found = FindEmbeddedObjectAt(e.OriginalSource as System.Windows.DependencyObject, pt);
@@ -713,6 +771,7 @@ public partial class MainWindow : Window
                     DispatcherPriority.Input);
                 break;
             case Key.Escape:
+                _tableCtrlClickAnchor = null;  // Ctrl+클릭 멀티 선택 앵커 초기화
                 if (_drawingTextBox || _drawingShape_active || _drawingPolyline_active)
                 {
                     EndDrawingMode();

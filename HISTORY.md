@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — **표 셀 Ctrl+클릭 범위 선택**: 표 셀에서 Ctrl+클릭을 하면 첫 클릭 위치(앵커)에서 이번 클릭 셀까지 사각형 범위로 선택이 확장됨. WPF 기본 동작(캐럿 이동 → 선택 해제)을 `PreviewMouseLeftButtonDown` 에서 차단하고, `_tableCtrlClickAnchor` 로 앵커를 유지하며 `Selection.Select(anchor, clickCell.ContentEnd)` 로 확장. 앵커는 비-Ctrl 클릭·Escape·열 리사이즈 시 초기화. 드래그 범위 선택(범위 드래그)은 WPF 기본 동작으로 이미 지원됨.
 - **Added** — **오버레이 표 드래그 이동 (F단계)**: InFrontOfText·BehindText·Fixed 배치 모드인 표를 캔버스 위에서 드래그해 위치를 변경할 수 있음. 마우스를 떼면 Core.Table.OverlayXMm/OverlayYMm 에 반영. Block 모드 표는 드래그 불가.
 - **Added** — **표 열 너비 드래그 리사이즈 (E단계)**: FlowDocument 표의 열 경계선 위로 마우스를 이동하면 커서가 ↔(SizeWE)로 바뀌고, 드래그하면 인접 두 열의 너비가 실시간으로 조정됨. TextPointer 상향 탐색으로 TableCell 위치를 확인하고 GetCharacterRect 로 경계선 X 좌표를 추정. 드래그 완료 시 Core.Table.Columns[i].WidthMm 에 반영.
 - **Added** — **멀티 셀 선택 우클릭 메뉴 (D단계)**: 여러 셀을 드래그 선택 후 우클릭하면 전용 컨텍스트 메뉴 표시. 선택 셀 병합(직사각형 범위), 선택 셀 내용 지우기, 선택 셀 배경색 일괄 변경(OS 색상 선택기), 선택 셀 속성 일괄 적용, 표 속성 진입 제공.
