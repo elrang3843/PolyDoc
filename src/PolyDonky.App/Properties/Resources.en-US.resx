@@ -81,7 +81,7 @@
   <data name="MenuHelp" xml:space="preserve"><value>_Help</value></data>
   <data name="MenuHelpManual" xml:space="preserve"><value>_Manual</value></data>
   <data name="MenuHelpLicense" xml:space="preserve"><value>_License &amp; References</value></data>
-  <data name="MenuHelpAbout" xml:space="preserve"><value>_About PolyDoc</value></data>
+  <data name="MenuHelpAbout" xml:space="preserve"><value>_About PolyDonky</value></data>
 
   <!-- Find/Replace Dialog -->
   <data name="FindReplaceTitle" xml:space="preserve"><value>Find / Replace</value></data>
@@ -125,7 +125,7 @@ Formats natively supported: IWPF, DOCX, HWPX, Markdown, TXT.</value></data>
 
 Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="DlgSaveConverterTitle" xml:space="preserve"><value>External Converter Required</value></data>
-  <data name="DlgSaveFail" xml:space="preserve"><value>PolyDoc cannot save in this format directly.</value></data>
+  <data name="DlgSaveFail" xml:space="preserve"><value>PolyDonky cannot save in this format directly.</value></data>
   <data name="DlgSaveFailTitle" xml:space="preserve"><value>Save Failed</value></data>
   <data name="DlgOpenError" xml:space="preserve"><value>An error occurred while opening the document.</value></data>
   <data name="DlgSaveError" xml:space="preserve"><value>An error occurred while saving the document.</value></data>
@@ -212,8 +212,8 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <!-- Common -->
   <data name="DlgConfirm"          xml:space="preserve"><value>OK</value></data>
 
-  <data name="AboutTitle" xml:space="preserve"><value>About PolyDoc</value></data>
-  <data name="AboutProduct" xml:space="preserve"><value>PolyDoc</value></data>
+  <data name="AboutTitle" xml:space="preserve"><value>About PolyDonky</value></data>
+  <data name="AboutProduct" xml:space="preserve"><value>PolyDonky</value></data>
   <data name="AboutCompany" xml:space="preserve"><value>HANDTECH</value></data>
   <data name="AboutAuthor" xml:space="preserve"><value>Noh JinMoon</value></data>
   <data name="AboutLicense" xml:space="preserve"><value>Mozilla Public License 2.0</value></data>
