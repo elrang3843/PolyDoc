@@ -72,7 +72,6 @@
   <data name="MenuTools" xml:space="preserve"><value>도구(_T)</value></data>
   <data name="MenuToolsSettings" xml:space="preserve"><value>설정(_O)...</value></data>
   <data name="MenuToolsDict" xml:space="preserve"><value>사전(_D)</value></data>
-  <data name="MenuToolsSpell" xml:space="preserve"><value>맞춤법 검사(_S)</value></data>
 
   <!-- 메뉴: 도움말 -->
   <data name="MenuHelp" xml:space="preserve"><value>도움말(_H)</value></data>

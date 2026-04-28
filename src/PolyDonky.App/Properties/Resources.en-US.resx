@@ -72,7 +72,6 @@
   <data name="MenuTools" xml:space="preserve"><value>_Tools</value></data>
   <data name="MenuToolsSettings" xml:space="preserve"><value>_Settings...</value></data>
   <data name="MenuToolsDict" xml:space="preserve"><value>_Dictionary</value></data>
-  <data name="MenuToolsSpell" xml:space="preserve"><value>_Spell Check</value></data>
 
   <!-- Menu: Help -->
   <data name="MenuHelp" xml:space="preserve"><value>_Help</value></data>

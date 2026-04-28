@@ -59,7 +59,6 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string MenuTools          => SR.MenuTools;
     public string MenuToolsSettings  => SR.MenuToolsSettings;
     public string MenuToolsDict      => SR.MenuToolsDict;
-    public string MenuToolsSpell     => SR.MenuToolsSpell;
     // ── 메뉴: 도움말 ────────────────────────────────────────────
     public string MenuHelp        => SR.MenuHelp;
     public string MenuHelpManual  => SR.MenuHelpManual;

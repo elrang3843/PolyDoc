@@ -63,7 +63,6 @@ namespace PolyDonky.App.Properties
         internal static string MenuTools             => Get(nameof(MenuTools));
         internal static string MenuToolsSettings     => Get(nameof(MenuToolsSettings));
         internal static string MenuToolsDict         => Get(nameof(MenuToolsDict));
-        internal static string MenuToolsSpell        => Get(nameof(MenuToolsSpell));
         // ── 메뉴: 도움말 ────────────────────────────────────────────
         internal static string MenuHelp              => Get(nameof(MenuHelp));
         internal static string MenuHelpManual        => Get(nameof(MenuHelpManual));
