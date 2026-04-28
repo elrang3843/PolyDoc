@@ -51,6 +51,19 @@ public static class FlowDocumentParser
         ParseInto(section.Blocks, blocks);
     }
 
+    /// <summary>
+    /// 단일 WPF Block 을 Core.Block 으로 변환해 반환한다 (선택 영역 직렬화용 진입점).
+    /// Tag 가 살아있으면 그대로 사용하고, 붙여넣기 등으로 Tag=null 인 경우 시각 트리에서 재구성.
+    /// 매칭되는 변환이 없으면 null.
+    /// </summary>
+    public static Block? ParseSingleBlock(Wpf.Block wpfBlock)
+    {
+        ArgumentNullException.ThrowIfNull(wpfBlock);
+        var bucket = new List<Block>();
+        ParseInto(bucket, new[] { wpfBlock });
+        return bucket.FirstOrDefault();
+    }
+
     private static void ParseInto(IList<Block> target, IEnumerable<Wpf.Block> blocks)
     {
         foreach (var block in blocks)

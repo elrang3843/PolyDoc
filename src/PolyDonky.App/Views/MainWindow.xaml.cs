@@ -331,9 +331,15 @@ public partial class MainWindow : Window
         BodyEditor.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
         BodyEditor.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
 
-        // 붙여넣기 직후 FlowDocument 내 새로 삽입된 표에 EnsureCoreTable 을 적용한다.
-        // (이미지/도형은 FlowDocumentParser 의 fallback 이 저장 시점에 재구성하므로 별도 처리 불필요)
+        // 붙여넣기 직후 FlowDocument 내 새로 삽입된 표에 EnsureCoreTable 을 적용한다 (외부 앱에서
+        // 들어온 XAML 폴백 경로용 안전망 — 우리 PolyDonky.FlowSelection.v1 경로는 아예 Tag 가 살아온다).
         DataObject.AddPastingHandler(BodyEditor, OnBodyEditorPasting);
+
+        // ── 본문 RichTextBox 의 멀티 블록 클립보드 — Tag(Core 객체) 완전 보존 ──
+        // WPF 기본 클립보드는 Tag 를 보존하지 못해 이미지/도형/표가 손실됨.
+        // Copy/Cut/Paste 의 PreviewExecuted 를 가로채 PolyDonky.FlowSelection.v1 (Core JSON) 으로 직렬화하고
+        // 붙여넣기 시 FlowDocumentBuilder 로 재구성하여 모든 속성·Tag 를 그대로 복원한다.
+        CommandManager.AddPreviewExecutedHandler(BodyEditor, OnBodyEditorPreviewExecuted);
         BodyEditor.MouseLeave += (_, _) =>
         {
             if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
@@ -352,6 +358,8 @@ public partial class MainWindow : Window
     /// 이 시점에 EnsureCoreTable 을 호출해두면 우클릭 메뉴·열 리사이즈가 즉시 정상 동작한다.
     /// DataObject.AddPastingHandler 는 실제 삽입 전에 발화하므로, 삽입 완료 후 처리를 위해
     /// Dispatcher.BeginInvoke(DispatcherPriority.Background) 로 지연 실행한다.
+    /// (PolyDonky.FlowSelection.v1 경로는 Tag 가 처음부터 살아오지만, 외부 앱 XAML 붙여넣기 등의
+    ///  fallback 경로 안전망으로 유지.)
     /// </summary>
     private void OnBodyEditorPasting(object sender, DataObjectPastingEventArgs e)
     {
@@ -361,12 +369,224 @@ public partial class MainWindow : Window
             {
                 if (block is System.Windows.Documents.Table wpfTable && wpfTable.Tag is null)
                     EnsureCoreTable(wpfTable);
-                // 중첩 섹션 등 다단 구조도 처리
                 else if (block is System.Windows.Documents.Section sec)
                     foreach (var inner in sec.Blocks.OfType<System.Windows.Documents.Table>())
                         if (inner.Tag is null) EnsureCoreTable(inner);
             }
         });
+    }
+
+    // ── 본문 RichTextBox 멀티-블록 클립보드 (Tag 완전 보존) ─────────────────
+
+    /// <summary>본문 RichTextBox 가 다루는 multi-block 선택의 Core JSON 직렬화 포맷.</summary>
+    private const string FlowSelectionClipboardFormat = "PolyDonky.FlowSelection.v1";
+
+    private void OnBodyEditorPreviewExecuted(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        // 부유 객체 전용 핸들러가 이미 처리한 경우(e.Handled=true)는 여기 도달하지 않음.
+        if (e.Command == ApplicationCommands.Copy)
+        {
+            if (TryCopyFlowSelection(cut: false)) e.Handled = true;
+        }
+        else if (e.Command == ApplicationCommands.Cut)
+        {
+            if (TryCopyFlowSelection(cut: true)) e.Handled = true;
+        }
+        else if (e.Command == ApplicationCommands.Paste)
+        {
+            if (TryPasteFlowSelection()) e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// 본문 선택 영역을 Core.Block 리스트로 추출해 PolyDonky.FlowSelection.v1 포맷으로 클립보드에 저장.
+    /// 텍스트만 포함된 단일 단락 내부 부분 선택은 기존 WPF 기본 동작에 양보 (return false).
+    /// </summary>
+    private bool TryCopyFlowSelection(bool cut)
+    {
+        var sel = BodyEditor.Selection;
+        if (sel.IsEmpty) return false;
+
+        var coreBlocks = ExtractCoreSelection();
+        if (coreBlocks.Count == 0) return false; // 텍스트만 있는 경우 — WPF 기본 동작에 양보
+
+        // ID 충돌 방지를 위해 새 ID 발급 + Modified 표시
+        foreach (var b in coreBlocks) ResetCoreBlockId(b);
+
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(
+                coreBlocks, PolyDonky.Core.JsonDefaults.Options);
+
+            var dataObj = new System.Windows.DataObject();
+            dataObj.SetData(FlowSelectionClipboardFormat, json);
+            dataObj.SetText(sel.Text);  // 다른 앱에서 plain text 로 받을 수 있도록
+
+            // XamlPackage / RTF 도 함께 — 외부 앱 호환용 (우리 앱에서는 우선 FlowSelection 사용)
+            try
+            {
+                using var msX = new System.IO.MemoryStream();
+                sel.Save(msX, System.Windows.DataFormats.XamlPackage);
+                dataObj.SetData(System.Windows.DataFormats.XamlPackage, msX.ToArray());
+            }
+            catch { /* 일부 선택은 XamlPackage 직렬화 실패 — 무시 */ }
+
+            try
+            {
+                using var msR = new System.IO.MemoryStream();
+                sel.Save(msR, System.Windows.DataFormats.Rtf);
+                dataObj.SetData(System.Windows.DataFormats.Rtf, msR.ToArray());
+            }
+            catch { /* RTF 직렬화 실패는 무시 */ }
+
+            System.Windows.Clipboard.SetDataObject(dataObj, copy: true);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (cut)
+        {
+            sel.Text = string.Empty;
+            _viewModel?.MarkDirty();
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// PolyDonky.FlowSelection.v1 클립보드 데이터를 캐럿 위치에 붙여넣는다.
+    /// FlowDocumentBuilder 가 모든 Tag 를 다시 부착하므로 우클릭 메뉴·저장이 즉시 정상 동작.
+    /// </summary>
+    private bool TryPasteFlowSelection()
+    {
+        if (!System.Windows.Clipboard.ContainsData(FlowSelectionClipboardFormat)) return false;
+        if (System.Windows.Clipboard.GetData(FlowSelectionClipboardFormat) is not string json
+            || string.IsNullOrEmpty(json)) return false;
+
+        List<PolyDonky.Core.Block>? blocks;
+        try
+        {
+            blocks = System.Text.Json.JsonSerializer.Deserialize<List<PolyDonky.Core.Block>>(
+                json, PolyDonky.Core.JsonDefaults.Options);
+        }
+        catch
+        {
+            return false;
+        }
+        if (blocks is null || blocks.Count == 0) return false;
+
+        // 새 인스턴스 표시 — ID 재발급 + Modified
+        foreach (var b in blocks) ResetCoreBlockId(b);
+
+        // 선택이 있으면 우선 비우고 캐럿 위치 확보
+        if (!BodyEditor.Selection.IsEmpty) BodyEditor.Selection.Text = string.Empty;
+        var caret = BodyEditor.CaretPosition;
+        var doc = BodyEditor.Document;
+
+        // 캐럿이 속한 최상위 Block 을 앵커로 — 그 뒤에 차례로 삽입.
+        System.Windows.Documents.Block? anchor = null;
+        foreach (var b in doc.Blocks)
+        {
+            if (b.ContentStart.CompareTo(caret) <= 0 && caret.CompareTo(b.ContentEnd) <= 0)
+            {
+                anchor = b;
+                break;
+            }
+        }
+
+        foreach (var coreBlock in blocks)
+        {
+            var wpfBlock = BuildWpfBlockFromCore(coreBlock);
+            if (wpfBlock is null) continue;
+            if (anchor is null)
+            {
+                doc.Blocks.Add(wpfBlock);
+            }
+            else
+            {
+                doc.Blocks.InsertAfter(anchor, wpfBlock);
+                anchor = wpfBlock;
+            }
+        }
+
+        // 오버레이 표/도형/이미지가 있다면 캔버스 시각 요소도 다시 그려야 한다.
+        // FlowDocumentBuilder 는 본문 Block 만 만들고 오버레이 Canvas 는 ViewModel 재로드 때 처리하므로,
+        // 라운드트립 보장을 위해 dirty 표시 + 다음 번 문서 갱신 시 RebuildOverlays 가 처리하도록 위임.
+        _viewModel?.MarkDirty();
+        return true;
+    }
+
+    /// <summary>BodyEditor.Selection 영역에 걸쳐 있는 모든 Block 을 Core.Block 으로 추출해 깊은 복사.</summary>
+    private List<PolyDonky.Core.Block> ExtractCoreSelection()
+    {
+        var sel = BodyEditor.Selection;
+        var result = new List<PolyDonky.Core.Block>();
+        if (sel.IsEmpty) return result;
+
+        foreach (var block in BodyEditor.Document.Blocks)
+        {
+            // Block 이 selection 범위와 겹치는지: end > sel.Start && start < sel.End
+            if (block.ContentEnd.CompareTo(sel.Start) <= 0) continue;
+            if (block.ContentStart.CompareTo(sel.End) >= 0) break;
+
+            // 표는 Tag 미부착(붙여넣기 직후 등) 이어도 EnsureCoreTable 로 즉석 부착.
+            if (block is System.Windows.Documents.Table wpfTable)
+            {
+                EnsureCoreTable(wpfTable);
+            }
+
+            var core = PolyDonky.App.Services.FlowDocumentParser.ParseSingleBlock(block);
+            if (core is null) continue;
+
+            // 깊은 복사 — 원본 인스턴스를 건드리지 않게 JSON round-trip.
+            try
+            {
+                var jsonClone = System.Text.Json.JsonSerializer.Serialize(
+                    core, PolyDonky.Core.JsonDefaults.Options);
+                var clone = System.Text.Json.JsonSerializer.Deserialize<PolyDonky.Core.Block>(
+                    jsonClone, PolyDonky.Core.JsonDefaults.Options);
+                if (clone != null) result.Add(clone);
+            }
+            catch { /* 직렬화 실패한 블록은 건너뜀 */ }
+        }
+
+        return result;
+    }
+
+    /// <summary>Core.Block 을 WPF Block 으로 변환 (FlowDocumentBuilder 디스패처).</summary>
+    private static System.Windows.Documents.Block? BuildWpfBlockFromCore(PolyDonky.Core.Block coreBlock)
+    {
+        return coreBlock switch
+        {
+            PolyDonky.Core.Table t when t.WrapMode == PolyDonky.Core.TableWrapMode.Block
+                => PolyDonky.App.Services.FlowDocumentBuilder.BuildTable(t),
+            PolyDonky.Core.Table => null, // 오버레이 표는 본문 흐름 외 — 캐릭터 클립보드에 부적합 (별도 처리)
+            PolyDonky.Core.ImageBlock img
+                => PolyDonky.App.Services.FlowDocumentBuilder.BuildImage(img),
+            PolyDonky.Core.ShapeObject sh
+                => PolyDonky.App.Services.FlowDocumentBuilder.BuildShape(sh),
+            PolyDonky.Core.Paragraph p
+                => PolyDonky.App.Services.FlowDocumentBuilder.BuildParagraph(p),
+            _ => null,
+        };
+    }
+
+    /// <summary>붙여넣기로 새 인스턴스가 되었음을 표시 — ID 재발급 및 Modified 상태.</summary>
+    private static void ResetCoreBlockId(PolyDonky.Core.Block block)
+    {
+        block.Id = null;
+        block.Status = PolyDonky.Core.NodeStatus.Modified;
+
+        // 자식 Block 도 ID 재발급 (중첩 표 셀 등)
+        if (block is PolyDonky.Core.Table t)
+        {
+            foreach (var row in t.Rows)
+                foreach (var cell in row.Cells)
+                    foreach (var inner in cell.Blocks)
+                        ResetCoreBlockId(inner);
+        }
+        // (Run 은 Id/Status 가 없음 — 자식 Run 재발급 불필요)
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -449,6 +669,9 @@ public partial class MainWindow : Window
             // 객체 종류 무관하게 동작 — 새 객체 추가 시 TryDelete/TryCopy/TryPaste*Object 한 곳만 손보면 됨.
             // 안쪽 본문(InnerEditor)이 포커스 중이거나 본문 텍스트 selection 이 있으면 가로채지 않고
             // RichTextBox 의 일반 텍스트 클립보드 동작으로 넘긴다.
+            //
+            // 본문 RichTextBox 의 multi-block 선택(이미지·표·도형 포함) 클립보드 보존은
+            // CommandManager.AddPreviewExecutedHandler 에서 PolyDonky.FlowSelection.v1 포맷으로 처리.
             case Key.C when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
                 if (TryCopySelectedObject()) e.Handled = true;
                 break;
