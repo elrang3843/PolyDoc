@@ -319,11 +319,12 @@ public static class FlowDocumentBuilder
         floater.Blocks.Add(new Wpf.BlockUIContainer(visual));
 
         // Paragraph 는 Tag 로 ImageBlock 을 보존해 라운드트립 가능. Floater 를 inlines 에 추가하고
-        // 그 다음에 폭을 가지지 않는 빈 Run 을 두어 라인을 "anchor" 한다.
-        // - WrapRight 의 경우 paragraph 에 본문 inline 이 없으면 WPF 가 우측 정렬 floater 의 가용
-        //   너비를 0 으로 계산해 그림이 화면에서 사라지는 현상이 있어서 dummy Run 이 필요.
+        // 그 다음에 anchor Run(비줄바꿈 공백  ) 을 추가한다.
+        // - WrapRight(우측 정렬 Floater) 는 라인에 실제 글리프가 없으면 WPF TextFormatter 가
+        //   "유효한 라인 없음"으로 처리해 Floater 위치를 결정하지 못하고 그림이 사라진다.
+        //   빈 Run("") 은 글리프를 생성하지 않으므로  (보이지 않는 폭 있는 문자) 를 사용한다.
+        // - Foreground/Background Transparent 로   과 선택 하이라이트 모두 시각적으로 억제.
         // - LineHeight = 0.1 로 라인 자체를 거의 0 높이로 만들어 본문 흐름 영향 최소화.
-        // - Foreground/Background Transparent 로 선택 하이라이트(파란 가로줄) 시각적 억제.
         var paragraph = new Wpf.Paragraph
         {
             Tag        = image,
@@ -333,7 +334,7 @@ public static class FlowDocumentBuilder
             Background = WpfMedia.Brushes.Transparent,
         };
         paragraph.Inlines.Add(floater);
-        paragraph.Inlines.Add(new Wpf.Run(string.Empty));
+        paragraph.Inlines.Add(new Wpf.Run(" ")); // non-breaking space: anchors line for right Floater
         return paragraph;
     }
 
