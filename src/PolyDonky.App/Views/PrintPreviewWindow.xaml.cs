@@ -202,7 +202,7 @@ public partial class PrintPreviewWindow : Window
                         Behind: shape.WrapMode == ImageWrapMode.BehindText));
                     break;
                 }
-                case Table tbl when tbl.WrapMode != TableWrapMode.Block:
+                case PolyDonky.Core.Table tbl when tbl.WrapMode != TableWrapMode.Block:
                 {
                     var ctrl = Fdb.BuildOverlayTableControl(tbl);
                     if (ctrl is null) break;
