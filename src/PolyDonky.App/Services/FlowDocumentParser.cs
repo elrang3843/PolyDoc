@@ -130,6 +130,17 @@ public static class FlowDocumentParser
                 Id      = original.Id,
                 Status  = original.Status,
                 HAlign  = original.HAlign,
+                BackgroundColor              = original.BackgroundColor,
+                DefaultCellPaddingTopMm      = original.DefaultCellPaddingTopMm,
+                DefaultCellPaddingBottomMm   = original.DefaultCellPaddingBottomMm,
+                DefaultCellPaddingLeftMm     = original.DefaultCellPaddingLeftMm,
+                DefaultCellPaddingRightMm    = original.DefaultCellPaddingRightMm,
+                OuterMarginTopMm             = original.OuterMarginTopMm,
+                OuterMarginBottomMm          = original.OuterMarginBottomMm,
+                OuterMarginLeftMm            = original.OuterMarginLeftMm,
+                OuterMarginRightMm           = original.OuterMarginRightMm,
+                BorderThicknessPt            = original.BorderThicknessPt,
+                BorderColor                  = original.BorderColor,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();

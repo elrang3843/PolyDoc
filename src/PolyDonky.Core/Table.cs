@@ -16,8 +16,30 @@ public sealed class Table : Block
     public IList<TableColumn> Columns { get; set; } = new List<TableColumn>();
     public IList<TableRow> Rows { get; set; } = new List<TableRow>();
 
-    /// <summary>페이지 기준 수평 정렬. WPF 미리보기는 제한적으로 적용되며 변환 출력 시 완전 적용.</summary>
+    /// <summary>페이지 기준 수평 정렬.</summary>
     public TableHAlign HAlign { get; set; } = TableHAlign.Left;
+
+    // ── 표 배경색 ────────────────────────────────────────────────────────
+    /// <summary>표 전체 배경색 hex. null 이면 투명.</summary>
+    public string? BackgroundColor { get; set; }
+
+    // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
+    public double DefaultCellPaddingTopMm    { get; set; }
+    public double DefaultCellPaddingBottomMm { get; set; }
+    public double DefaultCellPaddingLeftMm   { get; set; }
+    public double DefaultCellPaddingRightMm  { get; set; }
+
+    // ── 표 바깥 여백 (mm). 0 이하면 여백 없음 ───────────────────────────
+    public double OuterMarginTopMm    { get; set; }
+    public double OuterMarginBottomMm { get; set; }
+    public double OuterMarginLeftMm   { get; set; }
+    public double OuterMarginRightMm  { get; set; }
+
+    // ── 표 외곽선 ────────────────────────────────────────────────────────
+    /// <summary>표 외곽선 두께 (pt). 0 이하면 외곽선 없음.</summary>
+    public double BorderThicknessPt { get; set; }
+    /// <summary>표 외곽선 색상 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8).</summary>
+    public string? BorderColor { get; set; }
 }
 
 public sealed class TableColumn

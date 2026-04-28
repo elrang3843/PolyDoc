@@ -905,7 +905,11 @@ public partial class MainWindow : Window
         items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
             var dlg = new TablePropertiesWindow(coreTable) { Owner = this };
-            if (dlg.ShowDialog() == true) _viewModel?.MarkDirty();
+            if (dlg.ShowDialog() == true)
+            {
+                PolyDonky.App.Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(wpfTable, coreTable);
+                _viewModel?.MarkDirty();
+            }
         }));
         items.Add(MakeMenuItem("표 삭제(_X)", () => TableOp_DeleteTable(wpfTable)));
 

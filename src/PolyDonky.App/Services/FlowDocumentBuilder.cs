@@ -168,6 +168,9 @@ public static class FlowDocumentBuilder
     internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null)
     {
         var wtable = new Wpf.Table { CellSpacing = 0 };
+
+        ApplyTableLevelPropertiesToWpf(wtable, table);
+
         foreach (var col in table.Columns)
         {
             var width = col.WidthMm > 0
@@ -190,36 +193,17 @@ public static class FlowDocumentBuilder
 
             foreach (var cell in row.Cells)
             {
-                var borderColor = TryParseColor(cell.BorderColor)
-                    ?? WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8);
-                double borderDip = cell.BorderThicknessPt > 0
-                    ? PtToDip(cell.BorderThicknessPt) : PtToDip(0.75);
-                double padTop   = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : 1.0);
-                double padBottom= MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : 1.0);
-                double padLeft  = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : 1.5);
-                double padRight = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : 1.5);
-
                 var wcell = new Wpf.TableCell
                 {
-                    BorderBrush     = new WpfMedia.SolidColorBrush(borderColor),
-                    BorderThickness = new Thickness(borderDip),
-                    Padding         = new Thickness(padLeft, padTop, padRight, padBottom),
-                    ColumnSpan      = Math.Max(cell.ColumnSpan, 1),
-                    RowSpan         = Math.Max(cell.RowSpan, 1),
+                    ColumnSpan = Math.Max(cell.ColumnSpan, 1),
+                    RowSpan    = Math.Max(cell.RowSpan, 1),
                 };
 
-                if (row.IsHeader)
-                    wcell.FontWeight = FontWeights.SemiBold;
-
-                if (!string.IsNullOrEmpty(cell.BackgroundColor) &&
-                    TryParseColor(cell.BackgroundColor) is { } bg)
-                    wcell.Background = new WpfMedia.SolidColorBrush(bg);
-
+                ApplyCellPropertiesToWpf(wcell, cell, row.IsHeader, table);
                 AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles);
                 if (wcell.Blocks.Count == 0)
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
 
-                ApplyCellTextAlign(wcell, cell.TextAlign);
                 wrow.Cells.Add(wcell);
             }
             rowGroup.Rows.Add(wrow);
@@ -229,10 +213,43 @@ public static class FlowDocumentBuilder
         return wtable;
     }
 
+    /// <summary>표 수준 속성(배경·바깥여백·외곽선·정렬)을 WPF Table 에 적용.</summary>
+    internal static void ApplyTableLevelPropertiesToWpf(Wpf.Table wtable, Table table)
+    {
+        // 배경색
+        if (!string.IsNullOrEmpty(table.BackgroundColor) &&
+            TryParseColor(table.BackgroundColor) is { } bg)
+            wtable.Background = new WpfMedia.SolidColorBrush(bg);
+        else
+            wtable.Background = null;
+
+        // 바깥 여백
+        wtable.Margin = new Thickness(
+            table.OuterMarginLeftMm   > 0 ? MmToDip(table.OuterMarginLeftMm)   : 0,
+            table.OuterMarginTopMm    > 0 ? MmToDip(table.OuterMarginTopMm)    : 0,
+            table.OuterMarginRightMm  > 0 ? MmToDip(table.OuterMarginRightMm)  : 0,
+            table.OuterMarginBottomMm > 0 ? MmToDip(table.OuterMarginBottomMm) : 0);
+
+        // 표 외곽선
+        if (table.BorderThicknessPt > 0)
+        {
+            var borderColor = TryParseColor(table.BorderColor)
+                ?? WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8);
+            wtable.BorderBrush     = new WpfMedia.SolidColorBrush(borderColor);
+            wtable.BorderThickness = new Thickness(PtToDip(table.BorderThicknessPt));
+        }
+        else
+        {
+            wtable.BorderBrush     = null;
+            wtable.BorderThickness = new Thickness(0);
+        }
+    }
+
     internal static void ApplyCellPropertiesToWpf(
         Wpf.TableCell wcell,
         TableCell cell,
-        bool isHeader)
+        bool isHeader,
+        Table? tableDefaults = null)
     {
         var borderColor = TryParseColor(cell.BorderColor)
             ?? WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8);
@@ -241,10 +258,15 @@ public static class FlowDocumentBuilder
         wcell.BorderBrush     = new WpfMedia.SolidColorBrush(borderColor);
         wcell.BorderThickness = new Thickness(borderDip);
 
-        double padTop   = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : 1.0);
-        double padBottom= MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : 1.0);
-        double padLeft  = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : 1.5);
-        double padRight = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : 1.5);
+        double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : 1.0;
+        double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : 1.0;
+        double defLeft   = tableDefaults?.DefaultCellPaddingLeftMm   > 0 ? tableDefaults.DefaultCellPaddingLeftMm   : 1.5;
+        double defRight  = tableDefaults?.DefaultCellPaddingRightMm  > 0 ? tableDefaults.DefaultCellPaddingRightMm  : 1.5;
+
+        double padTop   = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : defTop);
+        double padBottom= MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : defBottom);
+        double padLeft  = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : defLeft);
+        double padRight = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : defRight);
         wcell.Padding = new Thickness(padLeft, padTop, padRight, padBottom);
 
         if (!string.IsNullOrEmpty(cell.BackgroundColor) &&
