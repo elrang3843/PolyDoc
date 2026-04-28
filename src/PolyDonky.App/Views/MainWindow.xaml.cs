@@ -43,6 +43,16 @@ public partial class MainWindow : Window
         if (!_drawingTextBox) DeselectAllOverlays();
         var pt = e.GetPosition(BodyEditor);
 
+        // 표 열 경계선 위: 열 너비 드래그 시작
+        if (_tableColResizeHovering &&
+            TryHitTableColumnBorder(pt, out var rcWpf, out var rcCore, out int rcIdx, out _))
+        {
+            _suppressEmbeddedObjectDrag = false;
+            StartTableColumnResize(rcWpf!, rcCore!, rcIdx, pt.X);
+            e.Handled = true;
+            return;
+        }
+
         // Alt + 클릭 → BehindText 그림(BodyEditor 뒤 UnderlayImageCanvas) 드래그 시작.
         // 일반 클릭은 본문 텍스트 선택을 위해 양보 — 텍스트 위에 그림이 깔린 영역에서도 편집 가능.
         if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0 &&
@@ -129,29 +139,68 @@ public partial class MainWindow : Window
 
     private void OnEditorPreviewMouseMoveBlockDrag(object sender, MouseEventArgs e)
     {
-        if (!_suppressEmbeddedObjectDrag) return;
-        if (e.LeftButton != MouseButtonState.Pressed)
+        var pt = e.GetPosition(BodyEditor);
+
+        // 우선순위 1: 표 열 너비 드래그 중
+        if (_tableColResizeActive)
         {
-            _embeddedDragActive = false;
-            _suppressEmbeddedObjectDrag = false;
-            Mouse.OverrideCursor = null;
+            if (e.LeftButton != MouseButtonState.Pressed) { FinishTableColumnResize(); return; }
+            double delta    = pt.X - _colRszStartX;
+            double newLeft  = Math.Max(_colRszInitLeft  + delta, TableColResizeMinDip);
+            double newRight = _colRszRightCol != null
+                            ? Math.Max(_colRszInitRight - delta, TableColResizeMinDip)
+                            : 0;
+            _colRszLeftCol!.Width = new GridLength(newLeft);
+            if (_colRszRightCol != null)
+                _colRszRightCol.Width = new GridLength(newRight);
+            e.Handled = true;
             return;
         }
-        // WPF 기본 드래그(Floater 위치 변경 + Tag 손실)를 완전 차단.
-        e.Handled = true;
 
-        var pt = e.GetPosition(BodyEditor);
-        if (!_embeddedDragActive &&
-            (Math.Abs(pt.X - _embeddedDragOrigin.X) > 8 ||
-             Math.Abs(pt.Y - _embeddedDragOrigin.Y) > 8))
+        // 우선순위 2: 임베드 오브젝트(이미지) 드래그 억제
+        if (_suppressEmbeddedObjectDrag)
         {
-            _embeddedDragActive  = true;
-            Mouse.OverrideCursor = Cursors.SizeAll;
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                _embeddedDragActive = false;
+                _suppressEmbeddedObjectDrag = false;
+                Mouse.OverrideCursor = null;
+                return;
+            }
+            e.Handled = true;
+            if (!_embeddedDragActive &&
+                (Math.Abs(pt.X - _embeddedDragOrigin.X) > 8 ||
+                 Math.Abs(pt.Y - _embeddedDragOrigin.Y) > 8))
+            {
+                _embeddedDragActive  = true;
+                Mouse.OverrideCursor = Cursors.SizeAll;
+            }
+            return;
+        }
+
+        // 우선순위 3: 아무 드래그도 없을 때 — 표 열 경계선 커서 표시
+        if (!_drawingShape_active && !_drawingPolyline_active && !_drawingTextBox &&
+            e.LeftButton != MouseButtonState.Pressed)
+        {
+            bool onBorder = TryHitTableColumnBorder(pt, out _, out _, out _, out _);
+            if (onBorder != _tableColResizeHovering)
+            {
+                _tableColResizeHovering = onBorder;
+                Mouse.OverrideCursor    = onBorder ? Cursors.SizeWE : null;
+            }
         }
     }
 
     private void OnEditorPreviewMouseUpEmbedded(object sender, MouseButtonEventArgs e)
     {
+        // 표 열 너비 드래그 완료
+        if (_tableColResizeActive)
+        {
+            FinishTableColumnResize();
+            e.Handled = true;
+            return;
+        }
+
         Mouse.OverrideCursor = null;
         _suppressEmbeddedObjectDrag = false;
 
@@ -279,6 +328,10 @@ public partial class MainWindow : Window
         // 이모지·이미지 우클릭 → 속성 컨텍스트 메뉴, 더블클릭 → 속성 다이얼로그
         BodyEditor.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
         BodyEditor.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
+        BodyEditor.MouseLeave += (_, _) =>
+        {
+            if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
+        };
 
         _statusTimer = new DispatcherTimer
         {
@@ -470,6 +523,20 @@ public partial class MainWindow : Window
     private double _overlayDragStartLeft;
     private double _overlayDragStartTop;
     private bool   _overlayDragMoved;
+
+    // ── 표 열 너비 드래그 리사이즈 상태 ──────────────────────────────
+    private const double TableColResizeHitDip = 8.0;
+    private const double TableColResizeMinDip = 18.0;
+    private bool   _tableColResizeActive;
+    private bool   _tableColResizeHovering;
+    private System.Windows.Documents.Table?       _colRszWpf;
+    private PolyDonky.Core.Table?                 _colRszCore;
+    private System.Windows.Documents.TableColumn? _colRszLeftCol;
+    private System.Windows.Documents.TableColumn? _colRszRightCol;
+    private int    _colRszLeftIdx;
+    private double _colRszInitLeft;
+    private double _colRszInitRight;
+    private double _colRszStartX;
 
     private void OnOverlayImageMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -785,6 +852,143 @@ public partial class MainWindow : Window
             _viewModel?.MarkDirty();
             BodyEditor.Focus();
         }
+    }
+
+    // ── 표 열 너비 드래그 리사이즈 ────────────────────────────────────────────
+
+    private bool TryHitTableColumnBorder(Point pt,
+        out System.Windows.Documents.Table? wpfTable,
+        out PolyDonky.Core.Table? coreTable,
+        out int leftColIdx,
+        out double borderX)
+    {
+        wpfTable = null; coreTable = null; leftColIdx = -1; borderX = 0;
+
+        var tp = BodyEditor.GetPositionFromPoint(pt, true);
+        if (tp == null) return false;
+
+        // Walk up to TableCell
+        System.Windows.Documents.TableCell? cell = null;
+        DependencyObject? cur = tp.Parent;
+        while (cur is System.Windows.FrameworkContentElement fce)
+        {
+            if (cur is System.Windows.Documents.TableCell tc) { cell = tc; break; }
+            cur = fce.Parent;
+        }
+        if (cell == null) return false;
+        if (cell.ColumnSpan > 1) return false;
+
+        var row      = cell.Parent as System.Windows.Documents.TableRow;
+        var rowGroup = row?.Parent as System.Windows.Documents.TableRowGroup;
+        var wTable   = rowGroup?.Parent as System.Windows.Documents.Table;
+        if (wTable?.Tag is not PolyDonky.Core.Table cTable) return false;
+
+        int cellIdx  = row!.Cells.IndexOf(cell);
+        int colCount = wTable.Columns.Count;
+        if (cellIdx < 0) return false;
+
+        var firstRow = rowGroup!.Rows[0];
+
+        // 이 셀의 오른쪽 경계선 = 다음 셀 콘텐츠 시작 X
+        if (cellIdx < colCount - 1 && cellIdx + 1 < firstRow.Cells.Count)
+        {
+            var nextRect = firstRow.Cells[cellIdx + 1].ContentStart
+                                .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+            if (!nextRect.IsEmpty && Math.Abs(pt.X - nextRect.Left) <= TableColResizeHitDip)
+            {
+                wpfTable = wTable; coreTable = cTable;
+                leftColIdx = cellIdx; borderX = nextRect.Left;
+                return true;
+            }
+        }
+
+        // 이 셀의 왼쪽 경계선 = 이 셀 콘텐츠 시작 X (이전 셀의 오른쪽 경계)
+        if (cellIdx > 0 && cellIdx < firstRow.Cells.Count)
+        {
+            var thisRect = firstRow.Cells[cellIdx].ContentStart
+                                .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+            if (!thisRect.IsEmpty && Math.Abs(pt.X - thisRect.Left) <= TableColResizeHitDip)
+            {
+                wpfTable = wTable; coreTable = cTable;
+                leftColIdx = cellIdx - 1; borderX = thisRect.Left;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void StartTableColumnResize(
+        System.Windows.Documents.Table wpfTable,
+        PolyDonky.Core.Table coreTable,
+        int leftColIdx, double startX)
+    {
+        _tableColResizeActive = true;
+        _colRszWpf     = wpfTable;
+        _colRszCore    = coreTable;
+        _colRszLeftIdx = leftColIdx;
+        _colRszStartX  = startX;
+        _colRszLeftCol  = wpfTable.Columns[leftColIdx];
+        _colRszRightCol = leftColIdx + 1 < wpfTable.Columns.Count
+                        ? wpfTable.Columns[leftColIdx + 1]
+                        : null;
+
+        // 현재 렌더된 열 너비 스냅샷 (셀 콘텐츠 시작 X 차이로 추정)
+        var firstRow = wpfTable.RowGroups[0].Rows[0];
+        double CellLeft(int idx)
+        {
+            if (idx >= firstRow.Cells.Count) return double.NaN;
+            var r = firstRow.Cells[idx].ContentStart.GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+            return r.IsEmpty ? double.NaN : r.Left;
+        }
+
+        double x0 = CellLeft(leftColIdx);
+        double x1 = CellLeft(leftColIdx + 1);
+        double x2 = CellLeft(leftColIdx + 2);
+
+        _colRszInitLeft = !double.IsNaN(x0) && !double.IsNaN(x1) && x1 > x0
+            ? x1 - x0
+            : _colRszLeftCol.Width.IsAbsolute ? _colRszLeftCol.Width.Value : 80;
+
+        _colRszInitRight = _colRszRightCol == null ? 0
+            : !double.IsNaN(x1) && !double.IsNaN(x2) && x2 > x1
+            ? x2 - x1
+            : _colRszRightCol.Width.IsAbsolute ? _colRszRightCol.Width.Value : 80;
+
+        // Auto 너비를 절대값으로 고정해야 드래그 중 다른 열이 튀지 않음
+        _colRszLeftCol.Width = new GridLength(_colRszInitLeft);
+        if (_colRszRightCol != null)
+            _colRszRightCol.Width = new GridLength(_colRszInitRight);
+
+        BodyEditor.CaptureMouse();
+        Mouse.OverrideCursor = Cursors.SizeWE;
+    }
+
+    private void FinishTableColumnResize()
+    {
+        if (!_tableColResizeActive) return;
+        _tableColResizeActive   = false;
+        _tableColResizeHovering = false;
+        if (BodyEditor.IsMouseCaptured) BodyEditor.ReleaseMouseCapture();
+        Mouse.OverrideCursor = null;
+
+        if (_colRszCore != null && _colRszLeftCol != null)
+        {
+            int li = _colRszLeftIdx;
+            int ri = li + 1;
+            double leftDip  = _colRszLeftCol.Width.IsAbsolute  ? _colRszLeftCol.Width.Value  : 0;
+            double rightDip = _colRszRightCol?.Width.IsAbsolute == true ? _colRszRightCol.Width.Value : 0;
+            if (li < _colRszCore.Columns.Count)
+                _colRszCore.Columns[li].WidthMm = Services.FlowDocumentBuilder.DipToMm(leftDip);
+            if (ri < _colRszCore.Columns.Count && _colRszRightCol != null)
+                _colRszCore.Columns[ri].WidthMm = Services.FlowDocumentBuilder.DipToMm(rightDip);
+        }
+
+        _colRszWpf      = null;
+        _colRszCore     = null;
+        _colRszLeftCol  = null;
+        _colRszRightCol = null;
+        _viewModel?.MarkDirty();
     }
 
     // ── 이모지·이미지 속성 편집 ─────────────────────────────────────────

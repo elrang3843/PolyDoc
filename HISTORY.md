@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — **표 열 너비 드래그 리사이즈 (E단계)**: FlowDocument 표의 열 경계선 위로 마우스를 이동하면 커서가 ↔(SizeWE)로 바뀌고, 드래그하면 인접 두 열의 너비가 실시간으로 조정됨. TextPointer 상향 탐색으로 TableCell 위치를 확인하고 GetCharacterRect 로 경계선 X 좌표를 추정. 드래그 완료 시 Core.Table.Columns[i].WidthMm 에 반영.
 - **Added** — **멀티 셀 선택 우클릭 메뉴 (D단계)**: 여러 셀을 드래그 선택 후 우클릭하면 전용 컨텍스트 메뉴 표시. 선택 셀 병합(직사각형 범위), 선택 셀 내용 지우기, 선택 셀 배경색 일괄 변경(OS 색상 선택기), 선택 셀 속성 일괄 적용, 표 속성 진입 제공.
 - **Added** — **표 배치 모드 (C단계)**: 표를 본문 흐름 외에 텍스트 위(InFrontOfText)·텍스트 아래(BehindText)·위치 고정(Fixed)으로 배치 가능. Core.TableWrapMode enum + OverlayXMm/OverlayYMm 모델 추가. 오버레이 모드일 때 Grid 기반 표 시각 요소를 OverlayTableCanvas/UnderlayTableCanvas 에 절대 위치로 렌더. 표 속성 다이얼로그에 배치 방식 섹션 추가.
 - **Added** — **ColorPickerBox 공용 색상 입력 컨트롤**: 직접 입력(hex/이름) + OS 색상 선택기(`...` 버튼) + 없음(지우기) 버튼을 하나의 UserControl로 제공. 투명/없음 상태는 체커보드 패턴으로 표시. 셀 속성·도형 속성 다이얼로그에 적용해 기존 단순 TextBox 대체.
