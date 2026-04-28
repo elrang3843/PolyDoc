@@ -2379,15 +2379,75 @@ public partial class MainWindow : Window
         return menu;
     }
 
+    // ── 오버레이 표 드래그 이동 상태 ────────────────────────────────────────
+    private FrameworkElement? _draggingOverlayTable;
+    private Point  _overlayTableDragStart;
+    private double _overlayTableDragStartLeft;
+    private double _overlayTableDragStartTop;
+    private bool   _overlayTableDragMoved;
+
     private void OnOverlayTableMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe) return;
+
+        // 더블클릭 → 속성 다이얼로그
         if (e.ClickCount == 2 && fe.Tag is PolyDonky.Core.Table tbl)
         {
             var dlg = new TablePropertiesWindow(tbl) { Owner = this };
             if (dlg.ShowDialog() == true) { RebuildOverlayTables(); _viewModel?.MarkDirty(); }
             e.Handled = true;
+            return;
         }
+
+        // 단일 클릭 → 드래그 시작 (Block 모드 표는 드래그 불가)
+        if (fe.Tag is PolyDonky.Core.Table t &&
+            t.WrapMode == PolyDonky.Core.TableWrapMode.Block) return;
+
+        if (fe.Parent is not Canvas canvas) return;
+        _draggingOverlayTable       = fe;
+        _overlayTableDragStart      = e.GetPosition(canvas);
+        _overlayTableDragStartLeft  = Canvas.GetLeft(fe);
+        _overlayTableDragStartTop   = Canvas.GetTop(fe);
+        if (double.IsNaN(_overlayTableDragStartLeft)) _overlayTableDragStartLeft = 0;
+        if (double.IsNaN(_overlayTableDragStartTop))  _overlayTableDragStartTop  = 0;
+        _overlayTableDragMoved = false;
+        fe.CaptureMouse();
+        fe.MouseMove         += OnOverlayTableDragMove;
+        fe.MouseLeftButtonUp += OnOverlayTableDragUp;
+        e.Handled = true;
+    }
+
+    private void OnOverlayTableDragMove(object sender, MouseEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || !ReferenceEquals(_draggingOverlayTable, fe)) return;
+        if (fe.Parent is not Canvas canvas) return;
+        var pos = e.GetPosition(canvas);
+        double dx = pos.X - _overlayTableDragStart.X;
+        double dy = pos.Y - _overlayTableDragStart.Y;
+        if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5) _overlayTableDragMoved = true;
+        Canvas.SetLeft(fe, _overlayTableDragStartLeft + dx);
+        Canvas.SetTop (fe, _overlayTableDragStartTop  + dy);
+    }
+
+    private void OnOverlayTableDragUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || !ReferenceEquals(_draggingOverlayTable, fe)) return;
+        fe.ReleaseMouseCapture();
+        fe.MouseMove         -= OnOverlayTableDragMove;
+        fe.MouseLeftButtonUp -= OnOverlayTableDragUp;
+        _draggingOverlayTable = null;
+
+        if (_overlayTableDragMoved && fe.Tag is PolyDonky.Core.Table t)
+        {
+            double left = Canvas.GetLeft(fe);
+            double top  = Canvas.GetTop(fe);
+            if (double.IsNaN(left)) left = 0;
+            if (double.IsNaN(top))  top  = 0;
+            t.OverlayXMm = Services.FlowDocumentBuilder.DipToMm(left);
+            t.OverlayYMm = Services.FlowDocumentBuilder.DipToMm(top);
+            _viewModel?.MarkDirty();
+        }
+        e.Handled = true;
     }
 
     private void DeleteOverlayShape(PolyDonky.Core.ShapeObject shape)
