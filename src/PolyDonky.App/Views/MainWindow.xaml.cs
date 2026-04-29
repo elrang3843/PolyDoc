@@ -875,15 +875,47 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// _viewModel.Document 로부터 PaginatedDocument 를 계산해 캐시한다.
-    /// 문서 로드 직후에만 _viewModel.Document 가 최신 상태이므로 그 시점에 호출한다.
-    /// 편집 중 OnBodyEditorSizeChanged 가 캐시를 null 로 초기화하므로
-    /// RebuildPageFramesCore 가 height 기반 폴백을 사용하게 된다.
+    /// 문서 로드 직후에만 호출 — 그 시점엔 _viewModel.Document 가 디스크와 일치한다.
+    /// 편집 중에는 <see cref="ScheduleLivePaginationRefresh"/> 가 라이브 FlowDocument 에서
+    /// 직접 모델을 파싱해 캐시를 갱신한다.
     /// </summary>
     private void UpdatePaginatedDoc()
     {
         var doc = _viewModel?.Document;
         if (doc is null || _pageGeometry is null) return;
         _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(doc);
+    }
+
+    private bool _liveRefreshQueued;
+
+    /// <summary>
+    /// PageBreakPadder 가 끝난 직후 호출 — 라이브 FlowDocument 를 Parse → Paginate 해서
+    /// _currentPaginatedDoc 캐시를 최신화한다. Background 우선순위로 디스패치해 UI 응답성 보장.
+    /// 동시에 여러 번 큐잉되지 않도록 _liveRefreshQueued 플래그로 합치기.
+    /// </summary>
+    private void ScheduleLivePaginationRefresh()
+    {
+        if (_liveRefreshQueued) return;
+        if (_viewModel?.Document is null || _pageGeometry is null) return;
+
+        _liveRefreshQueued = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+        {
+            _liveRefreshQueued = false;
+            try
+            {
+                // FlowDocumentParser 가 PageBreakPadder.IsPagePadding 단락을 자동으로 걸러낸다.
+                var freshDoc = PolyDonky.App.Services.FlowDocumentParser.Parse(
+                    BodyEditor.Document, _viewModel?.Document);
+                _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+                // 페이지 수가 폴백 추정과 다를 수 있으니 프레임 다시 그리기.
+                RebuildPageFrames();
+            }
+            catch
+            {
+                // Parse·Paginate 실패 시 캐시는 그대로 (다음 사이클에서 재시도).
+            }
+        });
     }
 
     /// <summary>
@@ -1046,7 +1078,7 @@ public partial class MainWindow : Window
 
     private PolyDonky.App.Services.PageGeometry? _pageGeometry;
     private int                _currentPageCount    = 1;
-    private PaginatedDocument? _currentPaginatedDoc;           // 문서 로드 직후에만 최신; 편집 중엔 null → 폴백 사용
+    private PaginatedDocument? _currentPaginatedDoc;           // 로드 시점·PageBreakPadder 사이클 후 최신 / 편집 중간엔 null → 폴백
     private bool               _suppressPageFrameRebuild;      // RebuildPageFrames 안에서 MinHeight 변경이 재귀로 돌아오는 것을 차단
 
     private void ApplyPageSettings(PolyDonky.Core.PageSettings? page)
@@ -1068,10 +1100,16 @@ public partial class MainWindow : Window
         // 합성 페이지-갭 패딩 단락 매니저 — 본문이 페이지 경계를 넘을 때마다 자동으로
         // (padBottom + interPageGap + padTop) 높이의 빈 단락을 끼워 다음 페이지 본문이
         // 정확히 padTop 위치에서 시작하도록 한다.
+        // PageBreakPadder 가 끝나면 (on=false) 라이브 FlowDocument 를 Parse → Paginate 해
+        // _currentPaginatedDoc 캐시를 최신으로 유지한다 (Phase 3c-1).
         _pageBreakPadder ??= new PolyDonky.App.Services.PageBreakPadder(
             BodyEditor,
             () => _pageGeometry,
-            on => _paginationInProgress = on);
+            on =>
+            {
+                _paginationInProgress = on;
+                if (!on) ScheduleLivePaginationRefresh();
+            });
 
         // 본문 RichTextBox 의 padding — 첫 페이지 상단에만 padT, 이하 좌우/하단은 단일 적용.
         // (다중 페이지 동안 본문이 페이지 경계를 넘어 흐를 때 "다음 페이지 padT" 만큼의 합성 패딩은
@@ -1103,8 +1141,9 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// PageBackgroundCanvas 에 페이지 별 흰색 Border (그림자 + 점선 여백 가이드 + "N페이지" 라벨)를 다시 그린다.
-    /// 페이지 수: 문서 로드 직후엔 <see cref="_currentPaginatedDoc"/> (WPF DocumentPaginator 기반),
-    /// 편집 중엔 BodyEditor.ActualHeight 기반 폴백.
+    /// 페이지 수 우선순위:
+    ///   1. <see cref="_currentPaginatedDoc"/> — 로드 시점·PageBreakPadder 디바운스 후 최신값.
+    ///   2. <see cref="PolyDonky.App.Services.PageGeometry.ComputePageCount"/> — 편집 중간(캐시 null) 폴백.
     /// </summary>
     private void RebuildPageFrames()
     {
@@ -1127,8 +1166,8 @@ public partial class MainWindow : Window
         var pg = _pageGeometry!;
 
         // 페이지 수 계산.
-        // 1순위: 문서 로드 직후 WPF DocumentPaginator 로 산출한 정확한 값 (_currentPaginatedDoc).
-        // 2순위: 편집 중 — BodyEditor.ActualHeight ÷ bodyH 근사값 + 오버레이 anchor max.
+        // 1순위: WPF DocumentPaginator 로 산출한 정확값 (_currentPaginatedDoc — 로드/PageBreakPadder 후 최신).
+        // 2순위: 편집 중간 짧은 구간 — BodyEditor.ActualHeight ÷ bodyH 근사값 + 오버레이 anchor max.
         double bodyContentHeight = BodyEditor.ActualHeight > 0 ? BodyEditor.ActualHeight : pg.PageHeightDip;
         int maxAnchorIndex = ComputeMaxAnchorPageIndex();
         int pageCount = _currentPaginatedDoc?.PageCount
