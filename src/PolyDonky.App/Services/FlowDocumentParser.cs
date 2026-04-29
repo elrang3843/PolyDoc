@@ -167,6 +167,9 @@ public static class FlowDocumentParser
     {
         foreach (var block in blocks)
         {
+            // 합성 페이지-갭 패딩 단락은 시각 장치이므로 모델로 절대 흘러가면 안 된다.
+            if (PageBreakPadder.IsPagePadding(block)) continue;
+
             switch (block)
             {
                 // Tag 가 OpaqueBlock 인 paragraph 는 보존 섬 — 원본 그대로 회수.

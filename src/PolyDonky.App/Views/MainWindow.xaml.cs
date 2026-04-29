@@ -294,6 +294,8 @@ public partial class MainWindow : Window
 
     // ── 페이지 구분선 ────────────────────────────────────────────────
     private double _pageHeightDip;  // 한 페이지 높이(DIP). 0이면 표시 안 함.
+    private PolyDonky.App.Services.PageBreakPadder? _pageBreakPadder;
+    private bool _paginationInProgress;   // 합성 페이지 갭 패딩 재계산 중 — TextChanged·SizeChanged 부수효과 차단
 
     // ── 글상자 드래그 생성 / 선택 상태 ────────────────────────────
     private bool _drawingTextBox;
@@ -508,6 +510,7 @@ public partial class MainWindow : Window
         System.Windows.Documents.Block? anchor = null;
         foreach (var b in doc.Blocks)
         {
+            if (PolyDonky.App.Services.PageBreakPadder.IsPagePadding(b)) continue;
             if (b.ContentStart.CompareTo(caret) <= 0 && caret.CompareTo(b.ContentEnd) <= 0)
             { anchor = b; break; }
         }
@@ -629,6 +632,8 @@ public partial class MainWindow : Window
 
         foreach (var block in BodyEditor.Document.Blocks)
         {
+            // 합성 페이지-갭 패딩 단락은 클립보드에 절대 포함되면 안 됨.
+            if (PolyDonky.App.Services.PageBreakPadder.IsPagePadding(block)) continue;
             if (block.ContentEnd.CompareTo(sel.Start) <= 0) continue;
             if (block.ContentStart.CompareTo(sel.End) >= 0) break;
 
@@ -1041,6 +1046,14 @@ public partial class MainWindow : Window
         BodyEditor.SizeChanged -= OnBodyEditorSizeChanged;
         BodyEditor.SizeChanged += OnBodyEditorSizeChanged;
 
+        // 합성 페이지-갭 패딩 단락 매니저 — 본문이 페이지 경계를 넘을 때마다 자동으로
+        // (padBottom + interPageGap + padTop) 높이의 빈 단락을 끼워 다음 페이지 본문이
+        // 정확히 padTop 위치에서 시작하도록 한다.
+        _pageBreakPadder ??= new PolyDonky.App.Services.PageBreakPadder(
+            BodyEditor,
+            () => _pageGeometry,
+            on => _paginationInProgress = on);
+
         // 본문 RichTextBox 의 padding — 첫 페이지 상단에만 padT, 이하 좌우/하단은 단일 적용.
         // (다중 페이지 동안 본문이 페이지 경계를 넘어 흐를 때 "다음 페이지 padT" 만큼의 합성 패딩은
         //  후속 사이클에서 추가 — 지금은 시각 페이지만 분리하고 본문은 연속 흐름으로 둔다.)
@@ -1053,12 +1066,16 @@ public partial class MainWindow : Window
 
         // 페이지 프레임 다시 그리기 + 전체 호스트 크기 갱신
         RebuildPageFrames();
+        // 페이지 설정이 바뀌었으면 합성 패딩도 즉시 다시 계산
+        _pageBreakPadder?.RunNow();
     }
 
     private void OnBodyEditorSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_suppressPageFrameRebuild) return;
-        // 본문 높이만 바뀌면 페이지 수 갱신 필요 — 재진입 가드 안에서만 실행.
+        // 합성 패딩 재계산 중에는 본문 크기가 임시로 출렁이므로 페이지 프레임 재구축을 미룸 —
+        // 페이지네이션 끝나면 PageBreakPadder.RunNow() 를 호출한 쪽이 RebuildPageFrames 도 따로 부른다.
+        if (_paginationInProgress) return;
         RebuildPageFrames();
     }
 
@@ -1229,7 +1246,11 @@ public partial class MainWindow : Window
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged) return;
+        // 합성 패딩 재계산이 일으킨 TextChanged 는 사용자의 편집이 아니므로 dirty 표시도 패스.
+        if (_paginationInProgress) return;
         _viewModel?.MarkDirty();
+        // 본문이 변경되면 페이지 경계 위치도 달라질 수 있으므로 합성 패딩 재계산을 디바운스.
+        _pageBreakPadder?.Schedule();
     }
 
     private void OnFindReplaceRequested(object? sender, EventArgs e)
@@ -3885,6 +3906,7 @@ public partial class MainWindow : Window
         {
             foreach (var wpfBlock in BodyEditor.Document.Blocks)
             {
+                if (PolyDonky.App.Services.PageBreakPadder.IsPagePadding(wpfBlock)) continue;
                 if (wpfBlock.ContentEnd.CompareTo(sel.Start) <= 0) continue;
                 if (wpfBlock.ContentStart.CompareTo(sel.End) >= 0) break;
 
