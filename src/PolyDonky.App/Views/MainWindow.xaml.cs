@@ -490,6 +490,15 @@ public partial class MainWindow : Window
             return true;
         }
 
+        // 셀 안에 단락만 붙여넣을 때 — 셀의 Blocks 컬렉션에 직접 단락을 삽입한다.
+        // (multi-block 일반 경로로 가면 enclosing Table 뒤에 붙어 셀 밖으로 나간다)
+        if (IsCaretInTableCell(caret) && blocks.All(b => b is PolyDonky.Core.Paragraph))
+        {
+            InsertParagraphsIntoCell(blocks.Cast<PolyDonky.Core.Paragraph>().ToList(), caret);
+            _viewModel?.MarkDirty();
+            return true;
+        }
+
         // 복수 블록 또는 표·이미지·도형 — 앵커 뒤에 새 Block 으로 삽입
         var doc = BodyEditor.Document;
         System.Windows.Documents.Block? anchor = FindTopLevelAnchorForCaret(doc, caret);
@@ -583,6 +592,35 @@ public partial class MainWindow : Window
                 return b;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 표 셀 안에 여러 단락을 붙여넣는다. 첫 단락은 캐럿 위치에 inline 으로 합치고,
+    /// 나머지 단락은 셀의 Blocks 컬렉션에 새 Paragraph 로 차례로 삽입한다.
+    /// </summary>
+    private void InsertParagraphsIntoCell(
+        List<PolyDonky.Core.Paragraph>     paragraphs,
+        System.Windows.Documents.TextPointer caret)
+    {
+        if (paragraphs.Count == 0) return;
+
+        // 첫 단락은 캐럿 위치에 inline 합치기
+        InsertParagraphInline(paragraphs[0], caret);
+
+        if (paragraphs.Count == 1) return;
+
+        // 캐럿 단락의 부모 셀을 찾아 그 Blocks 컬렉션에 추가 — 호출 후 caret 은 합쳐진 단락 안에 있다.
+        var insertPos  = caret.GetInsertionPosition(System.Windows.Documents.LogicalDirection.Forward);
+        var targetPara = insertPos.Paragraph;
+        if (targetPara?.Parent is not System.Windows.Documents.TableCell cell) return;
+
+        System.Windows.Documents.Block lastInserted = targetPara;
+        for (int i = 1; i < paragraphs.Count; i++)
+        {
+            var newPara = Services.FlowDocumentBuilder.BuildParagraph(paragraphs[i]);
+            cell.Blocks.InsertAfter(lastInserted, newPara);
+            lastInserted = newPara;
+        }
     }
 
     /// <summary>
@@ -3300,6 +3338,10 @@ public partial class MainWindow : Window
         }
 
         InsertShapeBlock(shape);
+        // Polyline 그리기 완료 후 그리기 모드 플래그·캡처를 정리하고 본문 RTB 로 포커스 복귀 —
+        // 이전에는 EndDrawingMode 가 호출되지 않아 _drawingPolyline_active 등이 true 로 남고
+        // 키보드 포커스가 BodyEditor 로 돌아오지 않아 텍스트 입력이 안 되는 문제가 있었다.
+        EndDrawingMode();
     }
 
     private void InsertShapeBlock(PolyDonky.Core.ShapeObject shape)
