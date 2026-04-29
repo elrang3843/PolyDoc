@@ -14,11 +14,13 @@ namespace PolyDonky.App.Pagination;
 /// </para>
 ///
 /// <para>
-/// 제약 (Phase 1):
+/// 근사치 주의:
 /// <list type="bullet">
 ///   <item>본문 블록→페이지 매핑은 오프스크린 RichTextBox 의 Y 좌표 기반 근사치다.
-///         페이지 경계를 가로지르는 블록은 부정확할 수 있다 (Phase 3 에서 정밀화).</item>
-///   <item><see cref="BlockOnPage.BodyLocalRect"/> 는 Phase 3 이전 <c>Rect.Empty</c>.</item>
+///         페이지 경계를 가로지르는 블록은 페이지 시작 지점에서 잘릴 수 있다.</item>
+///   <item><see cref="BlockOnPage.BodyLocalRect"/> 는 연속 스크롤 공간 기준이며
+///         FlowDocument 가 실제로 페이지 나눔을 수행한 좌표와 미묘하게 다를 수 있다.
+///         Phase 3c(per-page 편집기 재설계) 에서 정밀화 예정.</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -111,10 +113,10 @@ public static class FlowDocumentPaginationAdapter
 
     // ── 본문 블록 → 페이지 매핑 ──────────────────────────────────────────────
 
-    private static List<(int pageIdx, Block coreBlock)> MapBodyBlocksToPages(
+    private static List<(int pageIdx, Block coreBlock, Rect bodyLocalRect)> MapBodyBlocksToPages(
         WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount)
     {
-        var result = new List<(int, Block)>();
+        var result = new List<(int, Block, Rect)>();
 
         // 오프스크린 RichTextBox 에서 Measure/Arrange → TextPointer.GetCharacterRect 활성화
         var rtb = new RichTextBox
@@ -127,9 +129,11 @@ public static class FlowDocumentPaginationAdapter
         rtb.Measure(new Size(geo.PageWidthDip, double.PositiveInfinity));
         rtb.Arrange(new Rect(rtb.DesiredSize));
 
-        // 스크롤 연속 보기에서 "페이지당 본문 높이" = pageHeight - padTop - padBottom
+        // 연속 스크롤 공간에서 "페이지당 본문 높이" = pageHeight - padTop - padBottom
         double bodyH = geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip;
         if (bodyH <= 0) bodyH = geo.PageHeightDip;
+        double bodyW = geo.PageWidthDip - geo.PadLeftDip - geo.PadRightDip;
+        if (bodyW <= 0) bodyW = geo.PageWidthDip;
 
         foreach (var wpfBlock in FlattenBlocks(fd.Blocks))
         {
@@ -141,7 +145,9 @@ public static class FlowDocumentPaginationAdapter
                 ? 0
                 : Math.Clamp((int)(y / bodyH), 0, pageCount - 1);
 
-            result.Add((pageIdx, coreBlock));
+            var bodyLocalRect = TryGetBodyLocalRect(wpfBlock, pageIdx, bodyH, bodyW);
+
+            result.Add((pageIdx, coreBlock, bodyLocalRect));
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
@@ -179,6 +185,43 @@ public static class FlowDocumentPaginationAdapter
         catch
         {
             return double.NaN;
+        }
+    }
+
+    /// <summary>
+    /// 연속 스크롤 공간에서 블록의 전체 경계 상자를 측정해 페이지-본문 기준 Rect 로 변환한다.
+    /// 페이지 경계를 넘어서는 블록은 현재 페이지 본문 높이로 잘린다.
+    /// 측정 실패 시 <see cref="Rect.Empty"/> 반환.
+    /// </summary>
+    private static Rect TryGetBodyLocalRect(
+        WpfDocs.Block block, int pageIdx, double bodyH, double bodyW)
+    {
+        try
+        {
+            var topRect = block.ContentStart.GetCharacterRect(WpfDocs.LogicalDirection.Forward);
+            var botRect = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
+
+            if (topRect == Rect.Empty || double.IsNaN(topRect.Y) || double.IsInfinity(topRect.Y))
+                return Rect.Empty;
+
+            double globalTop    = topRect.Y;
+            double globalBottom = (botRect != Rect.Empty
+                                   && !double.IsNaN(botRect.Bottom)
+                                   && !double.IsInfinity(botRect.Bottom))
+                ? botRect.Bottom
+                : globalTop;
+
+            double pageOriginY = pageIdx * bodyH;
+            double localTop    = globalTop - pageOriginY;
+            // 페이지 경계를 넘어서는 부분은 이 페이지에서 잘림
+            double localBottom = Math.Min(globalBottom - pageOriginY, bodyH);
+            double height      = Math.Max(0, localBottom - localTop);
+
+            return new Rect(0, localTop, bodyW, height);
+        }
+        catch
+        {
+            return Rect.Empty;
         }
     }
 
@@ -222,8 +265,8 @@ public static class FlowDocumentPaginationAdapter
     // ── PaginatedPage 조립 ───────────────────────────────────────────────────
 
     private static IReadOnlyList<PaginatedPage> BuildPages(
-        int                                               pageCount,
-        List<(int pageIdx, Block coreBlock)>              bodyAssignments,
+        int                                                          pageCount,
+        List<(int pageIdx, Block coreBlock, Rect bodyLocalRect)>     bodyAssignments,
         List<(int pageIdx, Block coreBlock, double xMm, double yMm)> overlayAssignments)
     {
         var pages = new PaginatedPage[pageCount];
@@ -234,7 +277,12 @@ public static class FlowDocumentPaginationAdapter
                 PageIndex = i,
                 BodyBlocks = bodyAssignments
                     .Where(b => b.pageIdx == i)
-                    .Select(b => new BlockOnPage { Source = b.coreBlock, PageIndex = i })
+                    .Select(b => new BlockOnPage
+                    {
+                        Source        = b.coreBlock,
+                        PageIndex     = i,
+                        BodyLocalRect = b.bodyLocalRect,
+                    })
                     .ToArray(),
                 OverlayBlocks = overlayAssignments
                     .Where(o => o.pageIdx == i)

@@ -5,8 +5,6 @@ namespace PolyDonky.App.Pagination;
 
 /// <summary>
 /// 하나의 페이지에 속하는 본문 블록 정보.
-/// <see cref="BodyLocalRect"/> 는 Phase 3 (per-page 편집기 재설계) 에서 채워진다.
-/// Phase 1·2 에서는 <see cref="Rect.Empty"/>.
 /// </summary>
 public sealed class BlockOnPage
 {
@@ -15,7 +13,8 @@ public sealed class BlockOnPage
 
     /// <summary>
     /// 페이지 본문 영역(padding 제외) 기준 경계 상자 (DIP).
-    /// Phase 3 이전에는 <see cref="Rect.Empty"/>.
+    /// 오프스크린 RichTextBox 연속 스크롤 공간 기준이므로 FlowDocument 실제 페이지 좌표와
+    /// 미묘하게 다를 수 있다. 측정 실패 시 <see cref="Rect.Empty"/>.
     /// </summary>
     public Rect BodyLocalRect { get; init; } = Rect.Empty;
 }

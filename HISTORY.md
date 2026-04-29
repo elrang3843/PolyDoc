@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Internal** — **페이지네이션 엔진 Phase 3a: `BlockOnPage.BodyLocalRect` 측정값 채우기**. `FlowDocumentPaginationAdapter.MapBodyBlocksToPages` 가 오프스크린 RichTextBox 에서 `ContentStart`/`ContentEnd.GetCharacterRect()` 로 각 블록의 상·하단 Y 를 측정해 페이지-본문 기준 `Rect` 를 계산한다 (`TryGetBodyLocalRect` 헬퍼 추가). 페이지 경계를 넘어서는 블록은 현재 페이지 본문 높이로 잘린다. 연속 스크롤 공간 기준의 근사치이며 Phase 3c(per-page 편집기) 에서 정밀화 예정. 단위 테스트 3개 추가: `BodyLocalRect` 비어있지 않음·범위 검증·두 번째 단락 Y ≥ 첫째 단락 Y.
 - **Internal** — **페이지네이션 엔진 Phase 2: `PrintPreviewWindow.BuildOverlays` 를 `FlowDocumentPaginationAdapter` 위임으로 전환**. 오버레이 감지 로직 중복 제거 — `IsOverlayMode` 판별이 어댑터 한 곳에서만 관리된다. 부수 버그 수정: 이전 구현이 `doc.Sections.FirstOrDefault()` 만 순회해 두 번째 섹션 이후의 오버레이를 누락하던 문제 해결. `PaginationTests` 에 다중 섹션 오버레이 수집 검증 테스트 추가.
 - **Internal** — **페이지네이션 엔진 Phase 1: `PaginatedDocument` 모델 + `FlowDocumentPaginationAdapter`**. `PolyDonky.App.Pagination` 네임스페이스 신설. `PaginatedDocument` / `PaginatedPage` / `BlockOnPage` / `OverlayOnPage` 모델 클래스 추가 — 문서를 페이지 단위로 분할한 구조를 표현. `FlowDocumentPaginationAdapter.Paginate()` 가 WPF `DocumentPaginator` 를 레이아웃 백엔드로 사용해 정확한 페이지 수를 산출하고, 오버레이 블록을 `IOverlayAnchored.AnchorPageIndex` 기준으로 각 페이지에 배정한다. 본문 블록 → 페이지 매핑은 오프스크린 RichTextBox 측정의 Y 좌표 근사치(Phase 3 에서 정밀화). 단위 테스트 추가 (`PolyDonky.App.Tests/PaginationTests.cs`): 모델 구조 검증·오버레이 판별·STA 통합 테스트. 근거: 기존 합성 패딩(`PageBreakPadder`) 방식이 편집창 레이아웃 엔진과 미리보기 레이아웃 엔진이 달라 신뢰하기 어려운 구조적 문제를 해결하기 위한 단계적 전환의 첫 단계.
 

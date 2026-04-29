@@ -238,6 +238,76 @@ public class FlowDocumentPaginationAdapterTests
         });
     }
 
+    // ── BodyLocalRect 측정 ────────────────────────────────────────────────
+
+    [Fact]
+    public void Paginate_SingleParagraph_BodyLocalRectIsNotEmpty()
+    {
+        RunOnSta(() =>
+        {
+            var para = new Paragraph();
+            para.AddText("본문 단락");
+            var doc    = WrapInDocument(para);
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            var bop = result.Pages.SelectMany(p => p.BodyBlocks)
+                                  .First(b => ReferenceEquals(b.Source, para));
+
+            Assert.NotEqual(System.Windows.Rect.Empty, bop.BodyLocalRect);
+        });
+    }
+
+    [Fact]
+    public void Paginate_BodyLocalRect_YIsNonNegativeAndWithinBodyHeight()
+    {
+        RunOnSta(() =>
+        {
+            var page   = new PageSettings { SizeKind = PaperSizeKind.A4 };
+            var para   = new Paragraph();
+            para.AddText("범위 검증");
+            var doc    = new PolyDonkyument();
+            var sec    = new Section { Page = page };
+            sec.Blocks.Add(para);
+            doc.Sections.Add(sec);
+
+            var result  = FlowDocumentPaginationAdapter.Paginate(doc);
+            var bop     = result.Pages.SelectMany(p => p.BodyBlocks)
+                                      .First(b => ReferenceEquals(b.Source, para));
+            var rect    = bop.BodyLocalRect;
+
+            Assert.False(rect == System.Windows.Rect.Empty);
+            Assert.True(rect.Y >= 0,           $"Y={rect.Y} 는 0 이상이어야 함");
+            Assert.True(rect.Height > 0,        $"Height={rect.Height} 는 양수여야 함");
+            Assert.True(rect.Width  > 0,        $"Width={rect.Width} 는 양수여야 함");
+        });
+    }
+
+    [Fact]
+    public void Paginate_MultiParagraph_SecondBlockHasGreaterOrEqualY()
+    {
+        RunOnSta(() =>
+        {
+            var p1 = new Paragraph(); p1.AddText("첫째 단락");
+            var p2 = new Paragraph(); p2.AddText("둘째 단락");
+            var doc = WrapInDocument(p1, p2);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            // 같은 페이지에 있을 때만 Y 순서를 검증
+            var page0Blocks = result.Pages[0].BodyBlocks.ToList();
+            var bop1 = page0Blocks.FirstOrDefault(b => ReferenceEquals(b.Source, p1));
+            var bop2 = page0Blocks.FirstOrDefault(b => ReferenceEquals(b.Source, p2));
+
+            if (bop1 is not null && bop2 is not null
+                && bop1.BodyLocalRect != System.Windows.Rect.Empty
+                && bop2.BodyLocalRect != System.Windows.Rect.Empty)
+            {
+                Assert.True(bop2.BodyLocalRect.Y >= bop1.BodyLocalRect.Y,
+                    $"두 번째 단락 Y({bop2.BodyLocalRect.Y:F1}) 가 첫째({bop1.BodyLocalRect.Y:F1}) 보다 작다");
+            }
+        });
+    }
+
     // ── 오버레이 블록 배정 ────────────────────────────────────────────────
 
     [Fact]
