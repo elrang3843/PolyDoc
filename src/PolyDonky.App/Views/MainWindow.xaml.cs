@@ -492,14 +492,16 @@ public partial class MainWindow : Window
 
         // 복수 블록 또는 표·이미지·도형 — 앵커 뒤에 새 Block 으로 삽입
         var doc = BodyEditor.Document;
-
-        // 캐럿이 TableCell 안에 있으면 parent chain 으로 상위 Table 을 직접 찾는다.
-        // ContentRange 비교 기반 앵커 탐색만 쓰면 WPF Table InsertAfter 가
-        // 셀 내부에 삽입되는 문제가 발생한다.
         System.Windows.Documents.Block? anchor = FindTopLevelAnchorForCaret(doc, caret);
 
-        // anchor 바로 뒤 형제를 기준으로 InsertBefore 를 쓴다 — InsertAfter(Table,...) 보다 안정적.
-        System.Windows.Documents.Block? insertBefore = anchor?.NextBlock;
+        // 셀 안에 Table 을 붙여넣으면 중첩 표로 레이아웃이 무너진다.
+        // 이 경우에만 InsertBefore(table.NextBlock) 으로 enclosing Table 뒤에 삽입하고,
+        // 그 외 (텍스트·도형 등) 는 InsertAfter(anchor) 를 유지해 셀 안에 정상 삽입되도록 한다.
+        bool avoidTableInTable = anchor is System.Windows.Documents.Table
+            && IsCaretInTableCell(caret)
+            && blocks.Any(b => b is PolyDonky.Core.Table);
+
+        System.Windows.Documents.Block? insertBefore = avoidTableInTable ? anchor!.NextBlock : null;
 
         bool hasOverlay = false;
         foreach (var coreBlock in blocks)
@@ -515,11 +517,19 @@ public partial class MainWindow : Window
             var wpfBlock = BuildWpfBlockFromCore(coreBlock);
             if (wpfBlock is null) continue;
             if (insertBefore != null)
+            {
                 doc.Blocks.InsertBefore(insertBefore, wpfBlock);
+                insertBefore = wpfBlock.NextBlock;
+            }
+            else if (anchor != null)
+            {
+                doc.Blocks.InsertAfter(anchor, wpfBlock);
+                anchor = wpfBlock;
+            }
             else
+            {
                 doc.Blocks.Add(wpfBlock);
-            // 다음 블록은 방금 삽입한 블록의 NextBlock 앞에 삽입 — 순서 유지
-            insertBefore = wpfBlock.NextBlock;
+            }
 
             if (coreBlock is PolyDonky.Core.Table { WrapMode: not PolyDonky.Core.TableWrapMode.Block }
                 || coreBlock is PolyDonky.Core.ImageBlock { WrapMode: PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText }
@@ -527,12 +537,28 @@ public partial class MainWindow : Window
                 hasOverlay = true;
         }
 
-        if (hasOverlay) { RebuildOverlayImages(); RebuildOverlayShapes(); RebuildOverlayTables(); }
+        if (hasOverlay)
+        {
+            RebuildOverlayImages(); RebuildOverlayShapes(); RebuildOverlayTables();
+            // 오버레이 재구축 후 포커스가 캔버스에 묶일 수 있으므로 본문 RTB 로 복원
+            BodyEditor.Focus();
+        }
         _viewModel?.MarkDirty();
         return true;
     }
 
     /// <summary>
+    private static bool IsCaretInTableCell(System.Windows.Documents.TextPointer caret)
+    {
+        var el = caret.Parent as System.Windows.FrameworkContentElement;
+        while (el != null)
+        {
+            if (el is System.Windows.Documents.TableCell) return true;
+            el = el.Parent as System.Windows.FrameworkContentElement;
+        }
+        return false;
+    }
+
     /// FlowDocument 의 최상위 Block 중 caret 을 포함하는 것을 반환한다.
     /// caret 이 TableCell 안에 있으면 parent chain 으로 Table 을 직접 찾아 반환 —
     /// ContentRange 비교만 사용하면 WPF Table 의 InsertAfter 가 셀 내부에 삽입되는 문제가 발생한다.
@@ -2749,6 +2775,8 @@ public partial class MainWindow : Window
         DrawPreviewRect.Visibility = Visibility.Collapsed;
         if (PaperHost.IsMouseCaptured) PaperHost.ReleaseMouseCapture();
         if (_viewModel is not null) _viewModel.StatusMessage = SR.StatusReady;
+        // 그리기 모드 종료 후 키보드 포커스를 본문 RTB 로 복원
+        BodyEditor.Focus();
     }
 
     private void ClearPolylinePreview()
