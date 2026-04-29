@@ -1374,6 +1374,16 @@ public partial class MainWindow : Window
         if (Math.Abs(PaperHost.MinHeight - totalHeight) > 0.5)
             PaperHost.MinHeight = totalHeight;
 
+        // 오버레이 캔버스를 페이지 경계에서 클립 — 도형이 페이지 간 갭으로 넘어가지 않도록.
+        // 미리보기/인쇄와 동일한 시각 결과를 보장한다.
+        var overlayClip = PageViewBuilder.BuildPageClipGeometry(pg, pageCount);
+        OverlayShapeCanvas.Clip  = overlayClip;
+        UnderlayShapeCanvas.Clip = overlayClip;
+        OverlayImageCanvas.Clip  = overlayClip;
+        UnderlayImageCanvas.Clip = overlayClip;
+        OverlayTableCanvas.Clip  = overlayClip;
+        UnderlayTableCanvas.Clip = overlayClip;
+
         // PageBackgroundCanvas 클리어 후 페이지마다 다시 그리기.
         PageBackgroundCanvas.Children.Clear();
 

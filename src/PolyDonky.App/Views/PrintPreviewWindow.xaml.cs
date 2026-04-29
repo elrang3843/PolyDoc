@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,10 +7,9 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using System.Windows.Xps.Packaging;
 using PolyDonky.App.Pagination;
+using PolyDonky.App.Services;
 using PolyDonky.Core;
-using Fdb = PolyDonky.App.Services.FlowDocumentBuilder;
 
 namespace PolyDonky.App.Views;
 
@@ -20,19 +18,16 @@ public partial class PrintPreviewWindow : Window
     // ── 상태 ─────────────────────────────────────────────────────────────
 
     private readonly PolyDonkyument _doc;
-    private PageSettings _printPage;       // 패널에서 수정된 용지 설정 (원본 불변)
+    private PageSettings _printPage;
     private bool _monochrome;
     private int  _copies = 1;
 
-    private XpsDocument? _xpsDoc;
-    private string?      _tmpXpsPath;
-    private double _pageWidthDip;
-    private double _pageHeightDip;
-    private bool   _initialZoomApplied;
-    // InitializeComponent() 가 XAML 의 ComboBox 초기 SelectedIndex 를 적용하면서
-    // SelectionChanged 가 _doc 할당 전에 발화되어 NRE 가 났음. true 로 시작해 생성자 +
-    // OnWindowLoaded → InitSettingsPanel 이 끝날 때까지 핸들러를 무시하게 한다.
-    private bool _suppressSettingsEvents = true; // 초기화 중 이벤트 억제
+    private PageGeometry? _geo;
+    private int           _pageCount;
+    private bool          _initialZoomApplied;
+
+    // InitializeComponent() 가 ComboBox 초기 SelectedIndex 적용 시 이벤트 억제.
+    private bool _suppressSettingsEvents = true;
 
     private readonly DispatcherTimer _rebuildTimer;
 
@@ -49,7 +44,6 @@ public partial class PrintPreviewWindow : Window
         ["Legal"]  = PaperSizeKind.Legal,
     };
 
-    // (상, 하, 좌, 우) mm
     private static readonly Dictionary<string, (double T, double B, double L, double R)> MarginPresets = new()
     {
         ["Normal"] = (25,   25,   25,   25),
@@ -67,10 +61,7 @@ public partial class PrintPreviewWindow : Window
         _doc       = doc;
         _printPage = ClonePage(doc.Sections.FirstOrDefault()?.Page ?? new PageSettings());
 
-        _rebuildTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(350),
-        };
+        _rebuildTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
         _rebuildTimer.Tick += (_, _) => { _rebuildTimer.Stop(); RebuildPreview(); };
 
         Loaded      += OnWindowLoaded;
@@ -89,21 +80,12 @@ public partial class PrintPreviewWindow : Window
     {
         _suppressSettingsEvents = true;
 
-        // 용지 크기: 문서 기본값 선택
-        PaperSizeCombo.SelectedIndex = 0;
-
-        // 방향
-        PortraitRadio.IsChecked  = _printPage.Orientation == PageOrientation.Portrait;
-        LandscapeRadio.IsChecked = _printPage.Orientation == PageOrientation.Landscape;
-
-        // 여백: 문서 기본값 선택
+        PaperSizeCombo.SelectedIndex   = 0;
+        PortraitRadio.IsChecked        = _printPage.Orientation == PageOrientation.Portrait;
+        LandscapeRadio.IsChecked       = _printPage.Orientation == PageOrientation.Landscape;
         MarginPresetCombo.SelectedIndex = 0;
-
-        // 색상: 컬러
-        ColorRadio.IsChecked = true;
-
-        // 매수
-        CopiesBox.Text = "1";
+        ColorRadio.IsChecked           = true;
+        CopiesBox.Text                 = "1";
 
         _suppressSettingsEvents = false;
     }
@@ -117,7 +99,6 @@ public partial class PrintPreviewWindow : Window
         if (tag == "Default")
         {
             _printPage = ClonePage(_doc.Sections.FirstOrDefault()?.Page ?? new PageSettings());
-            // 방향은 그대로 유지
             _printPage.Orientation = PortraitRadio.IsChecked == true
                 ? PageOrientation.Portrait : PageOrientation.Landscape;
         }
@@ -168,15 +149,12 @@ public partial class PrintPreviewWindow : Window
     private void OnCopiesPreviewInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
         => e.Handled = !e.Text.All(char.IsDigit);
 
-    private void OnCopiesUp(object sender, RoutedEventArgs e)
-        => SetCopies(_copies + 1);
-
-    private void OnCopiesDown(object sender, RoutedEventArgs e)
-        => SetCopies(_copies - 1);
+    private void OnCopiesUp(object sender, RoutedEventArgs e)   => SetCopies(_copies + 1);
+    private void OnCopiesDown(object sender, RoutedEventArgs e) => SetCopies(_copies - 1);
 
     private void SetCopies(int v)
     {
-        _copies = Math.Clamp(v, 1, 99);
+        _copies        = Math.Clamp(v, 1, 99);
         CopiesBox.Text = _copies.ToString();
     }
 
@@ -195,49 +173,54 @@ public partial class PrintPreviewWindow : Window
         _initialZoomApplied = false;
         try
         {
-            _pageWidthDip  = Fdb.MmToDip(_printPage.EffectiveWidthMm);
-            _pageHeightDip = Fdb.MmToDip(_printPage.EffectiveHeightMm);
-            double padL = Fdb.MmToDip(_printPage.MarginLeftMm);
-            double padT = Fdb.MmToDip(_printPage.MarginTopMm);
-            double padR = Fdb.MmToDip(_printPage.MarginRightMm);
-            double padB = Fdb.MmToDip(_printPage.MarginBottomMm);
-
-            // FlowDocument 는 문서 원본(_doc) 기반으로 빌드하되
-            // 용지 설정은 패널에서 선택한 _printPage 를 적용한다.
+            // 1. 페이지 설정이 적용된 임시 문서 생성
             var docForBuild = BuildDocWithPage(_doc, _printPage);
-            var fd = Fdb.Build(docForBuild);
-            fd.PageWidth   = _pageWidthDip;
-            fd.PageHeight  = _pageHeightDip;
-            fd.PagePadding = new Thickness(padL, padT, padR, padB);
-            fd.ColumnWidth = double.MaxValue;
 
-            // 이전 XPS 정리
-            CleanupXps();
+            // 2. 편집창과 동일한 파이프라인으로 페이지 분할
+            var paginated = FlowDocumentPaginationAdapter.Paginate(docForBuild);
+            var slices    = PerPageDocumentSplitter.Split(paginated);
+            var geo       = new PageGeometry(_printPage);
 
-            _tmpXpsPath = Path.Combine(Path.GetTempPath(), $"pdpreview_{Guid.NewGuid():N}.xps");
+            _geo       = geo;
+            _pageCount = paginated.PageCount;
 
-            var innerPaginator = ((IDocumentPaginatorSource)fd).DocumentPaginator;
-            innerPaginator.PageSize = new Size(_pageWidthDip, _pageHeightDip);
+            // 3. 읽기 전용 per-page RTB 구성 (편집창 ConfigurePageRtb 와 동일 구조, 편집 잠금)
+            PreviewPageHost.SetupPages(slices, geo, rtb =>
+            {
+                rtb.IsReadOnly  = true;
+                rtb.Focusable   = false;
+                rtb.Background  = Brushes.Transparent;
+                rtb.BorderThickness = new Thickness(0);
+            });
 
-            var overlays = BuildOverlays(docForBuild);
-            DocumentPaginator paginator = overlays.Count > 0
-                ? new OverlayCompositingPaginator(innerPaginator, overlays, new Size(_pageWidthDip, _pageHeightDip), _monochrome)
-                : _monochrome
-                    ? new GrayscalePaginator(innerPaginator, new Size(_pageWidthDip, _pageHeightDip))
-                    : innerPaginator;
+            // 4. 페이지 배경 프레임
+            var pageSettings = docForBuild.Sections.FirstOrDefault()?.Page;
+            PageViewBuilder.BuildPageFrames(
+                PreviewPageBgCanvas, geo, _pageCount, pageSettings,
+                pageBg: Brushes.White, showShadow: true, showGuides: false, showLabels: true);
 
-            using (var xpsWrite = new XpsDocument(_tmpXpsPath, FileAccess.ReadWrite))
-                XpsDocument.CreateXpsDocumentWriter(xpsWrite).Write(paginator);
+            // 5. 오버레이 캔버스 채우기
+            PageViewBuilder.PopulateOverlayCanvases(
+                paginated, geo,
+                PreviewOverlayShapeCanvas,  PreviewUnderlayShapeCanvas,
+                PreviewOverlayImageCanvas,  PreviewUnderlayImageCanvas,
+                PreviewOverlayTableCanvas,  PreviewUnderlayTableCanvas,
+                PreviewFloatingCanvas);
 
-            _xpsDoc = new XpsDocument(_tmpXpsPath, FileAccess.Read);
+            // 6. 오버레이 캔버스 클립 — 도형이 페이지 경계 밖으로 나오지 않도록
+            var clip = PageViewBuilder.BuildPageClipGeometry(geo, _pageCount);
+            PreviewOverlayShapeCanvas.Clip  = clip;
+            PreviewUnderlayShapeCanvas.Clip = clip;
+            PreviewOverlayImageCanvas.Clip  = clip;
+            PreviewUnderlayImageCanvas.Clip = clip;
+            PreviewOverlayTableCanvas.Clip  = clip;
+            PreviewUnderlayTableCanvas.Clip = clip;
 
-            var fixedSeq = _xpsDoc.GetFixedDocumentSequence();
-            PreviewViewer.Document = fixedSeq;
+            // 7. PaperHost 크기 설정
+            PreviewPaperHost.Width     = geo.PageWidthDip;
+            PreviewPaperHost.MinHeight = geo.TotalHeightDip(_pageCount);
 
-            int pageCount = fixedSeq.References.Count > 0
-                ? fixedSeq.References[0].GetDocument(false)?.Pages.Count ?? 0
-                : 0;
-            PageInfoText.Text = pageCount > 0 ? $"총 {pageCount}페이지" : string.Empty;
+            PageInfoText.Text = $"총 {_pageCount}페이지";
 
             Dispatcher.BeginInvoke(new Action(ApplyFitPage), DispatcherPriority.Loaded);
         }
@@ -253,55 +236,17 @@ public partial class PrintPreviewWindow : Window
 
     private void RebuildPreview()
     {
-        PreviewViewer.Document = null;
-        CleanupXps();
+        // per-page RTB 초기화
+        PreviewPageHost.SetupPages([], new PageGeometry(new PageSettings()), null);
         BuildPreview();
     }
-
-    /// <summary>_doc 의 블록/플로팅 객체는 유지하고 용지 설정만 교체한 임시 문서를 반환한다.</summary>
-    private static PolyDonkyument BuildDocWithPage(PolyDonkyument src, PageSettings page)
-    {
-        var clone = new PolyDonkyument();
-        foreach (var sec in src.Sections)
-        {
-            // System.Windows.Documents.Section 과 모호 — 완전 한정명 필요.
-            var newSec = new PolyDonky.Core.Section
-            {
-                Id     = sec.Id,
-                Page   = page,
-                Blocks = sec.Blocks,
-            };
-            clone.Sections.Add(newSec);
-        }
-        clone.OutlineStyles = src.OutlineStyles;
-        return clone;
-    }
-
-    /// <summary>원본 PageSettings 의 얕은 복사본 반환. WidthMm/HeightMm/Margin 등 값 타입만 복사.</summary>
-    private static PageSettings ClonePage(PageSettings src) => new()
-    {
-        SizeKind        = src.SizeKind,
-        WidthMm         = src.WidthMm,
-        HeightMm        = src.HeightMm,
-        Orientation     = src.Orientation,
-        MarginTopMm     = src.MarginTopMm,
-        MarginBottomMm  = src.MarginBottomMm,
-        MarginLeftMm    = src.MarginLeftMm,
-        MarginRightMm   = src.MarginRightMm,
-        MarginHeaderMm  = src.MarginHeaderMm,
-        MarginFooterMm  = src.MarginFooterMm,
-        PaperColor      = src.PaperColor,
-        ColumnCount     = src.ColumnCount,
-        ColumnGapMm     = src.ColumnGapMm,
-        PageNumberStart = src.PageNumberStart,
-    };
 
     // ── 줌 ───────────────────────────────────────────────────────────────
 
     private void ApplyFitPage()
     {
-        if (_pageWidthDip <= 0 || _pageHeightDip <= 0) return;
-        if (PreviewViewer.ActualWidth < 50 || PreviewViewer.ActualHeight < 50)
+        if (_geo is null) return;
+        if (PreviewScroll.ActualWidth < 50 || PreviewScroll.ActualHeight < 50)
         {
             if (!_initialZoomApplied)
             {
@@ -311,30 +256,26 @@ public partial class PrintPreviewWindow : Window
             }
             return;
         }
-        const double padding = 32;
-        double availW = PreviewViewer.ActualWidth  - padding;
-        double availH = PreviewViewer.ActualHeight - padding;
-        double zoom   = Math.Min(availW / _pageWidthDip, availH / _pageHeightDip) * 100;
-        zoom = Math.Max(10, Math.Min(500, zoom));
-        SetZoom(zoom);
+        const double padding = 64;
+        double zoomW = (PreviewScroll.ActualWidth  - padding) / _geo.PageWidthDip;
+        double zoomH = (PreviewScroll.ActualHeight - padding) / _geo.PageHeightDip;
+        SetZoom(Math.Clamp(Math.Min(zoomW, zoomH) * 100, 10, 500));
         _initialZoomApplied = true;
     }
 
     private void ApplyFitWidth()
     {
-        if (_pageWidthDip <= 0) return;
-        if (PreviewViewer.ActualWidth < 50) return;
-        const double padding = 32;
-        double availW = PreviewViewer.ActualWidth - padding;
-        double zoom   = (availW / _pageWidthDip) * 100;
-        zoom = Math.Max(10, Math.Min(500, zoom));
-        SetZoom(zoom);
+        if (_geo is null) return;
+        const double padding = 64;
+        SetZoom(Math.Clamp((PreviewScroll.ActualWidth - padding) / _geo.PageWidthDip * 100, 10, 500));
     }
 
     private void SetZoom(double zoomPercent)
     {
-        PreviewViewer.Zoom = zoomPercent;
-        ZoomText.Text = $"{Math.Round(zoomPercent)}%";
+        double scale      = zoomPercent / 100.0;
+        PreviewScale.ScaleX = scale;
+        PreviewScale.ScaleY = scale;
+        ZoomText.Text     = $"{Math.Round(zoomPercent)}%";
     }
 
     private void OnViewerSizeChanged(object sender, SizeChangedEventArgs e)
@@ -345,19 +286,17 @@ public partial class PrintPreviewWindow : Window
     // ── 버튼 핸들러 ──────────────────────────────────────────────────────
 
     private void OnZoomInClick(object sender, RoutedEventArgs e)
-        => SetZoom(Math.Min(500, PreviewViewer.Zoom * 1.25));
+        => SetZoom(Math.Min(500, (PreviewScale.ScaleX * 100) * 1.25));
 
     private void OnZoomOutClick(object sender, RoutedEventArgs e)
-        => SetZoom(Math.Max(10, PreviewViewer.Zoom / 1.25));
+        => SetZoom(Math.Max(10, (PreviewScale.ScaleX * 100) / 1.25));
 
-    private void OnFitPageClick(object sender, RoutedEventArgs e)
-        => ApplyFitPage();
-
-    private void OnFitWidthClick(object sender, RoutedEventArgs e)
-        => ApplyFitWidth();
+    private void OnFitPageClick(object sender, RoutedEventArgs e)  => ApplyFitPage();
+    private void OnFitWidthClick(object sender, RoutedEventArgs e) => ApplyFitWidth();
 
     private void OnPrintClick(object sender, RoutedEventArgs e)
     {
+        if (_geo is null) return;
         if (int.TryParse(CopiesBox.Text, out int c) && c >= 1) _copies = c;
 
         var dlg = new System.Windows.Controls.PrintDialog();
@@ -371,167 +310,62 @@ public partial class PrintPreviewWindow : Window
 
         if (dlg.ShowDialog() != true) return;
 
-        if (PreviewViewer.Document is IDocumentPaginatorSource src)
-            dlg.PrintDocument(src.DocumentPaginator, "PolyDonky 문서");
+        var paginator = new LiveViewPaginator(PreviewPaperHost, _geo, _pageCount, _monochrome);
+        dlg.PrintDocument(paginator, "PolyDonky 문서");
     }
 
-    private void OnCloseClick(object sender, RoutedEventArgs e)
-        => Close();
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
-    // ── 오버레이 합성 ────────────────────────────────────────────────────
+    // ── 인쇄용 Paginator ─────────────────────────────────────────────────
 
     /// <summary>
-    /// 오버레이는 페이지-로컬 좌표를 직접 사용 — <see cref="PageIndex"/> 가 어느 페이지에
-    /// 그릴지 결정하고, X/Y 는 그 페이지 좌상단 기준 DIP 좌표.
+    /// PreviewPaperHost 의 각 페이지 영역을 VisualBrush 로 캡처해 DocumentPage 로 반환한다.
+    /// 미리보기와 인쇄가 완전히 동일한 렌더링 경로를 사용한다.
     /// </summary>
-    private readonly record struct OverlayItem(UIElement Element, int PageIndex, double X, double Y, bool Behind);
-
-    // 오버레이 감지·수집은 FlowDocumentPaginationAdapter 에 위임해 중복을 제거한다.
-    // 모든 섹션의 오버레이가 포함되며(이전 FirstOrDefault 버그 수정), IsOverlayMode 판별 로직도 공유.
-    private static List<OverlayItem> BuildOverlays(PolyDonkyument doc)
+    private sealed class LiveViewPaginator : DocumentPaginator
     {
-        var list      = new List<OverlayItem>();
-        var paginated = FlowDocumentPaginationAdapter.Paginate(doc);
+        private readonly UIElement   _source;
+        private readonly PageGeometry _geo;
+        private readonly int         _pageCount;
+        private readonly bool        _monochrome;
 
-        foreach (var page in paginated.Pages)
-            foreach (var oop in page.OverlayBlocks)
-                if (BuildOverlayItem(oop) is { } item)
-                    list.Add(item);
-
-        return list;
-    }
-
-    private static OverlayItem? BuildOverlayItem(OverlayOnPage oop)
-    {
-        double x = Fdb.MmToDip(oop.XMm);
-        double y = Fdb.MmToDip(oop.YMm);
-        int    p = oop.AnchorPageIndex;
-
-        return oop.Source switch
+        public LiveViewPaginator(UIElement source, PageGeometry geo, int pageCount, bool monochrome)
         {
-            TextBoxObject tb => new OverlayItem(
-                new TextBoxOverlay(tb) { Width = Fdb.MmToDip(tb.WidthMm), Height = Fdb.MmToDip(tb.HeightMm) },
-                p, x, y, Behind: tb.WrapMode == ImageWrapMode.BehindText),
-
-            ImageBlock img when Fdb.BuildOverlayImageControl(img) is { } imgCtrl
-                => new OverlayItem(imgCtrl, p, x, y, Behind: img.WrapMode == ImageWrapMode.BehindText),
-
-            ShapeObject shp => new OverlayItem(
-                Fdb.BuildOverlayShapeControl(shp), p, x, y, Behind: shp.WrapMode == ImageWrapMode.BehindText),
-
-            PolyDonky.Core.Table tbl when Fdb.BuildOverlayTableControl(tbl) is { } tblCtrl
-                => new OverlayItem(tblCtrl, p, x, y, Behind: tbl.WrapMode == TableWrapMode.BehindText),
-
-            _ => null,
-        };
-    }
-
-    // ── Paginator ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// 오버레이를 해당 페이지 Y 범위 기준으로 합성하고, monochrome 이면 추가로 회색 변환.
-    /// </summary>
-    private sealed class OverlayCompositingPaginator : DocumentPaginator
-    {
-        private readonly DocumentPaginator       _inner;
-        private readonly IReadOnlyList<OverlayItem> _overlays;
-        private readonly Size   _pageSize;
-        private readonly bool   _monochrome;
-
-        public OverlayCompositingPaginator(DocumentPaginator inner,
-            IReadOnlyList<OverlayItem> overlays, Size pageSize, bool monochrome)
-        {
-            _inner      = inner;
-            _overlays   = overlays;
-            _pageSize   = pageSize;
+            _source     = source;
+            _geo        = geo;
+            _pageCount  = pageCount;
             _monochrome = monochrome;
         }
 
         public override DocumentPage GetPage(int pageNumber)
         {
-            var inner = _inner.GetPage(pageNumber);
+            var sz = new Size(_geo.PageWidthDip, _geo.PageHeightDip);
 
-            // 좌표가 이미 페이지 로컬 — PageIndex 가 일치하는 오버레이만 그 페이지에 그린다.
-            // 별도 Y 보정 불필요 (예전의 padT yCorrection 패치 제거됨).
-            var pageOverlays = _overlays
-                .Where(ov => ov.PageIndex == pageNumber)
-                .ToList();
-
-            DocumentPage result;
-            if (pageOverlays.Count == 0)
+            // PreviewPaperHost 에서 해당 페이지 영역만 뽑아 (0,0) 에 렌더링
+            var brush = new VisualBrush(_source)
             {
-                result = inner;
-            }
-            else
-            {
-                var container = new ContainerVisual
-                {
-                    // 페이지 바깥으로 흘러내린 오버레이가 다음 페이지 영역까지 그려지지 않도록 클립.
-                    Clip = new System.Windows.Media.RectangleGeometry(
-                        new Rect(0, 0, _pageSize.Width, _pageSize.Height)),
-                };
+                Viewbox      = new Rect(0, pageNumber * _geo.PageStrideDip, sz.Width, sz.Height),
+                ViewboxUnits = BrushMappingMode.Absolute,
+                Stretch      = Stretch.None,
+            };
 
-                foreach (var ov in pageOverlays)
-                    if (ov.Behind) AddElementAt(container, ov);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+                dc.DrawRectangle(brush, null, new Rect(0, 0, sz.Width, sz.Height));
 
-                var bodyHost = new ContainerVisual();
-                bodyHost.Children.Add(inner.Visual);
-                container.Children.Add(bodyHost);
-
-                foreach (var ov in pageOverlays)
-                    if (!ov.Behind) AddElementAt(container, ov);
-
-                result = new DocumentPage(container, _pageSize, inner.BleedBox, inner.ContentBox);
-            }
-
-            return _monochrome ? ToGrayscale(result, _pageSize) : result;
+            var page = new DocumentPage(dv, sz, new Rect(sz), new Rect(sz));
+            return _monochrome ? ToGrayscale(page, sz) : page;
         }
 
-        private static void AddElementAt(ContainerVisual host, OverlayItem ov)
-        {
-            var e = ov.Element;
-            double w = e is FrameworkElement fe  && !double.IsNaN(fe.Width)   && fe.Width  > 0 ? fe.Width  : double.PositiveInfinity;
-            double h = e is FrameworkElement fe2 && !double.IsNaN(fe2.Height) && fe2.Height > 0 ? fe2.Height : double.PositiveInfinity;
-            e.Measure(new Size(w, h));
-            var sz = new Size(double.IsInfinity(w) ? e.DesiredSize.Width : w,
-                              double.IsInfinity(h) ? e.DesiredSize.Height : h);
-            e.Arrange(new Rect(ov.X, ov.Y, sz.Width, sz.Height));
-            host.Children.Add(e);
-        }
-
-        public override bool                     IsPageCountValid => _inner.IsPageCountValid;
-        public override int                      PageCount        => _inner.PageCount;
-        public override Size                     PageSize         { get => _inner.PageSize; set => _inner.PageSize = value; }
-        public override IDocumentPaginatorSource Source           => _inner.Source;
-        public override void                     ComputePageCount() => _inner.ComputePageCount();
+        public override bool IsPageCountValid => true;
+        public override int  PageCount        => _pageCount;
+        public override Size PageSize         { get; set; }
+        public override IDocumentPaginatorSource Source => null!;
+        public override void ComputePageCount() { }
     }
 
-    /// <summary>오버레이 없이 흑백만 필요한 경우 사용하는 단순 래퍼.</summary>
-    private sealed class GrayscalePaginator : DocumentPaginator
-    {
-        private readonly DocumentPaginator _inner;
-        private readonly Size _pageSize;
+    // ── 흑백 변환 ────────────────────────────────────────────────────────
 
-        public GrayscalePaginator(DocumentPaginator inner, Size pageSize)
-        {
-            _inner    = inner;
-            _pageSize = pageSize;
-        }
-
-        public override DocumentPage GetPage(int pageNumber)
-            => ToGrayscale(_inner.GetPage(pageNumber), _pageSize);
-
-        public override bool                     IsPageCountValid => _inner.IsPageCountValid;
-        public override int                      PageCount        => _inner.PageCount;
-        public override Size                     PageSize         { get => _inner.PageSize; set => _inner.PageSize = value; }
-        public override IDocumentPaginatorSource Source           => _inner.Source;
-        public override void                     ComputePageCount() => _inner.ComputePageCount();
-    }
-
-    /// <summary>
-    /// DocumentPage.Visual 을 150 DPI 로 래스터화 후 Gray8 로 변환해 흑백 페이지를 반환.
-    /// (화면 미리보기용. 실제 인쇄는 PrintTicket.OutputColor = Monochrome 사용.)
-    /// </summary>
     private static DocumentPage ToGrayscale(DocumentPage page, Size size)
     {
         const double dpi = 150;
@@ -552,23 +386,47 @@ public partial class PrintPreviewWindow : Window
         return new DocumentPage(dv, size, page.BleedBox, page.ContentBox);
     }
 
-    // ── Window lifecycle ─────────────────────────────────────────────────
+    // ── 유틸 ─────────────────────────────────────────────────────────────
 
-    private void CleanupXps()
+    private static PolyDonkyument BuildDocWithPage(PolyDonkyument src, PageSettings page)
     {
-        _xpsDoc?.Close();
-        _xpsDoc = null;
-        if (_tmpXpsPath is not null)
+        var clone = new PolyDonkyument();
+        foreach (var sec in src.Sections)
         {
-            try { File.Delete(_tmpXpsPath); } catch { }
-            _tmpXpsPath = null;
+            clone.Sections.Add(new PolyDonky.Core.Section
+            {
+                Id     = sec.Id,
+                Page   = page,
+                Blocks = sec.Blocks,
+            });
         }
+        clone.OutlineStyles = src.OutlineStyles;
+        return clone;
     }
+
+    private static PageSettings ClonePage(PageSettings src) => new()
+    {
+        SizeKind        = src.SizeKind,
+        WidthMm         = src.WidthMm,
+        HeightMm        = src.HeightMm,
+        Orientation     = src.Orientation,
+        MarginTopMm     = src.MarginTopMm,
+        MarginBottomMm  = src.MarginBottomMm,
+        MarginLeftMm    = src.MarginLeftMm,
+        MarginRightMm   = src.MarginRightMm,
+        MarginHeaderMm  = src.MarginHeaderMm,
+        MarginFooterMm  = src.MarginFooterMm,
+        PaperColor      = src.PaperColor,
+        ColumnCount     = src.ColumnCount,
+        ColumnGapMm     = src.ColumnGapMm,
+        PageNumberStart = src.PageNumberStart,
+    };
+
+    // ── Window lifecycle ─────────────────────────────────────────────────
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
         _rebuildTimer.Stop();
-        PreviewViewer.Document = null;
-        CleanupXps();
+        PreviewPageHost.SetupPages([], new PageGeometry(new PageSettings()), null);
     }
 }
