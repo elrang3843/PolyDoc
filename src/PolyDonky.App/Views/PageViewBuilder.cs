@@ -4,6 +4,7 @@ using System.Windows.Media;
 using PolyDonky.App.Pagination;
 using PolyDonky.App.Services;
 using PolyDonky.Core;
+using WpfColor = System.Windows.Media.Color;
 
 namespace PolyDonky.App.Views;
 
@@ -37,7 +38,7 @@ public static class PageViewBuilder
                 Width            = geo.PageWidthDip,
                 Height           = geo.PageHeightDip,
                 Background       = pageBg,
-                BorderBrush      = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC)),
+                BorderBrush      = new SolidColorBrush(WpfColor.FromRgb(0xCC, 0xCC, 0xCC)),
                 BorderThickness  = new Thickness(0.5),
                 IsHitTestVisible = false,
             };
@@ -60,7 +61,7 @@ public static class PageViewBuilder
                 {
                     Width           = geo.PageWidthDip  - geo.PadLeftDip - geo.PadRightDip,
                     Height          = geo.PageHeightDip - geo.PadTopDip  - geo.PadBottomDip,
-                    Stroke          = new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x78, 0xD4)),
+                    Stroke          = new SolidColorBrush(WpfColor.FromArgb(0x66, 0x00, 0x78, 0xD4)),
                     StrokeThickness = 0.7,
                     StrokeDashArray = new DoubleCollection { 4, 3 },
                     Fill            = Brushes.Transparent,
@@ -77,7 +78,7 @@ public static class PageViewBuilder
                 {
                     Text             = $"{i + 1}페이지",
                     FontSize         = 10,
-                    Foreground       = new SolidColorBrush(Color.FromArgb(0xA0, 0x50, 0x50, 0xB4)),
+                    Foreground       = new SolidColorBrush(WpfColor.FromArgb(0xA0, 0x50, 0x50, 0xB4)),
                     IsHitTestVisible = false,
                 };
                 Canvas.SetLeft(label, 6);
