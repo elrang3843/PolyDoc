@@ -20,6 +20,7 @@ public partial class MainWindow : Window
 {
     private MainViewModel? _viewModel;
     private bool _suppressTextChanged;
+    private bool _suppressPasteCommand;
     private DispatcherTimer? _statusTimer;
     private DictionaryWindow? _dictWindow;
 
@@ -396,7 +397,7 @@ public partial class MainWindow : Window
         }
         else if (e.Command == ApplicationCommands.Paste)
         {
-            if (TryPasteFlowSelection()) e.Handled = true;
+            if (!_suppressPasteCommand && TryPasteFlowSelection()) e.Handled = true;
         }
     }
 
@@ -873,7 +874,8 @@ public partial class MainWindow : Window
     {
         if (_currentPaginatedDoc is null || _pageGeometry is null) return;
         var slices = PerPageDocumentSplitter.Split(_currentPaginatedDoc);
-        _suppressTextChanged = true;
+        _suppressTextChanged    = true;
+        _suppressPasteCommand   = true;
         try
         {
             PageEditorHost.SetupPages(slices, _pageGeometry, ConfigurePageRtb);
@@ -882,6 +884,8 @@ public partial class MainWindow : Window
         {
             _suppressTextChanged = false;
         }
+        // Input 우선순위까지 미뤄서 RestoreCaretToLastEditor 포커스 이벤트가 모두 처리된 뒤 해제
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _suppressPasteCommand = false);
     }
 
     /// <summary>
