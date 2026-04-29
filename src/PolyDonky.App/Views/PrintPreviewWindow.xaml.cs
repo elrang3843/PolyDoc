@@ -262,10 +262,9 @@ public partial class PrintPreviewWindow : Window
         {
             var newSec = new Section
             {
-                Id             = sec.Id,
-                Page           = page,
-                Blocks         = sec.Blocks,
-                FloatingObjects = sec.FloatingObjects,
+                Id     = sec.Id,
+                Page   = page,
+                Blocks = sec.Blocks,
             };
             clone.Sections.Add(newSec);
         }
@@ -384,20 +383,23 @@ public partial class PrintPreviewWindow : Window
         var section = doc.Sections.FirstOrDefault();
         if (section is null) return list;
 
-        foreach (var tb in section.FloatingObjects.OfType<TextBoxObject>())
-        {
-            var ctrl = new TextBoxOverlay(tb)
-            {
-                Width  = Fdb.MmToDip(tb.WidthMm),
-                Height = Fdb.MmToDip(tb.HeightMm),
-            };
-            list.Add(new OverlayItem(ctrl, Fdb.MmToDip(tb.XMm), Fdb.MmToDip(tb.YMm), Behind: false));
-        }
-
+        // 통합 모델 — 도형·이미지·표·글상자 모두 section.Blocks 안에서 함께 순회.
         foreach (var block in section.Blocks)
         {
             switch (block)
             {
+                case TextBoxObject tb:
+                {
+                    var ctrl = new TextBoxOverlay(tb)
+                    {
+                        Width  = Fdb.MmToDip(tb.WidthMm),
+                        Height = Fdb.MmToDip(tb.HeightMm),
+                    };
+                    list.Add(new OverlayItem(ctrl,
+                        Fdb.MmToDip(tb.OverlayXMm), Fdb.MmToDip(tb.OverlayYMm),
+                        Behind: tb.WrapMode == ImageWrapMode.BehindText));
+                    break;
+                }
                 case ImageBlock img when img.WrapMode is ImageWrapMode.InFrontOfText
                                                        or ImageWrapMode.BehindText:
                 {

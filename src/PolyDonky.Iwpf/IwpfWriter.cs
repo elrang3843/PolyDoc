@@ -146,6 +146,10 @@ public sealed class IwpfWriter : IDocumentWriter
                             foreach (var cell in row.Cells)
                                 Walk(cell.Blocks);
                         break;
+                    case TextBoxObject textbox:
+                        // 글상자 안의 이미지/표/(중첩 글상자) 도 동일한 분리 저장 경로로 처리.
+                        Walk(textbox.Content);
+                        break;
                 }
             }
         }

@@ -35,14 +35,20 @@ public static class FlowDocumentParser
         if (originalForMerge?.Sections.FirstOrDefault() is { } origSection)
         {
             section.Page = origSection.Page;
-            // 부유 객체(글상자 등) 는 본문 흐름과 분리된 레이어이므로 FlowDocument 에서
-            // 파싱되지 않는다 — 원본 섹션의 컬렉션을 인계하지 않으면 저장 시 사라진다.
-            foreach (var fo in origSection.FloatingObjects)
-                section.FloatingObjects.Add(fo);
         }
         doc.Sections.Add(section);
 
         ParseBlocks(section, fd.Blocks);
+
+        // 글상자(TextBoxObject) 는 FlowDocument 안에 anchor paragraph 가 없는
+        // 자유 부유 블록이라 ParseBlocks 로 복원되지 않는다. 원본 모델에서 직접 인계.
+        if (originalForMerge?.Sections.FirstOrDefault() is { } origForTb)
+        {
+            foreach (var b in origForTb.Blocks)
+            {
+                if (b is TextBoxObject) section.Blocks.Add(b);
+            }
+        }
         return doc;
     }
 

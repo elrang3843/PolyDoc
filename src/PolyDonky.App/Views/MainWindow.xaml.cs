@@ -860,17 +860,22 @@ public partial class MainWindow : Window
         var page = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
         ApplyPageSettings(page);
 
-        // 부유 객체 (글상자 등) 오버레이 재구축
-        RebuildFloatingObjects();
+        // 모든 오버레이 (글상자·이미지·도형·표) 통합 재구축 — IWPF 통합 모델
+        RebuildOverlays();
+    }
 
-        // 그림 오버레이 재구축 (InFrontOfText / BehindText 모드)
-        RebuildOverlayImages();
-
-        // 도형 오버레이 재구축
-        RebuildOverlayShapes();
-
-        // 표 오버레이 재구축
-        RebuildOverlayTables();
+    /// <summary>
+    /// section.Blocks 전체를 훑어 InFrontOfText / BehindText / 글상자 등 모든
+    /// 부유 객체를 적절한 캔버스에 다시 채워 그린다.
+    /// 종류별 세부 로직은 RebuildOverlayImages / RebuildOverlayShapes /
+    /// RebuildOverlayTables / RebuildFloatingObjects 가 담당.
+    /// </summary>
+    private void RebuildOverlays()
+    {
+        RebuildFloatingObjects();   // 글상자 (TextBoxObject)
+        RebuildOverlayImages();     // 이미지 (ImageBlock)
+        RebuildOverlayShapes();     // 도형 (ShapeObject)
+        RebuildOverlayTables();     // 표 (Table)
     }
 
     /// <summary>
@@ -2707,14 +2712,14 @@ public partial class MainWindow : Window
 
         var model = new TextBoxObject
         {
-            Shape    = _drawingShape,
-            XMm      = x / TextBoxOverlay.DipsPerMm,
-            YMm      = y / TextBoxOverlay.DipsPerMm,
-            WidthMm  = w / TextBoxOverlay.DipsPerMm,
-            HeightMm = h / TextBoxOverlay.DipsPerMm,
-            Status   = NodeStatus.Modified,
+            Shape       = _drawingShape,
+            OverlayXMm  = x / TextBoxOverlay.DipsPerMm,
+            OverlayYMm  = y / TextBoxOverlay.DipsPerMm,
+            WidthMm     = w / TextBoxOverlay.DipsPerMm,
+            HeightMm    = h / TextBoxOverlay.DipsPerMm,
+            Status      = NodeStatus.Modified,
         };
-        _viewModel?.AddFloatingObjectToCurrentSection(model);
+        _viewModel?.AddOverlayBlockToCurrentSection(model);
         var overlay = AddTextBoxOverlay(model);
         SelectOverlay(overlay);
         overlay.BeginEditing();
@@ -3239,9 +3244,9 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    // ── 글상자(부유 객체) 복사/잘라내기/붙여넣기 ──────────────────────
-    private const string FloatingObjectClipboardFormat  = "PolyDonky.FloatingObject.v1";
-    private const string FloatingObjectsClipboardFormat = "PolyDonky.FloatingObjects.v1";
+    // ── 글상자 단독 복사/잘라내기/붙여넣기 ──────────────────────────────
+    // 통합 후 글상자도 PolyDonky.FlowSelection.v1 (List<Block>) 포맷을 단독 항목으로 사용한다.
+    // 별도 FloatingObject* 포맷은 폐지 (IWPF 통합으로 모든 부유 개체가 Block 트리 안에서 처리).
 
     /// <summary>
     /// 선택된 글상자를 복사한다. 안쪽 본문에 포커스가 있어도 텍스트 선택이 비어 있으면
@@ -3255,10 +3260,10 @@ public partial class MainWindow : Window
             && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
             return false;
 
-        var json = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
-            _selectedOverlay.Model, JsonDefaults.Options);
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            new List<Block> { _selectedOverlay.Model }, JsonDefaults.Options);
         var dataObj = new System.Windows.DataObject();
-        dataObj.SetData(FloatingObjectClipboardFormat, json);
+        dataObj.SetData(FlowSelectionClipboardFormat, json);
         // Plain-text 폴백 — 다른 앱으로 붙여넣기 시 안쪽 텍스트만 가도록.
         dataObj.SetText(_selectedOverlay.Model.GetPlainText());
         Clipboard.SetDataObject(dataObj, copy: true);
@@ -3270,95 +3275,13 @@ public partial class MainWindow : Window
         if (!TryCopySelectedFloatingObject()) return false;
         var overlay = _selectedOverlay!;
         FloatingCanvas.Children.Remove(overlay);
-        _viewModel?.RemoveFloatingObject(overlay.Model);
+        _viewModel?.RemoveOverlayBlock(overlay.Model);
         _selectedOverlay = null;
         BodyEditor.Focus();
         return true;
     }
 
-    private bool TryPasteFloatingObject()
-    {
-        if (!Clipboard.ContainsData(FloatingObjectClipboardFormat)) return false;
-        // 글상자 InnerEditor 가 포커스 중이고 텍스트가 선택된 경우에만 텍스트 붙여넣기에 양보.
-        // BodyEditor 선택 여부는 판단 기준에서 제외 — 사용자가 명시적으로 글상자를 복사했다면
-        // Ctrl+V 는 항상 새 글상자를 삽입해야 한다.
-        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true
-            && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
-            return false;
-
-        var json = Clipboard.GetData(FloatingObjectClipboardFormat) as string;
-        if (string.IsNullOrEmpty(json)) return false;
-
-        FloatingObject? clone;
-        try
-        {
-            clone = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(json, JsonDefaults.Options);
-        }
-        catch
-        {
-            return false;
-        }
-        if (clone is not TextBoxObject tb) return false;
-
-        // 새 인스턴스 표시 — Id 재발급, 위치는 살짝 오프셋.
-        tb.Id = null;
-        tb.XMm += 5;
-        tb.YMm += 5;
-        tb.Status = NodeStatus.Modified;
-
-        _viewModel?.AddFloatingObjectToCurrentSection(tb);
-        var overlay = AddTextBoxOverlay(tb);
-        SelectOverlay(overlay);
-        return true;
-    }
-
-    /// <summary>선택 가드 없이 FloatingObject 클립보드에서 글상자를 붙여넣는다.
-    /// 멀티-선택 붙여넣기 경로에서 사용 — 사용자가 명시적으로 복사한 글상자를 항상 삽입.</summary>
-    private bool TryPasteFloatingObjectNoGuard()
-    {
-        var json = Clipboard.GetData(FloatingObjectClipboardFormat) as string;
-        if (string.IsNullOrEmpty(json)) return false;
-        FloatingObject? clone;
-        try { clone = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(json, JsonDefaults.Options); }
-        catch { return false; }
-        if (clone is not TextBoxObject tb) return false;
-        tb.Id = null;
-        tb.XMm += 5;
-        tb.YMm += 5;
-        tb.Status = NodeStatus.Modified;
-        _viewModel?.AddFloatingObjectToCurrentSection(tb);
-        AddTextBoxOverlay(tb);
-        _viewModel?.MarkDirty();
-        return true;
-    }
-
-    /// <summary>FloatingObjects.v1 포맷 (글상자 리스트)을 클립보드에서 붙여넣는다.</summary>
-    private bool TryPasteFloatingObjects()
-    {
-        var json = Clipboard.GetData(FloatingObjectsClipboardFormat) as string;
-        if (string.IsNullOrEmpty(json)) return false;
-        List<FloatingObject>? items;
-        try { items = System.Text.Json.JsonSerializer.Deserialize<List<FloatingObject>>(json, JsonDefaults.Options); }
-        catch { return false; }
-        if (items is null || items.Count == 0) return false;
-
-        bool any = false;
-        foreach (var item in items)
-        {
-            if (item is not TextBoxObject tb) continue;
-            tb.Id = null;
-            tb.XMm += 5;
-            tb.YMm += 5;
-            tb.Status = NodeStatus.Modified;
-            _viewModel?.AddFloatingObjectToCurrentSection(tb);
-            AddTextBoxOverlay(tb);
-            any = true;
-        }
-        if (any) _viewModel?.MarkDirty();
-        return any;
-    }
-
-    /// <summary>현재 섹션의 FloatingObjects 를 캔버스에 다시 채워 그린다 (문서 로드 시).</summary>
+    /// <summary>현재 섹션의 글상자(TextBoxObject) 를 캔버스에 다시 채워 그린다 (문서 로드 시).</summary>
     private void RebuildFloatingObjects()
     {
         ClearMultiSelect();
@@ -3368,7 +3291,7 @@ public partial class MainWindow : Window
         _lastTextEditor = null;
         var section = _viewModel?.Document.Sections.FirstOrDefault();
         if (section is null) return;
-        foreach (var obj in section.FloatingObjects.OfType<TextBoxObject>())
+        foreach (var obj in section.Blocks.OfType<TextBoxObject>())
         {
             AddTextBoxOverlay(obj);
         }
@@ -3377,8 +3300,8 @@ public partial class MainWindow : Window
     private TextBoxOverlay AddTextBoxOverlay(TextBoxObject model)
     {
         var overlay = new TextBoxOverlay(model);
-        Canvas.SetLeft(overlay, model.XMm * TextBoxOverlay.DipsPerMm);
-        Canvas.SetTop(overlay,  model.YMm * TextBoxOverlay.DipsPerMm);
+        Canvas.SetLeft(overlay, model.OverlayXMm * TextBoxOverlay.DipsPerMm);
+        Canvas.SetTop(overlay,  model.OverlayYMm * TextBoxOverlay.DipsPerMm);
         overlay.Width  = model.WidthMm  * TextBoxOverlay.DipsPerMm;
         overlay.Height = model.HeightMm * TextBoxOverlay.DipsPerMm;
 
@@ -3396,7 +3319,7 @@ public partial class MainWindow : Window
                 FloatingCanvas.Children.RemoveAt(idx);
                 FloatingCanvas.Children.Insert(idx + 1, overlay);
                 model.ZOrder++;
-                _viewModel?.NotifyFloatingObjectChanged();
+                _viewModel?.NotifyOverlayChanged();
             }
         };
 
@@ -3408,31 +3331,31 @@ public partial class MainWindow : Window
                 FloatingCanvas.Children.RemoveAt(idx);
                 FloatingCanvas.Children.Insert(idx - 1, overlay);
                 model.ZOrder--;
-                _viewModel?.NotifyFloatingObjectChanged();
+                _viewModel?.NotifyOverlayChanged();
             }
         };
 
-        overlay.AppearanceChangedCommitted += (_, _) => _viewModel?.NotifyFloatingObjectChanged();
+        overlay.AppearanceChangedCommitted += (_, _) => _viewModel?.NotifyOverlayChanged();
 
         overlay.GeometryChangedCommitted += (_, _) =>
         {
             // Canvas DIP → mm 동기화. NaN 방어 (SetLeft 직후라 정상이지만 안전).
             double left = Canvas.GetLeft(overlay); if (double.IsNaN(left)) left = 0;
             double top  = Canvas.GetTop(overlay);  if (double.IsNaN(top))  top  = 0;
-            model.XMm      = left / TextBoxOverlay.DipsPerMm;
-            model.YMm      = top  / TextBoxOverlay.DipsPerMm;
-            model.WidthMm  = overlay.ActualWidth  / TextBoxOverlay.DipsPerMm;
-            model.HeightMm = overlay.ActualHeight / TextBoxOverlay.DipsPerMm;
-            model.Status   = NodeStatus.Modified;
-            _viewModel?.NotifyFloatingObjectChanged();
+            model.OverlayXMm = left / TextBoxOverlay.DipsPerMm;
+            model.OverlayYMm = top  / TextBoxOverlay.DipsPerMm;
+            model.WidthMm    = overlay.ActualWidth  / TextBoxOverlay.DipsPerMm;
+            model.HeightMm   = overlay.ActualHeight / TextBoxOverlay.DipsPerMm;
+            model.Status     = NodeStatus.Modified;
+            _viewModel?.NotifyOverlayChanged();
         };
 
-        overlay.ContentChangedCommitted += (_, _) => _viewModel?.NotifyFloatingObjectChanged();
+        overlay.ContentChangedCommitted += (_, _) => _viewModel?.NotifyOverlayChanged();
 
         overlay.DeleteRequested += (_, _) =>
         {
             FloatingCanvas.Children.Remove(overlay);
-            _viewModel?.RemoveFloatingObject(model);
+            _viewModel?.RemoveOverlayBlock(model);
             if (ReferenceEquals(_selectedOverlay, overlay)) _selectedOverlay = null;
             if (ReferenceEquals(_lastTextEditor, overlay.InnerEditor)) _lastTextEditor = null;
             BodyEditor.Focus();
@@ -3517,7 +3440,7 @@ public partial class MainWindow : Window
             if (overlay.InnerEditor.IsKeyboardFocusWithin && !overlay.InnerEditor.Selection.IsEmpty)
                 return false;
             FloatingCanvas.Children.Remove(overlay);
-            _viewModel?.RemoveFloatingObject(overlay.Model);
+            _viewModel?.RemoveOverlayBlock(overlay.Model);
             _selectedOverlay = null;
             BodyEditor.Focus();
             return true;
@@ -3555,20 +3478,11 @@ public partial class MainWindow : Window
     /// <summary>붙여넣기는 클립보드 포맷에 따라 자동 분기.</summary>
     private bool TryPasteSelectedObject()
     {
-        // 멀티-선택 복사 포맷 (도형·이미지·표·텍스트 블록 리스트)
+        // 통합 멀티-선택 포맷 — 모든 부유 개체(글상자 포함)가 단일 Block 리스트로 직렬화됨
         if (Clipboard.ContainsData(FlowSelectionClipboardFormat))
-        {
-            bool ok = TryPasteFlowSelection();
-            // 함께 저장된 글상자 리스트도 붙여넣기
-            if (Clipboard.ContainsData(FloatingObjectsClipboardFormat))
-                TryPasteFloatingObjects();
-            else if (Clipboard.ContainsData(FloatingObjectClipboardFormat))
-                TryPasteFloatingObjectNoGuard();
-            return ok;
-        }
-        if (Clipboard.ContainsData(BlockClipboardFormat))           return TryPasteBlockFromClipboard();
-        if (Clipboard.ContainsData(FloatingObjectsClipboardFormat)) return TryPasteFloatingObjects();
-        if (Clipboard.ContainsData(FloatingObjectClipboardFormat))  return TryPasteFloatingObject();
+            return TryPasteFlowSelection();
+        if (Clipboard.ContainsData(BlockClipboardFormat))
+            return TryPasteBlockFromClipboard();
         return false;
     }
 
@@ -3785,7 +3699,7 @@ public partial class MainWindow : Window
             if (fe is TextBoxOverlay tbo)
             {
                 FloatingCanvas.Children.Remove(tbo);
-                _viewModel?.RemoveFloatingObject(tbo.Model);
+                _viewModel?.RemoveOverlayBlock(tbo.Model);
             }
             else if (fe.Tag is PolyDonky.Core.ShapeObject shape)
             {
@@ -3838,15 +3752,20 @@ public partial class MainWindow : Window
         var collectedRefs = new System.Collections.Generic.HashSet<object>(
             ReferenceEqualityComparer.Instance);
 
-        // 오버레이 개체: Tag 에서 Core.Block 추출 (TextBoxOverlay 는 FloatingObject 라 스킵)
+        // 오버레이 개체 (도형·이미지·표·글상자) 모두 단일 Block 직렬화 경로로 추출.
         foreach (var fe in _multiSelectedControls)
         {
-            PolyDonky.Core.Block? coreBlock = fe.Tag switch
+            PolyDonky.Core.Block? coreBlock = fe switch
             {
-                PolyDonky.Core.ImageBlock  img   => img,
-                PolyDonky.Core.ShapeObject shape => shape,
-                PolyDonky.Core.Table       tbl   => tbl,
-                _                                => null,
+                TextBoxOverlay tbo                       => tbo.Model,
+                _ => fe.Tag switch
+                {
+                    PolyDonky.Core.ImageBlock     img   => img,
+                    PolyDonky.Core.ShapeObject    shape => shape,
+                    PolyDonky.Core.Table          tbl   => tbl,
+                    PolyDonky.Core.TextBoxObject  tb    => tb,
+                    _                                   => null,
+                },
             };
             if (coreBlock is null) continue;
             collectedRefs.Add(coreBlock);  // 원본 참조 기억 (clone 이 아니라 fe.Tag 자체)
@@ -3906,48 +3825,19 @@ public partial class MainWindow : Window
             }
         }
 
-        // TextBoxOverlay 는 FloatingObject — 별도 슬롯으로 저장
-        var floatingOverlays = _multiSelectedControls.OfType<TextBoxOverlay>().ToList();
-
-        if (blocks.Count == 0 && floatingOverlays.Count == 0) return false;
+        if (blocks.Count == 0) return false;
 
         var json = System.Text.Json.JsonSerializer.Serialize(blocks, PolyDonky.Core.JsonDefaults.Options);
         var dataObj = new DataObject();
         dataObj.SetData(FlowSelectionClipboardFormat, json);
 
-        if (floatingOverlays.Count > 0)
+        // plain-text 폴백 — 단락 + 글상자 텍스트
+        var plainParts = blocks.Select(b => b switch
         {
-            // 모든 글상자를 리스트 포맷으로 저장 (여러 개 동시 복사 지원)
-            var models = floatingOverlays.Select(o =>
-            {
-                try
-                {
-                    var j2 = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(o.Model, PolyDonky.Core.JsonDefaults.Options);
-                    var m2 = System.Text.Json.JsonSerializer.Deserialize<FloatingObject>(j2, PolyDonky.Core.JsonDefaults.Options);
-                    if (m2 != null) { m2.Id = null; return m2; }
-                }
-                catch { }
-                return (FloatingObject?)null;
-            }).Where(m => m != null).Select(m => m!).ToList();
-
-            if (models.Count > 0)
-            {
-                var tbListJson = System.Text.Json.JsonSerializer.Serialize<List<FloatingObject>>(models, PolyDonky.Core.JsonDefaults.Options);
-                dataObj.SetData(FloatingObjectsClipboardFormat, tbListJson);
-            }
-
-            // 단일 글상자 호환: 기존 단일 포맷도 유지
-            if (floatingOverlays.Count == 1)
-            {
-                var tbJson = System.Text.Json.JsonSerializer.Serialize<FloatingObject>(
-                    floatingOverlays[0].Model, PolyDonky.Core.JsonDefaults.Options);
-                dataObj.SetData(FloatingObjectClipboardFormat, tbJson);
-            }
-        }
-
-        // plain-text 폴백
-        var plainParts = blocks.OfType<PolyDonky.Core.Paragraph>().Select(p => p.GetPlainText())
-            .Concat(floatingOverlays.Select(o => o.Model.GetPlainText()));
+            PolyDonky.Core.Paragraph     p  => p.GetPlainText(),
+            PolyDonky.Core.TextBoxObject tb => tb.GetPlainText(),
+            _                                => string.Empty,
+        }).Where(s => !string.IsNullOrEmpty(s));
         dataObj.SetText(string.Join('\n', plainParts));
 
         Clipboard.SetDataObject(dataObj, copy: true);

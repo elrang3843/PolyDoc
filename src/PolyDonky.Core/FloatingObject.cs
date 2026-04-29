@@ -1,20 +1,19 @@
 namespace PolyDonky.Core;
 
-/// <summary>
-/// 텍스트 흐름 외부에 자유 위치로 배치되는 객체 (글상자·도형·이미지 캡션 등) 의 추상 베이스.
-/// 좌표는 페이지 좌상단 원점, 단위는 mm. <see cref="ZOrder"/> 가 큰 값이 위에 그려진다.
-/// 다형 직렬화는 <see cref="FloatingObjectJsonConverter"/> 가 처리.
-/// </summary>
-public abstract class FloatingObject
-{
-    public string? Id { get; set; }
-    public double XMm { get; set; }
-    public double YMm { get; set; }
-    public double WidthMm { get; set; }
-    public double HeightMm { get; set; }
-    public int ZOrder { get; set; }
-    public NodeStatus Status { get; set; } = NodeStatus.Clean;
-}
+using System.Text.Json.Serialization;
+
+// ── 통합 노트 ──────────────────────────────────────────────────────────────
+// IWPF 사양에 맞춰 도형/이미지/표/글상자 모두 단일 Block 트리로 통합 (2026-04-29).
+// TextBoxObject 가 Block 을 상속하도록 변경, 좌표는 OverlayXMm/OverlayYMm 로 통일,
+// Section.FloatingObjects 는 폐기 (Section.Blocks 로 흡수).
+//
+// 레거시 호환:
+// - 옛 IWPF/클립보드 JSON 의 FloatingObject($type:"textbox") + section.floatingObjects 컬렉션은
+//   SectionJsonConverter / BlockJsonConverter 가 읽어들여 Section.Blocks 로 자동 마이그레이션.
+// - TextBoxObject.XMm/YMm 는 OverlayXMm/OverlayYMm 로 포워딩되는 deprecated 속성으로 남김
+//   (옛 코드 빠르게 깨지지 않게 + 옛 JSON 필드 무손실 라운드트립).
+// - FloatingObject 추상 클래스 + FloatingObjectJsonConverter 는 폐기. TextBoxObject 의
+//   다형 직렬화는 이제 BlockJsonConverter 가 "textbox" discriminator 로 처리.
 
 /// <summary>글상자 모양.</summary>
 public enum TextBoxShape
@@ -47,9 +46,46 @@ public enum TextBoxHAlign { Left = 0, Center = 1, Right = 2, Justify = 3 }
 /// <summary>글상자 내 텍스트 세로 정렬.</summary>
 public enum TextBoxVAlign { Top = 0, Middle = 1, Bottom = 2 }
 
-public sealed class TextBoxObject : FloatingObject
+/// <summary>
+/// 글상자 — 페이지 위에 자유 위치로 배치되는 텍스트 컨테이너.
+/// 도형·이미지·표와 동일한 <see cref="ImageWrapMode"/> 배치 체계 + <see cref="OverlayXMm"/>/
+/// <see cref="OverlayYMm"/> 좌표 체계를 공유한다 (IWPF 통합 모델).
+/// </summary>
+public sealed class TextBoxObject : Block
 {
     public TextBoxShape Shape { get; set; } = TextBoxShape.Rectangle;
+
+    /// <summary>본문과의 배치 관계. 글상자 기본은 InFrontOfText (텍스트 위에 떠있음).</summary>
+    public ImageWrapMode WrapMode { get; set; } = ImageWrapMode.InFrontOfText;
+
+    /// <summary>오버레이 X 위치 (mm, 페이지 좌상단 기준).</summary>
+    public double OverlayXMm { get; set; }
+    /// <summary>오버레이 Y 위치 (mm, 페이지 좌상단 기준).</summary>
+    public double OverlayYMm { get; set; }
+
+    public double WidthMm { get; set; }
+    public double HeightMm { get; set; }
+
+    /// <summary>z-order. 큰 값이 위에 그려진다.</summary>
+    public int ZOrder { get; set; }
+
+    // ── 레거시 별칭 (옛 IWPF/클립보드 JSON 에 들어 있던 xMm/yMm 필드 호환 — 읽기 전용) ──
+    // 직렬화 출력에는 포함하지 않고, 역직렬화 시 입력값을 OverlayXMm/OverlayYMm 로 흘려넣는다.
+    [JsonPropertyName("xMm"), JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    internal double LegacyXMm
+    {
+        get => 0;
+        set { if (value != 0 && OverlayXMm == 0) OverlayXMm = value; }
+    }
+
+    [JsonPropertyName("yMm"), JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    internal double LegacyYMm
+    {
+        get => 0;
+        set { if (value != 0 && OverlayYMm == 0) OverlayYMm = value; }
+    }
 
     /// <summary>테두리 색 (hex). null/빈 = 검정.</summary>
     public string? BorderColor { get; set; }
@@ -66,38 +102,22 @@ public sealed class TextBoxObject : FloatingObject
     public double PaddingRightMm  { get; set; } = 2.0;
 
     // ── 텍스트 정렬 ───────────────────────────────────────────────────────────
-    // 기본값: 가로 가운데 / 세로 가운데 — 글상자(특히 말풍선·구름·가시 등 비사각형
-    // 모양) 의 일반적 사용 패턴은 짧은 텍스트를 박스 한가운데 두는 것. Word·PowerPoint
-    // 의 기본 텍스트 상자 동작과 일치.
     public TextBoxHAlign HAlign { get; set; } = TextBoxHAlign.Center;
     public TextBoxVAlign VAlign { get; set; } = TextBoxVAlign.Middle;
 
-    /// <summary>박스 전체 회전각 (도, 시계방향). 모양과 본문 모두 함께 회전. -360~360.</summary>
+    /// <summary>박스 전체 회전각 (도, 시계방향). -360~360.</summary>
     public double RotationAngleDeg { get; set; }
 
-    // ── 글자 방향 (페이지와 동일 의미; 기본값은 가로/오른쪽으로) ──────────────
-    /// <summary>가로/세로 쓰기. 세로쓰기는 모델만 저장 — 렌더링은 다음 사이클.</summary>
+    // ── 글자 방향 ─────────────────────────────────────────────────────────────
     public TextOrientation TextOrientation { get; set; } = TextOrientation.Horizontal;
-    /// <summary>본문/행 진행 방향.</summary>
     public TextProgression TextProgression { get; set; } = TextProgression.Rightward;
 
     // ── 모양별 형태 파라미터 ─────────────────────────────────────────────────
-    /// <summary>말풍선(Speech) 꼬리가 뻗는 방향.</summary>
     public SpeechPointerDirection SpeechDirection { get; set; } = SpeechPointerDirection.Bottom;
-
-    /// <summary>구름풍선(Cloud) 둘레의 뭉게뭉게(돌출 호) 개수. 6~24 권장.</summary>
     public int CloudPuffCount { get; set; } = 10;
-
-    /// <summary>가시풍선(Spiky) 가시(별 꼭짓점) 개수. 5~24 권장.</summary>
     public int SpikeCount { get; set; } = 12;
-
-    /// <summary>번개상자(Lightning) 지그재그 꺽임 개수. 1~5 권장 (1=단순, 2=기본 볼트).</summary>
     public int LightningBendCount { get; set; } = 2;
-
-    /// <summary>파이(Pie) 시작 각도 (도, 시계방향, 0 = 오른쪽). -360~360.</summary>
     public double PieStartAngleDeg { get; set; } = 0;
-
-    /// <summary>파이(Pie) 호 범위 (도). 5~355 로 클램프. 기본 270° = 3/4 원.</summary>
     public double PieSweepAngleDeg { get; set; } = 270;
 
     /// <summary>본문 블록. 최소 1개의 빈 Paragraph 를 포함하도록 기본값 설정.</summary>

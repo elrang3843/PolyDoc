@@ -614,7 +614,7 @@ public partial class MainViewModel : ObservableObject
 
     // ── 글상자 (Insert > TextBox) ────────────────────────────────────────
     // 메뉴 클릭 → ViewModel 이 이벤트 발생 → View 가 드래그 생성 모드 진입.
-    // 모델 갱신은 View 가 AddFloatingObjectToCurrentSection 으로 위임.
+    // 글상자도 다른 부유 개체와 동일하게 Section.Blocks 에 추가됨 (IWPF 통합 모델).
 
     [RelayCommand]
     private void InsertTextBox(object? shapeParam)
@@ -634,22 +634,22 @@ public partial class MainViewModel : ObservableObject
 
     public event EventHandler<PolyDonky.Core.TextBoxShape>? InsertTextBoxRequested;
 
-    /// <summary>드래그 생성 완료 후 View 가 호출 — 첫 섹션의 FloatingObjects 에 추가하고 Dirty 표시.</summary>
-    public void AddFloatingObjectToCurrentSection(PolyDonky.Core.FloatingObject obj)
+    /// <summary>드래그 생성 완료 후 View 가 호출 — 첫 섹션의 Blocks 에 글상자/도형/이미지/표를 추가.</summary>
+    public void AddOverlayBlockToCurrentSection(PolyDonky.Core.Block block)
     {
         var section = _document.Sections.FirstOrDefault();
         if (section is null) return;
-        section.FloatingObjects.Add(obj);
+        section.Blocks.Add(block);
         MarkDirty();
         RefreshMemoryUsage();
     }
 
     /// <summary>오버레이 삭제 시 View 가 호출.</summary>
-    public void RemoveFloatingObject(PolyDonky.Core.FloatingObject obj)
+    public void RemoveOverlayBlock(PolyDonky.Core.Block block)
     {
         foreach (var section in _document.Sections)
         {
-            if (section.FloatingObjects.Remove(obj))
+            if (section.Blocks.Remove(block))
             {
                 MarkDirty();
                 RefreshMemoryUsage();
@@ -659,7 +659,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>드래그/리사이즈/본문 편집 변경 시 View 가 호출.</summary>
-    public void NotifyFloatingObjectChanged() => MarkDirty();
+    public void NotifyOverlayChanged() => MarkDirty();
 
     /// <summary>
     /// _document 로부터 FlowDocument 를 재빌드한다. 호출 전 반드시 _document 가 최신 상태여야 한다.

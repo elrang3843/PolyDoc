@@ -21,7 +21,6 @@ public static class JsonDefaults
         };
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new BlockJsonConverter());
-        options.Converters.Add(new FloatingObjectJsonConverter());
         return options;
     }
 }

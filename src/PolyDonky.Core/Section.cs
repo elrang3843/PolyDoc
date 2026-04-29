@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PolyDonky.Core;
 
 public sealed class Section
@@ -7,11 +9,21 @@ public sealed class Section
     public IList<Block> Blocks { get; set; } = new List<Block>();
 
     /// <summary>
-    /// 텍스트 흐름 외부에 자유 위치로 배치되는 객체 (글상자 등).
-    /// 본문(<see cref="Blocks"/>) 과 별도 레이어로 렌더링되며, 직렬화는
-    /// <see cref="FloatingObjectJsonConverter"/> 로 다형 처리.
+    /// 레거시 호환 — 옛 IWPF/문서 JSON 의 <c>floatingObjects</c> 컬렉션을 받아
+    /// <see cref="Blocks"/> 로 즉시 흡수한다 (글상자가 Block 으로 통합된 2026-04-29 이후).
+    /// 출력에는 항상 <c>null</c> 이므로 <see cref="JsonIgnoreCondition.WhenWritingNull"/> 가 생략한다.
     /// </summary>
-    public IList<FloatingObject> FloatingObjects { get; set; } = new List<FloatingObject>();
+    [JsonPropertyName("floatingObjects"), JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    internal IList<Block>? LegacyFloatingObjects
+    {
+        get => null;
+        set
+        {
+            if (value is null) return;
+            foreach (var item in value) Blocks.Add(item);
+        }
+    }
 }
 
 // ── 용지 크기 종류 ────────────────────────────────────────────────────────

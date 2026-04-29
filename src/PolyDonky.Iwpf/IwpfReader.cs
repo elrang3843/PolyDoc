@@ -189,6 +189,9 @@ public sealed class IwpfReader : IDocumentReader
                             foreach (var cell in row.Cells)
                                 Walk(cell.Blocks);
                         break;
+                    case TextBoxObject textbox:
+                        Walk(textbox.Content);
+                        break;
                 }
             }
         }
