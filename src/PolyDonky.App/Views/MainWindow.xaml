@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:PolyDonky.App.ViewModels"
         xmlns:svc="clr-namespace:PolyDonky.App.Services"
+        xmlns:views="clr-namespace:PolyDonky.App.Views"
         mc:Ignorable="d"
         Title="{Binding WindowTitle}"
         Width="1200" Height="800"
@@ -55,15 +56,12 @@
             <MenuItem Header="{Binding MenuEdit, Source={x:Static svc:LocalizedStrings.Instance}}">
                 <MenuItem Header="{Binding MenuEditCopy, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="ApplicationCommands.Copy"
-                          CommandTarget="{Binding ElementName=BodyEditor}"
                           InputGestureText="Ctrl+C" />
                 <MenuItem Header="{Binding MenuEditCut, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="ApplicationCommands.Cut"
-                          CommandTarget="{Binding ElementName=BodyEditor}"
                           InputGestureText="Ctrl+X" />
                 <MenuItem Header="{Binding MenuEditPaste, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="ApplicationCommands.Paste"
-                          CommandTarget="{Binding ElementName=BodyEditor}"
                           InputGestureText="Ctrl+V" />
                 <MenuItem Header="{Binding MenuEditDelete, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnEditDelete"
@@ -326,24 +324,10 @@
                     <Canvas x:Name="UnderlayShapeCanvas" />
                     <!-- 표 오버레이(BehindText) -->
                     <Canvas x:Name="UnderlayTableCanvas" />
-                    <!-- VerticalAlignment="Top" 필수 — Stretch 면 PaperHost.MinHeight 만큼
-                         BodyEditor 가 늘어나 ActualHeight 가 본문 자연 높이가 아닌
-                         "강제된" 길이로 측정되어 RebuildPageFrames 가 무한 루프에 빠진다. -->
-                    <RichTextBox x:Name="BodyEditor"
-                                 AcceptsReturn="True"
-                                 AcceptsTab="True"
-                                 VerticalAlignment="Top"
-                                 VerticalScrollBarVisibility="Disabled"
-                                 HorizontalScrollBarVisibility="Disabled"
-                                 IsDocumentEnabled="True"
-                                 IsReadOnly="{Binding IsWriteProtected}"
-                                 SpellCheck.IsEnabled="False"
-                                 Padding="0"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Foreground="{DynamicResource OnSurface}"
-                                 PreviewKeyDown="OnEditorPreviewKeyDown"
-                                 PreviewTextInput="OnEditorPreviewTextInput" />
+                    <!-- PerPageEditorHost: 페이지별 RichTextBox 를 수직으로 배치하는 Canvas.
+                         SetupPages() 가 PerPageDocumentSplitter 슬라이스로 초기화한다. -->
+                    <views:PerPageEditorHost x:Name="PageEditorHost"
+                                             VerticalAlignment="Top" />
                     <!-- 부유 객체 (글상자 등) 오버레이. -->
                     <Canvas x:Name="FloatingCanvas" />
                     <!-- 그림 오버레이(InFrontOfText) -->
@@ -352,12 +336,6 @@
                     <Canvas x:Name="OverlayShapeCanvas" />
                     <!-- 표 오버레이(InFrontOfText/Fixed) -->
                     <Canvas x:Name="OverlayTableCanvas" />
-                    <!-- 페이지 사이 갭 마스크 — 모든 오버레이 위에 깔려서 갭 영역에 떠있는
-                         도형/이미지/표/글상자가 보이지 않도록 가린다. EditorCanvasBg 색으로 칠함.
-                         RebuildPageFrames 가 갭마다 Rectangle 을 추가/제거.
-                         Panel.ZIndex 강제 — Effect(DropShadow) 가 적용된 선택 도형이 XAML 순서
-                         만으론 z-order 를 무시하고 위에 그려지는 경우가 있어, ZIndex 로 못박음. -->
-                    <Canvas x:Name="GapMaskCanvas" IsHitTestVisible="False" Panel.ZIndex="100" />
                     <!-- 드래그 생성 미리보기. -->
                     <Canvas x:Name="DrawPreviewCanvas" IsHitTestVisible="False">
                         <Rectangle x:Name="DrawPreviewRect"

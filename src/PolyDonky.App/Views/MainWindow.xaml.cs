@@ -295,8 +295,13 @@ public partial class MainWindow : Window
 
     // ── 페이지 구분선 ────────────────────────────────────────────────
     private double _pageHeightDip;  // 한 페이지 높이(DIP). 0이면 표시 안 함.
-    private PolyDonky.App.Services.PageBreakPadder? _pageBreakPadder;
-    private bool _paginationInProgress;   // 합성 페이지 갭 패딩 재계산 중 — TextChanged·SizeChanged 부수효과 차단
+
+    // ── BodyEditor 호환 심(shim) ─────────────────────────────────────
+    // 활성 페이지 RTB 를 단일 편집기처럼 다루기 위한 프로퍼티.
+    // Selection·CaretPosition·Document.Blocks 등 단일-RTB API 가 필요한 곳에서 사용한다.
+    private RichTextBox BodyEditor
+        => PageEditorHost.ActiveEditor ?? PageEditorHost.FirstEditor
+           ?? throw new InvalidOperationException("페이지 에디터가 초기화되지 않았습니다.");
 
     // ── 글상자 드래그 생성 / 선택 상태 ────────────────────────────
     private bool _drawingTextBox;
@@ -311,12 +316,10 @@ public partial class MainWindow : Window
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        BodyEditor.TextChanged += OnEditorTextChanged;
+        // 페이지 텍스트 변경 이벤트 — SetupPages 가 각 RTB 에 연결한 뒤 여기로 집결.
+        PageEditorHost.PageTextChanged += OnEditorTextChanged;
         // 상태 표시줄 Insert/CapsLock/NumLock 갱신을 위해 윈도우 레벨 키 입력 가로채기.
         PreviewKeyDown += OnPreviewKeyDown;
-        // 마지막으로 키보드 포커스를 가졌던 텍스트 편집기를 추적 — 메뉴 클릭 시 포커스가
-        // 메뉴로 옮겨가도 직전 편집 컨텍스트(BodyEditor 또는 글상자 InnerEditor) 를 잃지 않게.
-        BodyEditor.GotKeyboardFocus += (_, _) => _lastTextEditor = BodyEditor;
     }
 
     /// <summary>가장 최근에 키보드 포커스를 가졌던 RichTextBox.</summary>
@@ -338,31 +341,8 @@ public partial class MainWindow : Window
             vm.RefreshMemoryUsage();
         }
 
-        // RichTextBox 클릭 = 본문 편집 의도. 드래그 생성 모드가 아니면 글상자 선택 해제.
-        // 동시에 임베드 객체(이미지·이모지) 위에서 드래그를 시작하는지 추적한다.
-        BodyEditor.PreviewMouseLeftButtonDown += OnEditorPreviewMouseDownTrackDrag;
-        BodyEditor.PreviewMouseMove           += OnEditorPreviewMouseMoveBlockDrag;
-        BodyEditor.PreviewMouseLeftButtonUp   += OnEditorPreviewMouseUpEmbedded;
-
-        // BodyEditor 우클릭 통합 — XAML 의 정적 메뉴 대신, ContextMenuOpening 이
-        // 매번 메뉴를 처음부터 빌드한다. ContextMenu 인스턴스가 있어야 이벤트가 발생.
-        BodyEditor.ContextMenu             = new System.Windows.Controls.ContextMenu();
-        BodyEditor.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
-        BodyEditor.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
-
-        // 붙여넣기 직후 FlowDocument 내 새로 삽입된 표에 EnsureCoreTable 을 적용한다 (외부 앱에서
-        // 들어온 XAML 폴백 경로용 안전망 — 우리 PolyDonky.FlowSelection.v1 경로는 아예 Tag 가 살아온다).
-        DataObject.AddPastingHandler(BodyEditor, OnBodyEditorPasting);
-
-        // ── 본문 RichTextBox 의 멀티 블록 클립보드 — Tag(Core 객체) 완전 보존 ──
-        // WPF 기본 클립보드는 Tag 를 보존하지 못해 이미지/도형/표가 손실됨.
-        // Copy/Cut/Paste 의 PreviewExecuted 를 가로채 PolyDonky.FlowSelection.v1 (Core JSON) 으로 직렬화하고
-        // 붙여넣기 시 FlowDocumentBuilder 로 재구성하여 모든 속성·Tag 를 그대로 복원한다.
-        CommandManager.AddPreviewExecutedHandler(BodyEditor, OnBodyEditorPreviewExecuted);
-        BodyEditor.MouseLeave += (_, _) =>
-        {
-            if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
-        };
+        // 각 페이지 RTB 에 대한 이벤트 구독·속성 설정은 ConfigurePageRtb 콜백에서 수행.
+        // SetupPageEditors → PageEditorHost.SetupPages 호출 시 RTB 마다 ConfigurePageRtb 가 적용된다.
 
         _statusTimer = new DispatcherTimer
         {
@@ -384,7 +364,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
         {
-            foreach (var block in BodyEditor.Document.Blocks)
+            foreach (var block in PageEditorHost.AllBlocks)
             {
                 if (block is System.Windows.Documents.Table wpfTable && wpfTable.Tag is null)
                     EnsureCoreTable(wpfTable);
@@ -838,38 +818,34 @@ public partial class MainWindow : Window
             ApplyFlowDocument(_viewModel.FlowDocument);
             _viewModel.RefreshMemoryUsage();
         }
+        else if (e.PropertyName == nameof(MainViewModel.IsWriteProtected))
+        {
+            bool ro = _viewModel.IsWriteProtected;
+            foreach (var rtb in PageEditorHost.PageEditors)
+                rtb.IsReadOnly = ro;
+        }
     }
 
-    private void ApplyFlowDocument(System.Windows.Documents.FlowDocument fd)
+    private void ApplyFlowDocument(System.Windows.Documents.FlowDocument _)
     {
-        // FlowDocument 는 RichTextBox 의 자식이지만 자체 시각 트리 루트라
-        // RichTextBox.Foreground 가 Run 까지 전파되지 않는다.
-        // SetResourceReference 로 테마 사전을 동적 바인딩 — 테마 교체 시 자동 갱신.
-        fd.SetResourceReference(System.Windows.Documents.FlowDocument.ForegroundProperty, "OnSurface");
-        // Background 는 PaperHost 가 담당하므로 FlowDocument 는 투명으로 둔다.
-        fd.Background = Brushes.Transparent;
+        // per-page 모드에서는 ViewModel 의 FlowDocument 를 직접 BodyEditor 에 대입하지 않는다.
+        // 대신 _viewModel.Document 를 DocumentPaginator 로 페이지네이트한 뒤,
+        // PerPageDocumentSplitter 가 생성한 슬라이스로 각 페이지 RTB 를 초기화한다.
 
-        _suppressTextChanged = true;
-        try
-        {
-            // 글자 방향은 추후 지원 예정 — 현재 항상 LTR.
-            BodyEditor.Document = fd;
-            BodyEditor.FlowDirection = FlowDirection.LeftToRight;
-        }
-        finally
-        {
-            _suppressTextChanged = false;
-        }
+        // 1. 페이지 기하 정보 갱신
+        var page = _viewModel?.Document.Sections.FirstOrDefault()?.Page
+                   ?? new PolyDonky.Core.PageSettings();
+        _pageGeometry  = new PolyDonky.App.Services.PageGeometry(page);
+        PaperHost.Width = _pageGeometry.PageWidthDip;
+        _pageHeightDip  = _pageGeometry.PageHeightDip;
 
-        // 용지 크기·색상을 PaperHost 에 반영 (_pageGeometry 설정)
-        var page = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
-        ApplyPageSettings(page);
-
-        // 문서 로드 직후에는 _viewModel.Document 가 최신 — PaginatedDocument 를 캐시해 두면
-        // RebuildPageFrames 가 WPF DocumentPaginator 기반의 정확한 페이지 수를 쓸 수 있다.
+        // 2. _viewModel.Document 로부터 PaginatedDocument 캐시 갱신
         UpdatePaginatedDoc();
 
-        // 모든 오버레이 (글상자·이미지·도형·표) 통합 재구축 — 내부에서 RebuildPageFrames 호출
+        // 3. 페이지별 RTB 초기화
+        SetupPageEditors();
+
+        // 4. 오버레이 전체 재구축 (내부에서 RebuildPageFrames 호출)
         RebuildOverlays();
     }
 
@@ -886,12 +862,114 @@ public partial class MainWindow : Window
         _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(doc);
     }
 
+    /// <summary>
+    /// _currentPaginatedDoc 으로부터 페이지별 슬라이스를 만들고 PageEditorHost 를 초기화한다.
+    /// _currentPaginatedDoc 이 null 이거나 _pageGeometry 가 없으면 아무 것도 하지 않는다.
+    /// </summary>
+    private void SetupPageEditors()
+    {
+        if (_currentPaginatedDoc is null || _pageGeometry is null) return;
+        var slices = PerPageDocumentSplitter.Split(_currentPaginatedDoc);
+        _suppressTextChanged = true;
+        try
+        {
+            PageEditorHost.SetupPages(slices, _pageGeometry, ConfigurePageRtb);
+        }
+        finally
+        {
+            _suppressTextChanged = false;
+        }
+    }
+
+    /// <summary>
+    /// 새로 생성된 페이지 RTB 에 이벤트 핸들러·속성을 등록하는 콜백.
+    /// PageEditorHost.SetupPages 가 각 RTB 생성 직후 호출한다.
+    /// </summary>
+    private void ConfigurePageRtb(RichTextBox rtb)
+    {
+        // 테마 Foreground 바인딩 (FlowDocument 는 RTB Foreground 를 상속하지 않아 별도 바인딩 필요)
+        rtb.Document.SetResourceReference(
+            System.Windows.Documents.FlowDocument.ForegroundProperty, "OnSurface");
+        rtb.Document.Background = Brushes.Transparent;
+
+        rtb.IsReadOnly            = _viewModel?.IsWriteProtected ?? false;
+        rtb.SpellCheck.IsEnabled  = false;
+        rtb.Foreground            = (WpfMedia.Brush)FindResource("OnSurface");
+
+        rtb.PreviewKeyDown    += OnEditorPreviewKeyDown;
+        rtb.PreviewTextInput  += OnEditorPreviewTextInput;
+
+        rtb.PreviewMouseLeftButtonDown += OnEditorPreviewMouseDownTrackDrag;
+        rtb.PreviewMouseMove           += OnEditorPreviewMouseMoveBlockDrag;
+        rtb.PreviewMouseLeftButtonUp   += OnEditorPreviewMouseUpEmbedded;
+
+        rtb.ContextMenu             = new System.Windows.Controls.ContextMenu();
+        rtb.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
+        rtb.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
+
+        rtb.MouseLeave += (_, _) =>
+        {
+            if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
+        };
+
+        // _lastTextEditor 갱신 — 마지막으로 포커스를 가진 RTB 를 추적한다.
+        rtb.GotKeyboardFocus += (_, _) => _lastTextEditor = rtb;
+
+        DataObject.AddPastingHandler(rtb, OnBodyEditorPasting);
+        CommandManager.AddPreviewExecutedHandler(rtb, OnBodyEditorPreviewExecuted);
+    }
+
+    /// <summary>
+    /// 모든 페이지 RTB 를 파싱해 본문 블록을 결합하고, _viewModel.Document 의 오버레이 블록을 추가한 뒤
+    /// 새로운 PolyDonkyument 를 반환한다.
+    /// </summary>
+    private PolyDonkyument ParseAllPageEditors()
+    {
+        var original = _viewModel?.Document;
+        var freshDoc = new PolyDonkyument();
+        if (original is not null)
+        {
+            freshDoc.Metadata      = original.Metadata;
+            freshDoc.Styles        = original.Styles;
+            freshDoc.Provenance    = original.Provenance;
+            freshDoc.Watermark     = original.Watermark;
+            freshDoc.OutlineStyles = original.OutlineStyles;
+        }
+
+        var section = new PolyDonky.Core.Section();
+        if (original?.Sections.FirstOrDefault() is { } origSection)
+            section.Page = origSection.Page;
+        freshDoc.Sections.Add(section);
+
+        // 각 페이지 RTB 를 파싱해 본문 블록 수집 (오버레이는 제외 — per-page RTB 에는 없다)
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            var pageDoc = PolyDonky.App.Services.FlowDocumentParser.Parse(rtb.Document);
+            if (pageDoc.Sections.FirstOrDefault() is { } ps)
+                foreach (var b in ps.Blocks)
+                    section.Blocks.Add(b);
+        }
+
+        // 오버레이 블록 (_viewModel.Document 가 stable source)
+        if (original?.Sections.FirstOrDefault() is { } origOverlay)
+        {
+            foreach (var b in origOverlay.Blocks)
+            {
+                if (b is PolyDonky.Core.IOverlayAnchored || b is PolyDonky.Core.TextBoxObject)
+                    section.Blocks.Add(b);
+            }
+        }
+
+        return freshDoc;
+    }
+
     private bool _liveRefreshQueued;
 
     /// <summary>
-    /// PageBreakPadder 가 끝난 직후 호출 — 라이브 FlowDocument 를 Parse → Paginate 해서
-    /// _currentPaginatedDoc 캐시를 최신화한다. Background 우선순위로 디스패치해 UI 응답성 보장.
+    /// 라이브 FlowDocument 를 Parse → Paginate 해서 _currentPaginatedDoc 캐시를 최신화한다.
+    /// Background 우선순위로 디스패치해 UI 응답성 보장.
     /// 동시에 여러 번 큐잉되지 않도록 _liveRefreshQueued 플래그로 합치기.
+    /// 주의: 커서 위치 보존을 위해 RTB 는 재구성하지 않는다.
     /// </summary>
     private void ScheduleLivePaginationRefresh()
     {
@@ -904,16 +982,15 @@ public partial class MainWindow : Window
             _liveRefreshQueued = false;
             try
             {
-                // FlowDocumentParser 가 PageBreakPadder.IsPagePadding 단락을 자동으로 걸러낸다.
-                var freshDoc = PolyDonky.App.Services.FlowDocumentParser.Parse(
-                    BodyEditor.Document, _viewModel?.Document);
+                // 모든 페이지 RTB 를 파싱해 결합된 PolyDonkyument 를 만들고 재페이지네이트.
+                // 주의: RTB 는 재구성하지 않는다 — 편집 중 커서 위치를 보존하기 위해.
+                var freshDoc = ParseAllPageEditors();
                 _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
-                // 페이지 수가 폴백 추정과 다를 수 있으니 프레임 다시 그리기.
                 RebuildPageFrames();
             }
             catch
             {
-                // Parse·Paginate 실패 시 캐시는 그대로 (다음 사이클에서 재시도).
+                // 실패 시 캐시 유지.
             }
         });
     }
@@ -944,11 +1021,13 @@ public partial class MainWindow : Window
         OverlayImageCanvas.Children.Clear();
         UnderlayImageCanvas.Children.Clear();
 
-        // 모델(_viewModel.Document)은 저장 시에만 FlowDocument 로부터 재구축되므로
-        // 편집 중에는 반드시 live FlowDocument(BodyEditor.Document) 를 직접 순회해야 한다.
-        foreach (var block in BodyEditor.Document.Blocks)
+        // per-page 모드에서 오버레이 이미지는 어떤 페이지 RTB 에도 포함되지 않으므로
+        // _viewModel.Document (삽입·삭제가 반영된 stable source) 를 직접 순회한다.
+        var overlaySection = _viewModel?.Document.Sections.FirstOrDefault();
+        if (overlaySection is null) return;
+        foreach (var coreBlock in overlaySection.Blocks)
         {
-            if (block.Tag is not PolyDonky.Core.ImageBlock img) continue;
+            if (coreBlock is not PolyDonky.Core.ImageBlock img) continue;
             if (img.WrapMode is not (PolyDonky.Core.ImageWrapMode.InFrontOfText
                                   or PolyDonky.Core.ImageWrapMode.BehindText)) continue;
 
@@ -1078,72 +1157,37 @@ public partial class MainWindow : Window
 
     private PolyDonky.App.Services.PageGeometry? _pageGeometry;
     private int                _currentPageCount    = 1;
-    private PaginatedDocument? _currentPaginatedDoc;           // 로드 시점·PageBreakPadder 사이클 후 최신 / 편집 중간엔 null → 폴백
+    private PaginatedDocument? _currentPaginatedDoc;           // 로드 시점 또는 ScheduleLivePaginationRefresh 후 최신
     private bool               _suppressPageFrameRebuild;      // RebuildPageFrames 안에서 MinHeight 변경이 재귀로 돌아오는 것을 차단
 
     private void ApplyPageSettings(PolyDonky.Core.PageSettings? page)
     {
         if (page is null) return;
 
-        _pageGeometry = new PolyDonky.App.Services.PageGeometry(page);
-
-        // 용지 너비 — 모든 페이지에 동일 적용
+        _pageGeometry  = new PolyDonky.App.Services.PageGeometry(page);
         PaperHost.Width = _pageGeometry.PageWidthDip;
         _pageHeightDip  = _pageGeometry.PageHeightDip;
 
-        // 본문 RichTextBox 가 자신의 콘텐츠 길이에 맞춰 ActualHeight 가 늘어날 때마다
-        // 페이지 수를 다시 계산해야 한다. PaperHost.SizeChanged 는 RebuildPageFrames 안의
-        // MinHeight 변경이 다시 SizeChanged 를 일으켜 무한 재귀가 되므로 사용 금지.
-        BodyEditor.SizeChanged -= OnBodyEditorSizeChanged;
-        BodyEditor.SizeChanged += OnBodyEditorSizeChanged;
-
-        // 합성 페이지-갭 패딩 단락 매니저 — 본문이 페이지 경계를 넘을 때마다 자동으로
-        // (padBottom + interPageGap + padTop) 높이의 빈 단락을 끼워 다음 페이지 본문이
-        // 정확히 padTop 위치에서 시작하도록 한다.
-        // PageBreakPadder 가 끝나면 (on=false) 라이브 FlowDocument 를 Parse → Paginate 해
-        // _currentPaginatedDoc 캐시를 최신으로 유지한다 (Phase 3c-1).
-        _pageBreakPadder ??= new PolyDonky.App.Services.PageBreakPadder(
-            BodyEditor,
-            () => _pageGeometry,
-            on =>
-            {
-                _paginationInProgress = on;
-                if (!on) ScheduleLivePaginationRefresh();
-            });
-
-        // 본문 RichTextBox 의 padding — 첫 페이지 상단에만 padT, 이하 좌우/하단은 단일 적용.
-        // (다중 페이지 동안 본문이 페이지 경계를 넘어 흐를 때 "다음 페이지 padT" 만큼의 합성 패딩은
-        //  후속 사이클에서 추가 — 지금은 시각 페이지만 분리하고 본문은 연속 흐름으로 둔다.)
-        BodyEditor.Padding = new Thickness(_pageGeometry.PadLeftDip, _pageGeometry.PadTopDip,
-                                          _pageGeometry.PadRightDip, _pageGeometry.PadBottomDip);
-
-        // FlowDocument 본문 폭은 종이폭 − 좌여백 − 우여백
-        BodyEditor.Document.PageWidth =
-            PolyDonky.App.Services.FlowDocumentBuilder.ComputeContentWidthDip(page);
-
-        // 페이지 프레임 다시 그리기 + 전체 호스트 크기 갱신
-        RebuildPageFrames();
-        // 페이지 설정이 바뀌었으면 합성 패딩도 즉시 다시 계산
-        _pageBreakPadder?.RunNow();
+        // 편집 중 페이지 설정 변경 — 라이브 RTB 내용을 파싱해 새 설정으로 재페이지네이트.
+        if (PageEditorHost.PageCount > 0)
+        {
+            var freshDoc = ParseAllPageEditors();
+            if (freshDoc.Sections.FirstOrDefault() is { } s) s.Page = page;
+            _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+            SetupPageEditors();
+            RebuildOverlays();
+        }
+        else
+        {
+            RebuildPageFrames();
+        }
     }
 
-    private void OnBodyEditorSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (_suppressPageFrameRebuild) return;
-        // 본문 크기가 바뀌었다 = 편집으로 내용이 달라졌다 → 로드 시점 캐시는 무효.
-        // RebuildPageFramesCore 는 height 기반 폴백을 쓴다.
-        _currentPaginatedDoc = null;
-        // 합성 패딩 재계산 중에는 본문 크기가 임시로 출렁이므로 페이지 프레임 재구축을 미룸 —
-        // 페이지네이션 끝나면 PageBreakPadder.RunNow() 를 호출한 쪽이 RebuildPageFrames 도 따로 부른다.
-        if (_paginationInProgress) return;
-        RebuildPageFrames();
-    }
-
-    /// <summary>
+/// <summary>
     /// PageBackgroundCanvas 에 페이지 별 흰색 Border (그림자 + 점선 여백 가이드 + "N페이지" 라벨)를 다시 그린다.
     /// 페이지 수 우선순위:
-    ///   1. <see cref="_currentPaginatedDoc"/> — 로드 시점·PageBreakPadder 디바운스 후 최신값.
-    ///   2. <see cref="PolyDonky.App.Services.PageGeometry.ComputePageCount"/> — 편집 중간(캐시 null) 폴백.
+    ///   1. <see cref="_currentPaginatedDoc"/> — 로드 시점·ScheduleLivePaginationRefresh 후 최신값.
+    ///   2. PageEditorHost.PageCount / 오버레이 anchor max — 편집 중간 폴백.
     /// </summary>
     private void RebuildPageFrames()
     {
@@ -1166,12 +1210,12 @@ public partial class MainWindow : Window
         var pg = _pageGeometry!;
 
         // 페이지 수 계산.
-        // 1순위: WPF DocumentPaginator 로 산출한 정확값 (_currentPaginatedDoc — 로드/PageBreakPadder 후 최신).
-        // 2순위: 편집 중간 짧은 구간 — BodyEditor.ActualHeight ÷ bodyH 근사값 + 오버레이 anchor max.
-        double bodyContentHeight = BodyEditor.ActualHeight > 0 ? BodyEditor.ActualHeight : pg.PageHeightDip;
+        // 1순위: WPF DocumentPaginator 로 산출한 정확값 (_currentPaginatedDoc).
+        // 2순위: 편집 중간 짧은 구간 — PageEditorHost 현재 페이지 수 또는 오버레이 anchor max.
         int maxAnchorIndex = ComputeMaxAnchorPageIndex();
         int pageCount = _currentPaginatedDoc?.PageCount
-            ?? pg.ComputePageCount(bodyContentHeight, maxAnchorIndex);
+            ?? Math.Max(PageEditorHost.PageCount, maxAnchorIndex + 1);
+        if (pageCount < 1) pageCount = 1;
         _currentPageCount = pageCount;
 
         // PaperHost 의 전체 높이 = N 페이지 + (N-1) 갭.
@@ -1181,13 +1225,10 @@ public partial class MainWindow : Window
 
         // PageBackgroundCanvas 클리어 후 페이지마다 다시 그리기.
         PageBackgroundCanvas.Children.Clear();
-        // 갭 마스크도 초기화 — 모든 오버레이 위에 깔려서 페이지 사이 갭에 떠있는 도형이 보이지 않게 가린다.
-        GapMaskCanvas.Children.Clear();
 
         var page = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
         bool showGuides = page?.ShowMarginGuides ?? true;
         WpfMedia.Brush pageBg = ResolvePaperBackground(page);
-        WpfMedia.Brush gapBg  = (WpfMedia.Brush)FindResource("EditorCanvasBg");
 
         for (int i = 0; i < pageCount; i++)
         {
@@ -1245,20 +1286,6 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (label, topY + 2);
             PageBackgroundCanvas.Children.Add(label);
 
-            // 다음 페이지 사이의 갭 마스크 — 마지막 페이지 다음에는 갭이 없으므로 i < pageCount-1 일 때만.
-            if (i < pageCount - 1)
-            {
-                var mask = new System.Windows.Shapes.Rectangle
-                {
-                    Width  = pg.PageWidthDip,
-                    Height = PolyDonky.App.Services.PageGeometry.InterPageGapDip,
-                    Fill   = gapBg,
-                    IsHitTestVisible = false,
-                };
-                System.Windows.Controls.Canvas.SetLeft(mask, 0);
-                System.Windows.Controls.Canvas.SetTop (mask, topY + pg.PageHeightDip);
-                GapMaskCanvas.Children.Add(mask);
-            }
         }
     }
 
@@ -1300,14 +1327,7 @@ public partial class MainWindow : Window
                 }
             }
         }
-        // 라이브 FlowDocument 의 anchor 단락도 확인 (동기화 직후가 아닐 수 있음)
-        foreach (var b in BodyEditor.Document.Blocks)
-        {
-            if (b.Tag is PolyDonky.Core.IOverlayAnchored a)
-            {
-                if (a.AnchorPageIndex > max) max = a.AnchorPageIndex;
-            }
-        }
+        // per-page 모드에서 오버레이 앵커는 _viewModel.Document 가 정본 — 두 번째 루프 불필요.
         return max;
     }
 
@@ -1329,11 +1349,9 @@ public partial class MainWindow : Window
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged) return;
-        // 합성 패딩 재계산이 일으킨 TextChanged 는 사용자의 편집이 아니므로 dirty 표시도 패스.
-        if (_paginationInProgress) return;
         _viewModel?.MarkDirty();
-        // 본문이 변경되면 페이지 경계 위치도 달라질 수 있으므로 합성 패딩 재계산을 디바운스.
-        _pageBreakPadder?.Schedule();
+        // 본문이 변경되면 페이지 수가 달라질 수 있으므로 라이브 페이지네이션 갱신 디바운스.
+        ScheduleLivePaginationRefresh();
     }
 
     private void OnFindReplaceRequested(object? sender, EventArgs e)
