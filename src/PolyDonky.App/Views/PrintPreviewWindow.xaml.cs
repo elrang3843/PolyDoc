@@ -28,7 +28,10 @@ public partial class PrintPreviewWindow : Window
     private double _pageWidthDip;
     private double _pageHeightDip;
     private bool   _initialZoomApplied;
-    private bool   _suppressSettingsEvents; // 초기화 중 이벤트 억제
+    // InitializeComponent() 가 XAML 의 ComboBox 초기 SelectedIndex 를 적용하면서
+    // SelectionChanged 가 _doc 할당 전에 발화되어 NRE 가 났음. true 로 시작해 생성자 +
+    // OnWindowLoaded → InitSettingsPanel 이 끝날 때까지 핸들러를 무시하게 한다.
+    private bool _suppressSettingsEvents = true; // 초기화 중 이벤트 억제
 
     private readonly DispatcherTimer _rebuildTimer;
 
