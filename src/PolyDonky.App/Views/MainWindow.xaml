@@ -326,9 +326,13 @@
                     <Canvas x:Name="UnderlayShapeCanvas" />
                     <!-- 표 오버레이(BehindText) -->
                     <Canvas x:Name="UnderlayTableCanvas" />
+                    <!-- VerticalAlignment="Top" 필수 — Stretch 면 PaperHost.MinHeight 만큼
+                         BodyEditor 가 늘어나 ActualHeight 가 본문 자연 높이가 아닌
+                         "강제된" 길이로 측정되어 RebuildPageFrames 가 무한 루프에 빠진다. -->
                     <RichTextBox x:Name="BodyEditor"
                                  AcceptsReturn="True"
                                  AcceptsTab="True"
+                                 VerticalAlignment="Top"
                                  VerticalScrollBarVisibility="Disabled"
                                  HorizontalScrollBarVisibility="Disabled"
                                  IsDocumentEnabled="True"
