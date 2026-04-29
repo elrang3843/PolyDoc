@@ -3760,6 +3760,10 @@ public partial class MainWindow : Window
     /// <summary>붙여넣기는 클립보드 포맷에 따라 자동 분기.</summary>
     private bool TryPasteSelectedObject()
     {
+        // 글상자 InnerEditor 편집 중이면 RichTextBox 기본 붙여넣기에 양보
+        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true)
+            return false;
+
         // 통합 멀티-선택 포맷 — 모든 부유 개체(글상자 포함)가 단일 Block 리스트로 직렬화됨
         if (Clipboard.ContainsData(FlowSelectionClipboardFormat))
             return TryPasteFlowSelection();
