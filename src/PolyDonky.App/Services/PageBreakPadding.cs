@@ -114,17 +114,23 @@ public sealed class PageBreakPadder
         double padBottom     = pg.PadBottomDip;
         double gap           = PageGeometry.InterPageGapDip;
         double bodyHeight    = pageHeight - padTop - padBottom;
-        double syntheticH    = padBottom + gap + padTop;
+        // 페이지 N (1-base) 의 PaperHost 좌표 — corner 와 본문 시작/끝.
+        // 모든 페이지가 같은 stride (pageHeight + gap) 로 떨어져 있다.
+        double pageStride = pageHeight + gap;
 
         if (bodyHeight <= 0) return;
 
         // 2. 페이지 경계마다 합성 패딩 단락 삽입.
         // BodyEditor 의 Padding 이 (padL, padT, padR, padB) 이라 첫 페이지 본문은 Y=padTop 부터.
-        // 페이지 N (1-base) 의 본문 끝 Y = padTop + N*bodyHeight + (N-1)*syntheticH.
+        // 페이지 N (1-base) 의 본문 끝 Y = N*pageStride - padBottom - gap (= 정확히 페이지 N 의 corner + bodyHeight + padTop).
+        // 합성 패딩 높이는 *가변* — 첫 overflow 블록이 다음 페이지 본문 시작 Y(targetY) 에
+        // 정확히 안착하도록 (targetY - currentBlockY) 로 계산한다. 고정 (padBottom+gap+padTop)
+        // 으로 두면 straddle 블록 이동 시 페이지 N+1 본문 시작 위치가 어긋난다.
         int pageIndex = 0;
         while (true)
         {
-            double pageBodyEndY = padTop + (pageIndex + 1) * bodyHeight + pageIndex * syntheticH;
+            double pageBodyEndY = pageIndex * pageStride + padTop + bodyHeight;
+            double nextPageBodyStartY = (pageIndex + 1) * pageStride + padTop;
 
             // GetCharacterRect 는 layout 갱신이 필요할 수 있어 UpdateLayout 먼저.
             _editor.UpdateLayout();
@@ -175,7 +181,14 @@ public sealed class PageBreakPadder
 
             if (firstOverflow is null) break; // 더 이상 넘는 블록 없음 — 종료
 
-            var padding = BuildSyntheticPaddingBlock(syntheticH);
+            // 가변 패딩 높이 — 이 블록이 다음 페이지 본문 시작 Y 에 정확히 안착하도록.
+            double currentY = TryGetTopY(firstOverflow);
+            if (double.IsNaN(currentY)) break;
+            double H = nextPageBodyStartY - currentY;
+            // 최소 보정 — 음수/너무 작은 값 방어 (블록이 이미 다음 페이지 본문 시작 Y 를 넘어 있는 비정상 상황).
+            if (H < 1.0) H = padBottom + gap + padTop;
+
+            var padding = BuildSyntheticPaddingBlock(H);
             doc.Blocks.InsertBefore(firstOverflow, padding);
 
             pageIndex++;
