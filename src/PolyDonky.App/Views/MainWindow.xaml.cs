@@ -330,6 +330,9 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel vm)
         {
             _viewModel = vm;
+            vm.LiveDocumentProvider = () => PageEditorHost.PageCount > 0
+                ? ParseAllPageEditors()
+                : null;
             ApplyFlowDocument(vm.FlowDocument);
             vm.PropertyChanged += OnViewModelPropertyChanged;
             vm.FindReplaceRequested  += OnFindReplaceRequested;

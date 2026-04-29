@@ -28,6 +28,12 @@ public partial class MainViewModel : ObservableObject
     public PolyDonkyument Document => _document;
 
     /// <summary>
+    /// 저장 직전에 호출해 현재 에디터 상태를 반영한 PolyDonkyument 를 얻는다.
+    /// per-page RTB 모드에서 MainWindow 가 등록한다. null 이면 FlowDocument 파싱으로 폴백.
+    /// </summary>
+    public Func<PolyDonkyument?>? LiveDocumentProvider { get; set; }
+
+    /// <summary>
     /// 열기 보호(Read/Both)에 사용할 비밀번호. null/빈 문자열이면 평문 저장.
     /// 메모리 외 어디에도 저장되지 않는다 (ViewModel 인스턴스 생명 주기 내에서만 유효).
     /// </summary>
@@ -710,7 +716,8 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var rebuilt = FlowDocumentParser.Parse(FlowDocument, _document);
+            var rebuilt = LiveDocumentProvider?.Invoke()
+                       ?? FlowDocumentParser.Parse(FlowDocument, _document);
 
             // 자동 일자 갱신: 첫 저장이면 Created+Modified 둘 다, 아니면 Modified 만.
             if (isFirstSave)
