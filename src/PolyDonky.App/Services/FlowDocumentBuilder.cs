@@ -102,8 +102,43 @@ public static class FlowDocumentBuilder
         AppendBlocks(fd.Blocks, section.Blocks, outlineStyles);
     }
 
+    /// <summary>
+    /// 지정한 Core.Block 목록만 포함하는 FlowDocument 를 빌드한다.
+    /// per-page 편집기·per-page RTB 측정에 사용. STA 스레드 필수.
+    /// </summary>
+    internal static Wpf.FlowDocument BuildFromBlocks(
+        IEnumerable<Block> blocks,
+        PageSettings?      page          = null,
+        OutlineStyleSet?   outlineStyles = null)
+    {
+        page          ??= new PageSettings();
+        outlineStyles ??= OutlineStyleSet.CreateDefault();
+
+        double contentWDip = ComputeContentWidthDip(page);
+        var fd = new Wpf.FlowDocument
+        {
+            FontFamily  = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
+            FontSize    = PtToDip(11),
+            PageWidth   = contentWDip,
+            PagePadding = new Thickness(0),
+        };
+
+        if (!string.IsNullOrEmpty(page.PaperColor))
+        {
+            try
+            {
+                var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(page.PaperColor)!;
+                fd.Background = new WpfMedia.SolidColorBrush(c);
+            }
+            catch { }
+        }
+
+        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles);
+        return fd;
+    }
+
     /// <summary>FlowDocument 또는 셀(TableCell) 양쪽에서 공유하는 블록 추가 로직.</summary>
-    private static void AppendBlocks(System.Collections.IList target, IList<Block> blocks,
+    internal static void AppendBlocks(System.Collections.IList target, IList<Block> blocks,
         OutlineStyleSet? outlineStyles = null)
     {
         Wpf.List? currentList = null;
