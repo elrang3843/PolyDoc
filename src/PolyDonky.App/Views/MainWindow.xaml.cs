@@ -1094,9 +1094,9 @@ public partial class MainWindow : Window
     /// 라이브 FlowDocument 를 Parse → Paginate 해서 _currentPaginatedDoc 캐시를 최신화한다.
     /// Background 우선순위로 디스패치해 UI 응답성 보장.
     /// 동시에 여러 번 큐잉되지 않도록 _liveRefreshQueued 플래그로 합치기.
-    /// 페이지 수가 동일하면 RTB 는 재구성하지 않아 커서 위치를 유지한다.
-    /// 페이지 수가 바뀌면(오버플로우/언더플로우) RTB 를 재구성해 본문을 페이지 경계에 맞게 재분배한다 —
-    /// 이 경우 커서는 마지막 RTB 끝으로 이동한다(가장 최근에 입력한 위치 근사).
+    /// 페이지 수가 동일하고 페이지별 본문 블록 수도 동일하면 RTB 는 재구성하지 않아 커서 위치를 유지한다.
+    /// 페이지 수 또는 페이지별 블록 분배가 달라지면(오버플로우/언더플로우/표 삽입) RTB 를 재구성해
+    /// 본문을 페이지 경계에 맞게 재분배한다 — 이 경우 커서는 마지막 RTB 끝으로 이동한다.
     /// </summary>
     private void ScheduleLivePaginationRefresh()
     {
@@ -1113,12 +1113,13 @@ public partial class MainWindow : Window
                 var freshDoc = ParseAllPageEditors();
                 _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
 
-                // 페이지 수가 달라졌으면(텍스트 오버플로우/언더플로우) RTB 를 재구성해
-                // 본문을 페이지별로 다시 분배 — 안 그러면 page 1 RTB 에 모든 텍스트가
-                // 남고(스크롤 숨김으로 클립), page 2 RTB 가 없어 입력 불가.
-                int newPageCount = _currentPaginatedDoc.PageCount;
-                int oldPageCount = PageEditorHost.PageCount;
-                if (newPageCount != oldPageCount)
+                // 재구성 필요 판정:
+                //   ① 페이지 수가 달라졌거나
+                //   ② 페이지별 본문 블록 수가 달라졌으면(예: 표 삽입으로 후속 단락이 다음 페이지로 이동)
+                // RTB 를 재구성해 본문을 페이지별로 다시 분배한다 — 안 그러면 page 1 RTB 에
+                // 모든 텍스트가 남고(스크롤 숨김으로 클립), 다음 페이지 RTB 는 빈 채 남는다.
+                bool needsRebuild = NeedsPageRebuild();
+                if (needsRebuild)
                 {
                     SetupPageEditors();
                     RestoreCaretToLastEditor();
@@ -1131,6 +1132,45 @@ public partial class MainWindow : Window
                 // 실패 시 캐시 유지.
             }
         });
+    }
+
+    /// <summary>
+    /// 새로 계산된 <see cref="_currentPaginatedDoc"/> 의 페이지별 블록 분배가
+    /// 현재 페이지 RTB 들과 다르면 true.
+    /// </summary>
+    private bool NeedsPageRebuild()
+    {
+        if (_currentPaginatedDoc is null) return false;
+
+        int newPageCount = _currentPaginatedDoc.PageCount;
+        int oldPageCount = PageEditorHost.PageCount;
+        if (newPageCount != oldPageCount) return true;
+
+        var rtbs = PageEditorHost.PageEditors;
+        for (int i = 0; i < newPageCount; i++)
+        {
+            int newCount = _currentPaginatedDoc.Pages[i].BodyBlocks.Count;
+            int oldCount = CountFlatTaggedBlocks(rtbs[i].Document.Blocks);
+            if (newCount != oldCount) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// FlowDocument.Blocks 를 재귀적으로 순회해 Tag 가 Core.Block 인 항목 수를 센다
+    /// (List 내부 ListItem.Blocks 도 포함). MapBodyBlocksToPages 의 FlattenBlocks 와 동일 기준.
+    /// </summary>
+    private static int CountFlatTaggedBlocks(System.Windows.Documents.BlockCollection blocks)
+    {
+        int n = 0;
+        foreach (var b in blocks)
+        {
+            if (b.Tag is PolyDonky.Core.Block) n++;
+            if (b is System.Windows.Documents.List list)
+                foreach (var li in list.ListItems)
+                    n += CountFlatTaggedBlocks(li.Blocks);
+        }
+        return n;
     }
 
     /// <summary>
