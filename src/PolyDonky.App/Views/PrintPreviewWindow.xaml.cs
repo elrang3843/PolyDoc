@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Windows.Xps.Packaging;
+using PolyDonky.App.Pagination;
 using PolyDonky.Core;
 using Fdb = PolyDonky.App.Services.FlowDocumentBuilder;
 
@@ -385,61 +386,44 @@ public partial class PrintPreviewWindow : Window
     /// </summary>
     private readonly record struct OverlayItem(UIElement Element, int PageIndex, double X, double Y, bool Behind);
 
+    // 오버레이 감지·수집은 FlowDocumentPaginationAdapter 에 위임해 중복을 제거한다.
+    // 모든 섹션의 오버레이가 포함되며(이전 FirstOrDefault 버그 수정), IsOverlayMode 판별 로직도 공유.
     private static List<OverlayItem> BuildOverlays(PolyDonkyument doc)
     {
-        var list    = new List<OverlayItem>();
-        var section = doc.Sections.FirstOrDefault();
-        if (section is null) return list;
+        var list      = new List<OverlayItem>();
+        var paginated = FlowDocumentPaginationAdapter.Paginate(doc);
 
-        // 통합 모델 — 도형·이미지·표·글상자 모두 section.Blocks 안에서 함께 순회.
-        // 좌표는 항상 (AnchorPageIndex, OverlayXMm/YMm) — 페이지 로컬.
-        foreach (var block in section.Blocks)
-        {
-            switch (block)
-            {
-                case TextBoxObject tb:
-                {
-                    var ctrl = new TextBoxOverlay(tb)
-                    {
-                        Width  = Fdb.MmToDip(tb.WidthMm),
-                        Height = Fdb.MmToDip(tb.HeightMm),
-                    };
-                    list.Add(new OverlayItem(ctrl, tb.AnchorPageIndex,
-                        Fdb.MmToDip(tb.OverlayXMm), Fdb.MmToDip(tb.OverlayYMm),
-                        Behind: tb.WrapMode == ImageWrapMode.BehindText));
-                    break;
-                }
-                case ImageBlock img when img.WrapMode is ImageWrapMode.InFrontOfText
-                                                       or ImageWrapMode.BehindText:
-                {
-                    var ctrl = Fdb.BuildOverlayImageControl(img);
-                    if (ctrl is null) break;
-                    list.Add(new OverlayItem(ctrl, img.AnchorPageIndex,
-                        Fdb.MmToDip(img.OverlayXMm), Fdb.MmToDip(img.OverlayYMm),
-                        Behind: img.WrapMode == ImageWrapMode.BehindText));
-                    break;
-                }
-                case ShapeObject shape when shape.WrapMode is ImageWrapMode.InFrontOfText
-                                                            or ImageWrapMode.BehindText:
-                {
-                    var ctrl = Fdb.BuildOverlayShapeControl(shape);
-                    list.Add(new OverlayItem(ctrl, shape.AnchorPageIndex,
-                        Fdb.MmToDip(shape.OverlayXMm), Fdb.MmToDip(shape.OverlayYMm),
-                        Behind: shape.WrapMode == ImageWrapMode.BehindText));
-                    break;
-                }
-                case PolyDonky.Core.Table tbl when tbl.WrapMode != TableWrapMode.Block:
-                {
-                    var ctrl = Fdb.BuildOverlayTableControl(tbl);
-                    if (ctrl is null) break;
-                    list.Add(new OverlayItem(ctrl, tbl.AnchorPageIndex,
-                        Fdb.MmToDip(tbl.OverlayXMm), Fdb.MmToDip(tbl.OverlayYMm),
-                        Behind: tbl.WrapMode == TableWrapMode.BehindText));
-                    break;
-                }
-            }
-        }
+        foreach (var page in paginated.Pages)
+            foreach (var oop in page.OverlayBlocks)
+                if (BuildOverlayItem(oop) is { } item)
+                    list.Add(item);
+
         return list;
+    }
+
+    private static OverlayItem? BuildOverlayItem(OverlayOnPage oop)
+    {
+        double x = Fdb.MmToDip(oop.XMm);
+        double y = Fdb.MmToDip(oop.YMm);
+        int    p = oop.AnchorPageIndex;
+
+        return oop.Source switch
+        {
+            TextBoxObject tb => new OverlayItem(
+                new TextBoxOverlay(tb) { Width = Fdb.MmToDip(tb.WidthMm), Height = Fdb.MmToDip(tb.HeightMm) },
+                p, x, y, Behind: tb.WrapMode == ImageWrapMode.BehindText),
+
+            ImageBlock img when Fdb.BuildOverlayImageControl(img) is { } imgCtrl
+                => new OverlayItem(imgCtrl, p, x, y, Behind: img.WrapMode == ImageWrapMode.BehindText),
+
+            ShapeObject shp => new OverlayItem(
+                Fdb.BuildOverlayShapeControl(shp), p, x, y, Behind: shp.WrapMode == ImageWrapMode.BehindText),
+
+            PolyDonky.Core.Table tbl when Fdb.BuildOverlayTableControl(tbl) is { } tblCtrl
+                => new OverlayItem(tblCtrl, p, x, y, Behind: tbl.WrapMode == TableWrapMode.BehindText),
+
+            _ => null,
+        };
     }
 
     // ── Paginator ────────────────────────────────────────────────────────

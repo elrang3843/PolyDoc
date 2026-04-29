@@ -315,6 +315,38 @@ public class FlowDocumentPaginationAdapterTests
         });
     }
 
+    // ── 다중 섹션 ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Paginate_MultiSection_OverlaysFromAllSectionsCollected()
+    {
+        RunOnSta(() =>
+        {
+            var tb1 = new TextBoxObject { AnchorPageIndex = 0, OverlayXMm = 10, OverlayYMm = 10 };
+            var tb2 = new TextBoxObject { AnchorPageIndex = 0, OverlayXMm = 50, OverlayYMm = 50 };
+
+            var doc = new PolyDonkyument();
+
+            var s1 = new Section();
+            var p1 = new Paragraph(); p1.AddText("섹션 1");
+            s1.Blocks.Add(p1);
+            s1.Blocks.Add(tb1);
+            doc.Sections.Add(s1);
+
+            var s2 = new Section();
+            var p2 = new Paragraph(); p2.AddText("섹션 2");
+            s2.Blocks.Add(p2);
+            s2.Blocks.Add(tb2);
+            doc.Sections.Add(s2);
+
+            var result      = FlowDocumentPaginationAdapter.Paginate(doc);
+            var allOverlays = result.Pages.SelectMany(p => p.OverlayBlocks).ToList();
+
+            Assert.Contains(allOverlays, o => ReferenceEquals(o.Source, tb1));
+            Assert.Contains(allOverlays, o => ReferenceEquals(o.Source, tb2));
+        });
+    }
+
     // ── 헬퍼 ─────────────────────────────────────────────────────────────
 
     private static PolyDonkyument WrapInDocument(params Block[] blocks)
