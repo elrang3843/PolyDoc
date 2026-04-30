@@ -954,6 +954,16 @@ public partial class MainWindow : Window
             case Key.V when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
                 if (TryPasteSelectedObject()) e.Handled = true;
                 break;
+
+            case Key.L when (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt:
+                OnFormatChar(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Key.T when (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt:
+                OnFormatPara(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -2053,6 +2063,22 @@ public partial class MainWindow : Window
         {
             Header = "붙여넣기(_P)", Command = ApplicationCommands.Paste, InputGestureText = "Ctrl+V"
         });
+
+        // ① 서식 메뉴 — 텍스트 컨텍스트 공통
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        var miFormatChar = new System.Windows.Controls.MenuItem
+        {
+            Header = "글자 서식(_L)...", InputGestureText = "Alt+L"
+        };
+        miFormatChar.Click += OnFormatChar;
+        menu.Items.Add(miFormatChar);
+
+        var miFormatPara = new System.Windows.Controls.MenuItem
+        {
+            Header = "문단 서식(_T)...", InputGestureText = "Alt+T"
+        };
+        miFormatPara.Click += OnFormatPara;
+        menu.Items.Add(miFormatPara);
 
         // ② 표 컨텍스트 — 멀티 셀 선택이 우선, 없으면 캐럿 위치 셀
         if (FindSelectedTableCells() is { Count: > 1 } multiCells)
