@@ -47,7 +47,7 @@
                 <MenuItem Header="{Binding MenuFileSaveAs, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
                 <Separator />
                 <MenuItem Header="{Binding MenuFilePreview, Source={x:Static svc:LocalizedStrings.Instance}}" Click="OnPreviewClick" />
-                <MenuItem Header="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" InputGestureText="Ctrl+P" />
+                <MenuItem Header="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}" Click="OnPrintClick" InputGestureText="Ctrl+P" />
                 <Separator />
                 <MenuItem Header="{Binding MenuFileClose, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding CloseCommand}" />
                 <MenuItem Header="{Binding MenuFileExit, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding ExitCommand}" InputGestureText="Alt+F4" />
@@ -166,8 +166,8 @@
                             Click="OnPreviewClick">
                         <Image Source="{StaticResource Icon_FilePreview}" Width="20" Height="20" />
                     </Button>
-                    <Button IsEnabled="False"
-                            ToolTip="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <Button ToolTip="{Binding MenuFilePrint, Source={x:Static svc:LocalizedStrings.Instance}}"
+                            Click="OnPrintClick">
                         <Image Source="{StaticResource Icon_FilePrint}" Width="20" Height="20" />
                     </Button>
                     <Separator />

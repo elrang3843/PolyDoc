@@ -964,6 +964,11 @@ public partial class MainWindow : Window
                 OnFormatPara(this, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Key.P when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
+                OnPrintClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -1714,6 +1719,17 @@ public partial class MainWindow : Window
             ? ParseAllPageEditors()
             : _viewModel.GetPreviewDocument();
         var wnd = new PrintPreviewWindow(snapshot) { Owner = this };
+        wnd.Show();
+    }
+
+    private void OnPrintClick(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var snapshot = PageEditorHost.PageCount > 0
+            ? ParseAllPageEditors()
+            : _viewModel.GetPreviewDocument();
+        // 미리보기 창을 띄우되 빌드 완료 후 자동으로 인쇄 다이얼로그 호출.
+        var wnd = new PrintPreviewWindow(snapshot, autoStartPrint: true) { Owner = this };
         wnd.Show();
     }
 
