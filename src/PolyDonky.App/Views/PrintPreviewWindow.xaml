@@ -254,6 +254,8 @@
                         <Canvas x:Name="PreviewUnderlayImageCanvas" IsHitTestVisible="False"/>
                         <Canvas x:Name="PreviewUnderlayShapeCanvas" IsHitTestVisible="False"/>
                         <Canvas x:Name="PreviewUnderlayTableCanvas" IsHitTestVisible="False"/>
+                        <!-- 워터마크 -->
+                        <Canvas x:Name="PreviewWatermarkCanvas" IsHitTestVisible="False"/>
                         <!-- 페이지별 본문 RTB (읽기 전용) -->
                         <views:PerPageEditorHost x:Name="PreviewPageHost"
                                                  VerticalAlignment="Top"

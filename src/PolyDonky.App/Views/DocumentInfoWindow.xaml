@@ -78,7 +78,7 @@
 
                     <Separator Margin="0,14,0,12" />
 
-                    <!-- 문서 속성 — Author 는 입력 가능 -->
+                    <!-- 문서 속성 — Author/Editor/Language 는 입력 가능 -->
                     <TextBlock Style="{StaticResource GroupHeader}"
                                Text="{Binding DocInfoGroupMeta, Source={x:Static svc:LocalizedStrings.Instance}}" />
                     <Grid Margin="8,0,0,0">
@@ -92,6 +92,8 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
                                    Text="{Binding DocInfoDocTitle, Source={x:Static svc:LocalizedStrings.Instance}}" />
@@ -100,21 +102,33 @@
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
                                    Text="{Binding DocInfoAuthor, Source={x:Static svc:LocalizedStrings.Instance}}" />
-                        <TextBox   Grid.Row="1" Grid.Column="1"
+                        <TextBox   Grid.Row="1" Grid.Column="1" x:Name="AuthorField"
                                    Text="{Binding Author, UpdateSourceTrigger=PropertyChanged}"
                                    Margin="0,4,0,4" Padding="6,3" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}"
-                                   Text="{Binding DocInfoLanguage, Source={x:Static svc:LocalizedStrings.Instance}}" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource FieldValue}"
-                                   Text="{Binding Language}" />
+                                   Text="{Binding DocInfoEditor, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBox   Grid.Row="2" Grid.Column="1"
+                                   Text="{Binding Editor, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" />
+
                         <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}"
-                                   Text="{Binding DocInfoCreated, Source={x:Static svc:LocalizedStrings.Instance}}" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource FieldValue}"
-                                   Text="{Binding Created}" />
+                                   Text="{Binding DocInfoLanguage, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1"
+                                   SelectedValuePath="Tag"
+                                   SelectedValue="{Binding Language, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3">
+                            <ComboBoxItem Tag="ko-KR">한국어 (Korean)</ComboBoxItem>
+                            <ComboBoxItem Tag="en-US">English (United States)</ComboBoxItem>
+                        </ComboBox>
+
                         <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}"
-                                   Text="{Binding DocInfoModified, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                                   Text="{Binding DocInfoCreated, Source={x:Static svc:LocalizedStrings.Instance}}" />
                         <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource FieldValue}"
+                                   Text="{Binding Created}" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                                   Text="{Binding DocInfoModified, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Style="{StaticResource FieldValue}"
                                    Text="{Binding Modified}" />
                     </Grid>
 

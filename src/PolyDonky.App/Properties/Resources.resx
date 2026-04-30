@@ -142,6 +142,7 @@
   <data name="DocInfoDataSize"    xml:space="preserve"><value>데이터 크기</value></data>
   <data name="DocInfoDocTitle"    xml:space="preserve"><value>제목</value></data>
   <data name="DocInfoAuthor"      xml:space="preserve"><value>작성자</value></data>
+  <data name="DocInfoEditor"      xml:space="preserve"><value>수정자</value></data>
   <data name="DocInfoLanguage"    xml:space="preserve"><value>언어</value></data>
   <data name="DocInfoCreated"     xml:space="preserve"><value>생성일</value></data>
   <data name="DocInfoModified"    xml:space="preserve"><value>수정일</value></data>

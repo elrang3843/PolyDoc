@@ -5,7 +5,7 @@ namespace PolyDonky.App.Models;
 
 /// <summary>
 /// 문서 정보 다이얼로그용 view model. 통계/메타데이터의 읽기 표시 + 사용자가 편집 가능한
-/// (Author, 암호 보호 모드, 워터마크) 항목을 함께 담는다.
+/// (Author/Editor/Language, 암호 보호 모드, 워터마크) 항목을 함께 담는다.
 /// </summary>
 public sealed partial class DocumentInfoModel : ObservableObject
 {
@@ -16,13 +16,23 @@ public sealed partial class DocumentInfoModel : ObservableObject
 
     // ── 문서 속성 ────────────────────────────────────────────
     public string DocTitle  { get; init; } = "";
-    public string Language  { get; init; } = "";
     public string Created   { get; init; } = "";
     public string Modified  { get; init; } = "";
 
-    /// <summary>편집 가능한 작성자 이름. 다이얼로그에서 두 방향 바인딩.</summary>
+    /// <summary>문서가 저장된 적 있는지 여부. 작성자 편집 가능 여부를 결정.</summary>
+    public bool HasBeenSaved { get; init; }
+
+    /// <summary>편집 가능한 작성자 이름. 저장 이전 또는 작성자 미정의 시에만 편집 가능.</summary>
     [ObservableProperty]
     private string _author = "";
+
+    /// <summary>편집 가능한 수정자 이름. 언제든 편집 가능.</summary>
+    [ObservableProperty]
+    private string _editor = "";
+
+    /// <summary>편집 가능한 언어 코드 (예: ko-KR, en-US).</summary>
+    [ObservableProperty]
+    private string _language = "ko-KR";
 
     // ── 통계 (read-only) ─────────────────────────────────────
     public string ParagraphCount { get; init; } = "";

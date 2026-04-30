@@ -142,6 +142,7 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="DocInfoDataSize"    xml:space="preserve"><value>Data Size</value></data>
   <data name="DocInfoDocTitle"    xml:space="preserve"><value>Title</value></data>
   <data name="DocInfoAuthor"      xml:space="preserve"><value>Author</value></data>
+  <data name="DocInfoEditor"      xml:space="preserve"><value>Editor</value></data>
   <data name="DocInfoLanguage"    xml:space="preserve"><value>Language</value></data>
   <data name="DocInfoCreated"     xml:space="preserve"><value>Created</value></data>
   <data name="DocInfoModified"    xml:space="preserve"><value>Modified</value></data>

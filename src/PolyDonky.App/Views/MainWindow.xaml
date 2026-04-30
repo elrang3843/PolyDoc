@@ -320,6 +320,8 @@
                     <Canvas x:Name="UnderlayShapeCanvas" />
                     <!-- 표 오버레이(BehindText) -->
                     <Canvas x:Name="UnderlayTableCanvas" />
+                    <!-- 워터마크 오버레이. -->
+                    <Canvas x:Name="WatermarkCanvas" IsHitTestVisible="False" />
                     <!-- PerPageEditorHost: 페이지별 RichTextBox 를 수직으로 배치하는 Canvas.
                          SetupPages() 가 PerPageDocumentSplitter 슬라이스로 초기화한다. -->
                     <views:PerPageEditorHost x:Name="PageEditorHost"

@@ -1631,6 +1631,14 @@ public partial class MainWindow : Window
             PageBackgroundCanvas.Children.Add(label);
 
         }
+
+        RenderWatermark(pg, pageCount);
+    }
+
+    private void RenderWatermark(PageGeometry pg, int pageCount)
+    {
+        var watermark = _viewModel?.Document.Watermark;
+        PageViewBuilder.BuildWatermarkLayer(WatermarkCanvas, watermark, pg, pageCount);
     }
 
     // ── 오버레이 좌표 헬퍼 — 페이지-로컬 (AnchorPageIndex, X/Y mm) ↔ Canvas 절대 DIP ──

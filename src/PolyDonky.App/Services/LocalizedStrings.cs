@@ -87,6 +87,7 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string DocInfoDataSize   => SR.DocInfoDataSize;
     public string DocInfoDocTitle   => SR.DocInfoDocTitle;
     public string DocInfoAuthor     => SR.DocInfoAuthor;
+    public string DocInfoEditor     => SR.DocInfoEditor;
     public string DocInfoLanguage   => SR.DocInfoLanguage;
     public string DocInfoCreated    => SR.DocInfoCreated;
     public string DocInfoModified   => SR.DocInfoModified;

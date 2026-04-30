@@ -15,6 +15,13 @@ public partial class DocumentInfoWindow : Window
         InitializeComponent();
         DataContext = model;
         UpdatePasswordStatus();
+        UpdateAuthorEditability();
+    }
+
+    private void UpdateAuthorEditability()
+    {
+        if (_model.HasBeenSaved && !string.IsNullOrWhiteSpace(_model.Author))
+            AuthorField.IsEnabled = false;
     }
 
     private void UpdatePasswordStatus()

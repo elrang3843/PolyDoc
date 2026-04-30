@@ -182,4 +182,53 @@ public static class PageViewBuilder
         Canvas.SetLeft(ctrl, xDip);
         Canvas.SetTop (ctrl, yDip);
     }
+
+    /// <summary>
+    /// 워터마크를 지정된 Canvas 에 렌더링한다.
+    /// </summary>
+    public static void BuildWatermarkLayer(
+        Canvas               target,
+        WatermarkSettings?   watermark,
+        PageGeometry         geo,
+        int                  pageCount)
+    {
+        target.Children.Clear();
+        if (watermark is null || !watermark.Enabled || string.IsNullOrWhiteSpace(watermark.Text))
+            return;
+
+        for (int i = 0; i < pageCount; i++)
+        {
+            double pageCenterY = i * geo.PageStrideDip + geo.PageHeightDip / 2;
+            double pageCenterX = geo.PageWidthDip / 2;
+
+            var tb = new TextBlock
+            {
+                Text                = watermark.Text,
+                FontSize            = watermark.FontSize,
+                FontWeight          = FontWeights.Bold,
+                Foreground          = ParseColorBrush(watermark.Color, watermark.Opacity),
+                TextAlignment       = TextAlignment.Center,
+                IsHitTestVisible    = false,
+                LayoutTransform     = new RotateTransform(watermark.Rotation),
+            };
+            tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var width = tb.DesiredSize.Width;
+            var height = tb.DesiredSize.Height;
+
+            Canvas.SetLeft(tb, pageCenterX - width / 2);
+            Canvas.SetTop(tb, pageCenterY - height / 2);
+            target.Children.Add(tb);
+        }
+    }
+
+    private static Brush ParseColorBrush(string colorHex, double opacity)
+    {
+        try
+        {
+            if (WpfColor.TryParse(colorHex, out var c))
+                return new SolidColorBrush(c) { Opacity = opacity };
+        }
+        catch { }
+        return new SolidColorBrush(Colors.Gray) { Opacity = opacity };
+    }
 }

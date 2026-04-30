@@ -50,6 +50,7 @@ public sealed class DocumentMetadata
 {
     public string? Title { get; set; }
     public string? Author { get; set; }
+    public string? Editor { get; set; }
     public string? Application { get; set; } = "PolyDonky";
     public string Language { get; set; } = "ko-KR";
     public DateTimeOffset Created { get; set; } = DateTimeOffset.UtcNow;

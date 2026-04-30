@@ -405,7 +405,9 @@ public partial class MainViewModel : ObservableObject
             Format         = format,
             DataSize       = DocumentMeasurement.FormatBytes(bytes),
             DocTitle       = string.IsNullOrWhiteSpace(meta.Title) ? none : meta.Title,
+            HasBeenSaved   = !string.IsNullOrEmpty(CurrentFilePath),
             Author         = meta.Author ?? string.Empty,
+            Editor         = meta.Editor ?? string.Empty,
             Language       = meta.Language,
             Created        = meta.Created.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
             Modified       = meta.Modified.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
@@ -441,10 +443,30 @@ public partial class MainViewModel : ObservableObject
         var meta = _document.Metadata;
 
         // ── 작성자 ──
+        var oldAuthor = meta.Author;
         var newAuthor = string.IsNullOrWhiteSpace(info.Author) ? null : info.Author.Trim();
-        if (!string.Equals(meta.Author, newAuthor, StringComparison.Ordinal))
+        if (!string.Equals(oldAuthor, newAuthor, StringComparison.Ordinal))
         {
             meta.Author = newAuthor;
+            // 작성자가 처음 지정되면 생성일도 함께 업데이트
+            if (string.IsNullOrEmpty(oldAuthor) && newAuthor is not null)
+                meta.Created = DateTimeOffset.UtcNow;
+            dirty = true;
+        }
+
+        // ── 수정자 ──
+        var newEditor = string.IsNullOrWhiteSpace(info.Editor) ? null : info.Editor.Trim();
+        if (!string.Equals(meta.Editor, newEditor, StringComparison.Ordinal))
+        {
+            meta.Editor = newEditor;
+            meta.Modified = DateTimeOffset.UtcNow;
+            dirty = true;
+        }
+
+        // ── 언어 ──
+        if (!string.Equals(meta.Language, info.Language, StringComparison.Ordinal))
+        {
+            meta.Language = info.Language;
             dirty = true;
         }
 
