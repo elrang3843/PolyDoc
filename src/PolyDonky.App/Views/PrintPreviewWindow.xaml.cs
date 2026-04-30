@@ -171,6 +171,8 @@ public partial class PrintPreviewWindow : Window
     private void BuildPreview()
     {
         _initialZoomApplied = false;
+        GrayscaleOverlay.Visibility = Visibility.Collapsed;
+        GrayscaleOverlay.Source     = null;
         try
         {
             // 1. 페이지 설정이 적용된 임시 문서 생성
@@ -229,6 +231,8 @@ public partial class PrintPreviewWindow : Window
             PageInfoText.Text = $"총 {_pageCount}페이지";
 
             Dispatcher.BeginInvoke(new Action(ApplyFitPage), DispatcherPriority.Loaded);
+            if (_monochrome)
+                Dispatcher.BeginInvoke(new Action(ApplyMonochromeOverlay), DispatcherPriority.Render);
         }
         catch (Exception ex)
         {
@@ -245,6 +249,40 @@ public partial class PrintPreviewWindow : Window
         // per-page RTB 초기화
         PreviewPageHost.SetupPages([], new PageGeometry(new PageSettings()), null);
         BuildPreview();
+    }
+
+    // ── 흑백 미리보기 오버레이 ───────────────────────────────────────────
+
+    /// <summary>
+    /// PreviewPaperHost 전체를 RenderTargetBitmap 으로 캡처해 Gray8 로 변환한 뒤
+    /// GrayscaleOverlay Image 로 덮어 흑백 미리보기를 구현한다.
+    /// DispatcherPriority.Render 로 호출돼 레이아웃이 완료된 시점에 실행된다.
+    /// </summary>
+    private void ApplyMonochromeOverlay()
+    {
+        if (!_monochrome) return;
+        try
+        {
+            double w = PreviewPaperHost.ActualWidth;
+            double h = PreviewPaperHost.ActualHeight;
+            if (w < 1 || h < 1) return;
+
+            int pw = Math.Max(1, (int)Math.Ceiling(w));
+            int ph = Math.Max(1, (int)Math.Ceiling(h));
+
+            var rtb = new RenderTargetBitmap(pw, ph, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(PreviewPaperHost);
+            rtb.Freeze();
+
+            var gray = new FormatConvertedBitmap(rtb, PixelFormats.Gray8, null, 0);
+            gray.Freeze();
+
+            GrayscaleOverlay.Width      = w;
+            GrayscaleOverlay.Height     = h;
+            GrayscaleOverlay.Source     = gray;
+            GrayscaleOverlay.Visibility = Visibility.Visible;
+        }
+        catch { /* 레이아웃 미완료 등 무시 */ }
     }
 
     // ── 줌 ───────────────────────────────────────────────────────────────

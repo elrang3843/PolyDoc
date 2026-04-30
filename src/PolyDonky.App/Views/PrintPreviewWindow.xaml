@@ -256,6 +256,13 @@
                         <Canvas x:Name="PreviewOverlayImageCanvas" IsHitTestVisible="False"/>
                         <Canvas x:Name="PreviewOverlayShapeCanvas" IsHitTestVisible="False"/>
                         <Canvas x:Name="PreviewOverlayTableCanvas" IsHitTestVisible="False"/>
+                        <!-- 흑백 모드 그레이스케일 오버레이 (빌드 완료 후 코드에서 채움) -->
+                        <Image x:Name="GrayscaleOverlay"
+                               IsHitTestVisible="False"
+                               Visibility="Collapsed"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Top"
+                               Stretch="None" />
                     </Grid>
                 </StackPanel>
             </ScrollViewer>
