@@ -787,6 +787,12 @@ public partial class MainViewModel : ObservableObject
                 rebuilt.Metadata.Modified = now;
             }
 
+            // 제목이 없으면 첫 줄 텍스트에서 자동 추출 (6단어 이내)
+            if (string.IsNullOrWhiteSpace(rebuilt.Metadata.Title))
+            {
+                rebuilt.Metadata.Title = ExtractFirstLineTitle(rebuilt);
+            }
+
             // IWPF writer 에 현재 보호 모드와 비밀번호를 지정한다.
             var actualWriter = writer;
             if (writer is IwpfWriter)
@@ -809,6 +815,39 @@ public partial class MainViewModel : ObservableObject
         {
             ReportError(SR.DlgSaveError, ex);
         }
+    }
+
+    private string? ExtractFirstLineTitle(PolyDonkyument doc)
+    {
+        var firstSection = doc.Sections.FirstOrDefault();
+        if (firstSection?.Blocks.Count == 0) return null;
+
+        var firstBlock = firstSection.Blocks.FirstOrDefault();
+        string? text = firstBlock switch
+        {
+            Paragraph p => p.GetPlainText(),
+            TextBoxObject tb => tb.GetPlainText(),
+            Table t when t.Rows.Count > 0 && t.Rows[0].Cells.Count > 0
+                => ExtractTableCellText(t.Rows[0].Cells[0]),
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var words = text.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        var limited = string.Join(" ", words.Take(6));
+        return string.IsNullOrWhiteSpace(limited) ? null : limited;
+    }
+
+    private string ExtractTableCellText(TableCell cell)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var block in cell.Blocks)
+        {
+            if (block is Paragraph p)
+                sb.Append(p.GetPlainText());
+        }
+        return sb.ToString();
     }
 
     /// <summary>
