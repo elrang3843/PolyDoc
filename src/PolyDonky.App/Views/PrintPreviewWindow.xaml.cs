@@ -10,6 +10,10 @@ using System.Windows.Threading;
 using PolyDonky.App.Pagination;
 using PolyDonky.App.Services;
 using PolyDonky.Core;
+using EnumeratedPrintQueueTypes = System.Printing.EnumeratedPrintQueueTypes;
+using LocalPrintServer          = System.Printing.LocalPrintServer;
+using OutputColor               = System.Printing.OutputColor;
+using PrintQueue                = System.Printing.PrintQueue;
 
 namespace PolyDonky.App.Views;
 
@@ -87,7 +91,51 @@ public partial class PrintPreviewWindow : Window
         ColorRadio.IsChecked           = true;
         CopiesBox.Text                 = "1";
 
+        PopulatePrinters();
+
         _suppressSettingsEvents = false;
+    }
+
+    /// <summary>
+    /// 시스템에 설치된 프린터 목록을 PrinterCombo 에 채우고 기본 프린터를 선택한다.
+    /// 인쇄 시 시스템 PrintDialog 를 띄우지 않고 여기서 선택한 PrintQueue 로 직접 전송한다.
+    /// </summary>
+    private void PopulatePrinters()
+    {
+        PrinterCombo.Items.Clear();
+        try
+        {
+            using var server = new LocalPrintServer();
+            var queues = server.GetPrintQueues(new[]
+            {
+                EnumeratedPrintQueueTypes.Local,
+                EnumeratedPrintQueueTypes.Connections,
+            });
+
+            string? defaultName = null;
+            try { defaultName = LocalPrintServer.GetDefaultPrintQueue()?.FullName; } catch { }
+
+            ComboBoxItem? defaultItem = null;
+            foreach (var pq in queues)
+            {
+                var item = new ComboBoxItem
+                {
+                    Content = pq.FullName,
+                    Tag     = pq,
+                };
+                PrinterCombo.Items.Add(item);
+                if (defaultName != null && pq.FullName == defaultName)
+                    defaultItem = item;
+            }
+
+            if (defaultItem != null) defaultItem.IsSelected = true;
+            else if (PrinterCombo.Items.Count > 0)
+                ((ComboBoxItem)PrinterCombo.Items[0]).IsSelected = true;
+        }
+        catch
+        {
+            // 프린터 열거 실패 — ComboBox 비어 있으면 OnPrintClick 이 안내 메시지 표시.
+        }
     }
 
     // ── 설정 이벤트 핸들러 ───────────────────────────────────────────────
@@ -343,16 +391,26 @@ public partial class PrintPreviewWindow : Window
         if (_geo is null) return;
         if (int.TryParse(CopiesBox.Text, out int c) && c >= 1) _copies = c;
 
-        var dlg = new System.Windows.Controls.PrintDialog();
+        // 좌측 패널에서 선택된 프린터 — 시스템 PrintDialog 를 띄우지 않고 곧바로 전송.
+        // (좌측 패널이 이미 미리보기 + 용지/색상/매수 옵션을 갖고 있어 시스템 다이얼로그가 중복.)
+        var pq = (PrinterCombo.SelectedItem as ComboBoxItem)?.Tag as PrintQueue;
+        if (pq is null)
+        {
+            MessageBox.Show(this,
+                "프린터를 선택하세요.",
+                "PolyDonky",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dlg = new System.Windows.Controls.PrintDialog { PrintQueue = pq };
         try
         {
             if (_monochrome)
-                dlg.PrintTicket.OutputColor = System.Printing.OutputColor.Monochrome;
+                dlg.PrintTicket.OutputColor = OutputColor.Monochrome;
             dlg.PrintTicket.CopyCount = (ushort)Math.Clamp(_copies, 1, 99);
         }
         catch { /* PrintTicket 미지원 드라이버 무시 */ }
-
-        if (dlg.ShowDialog() != true) return;
 
         var paginator = new LiveViewPaginator(PreviewPaperHost, _geo, _pageCount, _monochrome);
         dlg.PrintDocument(paginator, "PolyDonky 문서");

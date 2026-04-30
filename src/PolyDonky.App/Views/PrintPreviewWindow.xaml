@@ -167,6 +167,14 @@
                                    Foreground="{DynamicResource OnSurface}"
                                    Margin="0,0,0,8"/>
 
+                        <TextBlock Text="프린터"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource OnSurfaceMuted}"
+                                   Margin="0,0,0,3"/>
+                        <ComboBox x:Name="PrinterCombo"
+                                  Height="26" FontSize="12"
+                                  Margin="0,0,0,10"/>
+
                         <TextBlock Text="색상"
                                    FontSize="11"
                                    Foreground="{DynamicResource OnSurfaceMuted}"
