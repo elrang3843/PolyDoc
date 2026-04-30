@@ -67,6 +67,7 @@ namespace PolyDonky.App.Properties
         // ── 메뉴: 도움말 ────────────────────────────────────────────
         internal static string MenuHelp              => Get(nameof(MenuHelp));
         internal static string MenuHelpManual        => Get(nameof(MenuHelpManual));
+        internal static string MenuHelpFormat        => Get(nameof(MenuHelpFormat));
         internal static string MenuHelpLicense       => Get(nameof(MenuHelpLicense));
         internal static string MenuHelpAbout         => Get(nameof(MenuHelpAbout));
 

@@ -77,6 +77,7 @@
   <!-- 메뉴: 도움말 -->
   <data name="MenuHelp" xml:space="preserve"><value>도움말(_H)</value></data>
   <data name="MenuHelpManual" xml:space="preserve"><value>사용 방법(_M)</value></data>
+  <data name="MenuHelpFormat" xml:space="preserve"><value>IWPF 포맷(_F)</value></data>
   <data name="MenuHelpLicense" xml:space="preserve"><value>라이선스 및 참조(_L)</value></data>
   <data name="MenuHelpAbout" xml:space="preserve"><value>PolyDonky 정보(_A)</value></data>
 

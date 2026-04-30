@@ -42,6 +42,12 @@
     <EmbeddedResource Include="..\..\THIRD_PARTY_NOTICES.md">
       <LogicalName>PolyDonky.App.THIRD_PARTY_NOTICES.md</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\..\USER_GUIDE.md">
+      <LogicalName>PolyDonky.App.USER_GUIDE.md</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\IWPF.md">
+      <LogicalName>PolyDonky.App.IWPF.md</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- 앱 아이콘 / 회사 로고를 앱 리소스로 임베드 (About · 윈도우 타이틀바 표시) -->

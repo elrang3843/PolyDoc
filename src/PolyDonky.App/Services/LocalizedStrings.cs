@@ -63,6 +63,7 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     // ── 메뉴: 도움말 ────────────────────────────────────────────
     public string MenuHelp        => SR.MenuHelp;
     public string MenuHelpManual  => SR.MenuHelpManual;
+    public string MenuHelpFormat  => SR.MenuHelpFormat;
     public string MenuHelpLicense => SR.MenuHelpLicense;
     public string MenuHelpAbout   => SR.MenuHelpAbout;
 

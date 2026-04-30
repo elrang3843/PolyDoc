@@ -355,6 +355,28 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void UserGuide()
+    {
+        var window = new UserGuideWindow
+        {
+            Owner       = Application.Current.MainWindow,
+            SelectedTab = UserGuideWindow.Tab.UserGuide,
+        };
+        window.ShowDialog();
+    }
+
+    [RelayCommand]
+    private void IwpfFormatInfo()
+    {
+        var window = new UserGuideWindow
+        {
+            Owner       = Application.Current.MainWindow,
+            SelectedTab = UserGuideWindow.Tab.IwpfFormat,
+        };
+        window.ShowDialog();
+    }
+
+    [RelayCommand]
     private void DocInfo()
     {
         var text = _document.ToPlainText();

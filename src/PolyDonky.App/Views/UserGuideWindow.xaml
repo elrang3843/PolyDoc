@@ -1,0 +1,65 @@
+<Window x:Class="PolyDonky.App.Views.UserGuideWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="clr-namespace:PolyDonky.App.Services"
+        Title="{Binding MenuHelpManual, Source={x:Static svc:LocalizedStrings.Instance}}"
+        Width="900" Height="640"
+        MinWidth="640" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TabControl x:Name="MainTabs" Grid.Row="0">
+
+            <!-- 탭 1: 사용 방법 -->
+            <TabItem Header="{Binding MenuHelpManual, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                    <TextBox x:Name="UserGuideText"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Foreground="{DynamicResource OnSurface}"
+                             FontFamily="Consolas, Courier New, monospace"
+                             FontSize="13"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             Margin="8" />
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 탭 2: IWPF 포맷 (사용자/개발자 모두) -->
+            <TabItem Header="{Binding MenuHelpFormat, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                    <TextBox x:Name="IwpfFormatText"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Foreground="{DynamicResource OnSurface}"
+                             FontFamily="Consolas, Courier New, monospace"
+                             FontSize="13"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             Margin="8" />
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+
+        <Button Grid.Row="1"
+                Content="닫기"
+                Width="88" Height="32"
+                HorizontalAlignment="Right"
+                Margin="0,12,0,0"
+                IsDefault="True"
+                IsCancel="True"
+                Click="OnCloseClick" />
+    </Grid>
+</Window>

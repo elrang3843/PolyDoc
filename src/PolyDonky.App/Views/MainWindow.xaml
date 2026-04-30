@@ -125,7 +125,8 @@
             </MenuItem>
 
             <MenuItem Header="{Binding MenuHelp, Source={x:Static svc:LocalizedStrings.Instance}}">
-                <MenuItem Header="{Binding MenuHelpManual, Source={x:Static svc:LocalizedStrings.Instance}}" IsEnabled="False" />
+                <MenuItem Header="{Binding MenuHelpManual, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding UserGuideCommand}" />
+                <MenuItem Header="{Binding MenuHelpFormat, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding IwpfFormatInfoCommand}" />
                 <MenuItem Header="{Binding MenuHelpLicense, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding LicenseInfoCommand}" />
                 <Separator />
                 <MenuItem Header="{Binding MenuHelpAbout, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding AboutCommand}" />

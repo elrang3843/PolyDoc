@@ -114,8 +114,9 @@ PolyDonky은 모든 문서를 **공통 의미 모델 + 포맷별 보존 캡슐 +
 ## 프로젝트 상태
 
 > 🚧 **Pre-alpha — 설계/초기 구현 단계입니다.**
-> 현재 저장소에는 사양 문서(`README.md`, `IWPF.md`, `CLAUDE.md`, `HISTORY.md`)만 포함되어 있고,
-> 실행 가능한 바이너리·릴리스는 아직 제공되지 않습니다.
+> 사양·사용자 문서(`README.md`, `USER_GUIDE.md`, `IWPF.md`, `CLAUDE.md`, `HISTORY.md`)와 함께
+> 메인 앱 (`PolyDonky.App`, WPF) 및 코덱 라이브러리 (DOCX·HWPX·MD·TXT) 의 구현이 진행 중입니다.
+> 정식 릴리스 빌드는 아직 제공되지 않습니다.
 > 진행 상황은 [Issues](../../issues) / [Releases](../../releases) / [`HISTORY.md`](HISTORY.md) 에서 확인하세요.
 
 ### 버전 정책
@@ -240,8 +241,9 @@ PolyDonky은 모든 문서를 **공통 의미 모델 + 포맷별 보존 캡슐 +
 <details>
 <summary><b>도움말</b></summary>
 
-- 사용 방법(매뉴얼) — 언어별 별도 파일
-- 라이선스 — 써드파티 포함, 언어별 별도 파일
+- 사용 방법 — 앱 내 사용 안내 (저장소의 [`USER_GUIDE.md`](USER_GUIDE.md) 가 빌드에 임베드됨)
+- IWPF 포맷 — 자체 통합 포맷 사양과 설계 근거 ([`IWPF.md`](IWPF.md) 가 빌드에 임베드됨, 사용자/개발자 모두 열람 가능)
+- 라이선스 및 참조 — 써드파티 라이선스·의존성·파일 형식 명세
 - About — 저작권자·회사 로고 포함
 </details>
 
@@ -396,8 +398,9 @@ Licensed under the Apache License, Version 2.0
 | 문서                                | 대상            | 내용                                          |
 |------------------------------------|----------------|-----------------------------------------------|
 | [`README.md`](README.md)           | 사용자·기여자   | 프로젝트 소개와 사용 안내 (이 문서)             |
+| [`USER_GUIDE.md`](USER_GUIDE.md)   | 사용자          | 앱 사용 방법 (단축키·메뉴·기능). 빌드에 임베드되어 도움말 → 사용 방법 메뉴에서 동일 내용 열람 가능 |
 | [`HISTORY.md`](HISTORY.md)         | 사용자·기여자   | 변경 이력(Changelog) — 버전별 추가·수정 내역    |
-| [`IWPF.md`](IWPF.md)               | 설계자·개발자   | IWPF 통합 포맷 사양과 설계 근거                |
+| [`IWPF.md`](IWPF.md)               | 사용자·개발자   | IWPF 통합 포맷 사양과 설계 근거. 빌드에 임베드되어 도움말 → IWPF 포맷 메뉴에서 동일 내용 열람 가능 |
 | [`WORK_PLAN.md`](WORK_PLAN.md)     | 메인테이너·AI   | 다단계 작업 계획·진행 상태·인수인계             |
 | [`CLAUDE.md`](CLAUDE.md)           | Claude Code    | AI 어시스턴트가 참고할 개발 가이드라인          |
 | [`NOTICE`](NOTICE)                 | 모두           | 저작권 고지·써드파티 attribution                |
