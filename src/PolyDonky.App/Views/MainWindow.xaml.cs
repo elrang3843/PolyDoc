@@ -538,10 +538,25 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            // 오버레이 이미지도 5mm 오프셋만 적용 (앵커 처리는 BuildImage 에 위임)
+            // 오버레이 이미지 — RTB 앵커 없이 모델에만 등록(RebuildOverlayImages 가 모델을 읽음).
             if (coreBlock is PolyDonky.Core.ImageBlock imgBlk &&
                 imgBlk.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
-            { imgBlk.OverlayXMm += 5; imgBlk.OverlayYMm += 5; }
+            {
+                imgBlk.OverlayXMm += 5; imgBlk.OverlayYMm += 5;
+                _viewModel?.AddOverlayBlockToCurrentSection(imgBlk);
+                hasOverlay = true;
+                continue;
+            }
+
+            // 오버레이 표 — RTB 앵커 없이 모델에만 등록(RebuildOverlayTables 가 모델을 읽음).
+            if (coreBlock is PolyDonky.Core.Table tblOvl &&
+                tblOvl.WrapMode != PolyDonky.Core.TableWrapMode.Block)
+            {
+                tblOvl.OverlayXMm += 5; tblOvl.OverlayYMm += 5;
+                _viewModel?.AddOverlayBlockToCurrentSection(tblOvl);
+                hasOverlay = true;
+                continue;
+            }
 
             var wpfBlock = BuildWpfBlockFromCore(coreBlock);
             if (wpfBlock is null) continue;
@@ -559,10 +574,6 @@ public partial class MainWindow : Window
             {
                 doc.Blocks.Add(wpfBlock);
             }
-
-            if (coreBlock is PolyDonky.Core.Table { WrapMode: not PolyDonky.Core.TableWrapMode.Block }
-                || coreBlock is PolyDonky.Core.ImageBlock { WrapMode: PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText })
-                hasOverlay = true;
         }
 
         // 커서를 마지막 삽입 블록 끝으로 이동 (비-오버레이 블록 붙여넣기)
@@ -3576,9 +3587,11 @@ public partial class MainWindow : Window
         OverlayTableCanvas.Children.Clear();
         UnderlayTableCanvas.Children.Clear();
 
-        foreach (var block in BodyEditor.Document.Blocks)
+        var overlaySection = _viewModel?.Document.Sections.FirstOrDefault();
+        if (overlaySection is null) return;
+        foreach (var coreBlock in overlaySection.Blocks)
         {
-            if (block.Tag is not PolyDonky.Core.Table table) continue;
+            if (coreBlock is not PolyDonky.Core.Table table) continue;
             if (table.WrapMode == PolyDonky.Core.TableWrapMode.Block) continue;
 
             var ctrl = Services.FlowDocumentBuilder.BuildOverlayTableControl(table);
@@ -3631,12 +3644,12 @@ public partial class MainWindow : Window
         menu.Items.Add(new System.Windows.Controls.Separator());
         menu.Items.Add(MakeMenuItem("표 삭제(_X)", () =>
         {
+            _viewModel?.RemoveOverlayBlock(table);
             var anchor = BodyEditor.Document.Blocks
                 .FirstOrDefault(b => ReferenceEquals(b.Tag, table));
             if (anchor is not null)
                 BodyEditor.Document.Blocks.Remove(anchor);
             RebuildOverlayTables();
-            _viewModel?.MarkDirty();
         }));
         return menu;
     }
