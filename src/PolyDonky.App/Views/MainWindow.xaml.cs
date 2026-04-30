@@ -527,11 +527,19 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            // 오버레이 블록은 원본 위치에 겹쳐 붙여넣기되지 않도록 5mm 오프셋 적용
-            if (coreBlock is PolyDonky.Core.ShapeObject sh &&
-                sh.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
-            { sh.OverlayXMm += 5; sh.OverlayYMm += 5; }
-            else if (coreBlock is PolyDonky.Core.ImageBlock imgBlk &&
+            // 오버레이 도형 — RTB 앵커 없이 모델에만 등록(RebuildOverlayShapes 가 모델을 읽음).
+            // 앵커를 RTB 에 넣으면 ParseAllPageEditors 가 본문 블록으로 파싱해 모델의 도형과 중복된다.
+            if (coreBlock is PolyDonky.Core.ShapeObject shpOvl &&
+                shpOvl.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
+            {
+                shpOvl.OverlayXMm += 5; shpOvl.OverlayYMm += 5;
+                _viewModel?.AddShapeToCurrentSection(shpOvl);
+                hasOverlay = true;
+                continue;
+            }
+
+            // 오버레이 이미지도 5mm 오프셋만 적용 (앵커 처리는 BuildImage 에 위임)
+            if (coreBlock is PolyDonky.Core.ImageBlock imgBlk &&
                 imgBlk.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
             { imgBlk.OverlayXMm += 5; imgBlk.OverlayYMm += 5; }
 
@@ -552,14 +560,8 @@ public partial class MainWindow : Window
                 doc.Blocks.Add(wpfBlock);
             }
 
-            // 오버레이 도형은 RTB 앵커 외에 모델에도 등록해야 저장/재구축 후 유지됨
-            if (coreBlock is PolyDonky.Core.ShapeObject shpOvl &&
-                shpOvl.WrapMode is PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText)
-                _viewModel?.AddShapeToCurrentSection(shpOvl);
-
             if (coreBlock is PolyDonky.Core.Table { WrapMode: not PolyDonky.Core.TableWrapMode.Block }
-                || coreBlock is PolyDonky.Core.ImageBlock { WrapMode: PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText }
-                || coreBlock is PolyDonky.Core.ShapeObject { WrapMode: PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText })
+                || coreBlock is PolyDonky.Core.ImageBlock { WrapMode: PolyDonky.Core.ImageWrapMode.InFrontOfText or PolyDonky.Core.ImageWrapMode.BehindText })
                 hasOverlay = true;
         }
 
@@ -3506,26 +3508,19 @@ public partial class MainWindow : Window
 
     private void InsertShapeBlock(PolyDonky.Core.ShapeObject shape)
     {
-        // 현재 캐럿 위치에 빈 paragraph 처럼 삽입 (overlay 모드이므로 placeholder 만 들어감)
-        var block = Services.FlowDocumentBuilder.BuildShape(shape);
-        var doc   = BodyEditor.Document;
-
-        // 캐럿이 있는 단락 뒤에 삽입. 캐럿이 없으면 맨 끝에 추가.
-        var caretBlock = BodyEditor.CaretPosition?.Paragraph
-                         ?? BodyEditor.CaretPosition?.GetAdjacentElement(
-                             System.Windows.Documents.LogicalDirection.Backward) as System.Windows.Documents.Block;
-        if (caretBlock is not null && doc.Blocks.Contains(caretBlock))
-            doc.Blocks.InsertAfter(caretBlock, block);
-        else
-            doc.Blocks.Add(block);
-
+        // 오버레이 모드 도형은 페이지 RTB 가 아닌 모델(_viewModel.Document.Sections) 에만 등록한다.
+        // 캔버스 표시는 RebuildOverlayShapes() 가 모델을 읽어 처리.
+        // (예전에는 앵커 단락을 활성 페이지 RTB 에 삽입했는데, 그 결과
+        //  ① TextChanged → ScheduleLivePaginationRefresh → SetupPageEditors → RestoreCaretToLastEditor
+        //     로 이어져 도형 그리기 직후 커서가 마지막 페이지 끝으로 점프하고,
+        //  ② ParseAllPageEditors 가 앵커도 본문 블록으로 파싱해 모델의 도형과 중복되며,
+        //  ③ 활성 RTB 가 바뀌면 다른 페이지에서 그린 도형 앵커를 못 찾아 사라지는 문제가 있었다.)
         _viewModel?.AddShapeToCurrentSection(shape);
         RebuildOverlayShapes();
 
-        // 도형만 있고 일반 단락이 없으면 커서가 갈 곳이 없어 텍스트 입력 불가.
-        // 항상 정상 Paragraph가 하나 이상 있도록 보장.
-        var hasNormalParagraph = doc.Blocks.OfType<System.Windows.Documents.Paragraph>().Any();
-        if (!hasNormalParagraph)
+        // 본문이 비어 일반 Paragraph 가 없으면 커서가 갈 곳이 없어 텍스트 입력 불가 — 항상 하나 보장.
+        var doc = BodyEditor.Document;
+        if (!doc.Blocks.OfType<System.Windows.Documents.Paragraph>().Any())
         {
             doc.Blocks.Add(new System.Windows.Documents.Paragraph());
         }
@@ -3540,9 +3535,15 @@ public partial class MainWindow : Window
         OverlayShapeCanvas.Children.Clear();
         UnderlayShapeCanvas.Children.Clear();
 
-        foreach (var block in BodyEditor.Document.Blocks)
+        // per-page 모드에서 오버레이 도형 앵커는 어떤 페이지 RTB 에도 포함되지 않으므로
+        // (PerPageDocumentSplitter 가 BodyBlocks 만 RTB 에 넣음) 모델을 직접 순회한다.
+        // 이전에는 BodyEditor.Document.Blocks 에서 읽어 저장→재불러오기 후 도형이 사라지고,
+        // 활성 페이지 RTB 가 바뀌면 다른 페이지에 있던 도형이 안 보이는 문제가 있었다.
+        var section = _viewModel?.Document.Sections.FirstOrDefault();
+        if (section is null) return;
+        foreach (var coreBlock in section.Blocks)
         {
-            if (block.Tag is not PolyDonky.Core.ShapeObject shape) continue;
+            if (coreBlock is not PolyDonky.Core.ShapeObject shape) continue;
             if (shape.WrapMode is not (PolyDonky.Core.ImageWrapMode.InFrontOfText
                                     or PolyDonky.Core.ImageWrapMode.BehindText)) continue;
 
