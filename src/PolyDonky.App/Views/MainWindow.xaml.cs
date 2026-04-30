@@ -1522,7 +1522,7 @@ public partial class MainWindow : Window
     ///   1. <see cref="_currentPaginatedDoc"/> — 로드 시점·ScheduleLivePaginationRefresh 후 최신값.
     ///   2. PageEditorHost.PageCount / 오버레이 anchor max — 편집 중간 폴백.
     /// </summary>
-    private void RebuildPageFrames()
+    internal void RebuildPageFrames()
     {
         if (_pageGeometry is null) return;
         if (_suppressPageFrameRebuild) return;

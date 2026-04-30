@@ -431,6 +431,10 @@ public partial class MainViewModel : ObservableObject
         if (dlg.ShowDialog() != true) return;
 
         ApplyDocumentInfoChanges(info);
+
+        // 워터마크 변경 시 페이지 프레임 재구축 필요
+        if (Application.Current.MainWindow is Views.MainWindow mainWindow)
+            mainWindow.RebuildPageFrames();
     }
 
     /// <summary>

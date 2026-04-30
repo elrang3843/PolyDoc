@@ -97,8 +97,9 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
                                    Text="{Binding DocInfoDocTitle, Source={x:Static svc:LocalizedStrings.Instance}}" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource FieldValue}"
-                                   Text="{Binding DocTitle}" />
+                        <TextBox   Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding DocTitle, UpdateSourceTrigger=PropertyChanged}"
+                                   Margin="0,4,0,4" Padding="6,3" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
                                    Text="{Binding DocInfoAuthor, Source={x:Static svc:LocalizedStrings.Instance}}" />
