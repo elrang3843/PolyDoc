@@ -1167,14 +1167,15 @@ public partial class MainWindow : Window
 
                 // 재구성 필요 판정:
                 //   ① 페이지 수가 달라졌거나
-                //   ② 페이지별 본문 블록 수가 달라졌으면(예: 표 삽입으로 후속 단락이 다음 페이지로 이동)
-                // RTB 를 재구성해 본문을 페이지별로 다시 분배한다 — 안 그러면 page 1 RTB 에
-                // 모든 텍스트가 남고(스크롤 숨김으로 클립), 다음 페이지 RTB 는 빈 채 남는다.
+                //   ② 페이지별 본문 블록 수 또는 ID 시퀀스가 달라졌으면
+                //      (예: 단락이 자라서 다음 페이지로 밀려났지만 다른 단락이 채워져 개수가 같은 경우 포함)
+                // RTB 를 재구성해 본문을 페이지별로 다시 분배한다.
                 bool needsRebuild = NeedsPageRebuild();
                 if (needsRebuild)
                 {
+                    var savedCaret = SaveCaretState();
                     SetupPageEditors();
-                    RestoreCaretToLastEditor();
+                    RestoreCaretState(savedCaret);
                 }
 
                 RebuildPageFrames();
@@ -1189,6 +1190,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 새로 계산된 <see cref="_currentPaginatedDoc"/> 의 페이지별 블록 분배가
     /// 현재 페이지 RTB 들과 다르면 true.
+    /// 블록 수뿐 아니라 블록 ID 시퀀스까지 비교해 "개수는 같지만 다른 블록으로 채워진" 경우도 검출한다.
     /// </summary>
     private bool NeedsPageRebuild()
     {
@@ -1201,34 +1203,104 @@ public partial class MainWindow : Window
         var rtbs = PageEditorHost.PageEditors;
         for (int i = 0; i < newPageCount; i++)
         {
-            int newCount = _currentPaginatedDoc.Pages[i].BodyBlocks.Count;
-            int oldCount = CountFlatTaggedBlocks(rtbs[i].Document.Blocks);
-            if (newCount != oldCount) return true;
+            var newPage = _currentPaginatedDoc.Pages[i];
+            var oldIds  = CollectBodyBlockIds(rtbs[i].Document.Blocks);
+
+            if (newPage.BodyBlocks.Count != oldIds.Count) return true;
+
+            for (int j = 0; j < newPage.BodyBlocks.Count; j++)
+            {
+                var newId = newPage.BodyBlocks[j].Source.Id;
+                var oldId = oldIds[j];
+                // 둘 다 ID 가 있으면 직접 비교. 하나라도 null 이면 신규 단락(Enter/붙여넣기)이므로
+                // ID 로 판단 불가 — 이 위치는 카운트 일치로만 체크한다.
+                if (newId != null && oldId != null && newId != oldId)
+                    return true;
+            }
         }
         return false;
     }
 
     /// <summary>
-    /// FlowDocument.Blocks 를 재귀적으로 순회해 Tag 가 Core.Block 인 항목 수를 센다
-    /// (List 내부 ListItem.Blocks 도 포함). MapBodyBlocksToPages 의 FlattenBlocks 와 동일 기준.
+    /// FlowDocument.Blocks 를 재귀적으로 순회해 본문 블록의 ID 목록을 반환한다
+    /// (List 내부 ListItem.Blocks 포함, 오버레이 앵커 제외).
     /// </summary>
-    private static int CountFlatTaggedBlocks(System.Windows.Documents.BlockCollection blocks)
+    private static List<string?> CollectBodyBlockIds(System.Windows.Documents.BlockCollection blocks)
     {
-        int n = 0;
+        var ids = new List<string?>();
         foreach (var b in blocks)
         {
             if (b.Tag is PolyDonky.Core.Block coreBlock
-                && !Pagination.FlowDocumentPaginationAdapter.IsOverlayMode(coreBlock)) n++;
+                && !Pagination.FlowDocumentPaginationAdapter.IsOverlayMode(coreBlock))
+                ids.Add(coreBlock.Id);
             if (b is System.Windows.Documents.List list)
                 foreach (var li in list.ListItems)
-                    n += CountFlatTaggedBlocks(li.Blocks);
+                    ids.AddRange(CollectBodyBlockIds(li.Blocks));
         }
-        return n;
+        return ids;
+    }
+
+    private record CaretState(int PageIndex, int Offset);
+
+    /// <summary>
+    /// 현재 포커스된 페이지 RTB 와 캐럿 오프셋을 저장한다.
+    /// SetupPageEditors 이전에 호출해 재구성 후 커서 위치를 복원한다.
+    /// </summary>
+    private CaretState? SaveCaretState()
+    {
+        var rtbs = PageEditorHost.PageEditors;
+        for (int i = 0; i < rtbs.Count; i++)
+        {
+            var rtb = rtbs[i];
+            if (!rtb.IsKeyboardFocusWithin && !rtb.IsFocused) continue;
+            try
+            {
+                int offset = rtb.Document.ContentStart
+                    .GetOffsetToPosition(rtb.CaretPosition);
+                return new CaretState(i, offset);
+            }
+            catch { break; }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// <see cref="SaveCaretState"/> 로 저장한 위치로 커서를 복원한다.
+    /// 재구성으로 페이지 수나 내용이 바뀌었으면 최대한 근사한 위치로 이동한다.
+    /// </summary>
+    private void RestoreCaretState(CaretState? saved)
+    {
+        var rtbs = PageEditorHost.PageEditors;
+        if (rtbs.Count == 0) return;
+
+        if (saved is not null)
+        {
+            int pageIdx = Math.Min(saved.PageIndex, rtbs.Count - 1);
+            var rtb = rtbs[pageIdx];
+            try
+            {
+                var start     = rtb.Document.ContentStart;
+                int maxOffset = start.GetOffsetToPosition(rtb.Document.ContentEnd);
+                int target    = Math.Clamp(saved.Offset, 0, maxOffset);
+                var pos = start.GetPositionAtOffset(
+                    target, System.Windows.Documents.LogicalDirection.Forward);
+                if (pos != null)
+                {
+                    rtb.CaretPosition = pos;
+                    rtb.Focus();
+                    Keyboard.Focus(rtb);
+                    return;
+                }
+            }
+            catch { }
+        }
+
+        RestoreCaretToLastEditor();
     }
 
     /// <summary>
     /// SetupPageEditors 후 마지막 페이지 RTB 끝에 커서를 두고 포커스를 준다.
-    /// 페이지 분리 직후 호출되며, 사용자가 가장 최근에 입력하던 위치(오버플로우 영역)에 가까운 자리.
+    /// <see cref="RestoreCaretState"/> 가 실패했을 때 최후 수단으로 호출한다.
     /// </summary>
     private void RestoreCaretToLastEditor()
     {
