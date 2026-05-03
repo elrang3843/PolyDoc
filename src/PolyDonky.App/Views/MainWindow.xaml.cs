@@ -1765,6 +1765,32 @@ public partial class MainWindow : Window
             _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
             SetupPageEditors();
             RebuildOverlays();
+
+            // 첫 Paginate 의 오프스크린 RTB 측정이 GetCharacterRect=NaN 으로 실패해
+            // 모든 본문 블록이 page 0 으로 몰릴 수 있다(시각 트리 밖에서 fresh FlowDocument
+            // 의 텍스트 레이아웃이 확정되지 않는 케이스). RTB 가 시각 트리에 부착된 직후
+            // Render 우선순위로 한 번 더 재페이지네이트해 정확한 분배를 강제한다.
+            // 두 번째 측정은 PageEditorHost 자식 RTB 들이 이미 layout pass 를 거친 뒤이므로
+            // GetCharacterRect 가 안정된 Y 를 반환한다.
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
+            {
+                if (_pageGeometry is null) return;
+                var redoFresh = ParseAllPageEditors();
+                if (redoFresh.Sections.FirstOrDefault() is { } rs) rs.Page = page;
+                var redoPaginated = FlowDocumentPaginationAdapter.Paginate(redoFresh);
+                _currentPaginatedDoc = redoPaginated;
+                if (NeedsPageRebuild())
+                {
+                    var savedCaret = SaveCaretState();
+                    SetupPageEditors();
+                    RestoreCaretState(savedCaret);
+                    RebuildOverlays();
+                }
+                else
+                {
+                    RebuildPageFrames();
+                }
+            });
         }
         else
         {
