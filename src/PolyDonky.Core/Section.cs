@@ -129,6 +129,12 @@ public sealed class PageSettings
     // 다단
     public int    ColumnCount  { get; set; } = 1;
     public double ColumnGapMm  { get; set; } = 8;
+    /// <summary>
+    /// 각 단의 너비 (mm). null 이면 균등 배분.
+    /// 요소 수는 <see cref="ColumnCount"/> 와 같아야 한다.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<double>? ColumnWidthsMm { get; set; }
 
     // 페이지 번호
     public int PageNumberStart { get; set; } = 1;

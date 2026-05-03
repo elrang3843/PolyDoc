@@ -200,7 +200,7 @@ public partial class MainWindow : Window
             if (onBorder != _tableColResizeHovering)
             {
                 _tableColResizeHovering = onBorder;
-                Mouse.OverrideCursor    = onBorder ? Cursors.SizeWE : null;
+                Mouse.OverrideCursor    = (onBorder || _colDivHovering) ? Cursors.SizeWE : null;
             }
         }
     }
@@ -1114,7 +1114,11 @@ public partial class MainWindow : Window
 
         rtb.MouseLeave += (_, _) =>
         {
-            if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
+            if (!_tableColResizeActive)
+            {
+                _tableColResizeHovering = false;
+                Mouse.OverrideCursor = _colDivHovering ? Cursors.SizeWE : null;
+            }
         };
 
         // _lastTextEditor 갱신 — 마지막으로 포커스를 가진 RTB 를 추적한다.
@@ -1606,6 +1610,16 @@ public partial class MainWindow : Window
     private double _colRszInitRight;
     private double _colRszStartX;
 
+    // ── 단(column) 너비 드래그 리사이즈 상태 ──────────────────────────
+    private const double ColDivHitDip    = 8.0;
+    private const double ColDivMinWidthDip = 20.0;
+    private bool     _colDivDragging;
+    private bool     _colDivHovering;
+    private int      _colDivDragLeftIdx;
+    private double   _colDivDragStartX;
+    private double[] _colDivDragStartWidths = Array.Empty<double>();
+    private readonly List<WpfShapes.Line> _columnDividerLines = new();
+
     private void OnOverlayImageMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is not System.Windows.FrameworkElement fe) return;
@@ -1744,6 +1758,7 @@ public partial class MainWindow : Window
     private void RebuildPageFramesCore()
     {
         var pg = _pageGeometry!;
+        _columnDividerLines.Clear();
 
         // 페이지 수 계산.
         // 1순위: WPF DocumentPaginator 로 산출한 정확값 (_currentPaginatedDoc).
@@ -1829,9 +1844,10 @@ public partial class MainWindow : Window
                     double bodyHeight = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
                     for (int c = 0; c < pg.ColumnCount - 1; c++)
                     {
+                        double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
                         double divX = pg.PadLeftDip
-                                    + c * (pg.ColWidthDip + pg.ColGapDip)
-                                    + pg.ColWidthDip
+                                    + pg.ColumnXOffsetDip(c)
+                                    + colW
                                     + pg.ColGapDip / 2.0;
                         var divider = new WpfShapes.Line
                         {
@@ -1841,7 +1857,9 @@ public partial class MainWindow : Window
                             StrokeThickness = 0.7,
                             StrokeDashArray = new System.Windows.Media.DoubleCollection { 4, 3 },
                             IsHitTestVisible = false,
+                            Tag = c,  // 단 경계 인덱스 (왼쪽 단 번호), 드래그 업데이트에 사용
                         };
+                        _columnDividerLines.Add(divider);
                         PageBackgroundCanvas.Children.Add(divider);
                     }
                 }
@@ -2417,6 +2435,88 @@ public partial class MainWindow : Window
         _colRszLeftCol  = null;
         _colRszRightCol = null;
         _viewModel?.MarkDirty();
+    }
+
+    // ── 단 너비 드래그 리사이즈 헬퍼 ────────────────────────────────────────
+
+    /// <summary>
+    /// PaperHost 기준 좌표 <paramref name="ptInPaper"/> 가 단 구분선 Hit 영역 안에 있으면 true.
+    /// <paramref name="leftColIdx"/> 는 경계 왼쪽 단 인덱스 (0-based).
+    /// </summary>
+    private bool TryHitColumnDivider(Point ptInPaper, out int leftColIdx)
+    {
+        leftColIdx = -1;
+        var pg = _pageGeometry;
+        if (pg is null || pg.ColumnCount <= 1) return false;
+
+        for (int c = 0; c < pg.ColumnCount - 1; c++)
+        {
+            double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
+            double divX = pg.PadLeftDip + pg.ColumnXOffsetDip(c) + colW + pg.ColGapDip / 2.0;
+            if (Math.Abs(ptInPaper.X - divX) <= ColDivHitDip)
+            {
+                leftColIdx = c;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>단 너비 드래그 중 마우스 이동 — 구분선 위치를 실시간으로 업데이트한다.</summary>
+    private void HandleColDivDragMove(MouseEventArgs e)
+    {
+        var pg = _pageGeometry;
+        if (pg is null) return;
+
+        var pos   = e.GetPosition(PaperHost);
+        double delta = pos.X - _colDivDragStartX;
+        int l = _colDivDragLeftIdx, r = l + 1;
+        if (r >= _colDivDragStartWidths.Length) return;
+
+        double total = _colDivDragStartWidths[l] + _colDivDragStartWidths[r];
+        double newL  = Math.Clamp(_colDivDragStartWidths[l] + delta, ColDivMinWidthDip, total - ColDivMinWidthDip);
+
+        // 드래그된 경계의 새 X = padLeft + (변경되지 않은 이전 단들의 X 합) + newL + gap/2
+        double newDivX = pg.PadLeftDip + pg.ColumnXOffsetDip(l) + newL + pg.ColGapDip / 2.0;
+
+        foreach (var line in _columnDividerLines)
+        {
+            if (line.Tag is int idx && idx == l)
+            {
+                line.X1 = newDivX;
+                line.X2 = newDivX;
+            }
+        }
+    }
+
+    /// <summary>단 너비 드래그 완료 — 모델 갱신 후 페이지 재구성.</summary>
+    private void FinishColDivDrag(MouseButtonEventArgs e)
+    {
+        _colDivDragging = false;
+        _colDivHovering = false;
+        if (PaperHost.IsMouseCaptured) PaperHost.ReleaseMouseCapture();
+        Mouse.OverrideCursor = null;
+
+        var pos   = e.GetPosition(PaperHost);
+        double delta = pos.X - _colDivDragStartX;
+        int l = _colDivDragLeftIdx, r = l + 1;
+        if (r >= _colDivDragStartWidths.Length || _pageGeometry is null) { e.Handled = true; return; }
+
+        double total = _colDivDragStartWidths[l] + _colDivDragStartWidths[r];
+        double newL  = Math.Clamp(_colDivDragStartWidths[l] + delta, ColDivMinWidthDip, total - ColDivMinWidthDip);
+        double newR  = total - newL;
+
+        var sec = _viewModel?.Document.Sections.FirstOrDefault();
+        if (sec is null) { e.Handled = true; return; }
+
+        var newWidths = (double[])_pageGeometry.ColWidthsDip.Clone();
+        newWidths[l] = newL;
+        newWidths[r] = newR;
+        sec.Page.ColumnWidthsMm = newWidths.Select(w => Services.FlowDocumentBuilder.DipToMm(w)).ToList();
+
+        ApplyPageSettings(sec.Page);
+        _viewModel?.MarkDirty();
+        e.Handled = true;
     }
 
     // ── BodyEditor 우클릭 통합 핸들러 ──────────────────────────────────────
@@ -3713,6 +3813,23 @@ public partial class MainWindow : Window
                 ClearMultiSelect();
         }
 
+        // ── 단 너비 드래그 시작 ──────────────────────────────────────────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active && _colDivHovering)
+        {
+            var ptPaper = e.GetPosition(PaperHost);
+            if (TryHitColumnDivider(ptPaper, out int divLeftIdx))
+            {
+                _colDivDragging       = true;
+                _colDivDragLeftIdx    = divLeftIdx;
+                _colDivDragStartX     = ptPaper.X;
+                _colDivDragStartWidths = (double[])_pageGeometry!.ColWidthsDip.Clone();
+                PaperHost.CaptureMouse();
+                Mouse.OverrideCursor = Cursors.SizeWE;
+                e.Handled = true;
+                return;
+            }
+        }
+
         // ── 마퀴(범위 드래그) 시작 — 그리기 모드 아닐 때 ──────────────────────────
         // 마퀴가 시작되는 조건:
         //   A) 용지 여백(Padding) 안쪽이고 오버레이 개체가 없을 때 (무수정자 클릭)
@@ -3787,6 +3904,9 @@ public partial class MainWindow : Window
 
     private void OnPaperPreviewMouseMove(object sender, MouseEventArgs e)
     {
+        // ── 단 너비 드래그 중 ─────────────────────────────────────────────────
+        if (_colDivDragging) { HandleColDivDragMove(e); return; }
+
         if (_drawingPolyline_active && _drawingPolyline_points.Count > 0)
         {
             var pos = e.GetPosition(PaperHost);
@@ -3815,6 +3935,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ── 단 구분선 hover 감지 ─────────────────────────────────────────────
+        if (!_drawingInProgress && !_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active
+            && e.LeftButton != MouseButtonState.Pressed && !_tableColResizeActive)
+        {
+            bool onDiv = TryHitColumnDivider(pos2, out _);
+            if (onDiv != _colDivHovering)
+            {
+                _colDivHovering = onDiv;
+                if (!_tableColResizeHovering)
+                    Mouse.OverrideCursor = onDiv ? Cursors.SizeWE : null;
+            }
+        }
+
         if (!_drawingInProgress || (!_drawingTextBox && !_drawingShape_active)) return;
 
         Canvas.SetLeft(DrawPreviewRect, x2);
@@ -3825,6 +3958,9 @@ public partial class MainWindow : Window
 
     private void OnPaperPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        // ── 단 너비 드래그 완료 ───────────────────────────────────────────────
+        if (_colDivDragging) { FinishColDivDrag(e); return; }
+
         // ── 마퀴 드래그 완료: 사각형 안의 모든 개체 선택 ──
         if (_marqueeSelecting)
         {

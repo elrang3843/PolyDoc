@@ -42,7 +42,6 @@ public static class PerPageDocumentSplitter
         var geo    = new PageGeometry(page);
 
         int    colCount  = geo.ColumnCount;
-        double colWidth  = geo.ColWidthDip;
         double colGap    = geo.ColGapDip;
         double bodyH     = Math.Max(1.0, geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip);
 
@@ -55,11 +54,13 @@ public static class PerPageDocumentSplitter
 
             for (int col = 0; col < colCount; col++)
             {
+                double colWidth = col < geo.ColWidthsDip.Length ? geo.ColWidthsDip[col] : geo.ColWidthDip;
+
                 var colBlocks  = pp.BodyBlocks.Where(b => b.ColumnIndex == col).ToList();
                 var coreBlocks = colBlocks.Select(b => b.Source).ToList();
                 var fd         = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles);
 
-                // per-column RTB は 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
+                // per-column RTB는 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
                 fd.PageWidth   = colWidth;
                 fd.PagePadding = new Thickness(0);
 
