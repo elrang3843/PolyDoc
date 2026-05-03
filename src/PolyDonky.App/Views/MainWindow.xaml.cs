@@ -1820,6 +1820,31 @@ public partial class MainWindow : Window
                 System.Windows.Controls.Canvas.SetLeft(guide, pg.PadLeftDip);
                 System.Windows.Controls.Canvas.SetTop (guide, topY + pg.PadTopDip);
                 PageBackgroundCanvas.Children.Add(guide);
+
+                // 단 구분선 — 다단인 경우 단 사이 갭 중앙에 세로 점선.
+                // 인쇄에는 출력되지 않고 편집창 전용 시각 가이드.
+                if (pg.ColumnCount > 1)
+                {
+                    double bodyTop    = topY + pg.PadTopDip;
+                    double bodyHeight = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
+                    for (int c = 0; c < pg.ColumnCount - 1; c++)
+                    {
+                        double divX = pg.PadLeftDip
+                                    + c * (pg.ColWidthDip + pg.ColGapDip)
+                                    + pg.ColWidthDip
+                                    + pg.ColGapDip / 2.0;
+                        var divider = new WpfShapes.Line
+                        {
+                            X1 = divX, X2 = divX,
+                            Y1 = bodyTop, Y2 = bodyTop + bodyHeight,
+                            Stroke = new SolidColorBrush(WpfMedia.Color.FromArgb(0x66, 0x88, 0x88, 0x88)),
+                            StrokeThickness = 0.7,
+                            StrokeDashArray = new System.Windows.Media.DoubleCollection { 4, 3 },
+                            IsHitTestVisible = false,
+                        };
+                        PageBackgroundCanvas.Children.Add(divider);
+                    }
+                }
             }
 
             // 페이지 번호 라벨 (좌상단)
@@ -3283,13 +3308,18 @@ public partial class MainWindow : Window
         // Shift+이동키는 selection 확장 — 페이지 경계 점프는 일단 미지원(향후 보강 가능).
         if (shift) return false;
 
+        // 다단 모드에서 한 페이지가 여러 RTB(=단)로 쪼개져 있으므로 PgUp/PgDn 은
+        // 인접 단이 아니라 인접 *물리 페이지* 의 첫 단으로 점프해야 한다.
+        int colCount  = Math.Max(1, _pageGeometry?.ColumnCount ?? 1);
+        int curPage   = idx / colCount;
+
         switch (e.Key)
         {
             case Key.PageDown:
-                return MoveCaretToPage(idx + 1, atTop: true, e);
+                return MoveCaretToPage((curPage + 1) * colCount, atTop: true, e);
 
             case Key.PageUp:
-                return MoveCaretToPage(idx - 1, atTop: false, e);
+                return MoveCaretToPage((curPage - 1) * colCount, atTop: false, e);
 
             case Key.Down when caret.GetLineStartPosition(1) is null:
                 return MoveCaretToPage(idx + 1, atTop: true, e);
