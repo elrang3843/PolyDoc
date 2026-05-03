@@ -69,6 +69,21 @@
   <data name="MenuFormatPara" xml:space="preserve"><value>_Paragraph...</value></data>
   <data name="MenuFormatPage" xml:space="preserve"><value>Pa_ge...</value></data>
 
+  <!-- Menu: View -->
+  <data name="MenuView"                    xml:space="preserve"><value>_View</value></data>
+  <data name="MenuViewTypesettingMarks"    xml:space="preserve"><value>Typesetting _Marks</value></data>
+
+  <!-- Typesetting mark labels -->
+  <data name="TyposettingMarkHeader"       xml:space="preserve"><value>Header</value></data>
+  <data name="TyposettingMarkFooter"       xml:space="preserve"><value>Footer</value></data>
+  <data name="TyposettingMarkImage"        xml:space="preserve"><value>Image</value></data>
+  <data name="TyposettingMarkImageBehind"  xml:space="preserve"><value>Image (behind)</value></data>
+  <data name="TyposettingMarkShape"        xml:space="preserve"><value>Shape</value></data>
+  <data name="TyposettingMarkShapeBehind"  xml:space="preserve"><value>Shape (behind)</value></data>
+  <data name="TyposettingMarkTable"        xml:space="preserve"><value>Table</value></data>
+  <data name="TyposettingMarkTableBehind"  xml:space="preserve"><value>Table (behind)</value></data>
+  <data name="TyposettingMarkTextBox"      xml:space="preserve"><value>Text Box</value></data>
+
   <!-- Menu: Tools -->
   <data name="MenuTools" xml:space="preserve"><value>_Tools</value></data>
   <data name="MenuToolsSettings" xml:space="preserve"><value>_Settings...</value></data>

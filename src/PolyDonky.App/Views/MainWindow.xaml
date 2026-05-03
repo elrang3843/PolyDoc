@@ -119,6 +119,14 @@
                           Command="{Binding OutlineStyleCommand}" />
             </MenuItem>
 
+            <MenuItem Header="{Binding MenuView, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem x:Name="MiTypesettingMarks"
+                          Header="{Binding MenuViewTypesettingMarks, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsCheckable="True"
+                          Click="OnTypesettingMarksToggle"
+                          InputGestureText="Ctrl+Shift+F8" />
+            </MenuItem>
+
             <MenuItem Header="{Binding MenuTools, Source={x:Static svc:LocalizedStrings.Instance}}">
                 <MenuItem Header="{Binding MenuToolsSettings, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding SettingsCommand}" />
                 <MenuItem Header="{Binding MenuToolsDict, Source={x:Static svc:LocalizedStrings.Instance}}" Click="OnDictMenuClick" />
@@ -342,6 +350,8 @@
                                    Fill="#224A90E2"
                                    Visibility="Collapsed" />
                     </Canvas>
+                    <!-- 조판부호 보기 오버레이 — 머리글/바닥글 영역 + 오버레이 앵커 배지. IsHitTestVisible=False. -->
+                    <Canvas x:Name="TypesettingMarksCanvas" IsHitTestVisible="False" />
                     <!-- (페이지별 여백 가이드 / 페이지 구분 라벨은 PageBackgroundCanvas 에서 함께 그림) -->
                 </Grid>
             </StackPanel>

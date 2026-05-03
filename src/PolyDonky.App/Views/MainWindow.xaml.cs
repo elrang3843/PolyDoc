@@ -299,6 +299,9 @@ public partial class MainWindow : Window
     // ── 페이지 구분선 ────────────────────────────────────────────────
     private double _pageHeightDip;  // 한 페이지 높이(DIP). 0이면 표시 안 함.
 
+    // ── 조판부호 보기 ────────────────────────────────────────────────
+    private bool _showTypesettingMarks;
+
     // ── BodyEditor 호환 심(shim) ─────────────────────────────────────
     // 활성 페이지 RTB 를 단일 편집기처럼 다루기 위한 프로퍼티.
     // Selection·CaretPosition·Document.Blocks 등 단일-RTB API 가 필요한 곳에서 사용한다.
@@ -378,6 +381,9 @@ public partial class MainWindow : Window
         };
         _statusTimer.Tick += OnStatusTimerTick;
         _statusTimer.Start();
+
+        _showTypesettingMarks = LanguageService.ShowTypesettingMarks;
+        MiTypesettingMarks.IsChecked = _showTypesettingMarks;
     }
 
     /// <summary>
@@ -883,6 +889,14 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F8
+            && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            ToggleTypesettingMarks();
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Insert:
@@ -1823,6 +1837,147 @@ public partial class MainWindow : Window
         }
 
         RenderWatermark(pg, pageCount);
+        RebuildTypesettingMarks();
+    }
+
+    // ── 조판부호 보기 ───────────────────────────────────────────────────────
+
+    private void OnTypesettingMarksToggle(object sender, RoutedEventArgs e)
+        => ToggleTypesettingMarks();
+
+    private void ToggleTypesettingMarks()
+    {
+        _showTypesettingMarks = !_showTypesettingMarks;
+        MiTypesettingMarks.IsChecked = _showTypesettingMarks;
+        LanguageService.SetShowTypesettingMarks(_showTypesettingMarks);
+        RebuildTypesettingMarks();
+    }
+
+    private void RebuildTypesettingMarks()
+    {
+        TypesettingMarksCanvas.Children.Clear();
+        if (!_showTypesettingMarks || _pageGeometry is null) return;
+
+        var pg        = _pageGeometry;
+        int pageCount = _currentPageCount < 1 ? 1 : _currentPageCount;
+        var page      = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
+
+        double headerBandH = page is not null
+            ? Services.FlowDocumentBuilder.MmToDip(Math.Max(0.0, page.MarginTopMm - page.MarginHeaderMm))
+            : 0.0;
+        double footerBandH = page is not null
+            ? Services.FlowDocumentBuilder.MmToDip(Math.Max(0.0, page.MarginBottomMm - page.MarginFooterMm))
+            : 0.0;
+        double headerOffsetDip = page is not null
+            ? Services.FlowDocumentBuilder.MmToDip(page.MarginHeaderMm)
+            : 0.0;
+
+        var headerFill  = new SolidColorBrush(WpfMedia.Color.FromArgb(0x28, 0x00, 0x78, 0xD4));
+        var footerFill  = new SolidColorBrush(WpfMedia.Color.FromArgb(0x28, 0xFF, 0x80, 0x00));
+        var headerFg    = new SolidColorBrush(WpfMedia.Color.FromArgb(0xCC, 0x00, 0x4C, 0xAA));
+        var footerFg    = new SolidColorBrush(WpfMedia.Color.FromArgb(0xCC, 0xB8, 0x50, 0x00));
+
+        for (int i = 0; i < pageCount; i++)
+        {
+            double topY = i * pg.PageStrideDip;
+
+            if (headerBandH > 1.0)
+            {
+                var band = new WpfShapes.Rectangle
+                {
+                    Width  = pg.PageWidthDip,
+                    Height = headerBandH,
+                    Fill   = headerFill,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(band, 0);
+                System.Windows.Controls.Canvas.SetTop (band, topY + headerOffsetDip);
+                TypesettingMarksCanvas.Children.Add(band);
+
+                var lbl = new System.Windows.Controls.TextBlock
+                {
+                    Text       = SR.TyposettingMarkHeader,
+                    FontSize   = 9,
+                    Foreground = headerFg,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(lbl, pg.PadLeftDip);
+                System.Windows.Controls.Canvas.SetTop (lbl, topY + headerOffsetDip + 1);
+                TypesettingMarksCanvas.Children.Add(lbl);
+            }
+
+            if (footerBandH > 1.0)
+            {
+                double footerTopDip = topY + pg.PageHeightDip - pg.PadBottomDip;
+                var band = new WpfShapes.Rectangle
+                {
+                    Width  = pg.PageWidthDip,
+                    Height = footerBandH,
+                    Fill   = footerFill,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(band, 0);
+                System.Windows.Controls.Canvas.SetTop (band, footerTopDip);
+                TypesettingMarksCanvas.Children.Add(band);
+
+                var lbl = new System.Windows.Controls.TextBlock
+                {
+                    Text       = SR.TyposettingMarkFooter,
+                    FontSize   = 9,
+                    Foreground = footerFg,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(lbl, pg.PadLeftDip);
+                System.Windows.Controls.Canvas.SetTop (lbl, footerTopDip + 1);
+                TypesettingMarksCanvas.Children.Add(lbl);
+            }
+        }
+
+        AddOverlayAnchorBadges();
+    }
+
+    private void AddOverlayAnchorBadges()
+    {
+        void AddBadge(double left, double top, string icon, string tip)
+        {
+            var border = new Border
+            {
+                Background    = new SolidColorBrush(WpfMedia.Color.FromArgb(0xCC, 0x00, 0x50, 0xC0)),
+                CornerRadius  = new CornerRadius(3),
+                Padding       = new Thickness(3, 1, 3, 1),
+                IsHitTestVisible = false,
+                ToolTip       = tip,
+                Child = new System.Windows.Controls.TextBlock
+                {
+                    Text       = icon,
+                    FontSize   = 9,
+                    Foreground = WpfMedia.Brushes.White,
+                    IsHitTestVisible = false,
+                },
+            };
+            System.Windows.Controls.Canvas.SetLeft(border, left);
+            System.Windows.Controls.Canvas.SetTop (border, top);
+            TypesettingMarksCanvas.Children.Add(border);
+        }
+
+        void ScanCanvas(System.Windows.Controls.Canvas canvas, string icon, string tipKey)
+        {
+            foreach (System.Windows.FrameworkElement child in canvas.Children)
+            {
+                double l = System.Windows.Controls.Canvas.GetLeft(child);
+                double t = System.Windows.Controls.Canvas.GetTop(child);
+                if (!double.IsNaN(l) && !double.IsNaN(t))
+                    AddBadge(l, t, icon, tipKey);
+            }
+        }
+
+        ScanCanvas(OverlayImageCanvas,   "🖼", SR.TyposettingMarkImage);
+        ScanCanvas(UnderlayImageCanvas,  "🖼", SR.TyposettingMarkImageBehind);
+        ScanCanvas(OverlayShapeCanvas,   "△", SR.TyposettingMarkShape);
+        ScanCanvas(UnderlayShapeCanvas,  "△", SR.TyposettingMarkShapeBehind);
+        ScanCanvas(OverlayTableCanvas,   "⊞", SR.TyposettingMarkTable);
+        ScanCanvas(UnderlayTableCanvas,  "⊞", SR.TyposettingMarkTableBehind);
+        ScanCanvas(FloatingCanvas,       "▤", SR.TyposettingMarkTextBox);
     }
 
     private void RenderWatermark(PageGeometry pg, int pageCount)

@@ -47,6 +47,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 ### Internal
 - **Internal** — `CLAUDE.md` 에 솔루션 구조(7개 `src/` 프로젝트와 책임), `dotnet` 빌드/테스트/단일-테스트 필터/스모크 실행 명령, FlowDocument 기반 에디터 파이프라인(`FlowDocumentBuilder`/`Parser`/`Search`, `PageViewBuilder`, `PerPageEditorHost`) 갱신 규칙, i18n resx 짝 갱신·새 codec 의 `IDocumentCodec` + SmokeTest round-trip 추가 규칙을 추가. 더 이상 사실이 아닌 "코드는 아직 없다" 안내 제거. CLI 분리 원칙(§3) 이 HWP/DOC/HTML 한정이며 HWPX/DOCX 는 메인 앱에 직접 링크된다는 점 명시.
 
+### Added
+- **Added** — **보기 메뉴 신설 + 조판부호 보기(Ctrl+Shift+F8) 기능**: 보기(_V) 메뉴를 서식과 도구 사이에 추가. "조판부호 보기(_F)" 토글 메뉴 항목으로 편집 화면에 조판부호 오버레이를 표시/숨김. 켜면 각 페이지의 머리글/바닥글 영역이 색상 띠로 표시되고, 오버레이 그림(🖼)·도형(△)·표(⊞)·글상자(▤) 앵커 위치에 작은 배지를 덮어 그린다. 설정(`settings.json`)에 `ShowTypesettingMarks` 필드로 영구 저장. 한국어/영어 i18n 완비.
+
 ### Fixed
 - **Added** — **도움말 → "사용 방법" 활성화 + "IWPF 포맷" 메뉴 추가**: 비활성화 상태였던 도움말 → 사용 방법(_M) 메뉴를 새 `UserGuideWindow` 와 연결하고, 동일 창의 두 번째 탭으로 표시되는 "IWPF 포맷(_F)" 메뉴 항목을 도움말 메뉴에 신설. 새 문서 `USER_GUIDE.md` 작성(시작하기·본문 편집·객체 삽입·미리보기/인쇄·단축키·외부 포맷 호환성·이슈 리포트). 기존 `IWPF.md` 와 함께 `<EmbeddedResource>` 로 어셈블리에 임베드 — `LicenseInfoWindow` 와 동일 패턴으로 어셈블리에서 직접 로드, dev 환경에서는 `AppContext.BaseDirectory` 부터 상위 폴더를 거슬러 올라가 저장소 파일을 찾는 폴백. 새 명령 `MainViewModel.UserGuideCommand` / `IwpfFormatInfoCommand` (둘 다 `UserGuideWindow` 를 띄우되 `SelectedTab` 으로 초기 탭 선택). 새 리소스 `MenuHelpFormat` (KR "IWPF 포맷(_F)" / EN "IWPF _Format"). README 의 도움말 메뉴 설명·참고 문서 표·프로젝트 상태 섹션을 USER_GUIDE.md 와 도움말 임베드 사실에 맞춰 갱신.
 - **Changed** — **인쇄 시 시스템 PrintDialog 제거 — 미리보기 창 안에서 프린터 선택·전송 직접 처리**: 사용자가 `미리보기/인쇄` 창에서 인쇄 버튼을 누르면 Windows 시스템 인쇄 다이얼로그가 떠서 "이 앱은 인쇄 미리 보기를 지원하지 않습니다" 메시지가 보이는 모순(이미 미리보기 창인데!)을 해소. 좌측 인쇄 설정 패널 "인쇄" 섹션 상단에 "프린터" 콤보박스 추가 — `LocalPrintServer.GetPrintQueues(Local + Connections)` 로 시스템 프린터 열거, `LocalPrintServer.GetDefaultPrintQueue()` 를 기본 선택. `OnPrintClick` 에서 `dlg.ShowDialog()` 호출 제거하고 콤보박스에서 선택된 `PrintQueue` 를 `PrintDialog.PrintQueue` 에 직접 설정해 `PrintDocument` 호출 — 사용자 작업 없이 곧바로 프린터로 전송.

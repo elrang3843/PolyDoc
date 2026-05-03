@@ -56,6 +56,10 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string MenuFormatPara => SR.MenuFormatPara;
     public string MenuFormatPage => SR.MenuFormatPage;
 
+    // ── 메뉴: 보기 ──────────────────────────────────────────────
+    public string MenuView                  => SR.MenuView;
+    public string MenuViewTypesettingMarks  => SR.MenuViewTypesettingMarks;
+
     // ── 메뉴: 도구 ──────────────────────────────────────────────
     public string MenuTools          => SR.MenuTools;
     public string MenuToolsSettings  => SR.MenuToolsSettings;

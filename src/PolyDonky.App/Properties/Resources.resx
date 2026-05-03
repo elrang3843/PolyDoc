@@ -69,6 +69,21 @@
   <data name="MenuFormatPara" xml:space="preserve"><value>문단 서식(_P)</value></data>
   <data name="MenuFormatPage" xml:space="preserve"><value>페이지 서식(_G)</value></data>
 
+  <!-- 메뉴: 보기 -->
+  <data name="MenuView"                    xml:space="preserve"><value>보기(_V)</value></data>
+  <data name="MenuViewTypesettingMarks"    xml:space="preserve"><value>조판부호 보기(_F)</value></data>
+
+  <!-- 조판부호 보기 레이블 -->
+  <data name="TyposettingMarkHeader"       xml:space="preserve"><value>머리글</value></data>
+  <data name="TyposettingMarkFooter"       xml:space="preserve"><value>바닥글</value></data>
+  <data name="TyposettingMarkImage"        xml:space="preserve"><value>그림</value></data>
+  <data name="TyposettingMarkImageBehind"  xml:space="preserve"><value>그림 (뒤)</value></data>
+  <data name="TyposettingMarkShape"        xml:space="preserve"><value>도형</value></data>
+  <data name="TyposettingMarkShapeBehind"  xml:space="preserve"><value>도형 (뒤)</value></data>
+  <data name="TyposettingMarkTable"        xml:space="preserve"><value>표</value></data>
+  <data name="TyposettingMarkTableBehind"  xml:space="preserve"><value>표 (뒤)</value></data>
+  <data name="TyposettingMarkTextBox"      xml:space="preserve"><value>글상자</value></data>
+
   <!-- 메뉴: 도구 -->
   <data name="MenuTools" xml:space="preserve"><value>도구(_T)</value></data>
   <data name="MenuToolsSettings" xml:space="preserve"><value>설정(_O)...</value></data>

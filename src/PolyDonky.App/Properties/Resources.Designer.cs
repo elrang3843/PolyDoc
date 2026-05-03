@@ -60,6 +60,21 @@ namespace PolyDonky.App.Properties
         internal static string MenuFormatPara        => Get(nameof(MenuFormatPara));
         internal static string MenuFormatPage        => Get(nameof(MenuFormatPage));
 
+        // ── 메뉴: 보기 ─────────────────────────────────────────────
+        internal static string MenuView                   => Get(nameof(MenuView));
+        internal static string MenuViewTypesettingMarks   => Get(nameof(MenuViewTypesettingMarks));
+
+        // ── 조판부호 보기 레이블 ────────────────────────────────────
+        internal static string TyposettingMarkHeader       => Get(nameof(TyposettingMarkHeader));
+        internal static string TyposettingMarkFooter       => Get(nameof(TyposettingMarkFooter));
+        internal static string TyposettingMarkImage        => Get(nameof(TyposettingMarkImage));
+        internal static string TyposettingMarkImageBehind  => Get(nameof(TyposettingMarkImageBehind));
+        internal static string TyposettingMarkShape        => Get(nameof(TyposettingMarkShape));
+        internal static string TyposettingMarkShapeBehind  => Get(nameof(TyposettingMarkShapeBehind));
+        internal static string TyposettingMarkTable        => Get(nameof(TyposettingMarkTable));
+        internal static string TyposettingMarkTableBehind  => Get(nameof(TyposettingMarkTableBehind));
+        internal static string TyposettingMarkTextBox      => Get(nameof(TyposettingMarkTextBox));
+
         // ── 메뉴: 도구 ─────────────────────────────────────────────
         internal static string MenuTools             => Get(nameof(MenuTools));
         internal static string MenuToolsSettings     => Get(nameof(MenuToolsSettings));

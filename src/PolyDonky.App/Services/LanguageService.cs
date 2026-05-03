@@ -18,6 +18,8 @@ public static class LanguageService
     private static Language _current = Language.Korean;
     public static Language Current => _current;
 
+    public static bool ShowTypesettingMarks { get; private set; }
+
     public static event EventHandler? LanguageChanged;
 
     /// <summary>앱 시작 시 저장된 언어 설정을 불러와 적용한다.</summary>
@@ -31,6 +33,7 @@ public static class LanguageService
                 var json = File.ReadAllText(SettingsPath);
                 var data = JsonSerializer.Deserialize<SettingsData>(json);
                 if (data?.Language == "en-US") lang = Language.English;
+                ShowTypesettingMarks = data?.ShowTypesettingMarks ?? false;
             }
         }
         catch { /* 손상된 설정 파일은 무시 */ }
@@ -64,6 +67,12 @@ public static class LanguageService
         if (save) Save(lang);
     }
 
+    public static void SetShowTypesettingMarks(bool value)
+    {
+        ShowTypesettingMarks = value;
+        Save(_current);
+    }
+
     private static void Save(Language lang)
     {
         try
@@ -72,11 +81,16 @@ public static class LanguageService
             var json = JsonSerializer.Serialize(new SettingsData
             {
                 Language = lang == Language.English ? "en-US" : "ko-KR",
+                ShowTypesettingMarks = ShowTypesettingMarks,
             });
             File.WriteAllText(SettingsPath, json);
         }
         catch { /* 저장 실패 무시 */ }
     }
 
-    private sealed record SettingsData { public string? Language { get; init; } }
+    private sealed record SettingsData
+    {
+        public string? Language             { get; init; }
+        public bool?   ShowTypesettingMarks { get; init; }
+    }
 }
