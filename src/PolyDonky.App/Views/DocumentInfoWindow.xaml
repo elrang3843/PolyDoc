@@ -310,12 +310,11 @@
                                   IsChecked="{Binding PrintWithWatermark}"
                                   IsEnabled="{Binding WatermarkEnabled}"
                                   Margin="0,4,0,4" />
-                    </StackPanel>
 
-                    <!-- 인쇄 가능 여부는 잠금과 무관하게 항상 표시 -->
-                    <CheckBox Content="{Binding DocInfoIsPrintable, Source={x:Static svc:LocalizedStrings.Instance}}"
-                              IsChecked="{Binding IsPrintable}"
-                              Margin="0,4,0,4" />
+                        <CheckBox Content="{Binding DocInfoIsPrintable, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  IsChecked="{Binding IsPrintable}"
+                                  Margin="0,4,0,4" />
+                    </StackPanel>
 
                     <TextBlock Text="{Binding DocInfoWmHint, Source={x:Static svc:LocalizedStrings.Instance}}"
                                Foreground="{DynamicResource OnSurfaceMuted}"

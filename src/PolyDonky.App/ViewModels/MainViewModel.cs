@@ -429,7 +429,7 @@ public partial class MainViewModel : ObservableObject
             WatermarkRotation = wmLocked ? -45.0 : wm.Rotation,
             WatermarkOpacity  = wmLocked ? 0.3 : wm.Opacity,
             PrintWithWatermark = wmLocked ? true : wm.PrintWithWatermark,
-            IsPrintable       = _document.IsPrintable,
+            IsPrintable       = wmLocked ? true : _document.IsPrintable,
             IsWatermarkLocked = wmLocked,
         };
 
@@ -446,6 +446,7 @@ public partial class MainViewModel : ObservableObject
                 info.WatermarkRotation = wm.Rotation;
                 info.WatermarkOpacity  = wm.Opacity;
                 info.PrintWithWatermark = wm.PrintWithWatermark;
+                info.IsPrintable       = _document.IsPrintable;
                 info.IsWatermarkLocked = false;
             };
         }
@@ -538,8 +539,8 @@ public partial class MainViewModel : ObservableObject
             dirty = true;
         }
 
-        // ── 워터마크 ──
-        // 잠금 상태로 닫힌 경우 모델 필드는 빈 값이므로 _document.Watermark 를 건드리지 않는다.
+        // ── 워터마크 + 인쇄 가능 여부 ──
+        // 잠금 상태로 닫힌 경우 모델 필드는 빈 값/기본값이므로 _document 를 건드리지 않는다.
         if (!info.IsWatermarkLocked)
         {
             WatermarkSettings? newWm = info.WatermarkEnabled
@@ -559,13 +560,13 @@ public partial class MainViewModel : ObservableObject
                 _document.Watermark = newWm;
                 dirty = true;
             }
-        }
 
-        // ── 인쇄 가능 여부 ──
-        if (_document.IsPrintable != info.IsPrintable)
-        {
-            _document.IsPrintable = info.IsPrintable;
-            dirty = true;
+            // ── 인쇄 가능 여부 ──
+            if (_document.IsPrintable != info.IsPrintable)
+            {
+                _document.IsPrintable = info.IsPrintable;
+                dirty = true;
+            }
         }
 
         if (dirty) MarkDirty();

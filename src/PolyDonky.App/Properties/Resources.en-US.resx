@@ -180,7 +180,7 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="DocInfoWmPrintWith"  xml:space="preserve"><value>Print watermark with document</value></data>
   <data name="DocInfoIsPrintable"  xml:space="preserve"><value>This document is printable</value></data>
   <data name="DocInfoNotPrintable" xml:space="preserve"><value>Printing is not allowed for this document.</value></data>
-  <data name="DocInfoWmLockedHint" xml:space="preserve"><value>Watermark settings are protected by the edit password. Unlock to view or edit them.</value></data>
+  <data name="DocInfoWmLockedHint" xml:space="preserve"><value>Watermark and printability settings are protected by the edit password. Unlock to view or edit them.</value></data>
   <data name="DocInfoUnlock"       xml:space="preserve"><value>Unlock</value></data>
 
   <!-- Password dialogs -->
