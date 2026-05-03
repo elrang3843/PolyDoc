@@ -323,6 +323,15 @@ public partial class MainWindow : Window
         PageEditorHost.PageTextChanged += OnEditorTextChanged;
         // 상태 표시줄 Insert/CapsLock/NumLock 갱신을 위해 윈도우 레벨 키 입력 가로채기.
         PreviewKeyDown += OnPreviewKeyDown;
+
+        // IME(한글 등) 조합 중에는 RTB 재구성을 미룬다 — 조합 도중 SetupPageEditors 가
+        // RTB 를 새로 만들면 IME 조합 상태(ㅈ + ㅏ → 자)가 끊겨 한 글자가 둘로 갈라진다.
+        AddHandler(System.Windows.Input.TextCompositionManager.PreviewTextInputStartEvent,
+            new System.Windows.Input.TextCompositionEventHandler(OnImeCompositionStart),
+            handledEventsToo: true);
+        AddHandler(System.Windows.Input.TextCompositionManager.PreviewTextInputEvent,
+            new System.Windows.Input.TextCompositionEventHandler(OnImeCompositionEnd),
+            handledEventsToo: true);
     }
 
     /// <summary>가장 최근에 키보드 포커스를 가졌던 RichTextBox.</summary>
@@ -1170,6 +1179,24 @@ public partial class MainWindow : Window
     }
 
     private bool _liveRefreshQueued;
+    private bool _isImeComposing;
+    private bool _pendingLiveRefresh;
+
+    private void OnImeCompositionStart(object sender, System.Windows.Input.TextCompositionEventArgs e)
+    {
+        _isImeComposing = true;
+    }
+
+    private void OnImeCompositionEnd(object sender, System.Windows.Input.TextCompositionEventArgs e)
+    {
+        _isImeComposing = false;
+        // 조합 중에 보류된 재페이지네이션 요청이 있으면 지금 처리.
+        if (_pendingLiveRefresh)
+        {
+            _pendingLiveRefresh = false;
+            ScheduleLivePaginationRefresh();
+        }
+    }
 
     /// <summary>
     /// 라이브 FlowDocument 를 Parse → Paginate 해서 _currentPaginatedDoc 캐시를 최신화한다.
@@ -1188,6 +1215,16 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
         {
             _liveRefreshQueued = false;
+
+            // IME 조합 중에는 재구성을 보류 — RTB 재생성이 IME 조합 상태를 깨뜨려
+            // 한글 한 글자(ㅈ + ㅏ)가 두 글자로 분리되는 문제를 방지.
+            // 조합이 끝나면 OnImeCompositionEnd 가 다시 호출한다.
+            if (_isImeComposing)
+            {
+                _pendingLiveRefresh = true;
+                return;
+            }
+
             try
             {
                 // 모든 페이지 RTB 를 파싱해 결합된 PolyDonkyument 를 만들고 재페이지네이트.
