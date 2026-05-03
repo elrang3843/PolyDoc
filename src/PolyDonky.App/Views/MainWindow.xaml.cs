@@ -350,6 +350,19 @@ public partial class MainWindow : Window
         // 각 페이지 RTB 에 대한 이벤트 구독·속성 설정은 ConfigurePageRtb 콜백에서 수행.
         // SetupPageEditors → PageEditorHost.SetupPages 호출 시 RTB 마다 ConfigurePageRtb 가 적용된다.
 
+        // OnLoaded 시점에는 WPF 첫 렌더링이 아직 완료되지 않아 오프스크린 RTB 의
+        // GetCharacterRect 가 Y=0 을 반환할 수 있다. Background 우선순위로 지연해
+        // 첫 렌더링 완료 후 올바른 측정값으로 재-페이지네이션한다.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            if (_viewModel?.Document is not null && _pageGeometry is not null)
+            {
+                UpdatePaginatedDoc();
+                SetupPageEditors();
+                RebuildOverlays();
+            }
+        });
+
         _statusTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1),

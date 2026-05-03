@@ -93,15 +93,17 @@ public sealed class PerPageEditorHost : Canvas
             }
             else
             {
-                // 다단 — 단 폭 × 본문 높이, 여백·단 오프셋은 Canvas 위치로
+                // 다단 — 단 폭 × 본문 높이, 여백·단 오프셋은 Canvas 위치로.
+                // Disabled 로 설정해야 RTB 가 단 높이를 초과하는 콘텐츠를 내부 스크롤로
+                // 처리하지 않는다(Hidden 이면 스크롤이 발생해 편집창과 인쇄 미리보기가 달라진다).
                 rtb = new RichTextBox
                 {
                     Document      = slice.FlowDocument,
                     Width         = slice.BodyWidthDip,
                     Height        = slice.BodyHeightDip,
                     Padding       = new Thickness(0),
-                    VerticalScrollBarVisibility   = ScrollBarVisibility.Hidden,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                    VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     AcceptsReturn     = true,
                     AcceptsTab        = true,
                     Background        = Brushes.Transparent,

@@ -150,6 +150,14 @@ public static class FlowDocumentPaginationAdapter
         };
         rtb.Measure(new Size(colWidth, double.PositiveInfinity));
         rtb.Arrange(new Rect(rtb.DesiredSize));
+        // UpdateLayout() 을 명시적으로 호출해 FlowDocument 내부 레이아웃을 동기적으로 완료.
+        // OnLoaded 등 WPF 첫 렌더링 이전 시점에는 Measure/Arrange 만으로 텍스트 레이아웃이
+        // 확정되지 않아 GetCharacterRect 가 Y=0 을 반환할 수 있다.
+        rtb.UpdateLayout();
+
+        // 단 슬롯별 누적 채움 높이. 슬롯 경계 이동 후 다른 블록과 합산 시
+        // bodyH 를 넘기는 경우를 감지해 다음 슬롯으로 밀어낸다.
+        var slotFill = new System.Collections.Generic.Dictionary<int, double>();
 
         foreach (var wpfBlock in FlattenBlocks(fd.Blocks))
         {
@@ -168,6 +176,7 @@ public static class FlowDocumentPaginationAdapter
             }
             else
             {
+                double blockH  = (!double.IsNaN(bottomY) && bottomY > topY) ? (bottomY - topY) : 0.0;
                 // 연속 스크롤 공간에서 "단 슬롯" 인덱스 (단 슬롯 = 단 × 페이지).
                 // 상한 클램프 없음 — 호출자(Paginate) 가 max pageIdx 로 pageCount 를 보정한다.
                 int slotTop = Math.Max(0, (int)(topY / bodyH));
@@ -175,10 +184,23 @@ public static class FlowDocumentPaginationAdapter
                 // 블록이 단 슬롯 경계를 넘고 한 슬롯에 들어갈 만큼 작으면 다음 슬롯으로 이동.
                 if (!double.IsNaN(bottomY)
                     && bottomY > (slotTop + 1) * bodyH
-                    && (bottomY - topY) < bodyH)
+                    && blockH < bodyH)
                 {
                     slotTop += 1;
                 }
+
+                // 슬롯 누적 채움이 이 블록을 수용하기에 부족하면 다음 슬롯으로 밀어낸다.
+                // bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
+                if (blockH > 0 && blockH < bodyH)
+                {
+                    while (slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH)
+                        slotTop += 1;
+                }
+
+                // 슬롯 채움 갱신 (bodyH 캡 — 단 높이를 초과하는 블록은 슬롯 전체를 포화로 표시)
+                if (blockH > 0)
+                    slotFill[slotTop] = Math.Min(bodyH,
+                        slotFill.GetValueOrDefault(slotTop, 0.0) + Math.Min(blockH, bodyH));
 
                 pageIdx = slotTop / colCount;
                 colIdx  = slotTop % colCount;
