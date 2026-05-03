@@ -315,6 +315,7 @@
                 <!-- PaperHost: 모든 페이지 + 본문 + 오버레이를 담는 단일 좌표 공간.
                      크기 = pageWidth × (pageHeight × pageCount + gap × (pageCount-1)) -->
                 <Grid x:Name="PaperHost"
+                      Background="Transparent"
                       PreviewMouseLeftButtonDown="OnPaperPreviewMouseLeftButtonDown"
                       PreviewMouseMove="OnPaperPreviewMouseMove"
                       PreviewMouseLeftButtonUp="OnPaperPreviewMouseLeftButtonUp"

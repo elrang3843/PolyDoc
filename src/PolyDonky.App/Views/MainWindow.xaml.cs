@@ -2449,6 +2449,12 @@ public partial class MainWindow : Window
         var pg = _pageGeometry;
         if (pg is null || pg.ColumnCount <= 1) return false;
 
+        // Y 가 어느 한 페이지의 본문 영역 안이어야 한다 (페이지 사이 갭·머리글/바닥글 영역은 제외).
+        double stride    = pg.PageStrideDip;
+        double yInPage   = stride > 0 ? ptInPaper.Y % stride : ptInPaper.Y;
+        if (yInPage < pg.PadTopDip || yInPage > pg.PageHeightDip - pg.PadBottomDip)
+            return false;
+
         for (int c = 0; c < pg.ColumnCount - 1; c++)
         {
             double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
