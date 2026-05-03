@@ -48,6 +48,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Internal** — `CLAUDE.md` 에 솔루션 구조(7개 `src/` 프로젝트와 책임), `dotnet` 빌드/테스트/단일-테스트 필터/스모크 실행 명령, FlowDocument 기반 에디터 파이프라인(`FlowDocumentBuilder`/`Parser`/`Search`, `PageViewBuilder`, `PerPageEditorHost`) 갱신 규칙, i18n resx 짝 갱신·새 codec 의 `IDocumentCodec` + SmokeTest round-trip 추가 규칙을 추가. 더 이상 사실이 아닌 "코드는 아직 없다" 안내 제거. CLI 분리 원칙(§3) 이 HWP/DOC/HTML 한정이며 HWPX/DOCX 는 메인 앱에 직접 링크된다는 점 명시.
 
 ### Added
+- **Added** — **다단 편집 시 단 경계 교차 텍스트 선택**: `Shift+→/←/↑/↓` 로 단 경계를 넘어 선택 영역을 확장. 이전 단의 선택은 `IsInactiveSelectionHighlightEnabled` 로 비활성 상태에서도 시각 유지. 선택 후 Ctrl+C/X 로 복사/잘라내기 가능(여러 단의 선택 텍스트를 순서대로 결합). 비-Shift 탐색키 또는 타이핑 시 교차 선택 자동 해제.
 - **Added** — **다단 편집 시 단 너비 드래그 조정**: 다단 모드에서 단 구분선 위에 마우스를 올리면 `SizeWE` 커서로 변경되고, 좌우 드래그로 인접 두 단의 너비를 실시간으로 조정. 드래그 중 구분선 위치가 즉시 업데이트되고, 버튼 업 시 `PageSettings.ColumnWidthsMm` 에 저장 후 페이지 재구성. 단 너비는 최소값(20 DIP) 아래로 줄어들지 않도록 클램프. 열린 문서를 저장하면 변경된 단 너비가 IWPF 에 보존됨. 부수 수정: `PaperHost` Grid 에 `Background="Transparent"` 추가 — 기존엔 Background 가 null 이라 단 사이 갭(빈 영역)에서 마우스 이벤트가 PaperHost 에 도달하지 못해 hover/드래그가 시작되지 않던 문제 해결. 같은 문제로 잠재적으로 동작하지 않던 마퀴 선택의 빈 여백 hit 도 함께 개선.
 - **Added** — **보기 메뉴 신설 + 조판부호 보기(Ctrl+Shift+F8) 기능**: 보기(_V) 메뉴를 서식과 도구 사이에 추가. "조판부호 보기(_F)" 토글 메뉴 항목으로 편집 화면에 조판부호 오버레이를 표시/숨김. 켜면 각 페이지의 머리글/바닥글 영역이 색상 띠로 표시되고, 오버레이 그림(🖼)·도형(△)·표(⊞)·글상자(▤) 앵커 위치에 작은 배지를 덮어 그린다. 설정(`settings.json`)에 `ShowTypesettingMarks` 필드로 영구 저장. 한국어/영어 i18n 완비.
 

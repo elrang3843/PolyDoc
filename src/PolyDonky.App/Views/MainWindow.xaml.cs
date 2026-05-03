@@ -434,6 +434,10 @@ public partial class MainWindow : Window
     /// <summary>본문 선택 영역을 Core.Block 리스트로 추출해 PolyDonky.FlowSelection.v1 포맷으로 클립보드에 저장.</summary>
     private bool TryCopyFlowSelection(bool cut)
     {
+        // 단 교차 선택: 각 RTB 의 선택 텍스트를 순서대로 결합해 클립보드에 넣는다.
+        if (_crossSelActive)
+            return TryCopyCrossColumnSelection(cut);
+
         var sel = BodyEditor.Selection;
         if (sel.IsEmpty) return false;
 
@@ -485,6 +489,31 @@ public partial class MainWindow : Window
         if (cut)
         {
             sel.Text = string.Empty;
+            _viewModel?.MarkDirty();
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 단 교차 선택(여러 RTB)이 활성일 때의 복사/잘라내기.
+    /// 각 RTB 의 선택 텍스트를 순서대로 결합해 클립보드에 넣는다.
+    /// </summary>
+    private bool TryCopyCrossColumnSelection(bool cut)
+    {
+        var selected = PageEditorHost.PageEditors
+            .Where(r => !r.Selection.IsEmpty)
+            .ToList();
+        if (selected.Count == 0) return false;
+
+        var text = string.Concat(selected.Select(r => r.Selection.Text));
+        try { System.Windows.Clipboard.SetText(text); }
+        catch { return false; }
+
+        if (cut)
+        {
+            foreach (var r in selected)
+                r.Selection.Text = string.Empty;
+            ClearCrossColumnSelection();
             _viewModel?.MarkDirty();
         }
         return true;
@@ -1097,6 +1126,10 @@ public partial class MainWindow : Window
         rtb.IsReadOnly            = _viewModel?.IsWriteProtected ?? false;
         rtb.SpellCheck.IsEnabled  = false;
         rtb.Foreground            = (WpfMedia.Brush)FindResource("OnSurface");
+        // 비활성(포커스 없는) RTB 에서도 선택 영역이 시각적으로 유지되도록.
+        // 단 경계 교차 선택 시 이전 단의 선택을 표시하기 위해 필요.
+        rtb.IsInactiveSelectionHighlightEnabled = true;
+        rtb.GotKeyboardFocus += OnPageRtbGotFocusClearCrossSel;
 
         rtb.PreviewKeyDown    += OnEditorPreviewKeyDown;
         rtb.PreviewTextInput  += OnEditorPreviewTextInput;
@@ -1619,6 +1652,12 @@ public partial class MainWindow : Window
     private double   _colDivDragStartX;
     private double[] _colDivDragStartWidths = Array.Empty<double>();
     private readonly List<WpfShapes.Line> _columnDividerLines = new();
+
+    // ── 단 경계 교차 텍스트 선택 상태 ────────────────────────────────────
+    // Shift+방향키로 단 경계를 넘을 때 비활성 RTB 의 선택을 유지(IsInactiveSelectionHighlightEnabled)
+    // 하고, _crossSelActive 플래그로 복사/편집 명령이 여러 RTB 의 선택을 하나로 처리하도록 한다.
+    private bool _crossSelActive;
+    private bool _inCrossSelNavigation;  // 프로그래매틱 포커스 이동 중 GotKeyboardFocus 무시 플래그
 
     private void OnOverlayImageMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -2525,6 +2564,105 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    // ── 단 경계 교차 텍스트 선택 헬퍼 ────────────────────────────────────────
+
+    /// <summary>
+    /// RTB 포커스 변경 시 — 비-Shift 원인(클릭 등)이면 단 교차 선택을 모두 해제한다.
+    /// _inCrossSelNavigation 플래그가 설정된 프로그래매틱 이동은 무시.
+    /// </summary>
+    private void OnPageRtbGotFocusClearCrossSel(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (_inCrossSelNavigation) return;
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) return;
+        ClearCrossColumnSelection();
+    }
+
+    /// <summary>
+    /// 모든 비활성 RTB 의 선택을 해제하고 교차 선택 상태를 초기화한다.
+    /// </summary>
+    private void ClearCrossColumnSelection()
+    {
+        if (!_crossSelActive) return;
+        _crossSelActive = false;
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            if (rtb.IsKeyboardFocusWithin) continue;
+            if (!rtb.Selection.IsEmpty)
+            {
+                var cp = rtb.CaretPosition ?? rtb.Document.ContentStart;
+                rtb.Selection.Select(cp, cp);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shift+방향키가 RTB 경계에 도달했을 때 현재 RTB 선택을 경계까지 확장하고
+    /// 인접 RTB 로 캐럿을 이동한다.
+    /// </summary>
+    private bool TryExtendCrossColumnSelection(
+        RichTextBox rtb, WpfDocs.TextPointer caret, int idx, KeyEventArgs e)
+    {
+        // 방향 판단: 경계 조건이 아닌 키는 WPF 기본 처리에 양보
+        bool? fwd = e.Key switch
+        {
+            Key.Right when caret.GetNextInsertionPosition(WpfDocs.LogicalDirection.Forward)  is null => true,
+            Key.Down  when caret.GetLineStartPosition(1)   is null => true,
+            Key.Left  when caret.GetNextInsertionPosition(WpfDocs.LogicalDirection.Backward) is null => false,
+            Key.Up    when caret.GetLineStartPosition(-1)  is null => false,
+            _ => (bool?)null,
+        };
+        if (fwd is null) return false;
+
+        var pages = PageEditorHost.PageEditors;
+        int targetIdx = fwd.Value ? idx + 1 : idx - 1;
+        if (targetIdx < 0 || targetIdx >= pages.Count) return false;
+
+        // 현재 RTB 의 선택 고정점(anchor):
+        //   선택 없음 → 캐럿 그대로
+        //   앞으로 확장 중 → 선택 시작(Start)이 고정점
+        //   뒤로 확장 중  → 선택 끝(End)이 고정점
+        var sel    = rtb.Selection;
+        var anchor = sel.IsEmpty ? caret
+            : fwd.Value ? sel.Start : sel.End;
+
+        // 현재 RTB 선택을 경계까지 확장
+        if (fwd.Value)
+        {
+            var endPos = rtb.Document.ContentEnd
+                .GetInsertionPosition(WpfDocs.LogicalDirection.Backward) ?? rtb.Document.ContentEnd;
+            rtb.Selection.Select(anchor, endPos);
+        }
+        else
+        {
+            var startPos = rtb.Document.ContentStart
+                .GetInsertionPosition(WpfDocs.LogicalDirection.Forward) ?? rtb.Document.ContentStart;
+            rtb.Selection.Select(startPos, anchor);
+        }
+
+        _crossSelActive = true;
+
+        // 인접 RTB 로 캐럿 이동 (선택 없이, GotKeyboardFocus 는 무시)
+        _inCrossSelNavigation = true;
+        try
+        {
+            var target    = pages[targetIdx];
+            target.Focus();
+            var newCaret  = fwd.Value
+                ? target.Document.ContentStart
+                    .GetInsertionPosition(WpfDocs.LogicalDirection.Forward) ?? target.Document.ContentStart
+                : target.Document.ContentEnd
+                    .GetInsertionPosition(WpfDocs.LogicalDirection.Backward) ?? target.Document.ContentEnd;
+            target.CaretPosition = newCaret;
+        }
+        finally
+        {
+            _inCrossSelNavigation = false;
+        }
+
+        e.Handled = true;
+        return true;
+    }
+
     // ── BodyEditor 우클릭 통합 핸들러 ──────────────────────────────────────
     //
     // BodyEditor 본문 영역의 우클릭 메뉴는 모두 이 한 곳에서 빌드한다.
@@ -3367,6 +3505,9 @@ public partial class MainWindow : Window
     // 검증 성공 시 ViewModel 이 IsWriteProtected=false 로 풀고, 다음 키부터 바로 편집된다.
     private void OnEditorPreviewTextInput(object sender, TextCompositionEventArgs e)
     {
+        // 텍스트 입력은 활성 RTB 에만 적용 — 비활성 RTB 의 교차 선택을 해제한다.
+        if (_crossSelActive) ClearCrossColumnSelection();
+
         if (_viewModel?.IsWriteProtected != true) return;
         e.Handled = true;
         _viewModel.TryUnlockForEditing();
@@ -3382,6 +3523,16 @@ public partial class MainWindow : Window
             e.Handled = true;
             _viewModel.TryUnlockForEditing();
             return;
+        }
+
+        // Shift 없는 탐색키 → 단 교차 선택 해제 (경계 내 이동 포함).
+        // TryHandlePageBoundaryNavigation 의 비-Shift 경계 분기도 ClearCrossColumnSelection
+        // 을 직접 호출하므로 중복 호출이 되지만 이중 호출은 무해하다.
+        if (_crossSelActive && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        {
+            if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down
+                      or Key.Home or Key.End or Key.PageDown or Key.PageUp)
+                ClearCrossColumnSelection();
         }
 
         // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동을 직접 처리.
@@ -3411,8 +3562,12 @@ public partial class MainWindow : Window
         bool shift  = (mods & ModifierKeys.Shift)   == ModifierKeys.Shift;
         bool ctrl   = (mods & ModifierKeys.Control) == ModifierKeys.Control;
 
-        // Shift+이동키는 selection 확장 — 페이지 경계 점프는 일단 미지원(향후 보강 가능).
-        if (shift) return false;
+        // Shift+방향키: 단 경계에서 선택 확장 (경계가 아닌 경우 WPF 기본 동작에 양보)
+        if (shift)
+            return TryExtendCrossColumnSelection(rtb, caret, idx, e);
+
+        // 비-Shift 경계 이동 시 기존 단 교차 선택을 해제한다.
+        ClearCrossColumnSelection();
 
         // 다단 모드에서 한 페이지가 여러 RTB(=단)로 쪼개져 있으므로 PgUp/PgDn 은
         // 인접 단이 아니라 인접 *물리 페이지* 의 첫 단으로 점프해야 한다.
