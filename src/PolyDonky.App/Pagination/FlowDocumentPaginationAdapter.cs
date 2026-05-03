@@ -155,6 +155,11 @@ public static class FlowDocumentPaginationAdapter
         // 확정되지 않아 GetCharacterRect 가 Y=0 을 반환할 수 있다.
         rtb.UpdateLayout();
 
+        // mm→DIP 변환과 WPF 서브픽셀 반올림으로 인한 경계 오차 흡수용 허용치 (DIP).
+        // 블록의 bottomY 가 슬롯 경계를 이 값 이하로 넘어서면 경계 위반으로 보지 않는다.
+        // PerPageEditorHost.ClipRenderingTolerance 와 동일한 값을 유지한다.
+        const double BoundaryTol = 2.0;
+
         // 단 슬롯별 누적 채움 높이. 슬롯 경계 이동 후 다른 블록과 합산 시
         // bodyH 를 넘기는 경우를 감지해 다음 슬롯으로 밀어낸다.
         var slotFill = new System.Collections.Generic.Dictionary<int, double>();
@@ -188,8 +193,8 @@ public static class FlowDocumentPaginationAdapter
                 && wpfBlock is WpfDocs.Paragraph wpfPara)
             {
                 double slotBoundaryY = (slotTop + 1) * bodyH;
-                bool   crossesBoundary = !double.IsNaN(bottomY) && bottomY > slotBoundaryY;
-                bool   fillOverflow    = slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH;
+                bool   crossesBoundary = !double.IsNaN(bottomY) && bottomY > slotBoundaryY + BoundaryTol;
+                bool   fillOverflow    = slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH + BoundaryTol;
 
                 if (crossesBoundary || fillOverflow)
                 {
@@ -218,7 +223,7 @@ public static class FlowDocumentPaginationAdapter
                         double frag2H   = blockH - frag1H;
                         if (frag2H > 0 && frag2H < bodyH)
                         {
-                            while (slotFill.GetValueOrDefault(nextSlot, 0.0) + frag2H > bodyH)
+                            while (slotFill.GetValueOrDefault(nextSlot, 0.0) + frag2H > bodyH + BoundaryTol)
                                 nextSlot++;
                         }
                         if (frag2H > 0)
@@ -233,8 +238,9 @@ public static class FlowDocumentPaginationAdapter
 
             // ── 단일 블록 배정 (기존 로직) ────────────────────────────────────────────
             // 블록이 단 슬롯 경계를 넘고 한 슬롯에 들어갈 만큼 작으면 다음 슬롯으로 이동.
+            // BoundaryTol 이하의 초과는 mm→DIP 변환 오차로 보고 현재 슬롯에 유지한다.
             if (!double.IsNaN(bottomY)
-                && bottomY > (slotTop + 1) * bodyH
+                && bottomY > (slotTop + 1) * bodyH + BoundaryTol
                 && blockH < bodyH)
             {
                 slotTop += 1;
@@ -244,7 +250,7 @@ public static class FlowDocumentPaginationAdapter
             // bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
             if (blockH > 0 && blockH < bodyH)
             {
-                while (slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH)
+                while (slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH + BoundaryTol)
                     slotTop += 1;
             }
 
