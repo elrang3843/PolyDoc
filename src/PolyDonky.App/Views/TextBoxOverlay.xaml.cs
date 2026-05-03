@@ -626,7 +626,8 @@ public partial class TextBoxOverlay : UserControl
             try
             {
                 // 활성 RTB 인덱스 + 캐럿 오프셋 보존
-                int activeIdx = MultiColHost.Editors.IndexOf(MultiColHost.ActiveEditor!);
+                int activeIdx = MultiColHost.ActiveEditor is null ? -1
+                              : MultiColHost.IndexOf(MultiColHost.ActiveEditor);
                 int caretOff  = -1;
                 if (activeIdx >= 0)
                 {
@@ -965,7 +966,7 @@ public partial class TextBoxOverlay : UserControl
         // 다단 모드 — 단 경계 좌/우/상/하 화살표로 인접 단 RTB 로 캐럿 이동.
         if (IsMultiCol && MultiColHost.IsKeyboardFocusWithin && MultiColHost.ActiveEditor is { } cur)
         {
-            int idx = MultiColHost.Editors.IndexOf(cur);
+            int idx = MultiColHost.IndexOf(cur);
             if (idx < 0) return;
 
             int targetIdx = -1;

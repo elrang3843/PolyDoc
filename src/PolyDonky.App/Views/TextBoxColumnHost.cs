@@ -31,6 +31,14 @@ public sealed class TextBoxColumnHost : Canvas
     /// <summary>모든 단 RTB 목록 (단 인덱스 순).</summary>
     public IReadOnlyList<RichTextBox> Editors => _editors;
 
+    /// <summary><paramref name="editor"/> 의 단 인덱스 (없으면 -1).</summary>
+    public int IndexOf(RichTextBox editor)
+    {
+        for (int i = 0; i < _editors.Count; i++)
+            if (ReferenceEquals(_editors[i], editor)) return i;
+        return -1;
+    }
+
     /// <summary>임의 단 RTB 의 텍스트가 변경되면 발화.</summary>
     public event TextChangedEventHandler? ColumnTextChanged;
 
