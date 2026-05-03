@@ -1257,15 +1257,27 @@ public partial class MainWindow : Window
             }
             else
             {
-                // 다단: 이 페이지에 속한 모든 단 RTB 의 블록을 합산해 비교
-                int oldCount = 0;
+                // 다단: 페이지 내 단별 RTB 의 블록 분배를 새 결과와 비교한다.
+                // 페이지 합계만 비교하면 "단끼리 재분배되었지만 합은 같은" 경우(긴 단락이
+                // col 0 에서 col 1 로 넘어가야 하는 케이스) 를 놓쳐 RTB 가 stale 상태로 남는다.
                 for (int col = 0; col < colCount; col++)
                 {
                     int rtbIdx = i * colCount + col;
-                    if (rtbIdx < rtbs.Count)
-                        oldCount += CollectBodyBlockIds(rtbs[rtbIdx].Document.Blocks).Count;
+                    if (rtbIdx >= rtbs.Count) return true;
+
+                    var oldIds = CollectBodyBlockIds(rtbs[rtbIdx].Document.Blocks);
+                    var newColBlocks = newPage.BodyBlocks.Where(b => b.ColumnIndex == col).ToList();
+
+                    if (newColBlocks.Count != oldIds.Count) return true;
+
+                    for (int j = 0; j < newColBlocks.Count; j++)
+                    {
+                        var newId = newColBlocks[j].Source.Id;
+                        var oldId = oldIds[j];
+                        if (newId != null && oldId != null && newId != oldId)
+                            return true;
+                    }
                 }
-                if (newPage.BodyBlocks.Count != oldCount) return true;
             }
         }
         return false;
