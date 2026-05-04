@@ -66,6 +66,10 @@
                 <MenuItem Header="{Binding MenuEditPaste, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="ApplicationCommands.Paste"
                           InputGestureText="Ctrl+V" />
+                <MenuItem Header="{Binding MenuEditImport, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditImport" />
+                <MenuItem Header="{Binding MenuEditExport, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditExport" />
                 <Separator />
                 <MenuItem Header="{Binding MenuEditFindReplace, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding FindReplaceCommand}" InputGestureText="Ctrl+F" />
                 <Separator />

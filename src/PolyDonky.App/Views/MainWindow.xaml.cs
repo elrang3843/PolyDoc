@@ -411,8 +411,10 @@ public partial class MainWindow : Window
 
     // ── 본문 RichTextBox 멀티-블록 클립보드 (Tag 완전 보존) ─────────────────
 
-    /// <summary>본문 RichTextBox 가 다루는 multi-block 선택의 Core JSON 직렬화 포맷.</summary>
-    private const string FlowSelectionClipboardFormat = "PolyDonky.FlowSelection.v1";
+    /// <summary>본문 RichTextBox 가 다루는 multi-block 선택 + 가져오기/내보내기 공통 포맷.</summary>
+    private const string IwpfFragmentClipboardFormat = "PolyDonky.IwpfFragment.v1";
+    /// <summary>이전 버전 클립보드 포맷 — 붙여넣기 폴백용.</summary>
+    private const string LegacyFlowSelectionFormat   = "PolyDonky.FlowSelection.v1";
 
     private void OnBodyEditorPreviewExecuted(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
     {
@@ -449,11 +451,12 @@ public partial class MainWindow : Window
 
         try
         {
+            var fragment = new PolyDonky.Core.IwpfFragment { Blocks = coreBlocks };
             var json = System.Text.Json.JsonSerializer.Serialize(
-                coreBlocks, PolyDonky.Core.JsonDefaults.Options);
+                fragment, PolyDonky.Core.JsonDefaults.Options);
 
             var dataObj = new System.Windows.DataObject();
-            dataObj.SetData(FlowSelectionClipboardFormat, json);
+            dataObj.SetData(IwpfFragmentClipboardFormat, json);
             dataObj.SetText(sel.Text);  // 다른 앱에서 plain text 로 받을 수 있도록
 
             // XamlPackage / RTF 도 함께 — 외부 앱 호환용 (우리 앱에서는 우선 FlowSelection 사용).
@@ -520,25 +523,53 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// PolyDonky.FlowSelection.v1 클립보드 데이터를 캐럿 위치에 붙여넣는다.</summary>
+    /// IwpfFragment 클립보드 데이터를 캐럿 위치에 붙여넣는다.
+    /// 신규 포맷(<see cref="IwpfFragmentClipboardFormat"/>) 우선, 없으면 레거시 포맷으로 폴백.
+    /// </summary>
     private bool TryPasteFlowSelection()
     {
-        if (!System.Windows.Clipboard.ContainsData(FlowSelectionClipboardFormat)) return false;
-        if (System.Windows.Clipboard.GetData(FlowSelectionClipboardFormat) is not string json
-            || string.IsNullOrEmpty(json)) return false;
+        var cb = System.Windows.Clipboard.GetDataObject();
+        if (cb is null) return false;
 
-        List<PolyDonky.Core.Block>? blocks;
+        string? json = null;
+        if (cb.GetDataPresent(IwpfFragmentClipboardFormat))
+            json = cb.GetData(IwpfFragmentClipboardFormat) as string;
+        else if (cb.GetDataPresent(LegacyFlowSelectionFormat))
+            json = cb.GetData(LegacyFlowSelectionFormat) as string;
+
+        if (string.IsNullOrEmpty(json)) return false;
+
+        List<PolyDonky.Core.Block>? blocks = null;
         try
         {
-            blocks = System.Text.Json.JsonSerializer.Deserialize<List<PolyDonky.Core.Block>>(
+            // 신규: IwpfFragment 래퍼
+            var frag = System.Text.Json.JsonSerializer.Deserialize<PolyDonky.Core.IwpfFragment>(
                 json, PolyDonky.Core.JsonDefaults.Options);
+            blocks = frag?.Blocks;
         }
-        catch { return false; }
+        catch { }
+        if (blocks is null || blocks.Count == 0)
+        {
+            try
+            {
+                // 레거시: List<Block> 배열 직렬화
+                blocks = System.Text.Json.JsonSerializer.Deserialize<List<PolyDonky.Core.Block>>(
+                    json, PolyDonky.Core.JsonDefaults.Options);
+            }
+            catch { return false; }
+        }
         if (blocks is null || blocks.Count == 0) return false;
 
         foreach (var b in blocks) ResetCoreBlockId(b);
 
         if (!BodyEditor.Selection.IsEmpty) BodyEditor.Selection.Text = string.Empty;
+        InsertCoreBlocksAtCaret(blocks);
+        return true;
+    }
+
+    /// <summary>Core 블록 목록을 현재 캐럿 위치에 삽입한다 (붙여넣기·가져오기 공통 경로).</summary>
+    private void InsertCoreBlocksAtCaret(List<PolyDonky.Core.Block> blocks)
+    {
         var caret = BodyEditor.CaretPosition;
 
         // 단일 단락 콘텐츠 → 캐럿 위치에 인라인 삽입 (새 단락 블록 생성 않음)
@@ -547,7 +578,7 @@ public partial class MainWindow : Window
             var newCaret = InsertParagraphInline(singlePara, caret);
             if (newCaret != null) try { BodyEditor.CaretPosition = newCaret; } catch { }
             _viewModel?.MarkDirty();
-            return true;
+            return;
         }
 
         // 셀 안에 단락만 붙여넣을 때 — 셀의 Blocks 컬렉션에 직접 단락을 삽입한다.
@@ -556,7 +587,7 @@ public partial class MainWindow : Window
         {
             InsertParagraphsIntoCell(blocks.Cast<PolyDonky.Core.Paragraph>().ToList(), caret);
             _viewModel?.MarkDirty();
-            return true;
+            return;
         }
 
         // 복수 블록 또는 표·이미지·도형 — 앵커 뒤에 새 Block 으로 삽입
@@ -648,7 +679,6 @@ public partial class MainWindow : Window
             BodyEditor.Focus();
         }
         _viewModel?.MarkDirty();
-        return true;
     }
 
     /// <summary>
@@ -2194,6 +2224,135 @@ public partial class MainWindow : Window
             catch { /* 폴백 */ }
         }
         return new SolidColorBrush(WpfMedia.Color.FromArgb(0x66, 0x88, 0x88, 0x88));
+    }
+
+    // ── 가져오기 / 내보내기 ─────────────────────────────────────────────
+
+    private static readonly System.Collections.Generic.HashSet<string> _imageExts =
+        new(System.StringComparer.OrdinalIgnoreCase)
+        { "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "svg" };
+
+    private static string GetImageMediaType(string ext) => ext.ToLowerInvariant() switch
+    {
+        "png"          => "image/png",
+        "jpg" or "jpeg" => "image/jpeg",
+        "gif"          => "image/gif",
+        "bmp"          => "image/bmp",
+        "tiff" or "tif" => "image/tiff",
+        "webp"         => "image/webp",
+        "svg"          => "image/svg+xml",
+        _              => "application/octet-stream",
+    };
+
+    private void OnEditImport(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title     = "가져오기",
+            Filter    = "PolyDonky 문서 (*.iwpf)|*.iwpf|" +
+                        "그림 (*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.tiff;*.webp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.tiff;*.webp|" +
+                        "텍스트 (*.txt)|*.txt|" +
+                        "마크다운 (*.md;*.markdown)|*.md;*.markdown|" +
+                        "모든 파일 (*.*)|*.*",
+            Multiselect = false,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+
+        var path = dlg.FileName;
+        var ext  = System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+
+        List<PolyDonky.Core.Block> blocks;
+
+        if (_imageExts.Contains(ext))
+        {
+            try
+            {
+                var data = System.IO.File.ReadAllBytes(path);
+                blocks = new List<PolyDonky.Core.Block>
+                {
+                    new PolyDonky.Core.ImageBlock
+                    {
+                        Data      = data,
+                        MediaType = GetImageMediaType(ext),
+                        WrapMode  = PolyDonky.Core.ImageWrapMode.Inline,
+                        Status    = PolyDonky.Core.NodeStatus.Modified,
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this,
+                    $"이미지를 읽을 수 없습니다:\n{ex.Message}", "가져오기",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+        }
+        else
+        {
+            var reader = PolyDonky.App.Services.KnownFormats.PickReader(path);
+            if (reader is null)
+            {
+                System.Windows.MessageBox.Show(this,
+                    "지원하지 않는 파일 형식입니다.", "가져오기",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+            PolyDonky.Core.PolyDonkyument doc;
+            try { doc = reader.ReadFile(path); }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this,
+                    $"파일을 읽을 수 없습니다:\n{ex.Message}", "가져오기",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+            blocks = doc.Sections.SelectMany(s => s.Blocks).ToList();
+        }
+
+        if (blocks.Count == 0) return;
+        foreach (var b in blocks) ResetCoreBlockId(b);
+
+        if (!BodyEditor.Selection.IsEmpty) BodyEditor.Selection.Text = string.Empty;
+        InsertCoreBlocksAtCaret(blocks);
+    }
+
+    private void OnEditExport(object sender, RoutedEventArgs e)
+    {
+        var blocks = ExtractCoreSelection();
+        if (blocks.Count == 0)
+        {
+            System.Windows.MessageBox.Show(this,
+                "내보낼 내용을 선택하세요.", "내보내기",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title        = "내보내기",
+            Filter       = "PolyDonky 문서 (*.iwpf)|*.iwpf",
+            DefaultExt   = "iwpf",
+            AddExtension = true,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+
+        var doc = new PolyDonky.Core.PolyDonkyument
+        {
+            Sections = { new PolyDonky.Core.Section { Blocks = blocks } }
+        };
+        try
+        {
+            using var fs = System.IO.File.Create(dlg.FileName);
+            new PolyDonky.Iwpf.IwpfWriter().Write(doc, fs);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this,
+                $"저장에 실패했습니다:\n{ex.Message}", "내보내기",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
     }
 
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
@@ -4810,10 +4969,10 @@ public partial class MainWindow : Window
         if (_selectedOverlay.IsEditorFocusWithin && _selectedOverlay.HasEditorTextSelection)
             return false;
 
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            new List<Block> { _selectedOverlay.Model }, JsonDefaults.Options);
+        var fragment = new PolyDonky.Core.IwpfFragment { Blocks = new List<Block> { _selectedOverlay.Model } };
+        var json = System.Text.Json.JsonSerializer.Serialize(fragment, JsonDefaults.Options);
         var dataObj = new System.Windows.DataObject();
-        dataObj.SetData(FlowSelectionClipboardFormat, json);
+        dataObj.SetData(IwpfFragmentClipboardFormat, json);
         // Plain-text 폴백 — 다른 앱으로 붙여넣기 시 안쪽 텍스트만 가도록.
         dataObj.SetText(_selectedOverlay.Model.GetPlainText());
         Clipboard.SetDataObject(dataObj, copy: true);
@@ -5033,7 +5192,7 @@ public partial class MainWindow : Window
             return false;
 
         // 통합 멀티-선택 포맷 — 모든 부유 개체(글상자 포함)가 단일 Block 리스트로 직렬화됨
-        if (Clipboard.ContainsData(FlowSelectionClipboardFormat))
+        if (Clipboard.ContainsData(IwpfFragmentClipboardFormat) || Clipboard.ContainsData(LegacyFlowSelectionFormat))
             return TryPasteFlowSelection();
         if (Clipboard.ContainsData(BlockClipboardFormat))
             return TryPasteBlockFromClipboard();
@@ -5382,9 +5541,10 @@ public partial class MainWindow : Window
 
         if (blocks.Count == 0) return false;
 
-        var json = System.Text.Json.JsonSerializer.Serialize(blocks, PolyDonky.Core.JsonDefaults.Options);
+        var fragment = new PolyDonky.Core.IwpfFragment { Blocks = blocks };
+        var json = System.Text.Json.JsonSerializer.Serialize(fragment, PolyDonky.Core.JsonDefaults.Options);
         var dataObj = new DataObject();
-        dataObj.SetData(FlowSelectionClipboardFormat, json);
+        dataObj.SetData(IwpfFragmentClipboardFormat, json);
 
         // plain-text 폴백 — 단락 + 글상자 텍스트
         var plainParts = blocks.Select(b => b switch

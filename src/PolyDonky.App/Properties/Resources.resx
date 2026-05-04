@@ -50,6 +50,8 @@
   <data name="MenuEditCut" xml:space="preserve"><value>잘라내기(_T)</value></data>
   <data name="MenuEditPaste" xml:space="preserve"><value>붙여넣기(_P)</value></data>
   <data name="MenuEditDelete" xml:space="preserve"><value>지우기(_D)</value></data>
+  <data name="MenuEditImport" xml:space="preserve"><value>가져오기(_M)...</value></data>
+  <data name="MenuEditExport" xml:space="preserve"><value>내보내기(_X)...</value></data>
   <data name="MenuEditFindReplace" xml:space="preserve"><value>찾기/바꾸기(_F)...</value></data>
   <data name="MenuEditDocInfo" xml:space="preserve"><value>문서 정보(_I)...</value></data>
 

@@ -50,6 +50,8 @@
   <data name="MenuEditCut" xml:space="preserve"><value>Cu_t</value></data>
   <data name="MenuEditPaste" xml:space="preserve"><value>_Paste</value></data>
   <data name="MenuEditDelete" xml:space="preserve"><value>_Delete</value></data>
+  <data name="MenuEditImport" xml:space="preserve"><value>I_mport...</value></data>
+  <data name="MenuEditExport" xml:space="preserve"><value>E_xport...</value></data>
   <data name="MenuEditFindReplace" xml:space="preserve"><value>_Find / Replace...</value></data>
   <data name="MenuEditDocInfo" xml:space="preserve"><value>Document _Info...</value></data>
 
