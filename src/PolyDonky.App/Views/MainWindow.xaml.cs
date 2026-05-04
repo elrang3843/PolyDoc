@@ -2251,8 +2251,9 @@ public partial class MainWindow : Window
 
     private void OnFormatPara(object sender, RoutedEventArgs e)
     {
+        // 문단 속성은 selection 이 비어있어도 caret 단락에만 적용 — EnsureInnerSelectionForDialog
+        // (= SelectAll) 호출하지 않음. ParaFormatWindow.CollectParagraphs 가 caret 단락 1개 반환.
         var editor = GetActiveTextEditor();
-        EnsureInnerSelectionForDialog(editor, _selectedOverlay);
         var dlg = new ParaFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {

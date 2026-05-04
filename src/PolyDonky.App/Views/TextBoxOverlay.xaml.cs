@@ -251,6 +251,8 @@ public partial class TextBoxOverlay : UserControl
 
     private bool _suppressTextChanged;
     private bool _liveReflowQueued;
+    private bool _isImeComposing;
+    private bool _pendingReflow;
 
     /// <summary>다단 모드 여부 — Model.ColumnCount &gt; 1.</summary>
     private bool IsMultiCol => Model.ColumnCount > 1;
@@ -289,6 +291,16 @@ public partial class TextBoxOverlay : UserControl
 
         MultiColHost.ColumnTextChanged += OnColumnTextChanged;
 
+        // IME 조합 중에는 reflow 보류 — 단 RTB 재구성이 IME 상태를 깨뜨려
+        // 한글 한 글자(예: ㅈ + ㅏ) 가 두 글자로 분리되는 문제를 방지.
+        // PreviewTextInputStartEvent = IME 조합 시작, PreviewTextInputEvent = 조합 종료(확정).
+        AddHandler(System.Windows.Input.TextCompositionManager.PreviewTextInputStartEvent,
+            new System.Windows.Input.TextCompositionEventHandler(OnImeStart),
+            handledEventsToo: true);
+        AddHandler(System.Windows.Input.TextCompositionManager.PreviewTextInputEvent,
+            new System.Windows.Input.TextCompositionEventHandler(OnImeEnd),
+            handledEventsToo: true);
+
         // 초기 텍스트 로드 (plain text → FlowDocument)
         _suppressTextChanged = true;
         LoadModelTextToEditor();
@@ -305,6 +317,19 @@ public partial class TextBoxOverlay : UserControl
             // 다단 모드는 박스 크기 변경에 따라 단 너비/높이가 달라지므로 재배치.
             if (IsMultiCol) ScheduleColumnReflow();
         };
+    }
+
+    private void OnImeStart(object sender, System.Windows.Input.TextCompositionEventArgs e)
+        => _isImeComposing = true;
+
+    private void OnImeEnd(object sender, System.Windows.Input.TextCompositionEventArgs e)
+    {
+        _isImeComposing = false;
+        if (_pendingReflow)
+        {
+            _pendingReflow = false;
+            ScheduleColumnReflow();
+        }
     }
 
     // ── 선택 상태 ────────────────────────────────────────────────────
@@ -650,11 +675,17 @@ public partial class TextBoxOverlay : UserControl
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
         {
             _liveReflowQueued = false;
+
+            // IME 조합 중에는 reflow 보류 — 조합이 끝나면 OnImeEnd 가 다시 호출한다.
+            if (_isImeComposing)
+            {
+                _pendingReflow = true;
+                return;
+            }
+
             try
             {
                 // 캐럿을 "전역 텍스트 오프셋"(=모든 단의 텍스트 길이 합산) 으로 추적.
-                // 단순한 (활성 단, 단 내 오프셋) 보존은 콘텐츠가 다음 단으로 밀려난 경우
-                // 캐럿이 자기 자리에 그대로 남아 텍스트와 분리되는 문제가 발생.
                 int globalCaretChars = ComputeGlobalCaretCharOffset();
 
                 // 1) 모든 단 파싱 + frag 머지 → 모델 갱신
@@ -664,10 +695,17 @@ public partial class TextBoxOverlay : UserControl
                 try { LoadMultiColContent(); }
                 finally { _suppressTextChanged = false; }
 
-                // 3) 전역 텍스트 오프셋을 새 분배에 매핑해 캐럿 복원 — 입력 텍스트가
-                //    다음 단으로 흘렀다면 캐럿도 다음 단의 같은 글자 직후로 이동.
+                // 3) 캐럿 복원은 새 RTB 들이 layout pass 를 거친 뒤 Input 우선순위로 실행 —
+                //    SetupColumns 가 OLD RTB 를 visual tree 에서 제거할 때 keyboard focus 가
+                //    UserControl 로 잠시 떠나는데, 그 직후 동기적으로 ed.Focus() 를 호출하면
+                //    Window/UserControl 의 focus 처리 로직과 race 가 생겨 가끔 새 단으로
+                //    포커스가 이동하지 않는 문제 회피.
                 if (globalCaretChars >= 0)
-                    RestoreCaretAtGlobalCharOffset(globalCaretChars);
+                {
+                    int captured = globalCaretChars;
+                    Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,
+                        () => RestoreCaretAtGlobalCharOffset(captured));
+                }
             }
             catch { /* 실패 시 캐시 유지 */ }
         });
@@ -711,8 +749,7 @@ public partial class TextBoxOverlay : UserControl
             // 3) 모든 단을 다 소진해도 못 찾으면 폴백 — 마지막 단의 끝.
             if (remaining < len || (remaining == len && len > 0))
             {
-                ed.CaretPosition = FindCaretAtCharOffset(ed.Document, remaining);
-                ed.Focus();
+                FocusEditorWithCaret(ed, FindCaretAtCharOffset(ed.Document, remaining));
                 return;
             }
             remaining -= len;
@@ -721,9 +758,18 @@ public partial class TextBoxOverlay : UserControl
         if (MultiColHost.Editors.Count > 0)
         {
             var last = MultiColHost.Editors[^1];
-            last.CaretPosition = last.Document.ContentEnd;
-            last.Focus();
+            FocusEditorWithCaret(last, last.Document.ContentEnd);
         }
+    }
+
+    /// <summary>편집기에 포커스 설정 + 캐럿 위치 적용. SetupColumns 직후 발생할 수 있는 focus race 회피.</summary>
+    private static void FocusEditorWithCaret(RichTextBox ed, TextPointer caret)
+    {
+        // Focus → Keyboard.Focus → CaretPosition 순서 — Focus 가 안정된 뒤 Caret 설정해야
+        // WPF 가 caret 위치를 visual tree 정착 후 정확히 표시.
+        ed.Focus();
+        Keyboard.Focus(ed);
+        ed.CaretPosition = caret;
     }
 
     /// <summary>FlowDocument 내에서 텍스트 문자 offset 위치의 TextPointer 를 찾는다.</summary>
@@ -875,8 +921,10 @@ public partial class TextBoxOverlay : UserControl
 
     private void OnContextMenuParaFormat(object sender, RoutedEventArgs e)
     {
+        // 문단 속성은 selection 이 비어있으면 caret 위치 단락에만 적용 — SelectAll 하지 않음.
+        // (CharFormat 과 다름: 글자 속성은 chars 가 선택돼야 의미 있어 SelectAll 강제하지만,
+        //  문단 속성은 caret 만 있어도 ParaFormatWindow.CollectParagraphs 가 caret 단락 1개 반환.)
         var ed = ActiveEditor;
-        if (ed.Selection.IsEmpty) ed.SelectAll();
         var dlg = new ParaFormatWindow(ed) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() == true)
         {
