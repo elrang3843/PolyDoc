@@ -346,6 +346,14 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageFormatMarginFooter"       xml:space="preserve"><value>Footer (mm)</value></data>
   <data name="PageFormatColumns"            xml:space="preserve"><value>Columns</value></data>
   <data name="PageFormatColumnGap"          xml:space="preserve"><value>Column gap (mm)</value></data>
+  <data name="PageFormatColumnDividerVisible"   xml:space="preserve"><value>Show column divider</value></data>
+  <data name="PageFormatColumnDividerColor"     xml:space="preserve"><value>Divider color</value></data>
+  <data name="PageFormatColumnDividerThickness" xml:space="preserve"><value>Divider thickness (pt)</value></data>
+  <data name="PageFormatColumnDividerStyle"     xml:space="preserve"><value>Divider style</value></data>
+  <data name="ColumnDividerStyleNone"           xml:space="preserve"><value>None</value></data>
+  <data name="ColumnDividerStyleSolid"          xml:space="preserve"><value>Solid</value></data>
+  <data name="ColumnDividerStyleDashed"         xml:space="preserve"><value>Dashed</value></data>
+  <data name="ColumnDividerStyleDotted"         xml:space="preserve"><value>Dotted</value></data>
   <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>Page number start</value></data>
   <data name="PageFormatShowMarginGuides"   xml:space="preserve"><value>Show margin guides</value></data>
   <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>Preview</value></data>

@@ -541,6 +541,28 @@ public partial class TextBoxOverlay : UserControl
             Model.Content, Model.ColumnCount, innerW, innerH, colGap, widthsDip);
 
         MultiColHost.SetupColumns(slices, ConfigureColumnRtb);
+        RefreshDividerLines(slices);
+    }
+
+    private void RefreshDividerLines(IReadOnlyList<TextBoxColumnLayout.ColumnSlice>? slices = null)
+    {
+        if (!IsMultiCol) return;
+        if (slices is null)
+        {
+            // slices 없이 호출됐을 때 — 재분배 없이 현재 레이아웃 기준으로 갱신.
+            var (innerW, innerH) = ComputeInnerArea();
+            if (innerW <= 0 || innerH <= 0) return;
+            double colGap     = Model.ColumnGapMm * DipsPerMm;
+            var    widthsDip  = Model.ColumnWidthsMm?.Select(mm => mm * DipsPerMm).ToList();
+            slices = TextBoxColumnLayout.Distribute(
+                Model.Content, Model.ColumnCount, innerW, innerH, colGap, widthsDip);
+        }
+        MultiColHost.UpdateDividerLines(
+            slices,
+            Model.ColumnDividerVisible,
+            Model.ColumnDividerColor,
+            Model.ColumnDividerThicknessPt,
+            Model.ColumnDividerStyle);
     }
 
     /// <summary>각 단 RTB 생성 직후 호출되는 콜백 — 이벤트·속성 설정.</summary>
@@ -923,6 +945,12 @@ public partial class TextBoxOverlay : UserControl
             if (Model.ColumnCount != oldColCount)
                 Model.ColumnWidthsMm = null;
 
+            // 단 구분선 속성
+            Model.ColumnDividerVisible     = dlg.ResultColumnDividerVisible;
+            Model.ColumnDividerColor       = dlg.ResultColumnDividerColor;
+            Model.ColumnDividerThicknessPt = dlg.ResultColumnDividerThicknessPt;
+            Model.ColumnDividerStyle       = dlg.ResultColumnDividerStyle;
+
             Model.Status = NodeStatus.Modified;
 
             // 단일→다단 또는 다단→단일 전환 시 콘텐츠를 새 모드로 재로드.
@@ -954,8 +982,9 @@ public partial class TextBoxOverlay : UserControl
             }
             else if (IsMultiCol)
             {
-                // 단 간격만 바뀐 경우 — 분배 다시.
+                // 단 간격/구분선만 바뀐 경우 — 분배 다시.
                 ScheduleColumnReflow();
+                RefreshDividerLines();
             }
 
             ApplyShapeFromModel();

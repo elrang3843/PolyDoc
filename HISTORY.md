@@ -53,6 +53,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Added** — **다단 편집 시 단 너비 드래그 조정**: 다단 모드에서 단 구분선 위에 마우스를 올리면 `SizeWE` 커서로 변경되고, 좌우 드래그로 인접 두 단의 너비를 실시간으로 조정. 드래그 중 구분선 위치가 즉시 업데이트되고, 버튼 업 시 `PageSettings.ColumnWidthsMm` 에 저장 후 페이지 재구성. 단 너비는 최소값(20 DIP) 아래로 줄어들지 않도록 클램프. 열린 문서를 저장하면 변경된 단 너비가 IWPF 에 보존됨. 부수 수정: `PaperHost` Grid 에 `Background="Transparent"` 추가 — 기존엔 Background 가 null 이라 단 사이 갭(빈 영역)에서 마우스 이벤트가 PaperHost 에 도달하지 못해 hover/드래그가 시작되지 않던 문제 해결. 같은 문제로 잠재적으로 동작하지 않던 마퀴 선택의 빈 여백 hit 도 함께 개선.
 - **Added** — **보기 메뉴 신설 + 조판부호 보기(Ctrl+Shift+F8) 기능**: 보기(_V) 메뉴를 서식과 도구 사이에 추가. "조판부호 보기(_F)" 토글 메뉴 항목으로 편집 화면에 조판부호 오버레이를 표시/숨김. 켜면 각 페이지의 머리글/바닥글 영역이 색상 띠로 표시되고, 오버레이 그림(🖼)·도형(△)·표(⊞)·글상자(▤) 앵커 위치에 작은 배지를 덮어 그린다. 설정(`settings.json`)에 `ShowTypesettingMarks` 필드로 영구 저장. 한국어/영어 i18n 완비.
 
+- **Added** — **글상자 단 구분선 속성**: 글상자 속성 대화상자 "다단" 섹션 아래 "단 구분선" 섹션 추가. 표시 여부(체크박스), 색(hex + 컬러피커), 두께(pt), 선 스타일(없음/실선/파선/점선) 설정 가능. 설정값은 `TextBoxObject.ColumnDividerVisible`/`ColumnDividerColor`/`ColumnDividerThicknessPt`/`ColumnDividerStyle` 모델 프로퍼티로 저장되고, `TextBoxColumnHost.UpdateDividerLines()` 가 단 간격 중앙에 세로선을 렌더링. 새 모델 프로퍼티들은 IWPF JSON 라운드트립 자동 적용.
+- **Added** — **페이지 단 구분선 속성**: 페이지 서식 대화상자 "레이아웃" 탭에 단 구분선 표시 여부(체크박스), 색(hex + 컬러피커), 두께(pt), 선 스타일(없음/실선/파선/점선) 추가. 설정값은 `PageSettings.ColumnDividerVisible`/`ColumnDividerColor`/`ColumnDividerThicknessPt`/`ColumnDividerStyle` 모델 프로퍼티로 저장되고, `MainWindow.RebuildPageFramesCore` 의 단 구분선 렌더링이 새 속성을 적용 — 기존 하드코딩(회색 파선 0.7pt) 을 사용자 설정으로 교체. 단 구분선은 이제 "여백 안내선 표시(`ShowMarginGuides`)" 와 독립적으로 토글되며 글상자 다단 구분선과 동일한 enum(`ColumnDividerStyle`)·기본값을 공유. 한국어/영어 i18n 완비.
+
 ### Docs
 - **Docs** — **`USER_GUIDE.md`**: 페이지 서식 방향(가로↔세로) 변경 시 비대칭 단 너비(`ColumnWidthsMm`)가 균등 분할로 리셋되는 제약사항을 명시. `PageFormatWindow.Clone()` 이 `ColumnWidthsMm` 을 의도적으로 복사하지 않는 동작이며, 사용자는 방향을 먼저 정한 뒤 단 너비를 조정해야 함.
 

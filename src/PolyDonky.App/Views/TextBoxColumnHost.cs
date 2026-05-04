@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using PolyDonky.Core;
+using WpfShapes = System.Windows.Shapes;
 
 namespace PolyDonky.App.Views;
 
@@ -21,6 +22,7 @@ namespace PolyDonky.App.Views;
 public sealed class TextBoxColumnHost : Canvas
 {
     private readonly List<RichTextBox> _editors = new();
+    private readonly List<WpfShapes.Line> _dividerLines = new();
 
     /// <summary>현재 키보드 포커스를 가진 단 RTB.</summary>
     public RichTextBox? ActiveEditor { get; private set; }
@@ -97,6 +99,73 @@ public sealed class TextBoxColumnHost : Canvas
             Width  = last.XOffsetDip + last.WidthDip;
             Height = slices.Max(s => s.HeightDip);
         }
+    }
+
+    /// <summary>
+    /// 단 사이 구분선을 그리거나 지운다.
+    /// <paramref name="slices"/> 는 마지막 <see cref="SetupColumns"/> 호출과 동일해야 한다.
+    /// </summary>
+    public void UpdateDividerLines(
+        IReadOnlyList<TextBoxColumnLayout.ColumnSlice> slices,
+        bool               visible,
+        string             colorHex,
+        double             thicknessPt,
+        ColumnDividerStyle style)
+    {
+        foreach (var line in _dividerLines) Children.Remove(line);
+        _dividerLines.Clear();
+
+        if (!visible || slices.Count < 2) return;
+
+        var brush = ParseBrush(colorHex);
+        double thickDip = thicknessPt * (96.0 / 72.0);
+        DoubleCollection? dash = style switch
+        {
+            ColumnDividerStyle.Dashed => new DoubleCollection { 4, 3 },
+            ColumnDividerStyle.Dotted => new DoubleCollection { 1, 2 },
+            _                         => null,
+        };
+        if (style == ColumnDividerStyle.None) return;
+
+        double hostHeight = slices.Max(s => s.HeightDip);
+
+        for (int i = 0; i < slices.Count - 1; i++)
+        {
+            var curr = slices[i];
+            var next = slices[i + 1];
+            double midX = (curr.XOffsetDip + curr.WidthDip + next.XOffsetDip) / 2.0;
+
+            var line = new WpfShapes.Line
+            {
+                X1               = midX,
+                Y1               = 0,
+                X2               = midX,
+                Y2               = hostHeight,
+                Stroke           = brush,
+                StrokeThickness  = thickDip,
+                IsHitTestVisible = false,
+                SnapsToDevicePixels = true,
+            };
+            if (dash is not null) line.StrokeDashArray = dash;
+            Children.Add(line);
+            _dividerLines.Add(line);
+        }
+    }
+
+    private static Brush ParseBrush(string? hex)
+    {
+        if (!string.IsNullOrWhiteSpace(hex))
+        {
+            try
+            {
+                var s = hex.Trim();
+                if (!s.StartsWith('#')) s = '#' + s;
+                var c = (System.Windows.Media.Color)ColorConverter.ConvertFromString(s)!;
+                return new SolidColorBrush(c);
+            }
+            catch { }
+        }
+        return new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0x88, 0x88));
     }
 
     private void OnAnyTextChanged(object sender, TextChangedEventArgs e)

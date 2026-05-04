@@ -327,6 +327,14 @@ namespace PolyDonky.App.Properties
         internal static string PageFormatMarginFooter      => Get(nameof(PageFormatMarginFooter));
         internal static string PageFormatColumns           => Get(nameof(PageFormatColumns));
         internal static string PageFormatColumnGap         => Get(nameof(PageFormatColumnGap));
+        internal static string PageFormatColumnDividerVisible    => Get(nameof(PageFormatColumnDividerVisible));
+        internal static string PageFormatColumnDividerColor      => Get(nameof(PageFormatColumnDividerColor));
+        internal static string PageFormatColumnDividerThickness  => Get(nameof(PageFormatColumnDividerThickness));
+        internal static string PageFormatColumnDividerStyle      => Get(nameof(PageFormatColumnDividerStyle));
+        internal static string ColumnDividerStyleNone            => Get(nameof(ColumnDividerStyleNone));
+        internal static string ColumnDividerStyleSolid           => Get(nameof(ColumnDividerStyleSolid));
+        internal static string ColumnDividerStyleDashed          => Get(nameof(ColumnDividerStyleDashed));
+        internal static string ColumnDividerStyleDotted          => Get(nameof(ColumnDividerStyleDotted));
         internal static string PageFormatPageNumberStart   => Get(nameof(PageFormatPageNumberStart));
         internal static string PageFormatShowMarginGuides  => Get(nameof(PageFormatShowMarginGuides));
         internal static string PageFormatPreviewGroup      => Get(nameof(PageFormatPreviewGroup));

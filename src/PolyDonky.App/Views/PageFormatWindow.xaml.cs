@@ -153,6 +153,13 @@ public partial class PageFormatWindow : Window
             TxtColumnGap.Text       = _settings.ColumnGapMm.ToString("0.##");
             TxtPageNumberStart.Text = _settings.PageNumberStart.ToString();
 
+            // 단 구분선
+            ChkColumnDividerVisible.IsChecked   = _settings.ColumnDividerVisible;
+            TxtColumnDividerColor.Text          = _settings.ColumnDividerColor ?? "#888888";
+            TxtColumnDividerThickness.Text      = _settings.ColumnDividerThicknessPt.ToString("0.##");
+            CboColumnDividerStyle.SelectedIndex = (int)_settings.ColumnDividerStyle;
+            UpdateDividerColorSwatch();
+
             // Custom 패널 가시성 — 선택 연동은 OnSizeChanged 에서
             PanelCustomSize.IsEnabled = _settings.SizeKind == PaperSizeKind.Custom;
         }
@@ -294,6 +301,12 @@ public partial class PageFormatWindow : Window
     // ── 레이아웃 ─────────────────────────────────────────────────
 
     private void OnLayoutChanged(object sender, TextChangedEventArgs e)
+        => RecomputeLayout();
+
+    private void OnDividerVisibleChanged(object sender, RoutedEventArgs e)
+        => RecomputeLayout();
+
+    private void RecomputeLayout()
     {
         if (_suppress) return;
         if (int.TryParse(TxtColumns.Text, out int cols) && cols >= 1)
@@ -301,7 +314,55 @@ public partial class PageFormatWindow : Window
         TrySetMm(TxtColumnGap, v => _settings.ColumnGapMm = v);
         if (int.TryParse(TxtPageNumberStart.Text, out int pg) && pg >= 0)
             _settings.PageNumberStart = pg;
+
+        _settings.ColumnDividerVisible = ChkColumnDividerVisible.IsChecked == true;
+        if (double.TryParse(TxtColumnDividerThickness.Text, out double thk) && thk > 0)
+            _settings.ColumnDividerThicknessPt = thk;
+
         UpdatePreview();
+    }
+
+    private void OnDividerColorChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppress) return;
+        var hex = TxtColumnDividerColor.Text.Trim();
+        if (TryParseWpfColor(hex, out _))
+            _settings.ColumnDividerColor = NormalizeHex(hex);
+        UpdateDividerColorSwatch();
+        UpdatePreview();
+    }
+
+    private void OnDividerColorPickClick(object sender, RoutedEventArgs e)
+    {
+        using var dlg = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true };
+        if (TryParseWpfColor(TxtColumnDividerColor.Text, out var cur))
+            dlg.Color = System.Drawing.Color.FromArgb(cur.A, cur.R, cur.G, cur.B);
+        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var p = dlg.Color;
+            _suppress = true;
+            TxtColumnDividerColor.Text = $"#{p.R:X2}{p.G:X2}{p.B:X2}";
+            _suppress = false;
+            _settings.ColumnDividerColor = TxtColumnDividerColor.Text;
+            UpdateDividerColorSwatch();
+            UpdatePreview();
+        }
+    }
+
+    private void OnDividerStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppress) return;
+        _settings.ColumnDividerStyle = (ColumnDividerStyle)System.Math.Clamp(
+            CboColumnDividerStyle.SelectedIndex, 0, 3);
+        UpdatePreview();
+    }
+
+    private void UpdateDividerColorSwatch()
+    {
+        if (TryParseWpfColor(_settings.ColumnDividerColor, out var c))
+            BtnColumnDividerColorPick.Background = new WpfMedia.SolidColorBrush(c);
+        else
+            BtnColumnDividerColorPick.Background = new WpfMedia.SolidColorBrush(WpfMedia.Colors.Gray);
     }
 
     // ── 미리보기 ─────────────────────────────────────────────────
@@ -484,6 +545,10 @@ public partial class PageFormatWindow : Window
         MarginFooterMm  = s.MarginFooterMm,
         ColumnCount     = s.ColumnCount,
         ColumnGapMm     = s.ColumnGapMm,
+        ColumnDividerVisible      = s.ColumnDividerVisible,
+        ColumnDividerColor        = s.ColumnDividerColor,
+        ColumnDividerThicknessPt  = s.ColumnDividerThicknessPt,
+        ColumnDividerStyle        = s.ColumnDividerStyle,
         PageNumberStart = s.PageNumberStart,
         Header          = new HeaderFooterContent
         {

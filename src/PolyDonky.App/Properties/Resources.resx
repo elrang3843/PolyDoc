@@ -346,6 +346,14 @@
   <data name="PageFormatMarginFooter"       xml:space="preserve"><value>꼬리말 (mm)</value></data>
   <data name="PageFormatColumns"            xml:space="preserve"><value>단 수</value></data>
   <data name="PageFormatColumnGap"          xml:space="preserve"><value>단 간격 (mm)</value></data>
+  <data name="PageFormatColumnDividerVisible"   xml:space="preserve"><value>단 구분선 표시</value></data>
+  <data name="PageFormatColumnDividerColor"     xml:space="preserve"><value>구분선 색</value></data>
+  <data name="PageFormatColumnDividerThickness" xml:space="preserve"><value>구분선 두께 (pt)</value></data>
+  <data name="PageFormatColumnDividerStyle"     xml:space="preserve"><value>구분선 스타일</value></data>
+  <data name="ColumnDividerStyleNone"           xml:space="preserve"><value>없음</value></data>
+  <data name="ColumnDividerStyleSolid"          xml:space="preserve"><value>실선</value></data>
+  <data name="ColumnDividerStyleDashed"         xml:space="preserve"><value>파선</value></data>
+  <data name="ColumnDividerStyleDotted"         xml:space="preserve"><value>점선</value></data>
   <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>페이지 번호 시작</value></data>
   <data name="PageFormatShowMarginGuides"   xml:space="preserve"><value>여백 안내선 표시</value></data>
   <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>미리보기</value></data>

@@ -235,16 +235,26 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="6" />
+                            <ColumnDefinition Width="36" />
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0"
                                    Text="{Binding PageFormatColumns, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TxtColumns"
+                        <TextBox   Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtColumns"
                                    Padding="4,3"
                                    Background="{DynamicResource SurfaceAlt}"
                                    Foreground="{DynamicResource OnSurface}"
@@ -254,7 +264,7 @@
                         <TextBlock Grid.Row="2" Grid.Column="0"
                                    Text="{Binding PageFormatColumnGap, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" x:Name="TxtColumnGap"
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtColumnGap"
                                    Padding="4,3"
                                    Background="{DynamicResource SurfaceAlt}"
                                    Foreground="{DynamicResource OnSurface}"
@@ -264,12 +274,74 @@
                         <TextBlock Grid.Row="4" Grid.Column="0"
                                    Text="{Binding PageFormatPageNumberStart, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="4" Grid.Column="1" x:Name="TxtPageNumberStart"
+                        <TextBox   Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtPageNumberStart"
                                    Padding="4,3"
                                    Background="{DynamicResource SurfaceAlt}"
                                    Foreground="{DynamicResource OnSurface}"
                                    BorderBrush="{DynamicResource Divider}"
                                    TextChanged="OnLayoutChanged" />
+
+                        <!-- ── 단 구분선 ── -->
+                        <CheckBox Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4"
+                                  x:Name="ChkColumnDividerVisible"
+                                  Content="{Binding PageFormatColumnDividerVisible, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  Checked="OnDividerVisibleChanged"
+                                  Unchecked="OnDividerVisibleChanged" />
+
+                        <TextBlock Grid.Row="8" Grid.Column="0"
+                                   Text="{Binding PageFormatColumnDividerColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="8" Grid.Column="1" x:Name="TxtColumnDividerColor"
+                                   Padding="4,3"
+                                   Background="{DynamicResource SurfaceAlt}"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   BorderBrush="{DynamicResource Divider}"
+                                   TextChanged="OnDividerColorChanged" />
+                        <Button x:Name="BtnColumnDividerColorPick"
+                                Grid.Row="8" Grid.Column="3"
+                                Height="26"
+                                BorderBrush="{DynamicResource Divider}"
+                                BorderThickness="1"
+                                Click="OnDividerColorPickClick"
+                                Padding="0">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}" />
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <TextBlock Grid.Row="10" Grid.Column="0"
+                                   Text="{Binding PageFormatColumnDividerThickness, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="10" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtColumnDividerThickness"
+                                   Padding="4,3"
+                                   Background="{DynamicResource SurfaceAlt}"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   BorderBrush="{DynamicResource Divider}"
+                                   TextChanged="OnLayoutChanged" />
+
+                        <TextBlock Grid.Row="12" Grid.Column="0"
+                                   Text="{Binding PageFormatColumnDividerStyle, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox  Grid.Row="12" Grid.Column="1" Grid.ColumnSpan="3" x:Name="CboColumnDividerStyle"
+                                   Background="{DynamicResource SurfaceAlt}"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   BorderBrush="{DynamicResource Divider}"
+                                   SelectionChanged="OnDividerStyleChanged">
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleNone,   Source={x:Static svc:LocalizedStrings.Instance}}" />
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleSolid,  Source={x:Static svc:LocalizedStrings.Instance}}" />
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleDashed, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleDotted, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        </ComboBox>
                     </Grid>
                 </TabItem>
 

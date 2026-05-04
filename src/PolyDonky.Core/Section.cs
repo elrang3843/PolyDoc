@@ -136,6 +136,16 @@ public sealed class PageSettings
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<double>? ColumnWidthsMm { get; set; }
 
+    // 단 구분선 (편집창 시각 가이드 + 인쇄 출력)
+    /// <summary>단 구분선 표시 여부. ColumnCount &gt; 1 일 때만 의미 있음.</summary>
+    public bool               ColumnDividerVisible      { get; set; } = true;
+    /// <summary>단 구분선 색 (hex). 기본값 회색.</summary>
+    public string             ColumnDividerColor        { get; set; } = "#888888";
+    /// <summary>단 구분선 두께 (pt).</summary>
+    public double             ColumnDividerThicknessPt  { get; set; } = 0.7;
+    /// <summary>단 구분선 스타일.</summary>
+    public ColumnDividerStyle ColumnDividerStyle        { get; set; } = ColumnDividerStyle.Dashed;
+
     // 페이지 번호
     public int PageNumberStart { get; set; } = 1;
 

@@ -237,6 +237,14 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string PageFormatMarginFooter      => SR.PageFormatMarginFooter;
     public string PageFormatColumns           => SR.PageFormatColumns;
     public string PageFormatColumnGap         => SR.PageFormatColumnGap;
+    public string PageFormatColumnDividerVisible    => SR.PageFormatColumnDividerVisible;
+    public string PageFormatColumnDividerColor      => SR.PageFormatColumnDividerColor;
+    public string PageFormatColumnDividerThickness  => SR.PageFormatColumnDividerThickness;
+    public string PageFormatColumnDividerStyle      => SR.PageFormatColumnDividerStyle;
+    public string ColumnDividerStyleNone            => SR.ColumnDividerStyleNone;
+    public string ColumnDividerStyleSolid           => SR.ColumnDividerStyleSolid;
+    public string ColumnDividerStyleDashed          => SR.ColumnDividerStyleDashed;
+    public string ColumnDividerStyleDotted          => SR.ColumnDividerStyleDotted;
     public string PageFormatPageNumberStart   => SR.PageFormatPageNumberStart;
     public string PageFormatShowMarginGuides  => SR.PageFormatShowMarginGuides;
     public string PageFormatPreviewGroup      => SR.PageFormatPreviewGroup;

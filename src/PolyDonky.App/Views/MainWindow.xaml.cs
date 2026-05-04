@@ -1916,33 +1916,46 @@ public partial class MainWindow : Window
                 System.Windows.Controls.Canvas.SetLeft(guide, pg.PadLeftDip);
                 System.Windows.Controls.Canvas.SetTop (guide, topY + pg.PadTopDip);
                 PageBackgroundCanvas.Children.Add(guide);
+            }
 
-                // 단 구분선 — 다단인 경우 단 사이 갭 중앙에 세로 점선.
-                // 인쇄에는 출력되지 않고 편집창 전용 시각 가이드.
-                if (pg.ColumnCount > 1)
+            // 단 구분선 — 다단인 경우 단 사이 갭 중앙에 세로선.
+            // 표시 여부/색/두께/스타일은 PageSettings.ColumnDivider* 로 사용자 설정.
+            // ShowMarginGuides 와는 독립적이며, 인쇄에는 출력되지 않는 편집창 전용 가이드.
+            if (pg.ColumnCount > 1
+                && page is not null
+                && page.ColumnDividerVisible
+                && page.ColumnDividerStyle != ColumnDividerStyle.None)
+            {
+                double bodyTop    = topY + pg.PadTopDip;
+                double bodyHeight = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
+                var dividerBrush  = ParseColumnDividerBrush(page.ColumnDividerColor);
+                double dividerThk = page.ColumnDividerThicknessPt * (96.0 / 72.0);
+                System.Windows.Media.DoubleCollection? dividerDash = page.ColumnDividerStyle switch
                 {
-                    double bodyTop    = topY + pg.PadTopDip;
-                    double bodyHeight = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
-                    for (int c = 0; c < pg.ColumnCount - 1; c++)
+                    ColumnDividerStyle.Dashed => new System.Windows.Media.DoubleCollection { 4, 3 },
+                    ColumnDividerStyle.Dotted => new System.Windows.Media.DoubleCollection { 1, 2 },
+                    _                         => null,
+                };
+
+                for (int c = 0; c < pg.ColumnCount - 1; c++)
+                {
+                    double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
+                    double divX = pg.PadLeftDip
+                                + pg.ColumnXOffsetDip(c)
+                                + colW
+                                + pg.ColGapDip / 2.0;
+                    var divider = new WpfShapes.Line
                     {
-                        double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
-                        double divX = pg.PadLeftDip
-                                    + pg.ColumnXOffsetDip(c)
-                                    + colW
-                                    + pg.ColGapDip / 2.0;
-                        var divider = new WpfShapes.Line
-                        {
-                            X1 = divX, X2 = divX,
-                            Y1 = bodyTop, Y2 = bodyTop + bodyHeight,
-                            Stroke = new SolidColorBrush(WpfMedia.Color.FromArgb(0x66, 0x88, 0x88, 0x88)),
-                            StrokeThickness = 0.7,
-                            StrokeDashArray = new System.Windows.Media.DoubleCollection { 4, 3 },
-                            IsHitTestVisible = false,
-                            Tag = c,  // 단 경계 인덱스 (왼쪽 단 번호), 드래그 업데이트에 사용
-                        };
-                        _columnDividerLines.Add(divider);
-                        PageBackgroundCanvas.Children.Add(divider);
-                    }
+                        X1 = divX, X2 = divX,
+                        Y1 = bodyTop, Y2 = bodyTop + bodyHeight,
+                        Stroke = dividerBrush,
+                        StrokeThickness = dividerThk,
+                        IsHitTestVisible = false,
+                        Tag = c,
+                    };
+                    if (dividerDash is not null) divider.StrokeDashArray = dividerDash;
+                    _columnDividerLines.Add(divider);
+                    PageBackgroundCanvas.Children.Add(divider);
                 }
             }
 
@@ -2165,6 +2178,22 @@ public partial class MainWindow : Window
             catch { /* 파싱 실패 시 테마 색상으로 폴백 */ }
         }
         return (WpfMedia.Brush)FindResource("Surface");
+    }
+
+    private static WpfMedia.Brush ParseColumnDividerBrush(string? hex)
+    {
+        if (!string.IsNullOrWhiteSpace(hex))
+        {
+            try
+            {
+                var s = hex.Trim();
+                if (!s.StartsWith('#')) s = '#' + s;
+                var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(s)!;
+                return new SolidColorBrush(c);
+            }
+            catch { /* 폴백 */ }
+        }
+        return new SolidColorBrush(WpfMedia.Color.FromArgb(0x66, 0x88, 0x88, 0x88));
     }
 
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
