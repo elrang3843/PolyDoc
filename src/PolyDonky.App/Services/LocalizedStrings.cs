@@ -38,6 +38,8 @@ public sealed class LocalizedStrings : INotifyPropertyChanged
     public string MenuEditCut        => SR.MenuEditCut;
     public string MenuEditPaste      => SR.MenuEditPaste;
     public string MenuEditDelete     => SR.MenuEditDelete;
+    public string MenuEditImport     => SR.MenuEditImport;
+    public string MenuEditExport     => SR.MenuEditExport;
     public string MenuEditFindReplace => SR.MenuEditFindReplace;
     public string MenuEditDocInfo    => SR.MenuEditDocInfo;
 

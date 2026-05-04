@@ -325,6 +325,8 @@ namespace PolyDonky.App.Properties
         internal static string PageFormatMarginRight       => Get(nameof(PageFormatMarginRight));
         internal static string PageFormatMarginHeader      => Get(nameof(PageFormatMarginHeader));
         internal static string PageFormatMarginFooter      => Get(nameof(PageFormatMarginFooter));
+        internal static string MenuEditImport              => Get(nameof(MenuEditImport));
+        internal static string MenuEditExport              => Get(nameof(MenuEditExport));
         internal static string PageFormatColumns           => Get(nameof(PageFormatColumns));
         internal static string PageFormatColumnGap         => Get(nameof(PageFormatColumnGap));
         internal static string PageFormatColumnDividerVisible    => Get(nameof(PageFormatColumnDividerVisible));

@@ -40,9 +40,10 @@ public partial class ShapePropertiesWindow : Window
         FillColorPicker.ColorText = _shape.FillColor ?? string.Empty;
         TxtFillOpacity.Text       = _shape.FillOpacity.ToString("0.##");
 
-        // ── 화살촉 ────────────────────────────────────────────────────────
+        // ── 끝모양 ────────────────────────────────────────────────────────
         SelectComboByTag(CboStartArrow, _shape.StartArrow.ToString());
         SelectComboByTag(CboEndArrow,   _shape.EndArrow.ToString());
+        TxtEndShapeSize.Text = _shape.EndShapeSizeMm.ToString("0.##");
         bool isLineKind = _shape.Kind is ShapeKind.Line or ShapeKind.Polyline or ShapeKind.Spline;
         GrpArrows.IsEnabled = isLineKind;
 
@@ -67,8 +68,13 @@ public partial class ShapePropertiesWindow : Window
         TxtLabelFont.Text             = _shape.LabelFontFamily ?? string.Empty;
         TxtLabelSize.Text             = _shape.LabelFontSizePt.ToString("0.##");
         LabelColorPicker.ColorText    = _shape.LabelColor ?? string.Empty;
+        LabelBgColorPicker.ColorText  = _shape.LabelBackgroundColor ?? string.Empty;
         ChkLabelBold.IsChecked   = _shape.LabelBold;
         ChkLabelItalic.IsChecked = _shape.LabelItalic;
+        SelectComboByTag(CboLabelHAlign, _shape.LabelHAlign.ToString());
+        SelectComboByTag(CboLabelVAlign, _shape.LabelVAlign.ToString());
+        TxtLabelOffsetX.Text = _shape.LabelOffsetXMm.ToString("0.##");
+        TxtLabelOffsetY.Text = _shape.LabelOffsetYMm.ToString("0.##");
     }
 
     private void OnOk(object sender, RoutedEventArgs e)
@@ -108,11 +114,13 @@ public partial class ShapePropertiesWindow : Window
         if (double.TryParse(TxtFillOpacity.Text, out double fo))
             _shape.FillOpacity = Math.Clamp(fo, 0, 1);
 
-        // ── 화살촉 ────────────────────────────────────────────────────────
+        // ── 끝모양 ────────────────────────────────────────────────────────
         if (GetComboTag(CboStartArrow) is string saStr && Enum.TryParse<ShapeArrow>(saStr, out var sa))
             _shape.StartArrow = sa;
         if (GetComboTag(CboEndArrow) is string eaStr && Enum.TryParse<ShapeArrow>(eaStr, out var ea))
             _shape.EndArrow = ea;
+        if (double.TryParse(TxtEndShapeSize.Text, out double esz) && esz >= 0)
+            _shape.EndShapeSizeMm = esz;
 
         // ── 모양 파라미터 ─────────────────────────────────────────────────
         if (int.TryParse(TxtSideCount.Text, out int sc) && sc >= 3) _shape.SideCount = sc;
@@ -126,8 +134,15 @@ public partial class ShapePropertiesWindow : Window
         _shape.LabelFontFamily = string.IsNullOrWhiteSpace(TxtLabelFont.Text) ? null : TxtLabelFont.Text.Trim();
         if (double.TryParse(TxtLabelSize.Text, out double ls) && ls > 0) _shape.LabelFontSizePt = ls;
         _shape.LabelColor  = string.IsNullOrWhiteSpace(LabelColorPicker.ColorText) ? null : LabelColorPicker.ColorText.Trim();
+        _shape.LabelBackgroundColor = string.IsNullOrWhiteSpace(LabelBgColorPicker.ColorText) ? null : LabelBgColorPicker.ColorText.Trim();
         _shape.LabelBold   = ChkLabelBold.IsChecked   == true;
         _shape.LabelItalic = ChkLabelItalic.IsChecked == true;
+        if (GetComboTag(CboLabelHAlign) is string lhStr && Enum.TryParse<ShapeLabelHAlign>(lhStr, out var lh))
+            _shape.LabelHAlign = lh;
+        if (GetComboTag(CboLabelVAlign) is string lvStr && Enum.TryParse<ShapeLabelVAlign>(lvStr, out var lv))
+            _shape.LabelVAlign = lv;
+        if (double.TryParse(TxtLabelOffsetX.Text, out double lox)) _shape.LabelOffsetXMm = lox;
+        if (double.TryParse(TxtLabelOffsetY.Text, out double loy)) _shape.LabelOffsetYMm = loy;
 
         _shape.Status = NodeStatus.Modified;
         return true;

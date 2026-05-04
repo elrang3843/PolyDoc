@@ -152,32 +152,39 @@
                     </Grid>
                 </GroupBox>
 
-                <!-- 화살촉 (선 계열) -->
-                <GroupBox Header="화살촉 (직선·폴리곤선·스플라인선에서만)" x:Name="GrpArrows"
+                <!-- 끝모양 (선 계열) -->
+                <GroupBox Header="끝모양 (직선·폴리곤선·스플라인선에서만)" x:Name="GrpArrows"
                           Margin="0,0,0,10" Padding="8">
                     <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Label Grid.Column="0" Content="시작:" VerticalAlignment="Center" />
-                        <ComboBox x:Name="CboStartArrow" Grid.Column="1" Margin="4,2">
+                        <Label Grid.Row="0" Grid.Column="0" Content="시작:" VerticalAlignment="Center" />
+                        <ComboBox x:Name="CboStartArrow" Grid.Row="0" Grid.Column="1" Margin="4,2">
                             <ComboBoxItem Tag="None">없음</ComboBoxItem>
-                            <ComboBoxItem Tag="Open">열린 화살촉</ComboBoxItem>
-                            <ComboBoxItem Tag="Filled">채운 화살촉</ComboBoxItem>
+                            <ComboBoxItem Tag="Open">열린 화살</ComboBoxItem>
+                            <ComboBoxItem Tag="Filled">채운 화살</ComboBoxItem>
                             <ComboBoxItem Tag="Diamond">다이아몬드</ComboBoxItem>
                             <ComboBoxItem Tag="Circle">원</ComboBoxItem>
                         </ComboBox>
-                        <Label Grid.Column="2" Content="끝:" VerticalAlignment="Center" />
-                        <ComboBox x:Name="CboEndArrow" Grid.Column="3" Margin="4,2">
+                        <Label Grid.Row="0" Grid.Column="2" Content="끝:" VerticalAlignment="Center" />
+                        <ComboBox x:Name="CboEndArrow" Grid.Row="0" Grid.Column="3" Margin="4,2">
                             <ComboBoxItem Tag="None">없음</ComboBoxItem>
-                            <ComboBoxItem Tag="Open">열린 화살촉</ComboBoxItem>
-                            <ComboBoxItem Tag="Filled">채운 화살촉</ComboBoxItem>
+                            <ComboBoxItem Tag="Open">열린 화살</ComboBoxItem>
+                            <ComboBoxItem Tag="Filled">채운 화살</ComboBoxItem>
                             <ComboBoxItem Tag="Diamond">다이아몬드</ComboBoxItem>
                             <ComboBoxItem Tag="Circle">원</ComboBoxItem>
                         </ComboBox>
+                        <Label Grid.Row="1" Grid.Column="0" Content="크기(mm):" VerticalAlignment="Center" />
+                        <TextBox x:Name="TxtEndShapeSize" Grid.Row="1" Grid.Column="1" Margin="4,2"
+                                 ToolTip="0 = 자동(선 두께에 비례)" />
                     </Grid>
                 </GroupBox>
 
@@ -225,6 +232,9 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <Label Grid.Row="0" Grid.Column="0" Content="텍스트:" VerticalAlignment="Center" />
@@ -245,6 +255,31 @@
                             <CheckBox x:Name="ChkLabelBold"   Content="굵게"   VerticalAlignment="Center" Margin="0,0,8,0" />
                             <CheckBox x:Name="ChkLabelItalic" Content="기울임" VerticalAlignment="Center" />
                         </StackPanel>
+
+                        <Label Grid.Row="3" Grid.Column="0" Content="가로 위치:" VerticalAlignment="Center" />
+                        <ComboBox x:Name="CboLabelHAlign" Grid.Row="3" Grid.Column="1" Margin="4,2">
+                            <ComboBoxItem Tag="Left">왼쪽</ComboBoxItem>
+                            <ComboBoxItem Tag="Center">가운데</ComboBoxItem>
+                            <ComboBoxItem Tag="Right">오른쪽</ComboBoxItem>
+                        </ComboBox>
+                        <Label Grid.Row="3" Grid.Column="2" Content="세로 위치:" VerticalAlignment="Center" />
+                        <ComboBox x:Name="CboLabelVAlign" Grid.Row="3" Grid.Column="3" Margin="4,2">
+                            <ComboBoxItem Tag="Top">위</ComboBoxItem>
+                            <ComboBoxItem Tag="Middle">가운데</ComboBoxItem>
+                            <ComboBoxItem Tag="Bottom">아래</ComboBoxItem>
+                        </ComboBox>
+
+                        <Label Grid.Row="4" Grid.Column="0" Content="X 오프셋(mm):" VerticalAlignment="Center" />
+                        <TextBox x:Name="TxtLabelOffsetX" Grid.Row="4" Grid.Column="1" Margin="4,2"
+                                 ToolTip="정렬 위치에서 양수=오른쪽, 음수=왼쪽" />
+                        <Label Grid.Row="4" Grid.Column="2" Content="Y 오프셋(mm):" VerticalAlignment="Center" />
+                        <TextBox x:Name="TxtLabelOffsetY" Grid.Row="4" Grid.Column="3" Margin="4,2"
+                                 ToolTip="정렬 위치에서 양수=아래, 음수=위" />
+
+                        <Label Grid.Row="5" Grid.Column="0" Content="배경색:" VerticalAlignment="Center" />
+                        <ctrl:ColorPickerBox x:Name="LabelBgColorPicker"
+                                             Grid.Row="5" Grid.Column="1"
+                                             AllowEmpty="True" Margin="4,2" />
                     </Grid>
                 </GroupBox>
 

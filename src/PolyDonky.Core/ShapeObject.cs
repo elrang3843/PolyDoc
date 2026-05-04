@@ -27,7 +27,7 @@ public enum StrokeDash
     DashDot,
 }
 
-/// <summary>화살촉 종류 (선·폴리곤선·스플라인 선의 시작/끝에 적용).</summary>
+/// <summary>끝모양 종류 (선·폴리곤선·스플라인 선의 시작/끝에 적용).</summary>
 public enum ShapeArrow
 {
     None,
@@ -36,6 +36,12 @@ public enum ShapeArrow
     Diamond,
     Circle,
 }
+
+/// <summary>도형 레이블 텍스트의 가로 정렬.</summary>
+public enum ShapeLabelHAlign { Left, Center, Right }
+
+/// <summary>도형 레이블 텍스트의 세로 정렬.</summary>
+public enum ShapeLabelVAlign { Top, Middle, Bottom }
 
 /// <summary>도형 꼭짓점 또는 제어점. 좌표는 도형 바운딩 박스 좌상단 기준, 단위 mm.</summary>
 public sealed class ShapePoint
@@ -113,11 +119,14 @@ public sealed class ShapeObject : Block, IOverlayAnchored
     /// <summary>선 종류 (실선·파선·점선·일점쇄선).</summary>
     public StrokeDash StrokeDash { get; set; } = StrokeDash.Solid;
 
-    /// <summary>시작점 화살촉 (Line/Polyline/Spline 에만 의미 있음).</summary>
+    /// <summary>시작점 끝모양 (Line/Polyline/Spline 에만 의미 있음).</summary>
     public ShapeArrow StartArrow { get; set; } = ShapeArrow.None;
 
-    /// <summary>끝점 화살촉 (Line/Polyline/Spline 에만 의미 있음).</summary>
+    /// <summary>끝점 끝모양 (Line/Polyline/Spline 에만 의미 있음).</summary>
     public ShapeArrow EndArrow { get; set; } = ShapeArrow.None;
+
+    /// <summary>끝모양 크기 (mm). 0 이하면 선 두께에 비례한 자동 크기.</summary>
+    public double EndShapeSizeMm { get; set; } = 0;
 
     // ── 채우기 속성 ───────────────────────────────────────────────────────────
 
@@ -148,6 +157,21 @@ public sealed class ShapeObject : Block, IOverlayAnchored
 
     public bool LabelBold { get; set; }
     public bool LabelItalic { get; set; }
+
+    /// <summary>레이블 가로 정렬. 기본 Center.</summary>
+    public ShapeLabelHAlign LabelHAlign { get; set; } = ShapeLabelHAlign.Center;
+
+    /// <summary>레이블 세로 정렬. 기본 Middle.</summary>
+    public ShapeLabelVAlign LabelVAlign { get; set; } = ShapeLabelVAlign.Middle;
+
+    /// <summary>레이블 배경색 hex. null / 빈 문자열이면 배경 없음(투명).</summary>
+    public string? LabelBackgroundColor { get; set; }
+
+    /// <summary>레이블 가로 위치 오프셋 (mm). 정렬 기준점에서 양수면 오른쪽, 음수면 왼쪽으로 이동.</summary>
+    public double LabelOffsetXMm { get; set; }
+
+    /// <summary>레이블 세로 위치 오프셋 (mm). 정렬 기준점에서 양수면 아래, 음수면 위로 이동.</summary>
+    public double LabelOffsetYMm { get; set; }
 
     // ── 여백 ─────────────────────────────────────────────────────────────────
 
