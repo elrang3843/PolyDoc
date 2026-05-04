@@ -140,55 +140,91 @@ public static class TextBoxColumnLayout
             double blockH  = (!double.IsNaN(bottomY) && bottomY > topY) ? (bottomY - topY) : 0.0;
             int    slotTop = Math.Max(0, (int)(topY / innerHeightDip));
 
-            // 줄 단위 분할 — 본문과 동일한 조건/원리.
+            // 누적 분할 — 한 단을 초과하는 단락도 단 경계마다 잘라서 §f0/§f1/§f2/...
+            // 평탄한 fragment 들로 만든다. 본문 다단의 단일-분할 로직 + 다단계 반복 확장.
+            // 입력 폭주(BG 우선순위 starvation)로 reflow 가 한 번에 몰릴 때 단락 높이가
+            // innerHeightDip 를 넘어 분할이 막히는 문제 해결.
             if (coreBlock is Paragraph corePara
                 && corePara.Style.ListMarker == null
-                && blockH > 0 && blockH < innerHeightDip
+                && blockH > 0
                 && wpfBlock is WpfDocs.Paragraph wpfPara
-                && slotTop < columnCount)
+                && slotTop < columnCount - 1)
             {
-                double slotBoundaryY = (slotTop + 1) * innerHeightDip;
-                bool   crossesBoundary = !double.IsNaN(bottomY) && bottomY > slotBoundaryY + BoundaryTol;
-                bool   fillOverflow    = slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > innerHeightDip + BoundaryTol;
-
-                if (crossesBoundary || fillOverflow)
+                // groupId — 모든 fragment 가 공유. 원본 Id 가 §f 를 포함하면 그 앞부분을 재사용,
+                // 아니면 원본 Id 또는 새 GUID. 평탄 인덱스로 §f0/§f1/§f2 부여.
+                string groupId;
+                if (corePara.Id is { } origId)
                 {
-                    double splitY = crossesBoundary
+                    int sepIdx = origId.LastIndexOf("§f", StringComparison.Ordinal);
+                    groupId = sepIdx >= 0 ? origId[..sepIdx] : origId;
+                }
+                else
+                {
+                    groupId = "§g" + Guid.NewGuid().ToString("N")[..8];
+                }
+
+                var    remainingPara = corePara;
+                int    remainingChars = corePara.Runs.Sum(r => r.Text.Length);
+                int    absOffsetSoFar = 0;
+                double remainingTopY = topY;
+                int    curSlot       = slotTop;
+                int    fragIdx       = 0;
+                bool   didSplit      = false;
+
+                while (curSlot < columnCount - 1 && remainingChars > 0)
+                {
+                    double slotBoundaryY = (curSlot + 1) * innerHeightDip;
+                    double remainingH    = (!double.IsNaN(bottomY) && bottomY > remainingTopY)
+                                            ? bottomY - remainingTopY : 0.0;
+                    double slotRemain    = innerHeightDip - slotFill.GetValueOrDefault(curSlot, 0.0);
+
+                    bool crosses   = !double.IsNaN(bottomY) && bottomY > slotBoundaryY + BoundaryTol;
+                    bool overflows = remainingH > slotRemain + BoundaryTol;
+                    if (!crosses && !overflows) break;
+
+                    double splitY = crosses
                         ? slotBoundaryY
-                        : topY + Math.Max(0.0, innerHeightDip - slotFill.GetValueOrDefault(slotTop, 0.0));
+                        : remainingTopY + Math.Max(0.0, slotRemain);
 
-                    int splitCharOffset = Pagination.FlowDocumentPaginationAdapter
+                    int splitAbs = Pagination.FlowDocumentPaginationAdapter
                         .FindSplitCharOffsetPublic(wpfPara, splitY);
-                    int totalChars = corePara.Runs.Sum(r => r.Text.Length);
+                    int splitRel = splitAbs - absOffsetSoFar;
+                    if (splitRel <= 0 || splitRel >= remainingChars) break;
 
-                    if (splitCharOffset > 0 && splitCharOffset < totalChars)
+                    var (first, second) = Pagination.FlowDocumentPaginationAdapter
+                        .SplitCoreParagraphPublic(remainingPara, splitRel);
+
+                    // 평탄 인덱스로 재명명 — SplitCoreParagraph 가 만든 중첩 §f0§f1 무시.
+                    first.Id = groupId + "§f" + fragIdx;
+                    fragIdx++;
+
+                    double frag1H = Math.Max(0.0, splitY - remainingTopY);
+                    slotFill[curSlot] = Math.Min(innerHeightDip,
+                        slotFill.GetValueOrDefault(curSlot, 0.0) + frag1H);
+                    slotBlocks[curSlot].Add(first);
+
+                    remainingPara  = second;
+                    remainingChars -= splitRel;
+                    absOffsetSoFar = splitAbs;
+                    remainingTopY  = splitY;
+                    curSlot++;
+                    didSplit = true;
+                }
+
+                if (didSplit)
+                {
+                    // 마지막 fragment 를 curSlot 에 — curSlot 이 마지막 단이면 거기 클립.
+                    if (remainingChars > 0)
                     {
-                        var (frag1, frag2) = Pagination.FlowDocumentPaginationAdapter
-                            .SplitCoreParagraphPublic(corePara, splitCharOffset);
-
-                        double frag1H = Math.Max(0.0, splitY - topY);
-                        slotFill[slotTop] = Math.Min(innerHeightDip,
-                            slotFill.GetValueOrDefault(slotTop, 0.0) + frag1H);
-                        if (slotTop < columnCount) slotBlocks[slotTop].Add(frag1);
-
-                        int    nextSlot = slotTop + 1;
-                        double frag2H   = blockH - frag1H;
-                        if (frag2H > 0 && frag2H < innerHeightDip)
-                        {
-                            while (nextSlot < columnCount
-                                && slotFill.GetValueOrDefault(nextSlot, 0.0) + frag2H > innerHeightDip + BoundaryTol)
-                                nextSlot++;
-                        }
-                        if (frag2H > 0 && nextSlot < columnCount)
-                            slotFill[nextSlot] = Math.Min(innerHeightDip,
-                                slotFill.GetValueOrDefault(nextSlot, 0.0) + Math.Min(frag2H, innerHeightDip));
-                        if (nextSlot < columnCount)
-                            slotBlocks[nextSlot].Add(frag2);
-                        else
-                            // 마지막 단을 넘어가는 frag2 는 마지막 단에 클립 (= 콘텐츠 잘림 — 사용자가 박스 키우거나 단 수 늘려야)
-                            slotBlocks[columnCount - 1].Add(frag2);
-                        continue;
+                        if (curSlot >= columnCount) curSlot = columnCount - 1;
+                        remainingPara.Id = groupId + "§f" + fragIdx;
+                        double frag2H = (!double.IsNaN(bottomY) && bottomY > remainingTopY)
+                                            ? bottomY - remainingTopY : 0.0;
+                        slotFill[curSlot] = Math.Min(innerHeightDip,
+                            slotFill.GetValueOrDefault(curSlot, 0.0) + Math.Min(frag2H, innerHeightDip));
+                        slotBlocks[curSlot].Add(remainingPara);
                     }
+                    continue;
                 }
             }
 

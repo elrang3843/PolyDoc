@@ -748,7 +748,12 @@ public partial class TextBoxOverlay : UserControl
         });
     }
 
-    /// <summary>현재 캐럿의 전역 텍스트 오프셋(모든 단 텍스트 길이 누적).</summary>
+    /// <summary>현재 캐럿의 전역 텍스트 오프셋(모든 단의 가시 문자 누적).</summary>
+    /// <remarks>
+    /// 가시 문자(=Text run 길이) 만 카운트. <c>TextRange.Text</c> 는 단락 경계마다 \r\n 을
+    /// 포함해 길이가 부풀어 <see cref="FindCaretAtCharOffset"/>(가시 문자 기준)와 어긋난다.
+    /// 다단에서 단을 건너갈 때 단마다 \r\n 만큼씩 어긋나 캐럿이 입력 끝이 아닌 중간에 떨어지는 버그.
+    /// </remarks>
     private int ComputeGlobalCaretCharOffset()
     {
         if (MultiColHost.ActiveEditor is null) return -1;
@@ -759,12 +764,12 @@ public partial class TextBoxOverlay : UserControl
         for (int i = 0; i < actIdx; i++)
         {
             var doc = MultiColHost.Editors[i].Document;
-            total += new TextRange(doc.ContentStart, doc.ContentEnd).Text.Length;
+            total += CountVisibleChars(doc.ContentStart, doc.ContentEnd);
         }
         try
         {
             var actEd = MultiColHost.ActiveEditor;
-            total += new TextRange(actEd.Document.ContentStart, actEd.CaretPosition).Text.Length;
+            total += CountVisibleChars(actEd.Document.ContentStart, actEd.CaretPosition);
             return total;
         }
         catch { return -1; }
@@ -777,14 +782,16 @@ public partial class TextBoxOverlay : UserControl
         for (int i = 0; i < MultiColHost.Editors.Count; i++)
         {
             var ed = MultiColHost.Editors[i];
-            int len = new TextRange(ed.Document.ContentStart, ed.Document.ContentEnd).Text.Length;
+            int len = CountVisibleChars(ed.Document.ContentStart, ed.Document.ContentEnd);
             // 캐럿을 이 단에 둘 조건:
             // 1) remaining 이 단 길이 안쪽이면 무조건 (remaining < len)
-            // 2) 정확히 단 끝(remaining == len)이고 이 단에 콘텐츠가 있으면 — 다음 단의
-            //    "비어있는 시작" 보다 현재 단의 "콘텐츠 직후" 가 사용자 의도에 가까움
-            //    (입력으로 다음 단으로 흘러간 텍스트의 끝에 캐럿이 위치).
+            // 2) 정확히 단 끝(remaining == len)이고 이 단에 콘텐츠가 있고 마지막 단이거나
+            //    다음 단들이 모두 비어있으면 — 콘텐츠 직후가 사용자 의도.
+            //    (다음 단에 콘텐츠가 있으면 "단 사이"이므로 다음 단의 시작이 더 자연스럽다)
             // 3) 모든 단을 다 소진해도 못 찾으면 폴백 — 마지막 단의 끝.
-            if (remaining < len || (remaining == len && len > 0))
+            bool atExactEnd = remaining == len && len > 0;
+            bool followingColsEmpty = atExactEnd && AllFollowingColsEmpty(i);
+            if (remaining < len || (atExactEnd && followingColsEmpty))
             {
                 FocusEditorWithCaret(ed, FindCaretAtCharOffset(ed.Document, remaining));
                 return;
@@ -797,6 +804,47 @@ public partial class TextBoxOverlay : UserControl
             var last = MultiColHost.Editors[^1];
             FocusEditorWithCaret(last, last.Document.ContentEnd);
         }
+    }
+
+    private bool AllFollowingColsEmpty(int afterIdx)
+    {
+        for (int j = afterIdx + 1; j < MultiColHost.Editors.Count; j++)
+        {
+            var d = MultiColHost.Editors[j].Document;
+            if (CountVisibleChars(d.ContentStart, d.ContentEnd) > 0) return false;
+        }
+        return true;
+    }
+
+    /// <summary>start ~ end 사이 가시 문자(Text run 의 길이) 누적. 단락 경계 \r\n 등 미가시 토큰 제외.</summary>
+    private static int CountVisibleChars(TextPointer start, TextPointer end)
+    {
+        if (start == null || end == null || start.CompareTo(end) >= 0) return 0;
+        int count = 0;
+        var p = start;
+        while (p != null && p.CompareTo(end) < 0)
+        {
+            if (p.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+            {
+                int run = p.GetTextRunLength(LogicalDirection.Forward);
+                var nextP = p.GetPositionAtOffset(run, LogicalDirection.Forward);
+                if (nextP == null) break;
+                if (nextP.CompareTo(end) > 0)
+                {
+                    // run 이 end 를 넘어가면 end 까지만 카운트
+                    count += p.GetOffsetToPosition(end);
+                    break;
+                }
+                count += run;
+                p = nextP;
+            }
+            else
+            {
+                p = p.GetNextContextPosition(LogicalDirection.Forward);
+                if (p == null) break;
+            }
+        }
+        return count;
     }
 
     /// <summary>편집기에 포커스 설정 + 캐럿 위치 적용. SetupColumns 직후 발생할 수 있는 focus race 회피.</summary>
