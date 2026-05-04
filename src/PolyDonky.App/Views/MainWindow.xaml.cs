@@ -4932,6 +4932,8 @@ public partial class MainWindow : Window
         if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5) _overlayShapeDragMoved = true;
         Canvas.SetLeft(fe, _overlayShapeDragStartLeft + dx);
         Canvas.SetTop (fe, _overlayShapeDragStartTop  + dy);
+        if (ReferenceEquals(_selectedShapeCtrl, fe))
+            RefreshShapeEditHandlePositions();
     }
 
     private void OnOverlayShapeDragUp(object sender, MouseButtonEventArgs e)
@@ -5113,6 +5115,7 @@ public partial class MainWindow : Window
             BlurRadius  = 14,
             Opacity     = 0.9,
         };
+        ShowShapeEditHandles(ctrl, shape);
         // 윈도우로 키보드 포커스 — Delete/Ctrl+C 가 BodyEditor 가 아닌 윈도우에서 처리되도록.
         Focus();
         Keyboard.Focus(this);
@@ -5120,6 +5123,7 @@ public partial class MainWindow : Window
 
     private void DeselectShape()
     {
+        HideShapeEditHandles();
         if (_selectedShapeCtrl is not null)
             _selectedShapeCtrl.Effect = null;
         _selectedShape     = null;

@@ -48,6 +48,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Internal** — `CLAUDE.md` 에 솔루션 구조(7개 `src/` 프로젝트와 책임), `dotnet` 빌드/테스트/단일-테스트 필터/스모크 실행 명령, FlowDocument 기반 에디터 파이프라인(`FlowDocumentBuilder`/`Parser`/`Search`, `PageViewBuilder`, `PerPageEditorHost`) 갱신 규칙, i18n resx 짝 갱신·새 codec 의 `IDocumentCodec` + SmokeTest round-trip 추가 규칙을 추가. 더 이상 사실이 아닌 "코드는 아직 없다" 안내 제거. CLI 분리 원칙(§3) 이 HWP/DOC/HTML 한정이며 HWPX/DOCX 는 메인 앱에 직접 링크된다는 점 명시.
 
 ### Added
+- **Added** — **도형 크기·모양 편집 핸들**: 도형(ShapeObject) 선택 시 종류별 편집 핸들 표시. **Bounding-box 도형**(사각형·둥근사각형·타원·삼각형·정다각형·별)은 8 코너/엣지 핸들로 크기 조절(드래그 시 OverlayXMm/YMm + WidthMm/HeightMm 동기 갱신, 최소 크기 2 mm 클램프). **점-기반 도형**(직선·폴리라인·스플라인선·폴리곤·스플라인면)은 각 정점 위치에 노란 핸들 — 드래그로 정점 좌표 변경. 직선은 Points 가 비어있으면 시작점/끝점이 자동으로 채워져 편집 가능. 정점 드래그 종료 시 bbox 정규화 — 음수 좌표나 bbox 밖 정점이 있으면 OverlayXMm/YMm 시프트 + 모든 점을 [0, Width]×[0, Height] 안으로 이동. 핸들 별 SizeNWSE/SizeNESW/SizeNS/SizeWE/Cross 커서 자동 적용. 새 partial 파일 `MainWindow.ShapeEdit.cs` 로 분리.
 - **Added** — **클립보드 포맷 IWPF 통합 (`IwpfFragment`)**: 클립보드 포맷을 `"PolyDonky.FlowSelection.v1"` (raw `List<Block>` JSON)에서 `"PolyDonky.IwpfFragment.v1"` (`{ version, blocks }` 래퍼)으로 개선. 가져오기·내보내기와 동일한 직렬화 구조를 공유해 클립보드→파일, 파일→클립보드 연동이 자연스럽다. 이전 포맷은 붙여넣기 시 폴백으로 호환 유지.
 - **Added** — **편집 메뉴 가져오기**: IWPF 문서·그림(PNG/JPG/GIF/BMP/TIFF/WEBP)·텍스트·마크다운 파일을 열기 대화상자로 선택해 현재 캐럿 위치에 삽입. 그림은 `ImageBlock.Inline` 으로, 문서는 모든 섹션 블록을 순서대로 삽입. 지원 외 확장자는 오류 안내.
 - **Added** — **편집 메뉴 내보내기**: 현재 선택 영역의 블록을 IWPF 문서(*.iwpf)로 저장. 선택이 없으면 안내 메시지. 저장된 파일은 PolyDonky 에서 다시 가져오거나 열 수 있음.
