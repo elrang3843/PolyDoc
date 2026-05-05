@@ -470,16 +470,8 @@ public partial class MainViewModel : ObservableObject
         };
         if (dlg.ShowDialog() != true) return;
 
-        if (KnownFormats.RequiresExternalConverter(dlg.FileName) && !KnownFormats.IsSupportedNatively(dlg.FileName))
-        {
-            var ext = Path.GetExtension(dlg.FileName).TrimStart('.').ToLowerInvariant();
-            MessageBox.Show(
-                string.Format(SR.DlgSaveConverterNeeded, ext),
-                SR.DlgSaveConverterTitle,
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
+        // 외부 CLI 변환 포맷(DOCX/HWPX/HTML/XML)은 SaveToAsync → SaveViaExternalConverterAsync
+        // 가 IWPF 정본을 만든 뒤 CLI 로 변환한다. 변환기 미등록 시(HWP/DOC) 그쪽에서 안내.
         await SaveToAsync(dlg.FileName);
     }
 
