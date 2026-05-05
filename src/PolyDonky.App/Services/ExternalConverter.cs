@@ -102,6 +102,11 @@ public static class ExternalConverter
         await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
 
+        if (proc.ExitCode == ExitCodeUnsupportedVersion)
+        {
+            // 6 = 지원하지 않는 옛 버전. 호출측이 별도로 안내하도록 전용 예외.
+            throw new UnsupportedFormatVersionException(stderr.Trim());
+        }
         if (proc.ExitCode != 0)
         {
             throw new InvalidOperationException(
@@ -109,7 +114,16 @@ public static class ExternalConverter
         }
     }
 
+    /// <summary>CLI 가 "지원하지 않는 옛 버전" 으로 거부할 때의 종료 코드.</summary>
+    public const int ExitCodeUnsupportedVersion = 6;
+
     /// <summary>임시 IWPF 파일 경로 — Path.GetTempPath() 아래 고유한 이름.</summary>
     public static string CreateTempIwpfPath()
         => Path.Combine(Path.GetTempPath(), $"polydonky-{Guid.NewGuid():N}.iwpf");
+}
+
+/// <summary>외부 CLI 변환기가 지원 범위 밖 버전(예: HWPX 1.0, Word 2010 DOCX) 을 거부했을 때 던진다.</summary>
+public sealed class UnsupportedFormatVersionException : Exception
+{
+    public UnsupportedFormatVersionException(string detail) : base(detail) { }
 }

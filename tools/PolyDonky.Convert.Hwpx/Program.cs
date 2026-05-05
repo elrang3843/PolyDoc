@@ -42,7 +42,16 @@ try
 {
     if (inExt == "hwpx" && outExt == "iwpf")
     {
-        WriteProgress(0, "HWPX 읽는 중");
+        // 버전 정책 — HWPX 1.2 (HWP 2014) 이상만 지원.
+        var ver = HwpxVersionPolicy.ReadXmlVersion(inPath);
+        if (!HwpxVersionPolicy.IsSupported(ver))
+        {
+            Console.Error.WriteLine(
+                $"지원하지 않는 버전 — HWPX 스키마 {ver}. " +
+                $"PolyDonky 는 HWPX {HwpxVersionPolicy.MinSupportedXmlVersion} 이상(HWP 2014 이후)만 처리합니다.");
+            return 6;
+        }
+        WriteProgress(0, $"HWPX 읽는 중 (xmlVersion {ver ?? "?"})");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new HwpxReader().Read(fs);

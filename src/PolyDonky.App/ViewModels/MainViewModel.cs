@@ -343,6 +343,14 @@ public partial class MainViewModel : ObservableObject
             {
                 await ExternalConverter.ConvertAsync(converter, sourcePath, iwpfPath, reporter);
             }
+            catch (UnsupportedFormatVersionException ex)
+            {
+                MessageBox.Show(
+                    string.Format(SR.DlgUnsupportedVersionPrompt, Path.GetFileName(sourcePath), ex.Message),
+                    SR.DlgUnsupportedVersionTitle,
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             catch (Exception ex)
             {
                 ReportError(SR.DlgOpenError, ex);

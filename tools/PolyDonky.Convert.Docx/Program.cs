@@ -44,7 +44,16 @@ try
 {
     if (inExt == "docx" && outExt == "iwpf")
     {
-        WriteProgress(0, "DOCX 읽는 중");
+        // 버전 정책 — Word 2013 (AppVersion 15.0) 이상만 지원.
+        var av = DocxVersionPolicy.ReadAppVersion(inPath);
+        if (!DocxVersionPolicy.IsSupported(av))
+        {
+            Console.Error.WriteLine(
+                $"지원하지 않는 버전 — DOCX AppVersion {av:0.0}. " +
+                $"PolyDonky 는 Word 2013 (AppVersion {DocxVersionPolicy.MinSupportedAppVersion:0.0}) 이상만 처리합니다.");
+            return 6;
+        }
+        WriteProgress(0, $"DOCX 읽는 중 (AppVersion {av?.ToString("0.0") ?? "?"})");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new DocxReader().Read(fs);

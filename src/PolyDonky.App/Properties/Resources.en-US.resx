@@ -149,6 +149,17 @@ Continue?</value></data>
 [Yes] Re-convert and overwrite
 [No]  Open the existing IWPF file as-is
 [Cancel] Cancel</value></data>
+  <data name="DlgUnsupportedVersionTitle" xml:space="preserve"><value>Unsupported version</value></data>
+  <data name="DlgUnsupportedVersionPrompt" xml:space="preserve"><value>This file is too old for PolyDonky to handle.
+
+  File   : {0}
+  Detail : {1}
+
+Supported range:
+  • HWP / HWPX — 2014 or later (HWPX 1.2+)
+  • DOC / DOCX — 2012 or later (Word 2013 / AppVersion 15.0+)
+
+Re-save the file in a recent Hancom Office or Microsoft Word and try again.</value></data>
   <data name="DlgHtmlTruncatedTitle" xml:space="preserve"><value>HTML truncated</value></data>
   <data name="DlgHtmlTruncatedPrompt" xml:space="preserve"><value>This HTML document exceeded the block limit (10,000) and was loaded only partially.
 
