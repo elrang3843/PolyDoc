@@ -45,6 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — **머리말/꼬리말 편집 UI**: `서식 > 머리말/꼬리말` 메뉴 항목 신설 — `PageFormatWindow` 를 머리말/꼬리말 탭(4번째)에서 바로 열어준다. `PageFormatWindow` 에 "머리말/꼬리말" 탭을 추가하여 머리말·꼬리말 각각 좌·가운데·오른쪽 세 칸의 텍스트를 편집. 사용 가능한 토큰 목록(`{PAGE}` 등) 힌트 표시. `PageFormatWindow(PageSettings, int initialTab)` 생성자 오버로드를 추가해 탭 인덱스를 지정할 수 있도록 함. i18n 문자열 8건 추가(`Resources.resx`·`Resources.en-US.resx`).
 - **Added** — **머리말·꼬리말 렌더링 + 페이지 번호 토큰 치환**: `Section.PageSettings.Header`/`Footer`(좌·중·우 3분할) 모델을 편집창과 인쇄 미리보기에서 실제로 렌더링한다. 페이지 상단 마진(`MarginHeaderMm`)·하단 마진(`MarginFooterMm`) 위치에 텍스트 출력. 신규 `PolyDonky.Core/HeaderFooterTokens` 가 `{PAGE}`/`{NUMPAGES}`/`{DATE}`/`{TIME}`/`{TITLE}`/`{AUTHOR}`/`{FILENAME}` 및 한국어 별칭(`{페이지}`/`{전체페이지}`/`{날짜}`/`{시간}`/`{제목}`/`{저자}`/`{파일명}`)을 페이지마다 치환 — 토큰명은 대소문자 무시·공백 허용, 알 수 없는 토큰은 원본 보존(미래 호환), 리터럴 중괄호는 `\{`/`\}` 이스케이프. `PageNumberStart` 를 시작 페이지 번호로 사용. `PageViewBuilder.BuildHeaderFooterLayer` 가 `IsHitTestVisible=false` Canvas 에 좌·가운데·우 `TextBlock` 을 배치(편집은 `PageFormatWindow`); `MainWindow` 의 `HeaderFooterCanvas` 와 `PrintPreviewWindow` 의 `PreviewHeaderFooterCanvas` 모두 페이지 클립 적용. `RebuildPageFramesCore` 와 `BuildPreview` 양쪽에서 호출되어 페이지 설정 변경·문서 메타데이터 변경 시 즉시 반영. 1차 사이클은 모든 페이지 동일 — `DifferentFirstPage`/`DifferentOddEven` 모델 확장은 다음 사이클. 신규 단위 테스트 14건 (`HeaderFooterTokensTests`).
 
 ### Fixed

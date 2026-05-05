@@ -70,6 +70,7 @@
   <data name="MenuFormatChar" xml:space="preserve"><value>글자 서식(_F)</value></data>
   <data name="MenuFormatPara" xml:space="preserve"><value>문단 서식(_P)</value></data>
   <data name="MenuFormatPage" xml:space="preserve"><value>페이지 서식(_G)</value></data>
+  <data name="MenuFormatHeaderFooter" xml:space="preserve"><value>머리말/꼬리말(_H)…</value></data>
 
   <!-- 메뉴: 보기 -->
   <data name="MenuView"                    xml:space="preserve"><value>보기(_V)</value></data>
@@ -374,6 +375,13 @@
   <data name="PageFormatPaperTab"           xml:space="preserve"><value>용지</value></data>
   <data name="PageFormatMarginsTab"         xml:space="preserve"><value>여백</value></data>
   <data name="PageFormatLayoutTab"          xml:space="preserve"><value>레이아웃</value></data>
+  <data name="PageFormatHeaderFooterTab"    xml:space="preserve"><value>머리말/꼬리말</value></data>
+  <data name="PageFormatHeaderGroup"        xml:space="preserve"><value>머리말</value></data>
+  <data name="PageFormatFooterGroup"        xml:space="preserve"><value>꼬리말</value></data>
+  <data name="PageFormatHFLeft"             xml:space="preserve"><value>왼쪽</value></data>
+  <data name="PageFormatHFCenter"           xml:space="preserve"><value>가운데</value></data>
+  <data name="PageFormatHFRight"            xml:space="preserve"><value>오른쪽</value></data>
+  <data name="PageFormatHFTokenHint"        xml:space="preserve"><value>사용 가능 토큰: {PAGE} {NUMPAGES} {DATE} {TIME} {TITLE} {AUTHOR} {FILENAME}</value></data>
   <data name="PageFormatSizeLabel"          xml:space="preserve"><value>용지 크기</value></data>
   <data name="PageFormatCustomSize"         xml:space="preserve"><value>사용자 정의</value></data>
   <data name="PageFormatWidthLabel"         xml:space="preserve"><value>너비 (mm)</value></data>

@@ -119,6 +119,8 @@
                           Click="OnFormatPara" InputGestureText="Ctrl+T" />
                 <MenuItem Header="{Binding MenuFormatPage, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnFormatPage" />
+                <MenuItem Header="{Binding MenuFormatHeaderFooter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnFormatHeaderFooter" />
                 <Separator />
                 <MenuItem Header="{Binding MenuFormatOutline, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="{Binding OutlineStyleCommand}" />

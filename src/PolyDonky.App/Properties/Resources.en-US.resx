@@ -70,6 +70,7 @@
   <data name="MenuFormatChar" xml:space="preserve"><value>_Character...</value></data>
   <data name="MenuFormatPara" xml:space="preserve"><value>_Paragraph...</value></data>
   <data name="MenuFormatPage" xml:space="preserve"><value>Pa_ge...</value></data>
+  <data name="MenuFormatHeaderFooter" xml:space="preserve"><value>_Header/Footer...</value></data>
 
   <!-- Menu: View -->
   <data name="MenuView"                    xml:space="preserve"><value>_View</value></data>
@@ -379,6 +380,13 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageFormatPaperTab"           xml:space="preserve"><value>Paper</value></data>
   <data name="PageFormatMarginsTab"         xml:space="preserve"><value>Margins</value></data>
   <data name="PageFormatLayoutTab"          xml:space="preserve"><value>Layout</value></data>
+  <data name="PageFormatHeaderFooterTab"    xml:space="preserve"><value>Header/Footer</value></data>
+  <data name="PageFormatHeaderGroup"        xml:space="preserve"><value>Header</value></data>
+  <data name="PageFormatFooterGroup"        xml:space="preserve"><value>Footer</value></data>
+  <data name="PageFormatHFLeft"             xml:space="preserve"><value>Left</value></data>
+  <data name="PageFormatHFCenter"           xml:space="preserve"><value>Center</value></data>
+  <data name="PageFormatHFRight"            xml:space="preserve"><value>Right</value></data>
+  <data name="PageFormatHFTokenHint"        xml:space="preserve"><value>Available tokens: {PAGE} {NUMPAGES} {DATE} {TIME} {TITLE} {AUTHOR} {FILENAME}</value></data>
   <data name="PageFormatSizeLabel"          xml:space="preserve"><value>Paper size</value></data>
   <data name="PageFormatCustomSize"         xml:space="preserve"><value>Custom</value></data>
   <data name="PageFormatWidthLabel"         xml:space="preserve"><value>Width (mm)</value></data>

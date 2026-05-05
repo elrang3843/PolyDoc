@@ -2494,10 +2494,16 @@ public partial class MainWindow : Window
     }
 
     private void OnFormatPage(object sender, RoutedEventArgs e)
+        => OpenPageFormatDialog(initialTab: 0);
+
+    private void OnFormatHeaderFooter(object sender, RoutedEventArgs e)
+        => OpenPageFormatDialog(initialTab: 3);
+
+    private void OpenPageFormatDialog(int initialTab)
     {
         var current = _viewModel?.Document.Sections.FirstOrDefault()?.Page
                       ?? new PolyDonky.Core.PageSettings();
-        var dlg = new PageFormatWindow(current) { Owner = this };
+        var dlg = new PageFormatWindow(current, initialTab) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             if (_viewModel?.Document.Sections.FirstOrDefault() is { } section)

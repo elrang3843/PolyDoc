@@ -22,7 +22,8 @@
             </Grid.ColumnDefinitions>
 
             <!-- ── 탭 패널 ── -->
-            <TabControl Grid.Column="0"
+            <TabControl x:Name="MainTabControl"
+                        Grid.Column="0"
                         Background="{DynamicResource Surface}"
                         BorderBrush="{DynamicResource Divider}">
 
@@ -343,6 +344,133 @@
                             <ComboBoxItem Content="{Binding ColumnDividerStyleDotted, Source={x:Static svc:LocalizedStrings.Instance}}" />
                         </ComboBox>
                     </Grid>
+                </TabItem>
+
+                <!-- ── 머리말/꼬리말 탭 ── -->
+                <TabItem x:Name="TabHeaderFooter"
+                         Header="{Binding PageFormatHeaderFooterTab, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <StackPanel Margin="10,8">
+
+                        <!-- 머리말 섹션 -->
+                        <TextBlock Text="{Binding PageFormatHeaderGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   Margin="0,0,0,6"/>
+
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="64"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="4"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="4"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding PageFormatHFLeft, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceMuted}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     x:Name="TxtHeaderLeft"
+                                     Padding="4,3" FontSize="12"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnHeaderFooterChanged"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="{Binding PageFormatHFCenter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceMuted}"/>
+                            <TextBox Grid.Row="2" Grid.Column="1"
+                                     x:Name="TxtHeaderCenter"
+                                     Padding="4,3" FontSize="12"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnHeaderFooterChanged"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="{Binding PageFormatHFRight, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceMuted}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1"
+                                     x:Name="TxtHeaderRight"
+                                     Padding="4,3" FontSize="12"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnHeaderFooterChanged"/>
+                        </Grid>
+
+                        <Separator Margin="0,10,0,10" Background="{DynamicResource Divider}"/>
+
+                        <!-- 꼬리말 섹션 -->
+                        <TextBlock Text="{Binding PageFormatFooterGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   Margin="0,0,0,6"/>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="64"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="4"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="4"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding PageFormatHFLeft, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceMuted}"/>
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     x:Name="TxtFooterLeft"
+                                     Padding="4,3" FontSize="12"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnHeaderFooterChanged"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="{Binding PageFormatHFCenter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceMuted}"/>
+                            <TextBox Grid.Row="2" Grid.Column="1"
+                                     x:Name="TxtFooterCenter"
+                                     Padding="4,3" FontSize="12"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnHeaderFooterChanged"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0"
+                                       Text="{Binding PageFormatHFRight, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource OnSurfaceMuted}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1"
+                                     x:Name="TxtFooterRight"
+                                     Padding="4,3" FontSize="12"
+                                     Background="{DynamicResource SurfaceAlt}"
+                                     Foreground="{DynamicResource OnSurface}"
+                                     BorderBrush="{DynamicResource Divider}"
+                                     TextChanged="OnHeaderFooterChanged"/>
+                        </Grid>
+
+                        <!-- 토큰 힌트 -->
+                        <TextBlock Text="{Binding PageFormatHFTokenHint, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource OnSurfaceMuted}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
                 </TabItem>
 
             </TabControl>

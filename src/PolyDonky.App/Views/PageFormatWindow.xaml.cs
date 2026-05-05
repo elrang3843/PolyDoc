@@ -9,19 +9,20 @@ using WpfMedia = System.Windows.Media;
 namespace PolyDonky.App.Views;
 
 /// <summary>
-/// 페이지(용지·여백·레이아웃) 설정 다이얼로그.
-/// 머리말·꼬리말 UI 는 다음 사이클에서 구현한다 — 모델은 PageSettings 에 이미 포함.
-/// </summary>
+/// 페이지(용지·여백·레이아웃·머리말/꼬리말) 설정 다이얼로그.
+///</summary>
 public partial class PageFormatWindow : Window
 {
     private PageSettings _settings;
     private bool _suppress;
+    private readonly int _initialTab;
 
     public PageSettings ResultSettings { get; private set; } = new();
 
-    public PageFormatWindow(PageSettings current)
+    public PageFormatWindow(PageSettings current, int initialTab = 0)
     {
-        _settings = Clone(current);
+        _settings   = Clone(current);
+        _initialTab = initialTab;
         InitializeComponent();
         Loaded += OnLoaded;
     }
@@ -32,6 +33,8 @@ public partial class PageFormatWindow : Window
     {
         PopulateSizeCombo();
         LoadUI();
+        if (_initialTab > 0 && _initialTab < MainTabControl.Items.Count)
+            MainTabControl.SelectedIndex = _initialTab;
     }
 
     private void PopulateSizeCombo()
@@ -144,6 +147,14 @@ public partial class PageFormatWindow : Window
             TxtMarginRight.Text  = _settings.MarginRightMm.ToString("0.##");
             TxtMarginHeader.Text = _settings.MarginHeaderMm.ToString("0.##");
             TxtMarginFooter.Text = _settings.MarginFooterMm.ToString("0.##");
+
+            // 머리말/꼬리말 내용
+            TxtHeaderLeft.Text   = _settings.Header.Left   ?? "";
+            TxtHeaderCenter.Text = _settings.Header.Center ?? "";
+            TxtHeaderRight.Text  = _settings.Header.Right  ?? "";
+            TxtFooterLeft.Text   = _settings.Footer.Left   ?? "";
+            TxtFooterCenter.Text = _settings.Footer.Center ?? "";
+            TxtFooterRight.Text  = _settings.Footer.Right  ?? "";
 
             // 여백 안내선
             ChkShowMarginGuides.IsChecked = _settings.ShowMarginGuides;
@@ -364,6 +375,28 @@ public partial class PageFormatWindow : Window
         else
             BtnColumnDividerColorPick.Background = new WpfMedia.SolidColorBrush(WpfMedia.Colors.Gray);
     }
+
+    // ── 머리말/꼬리말 ────────────────────────────────────────────
+
+    private void OnHeaderFooterChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppress) return;
+        _settings.Header = new PolyDonky.Core.HeaderFooterContent
+        {
+            Left   = NullIfEmpty(TxtHeaderLeft.Text),
+            Center = NullIfEmpty(TxtHeaderCenter.Text),
+            Right  = NullIfEmpty(TxtHeaderRight.Text),
+        };
+        _settings.Footer = new PolyDonky.Core.HeaderFooterContent
+        {
+            Left   = NullIfEmpty(TxtFooterLeft.Text),
+            Center = NullIfEmpty(TxtFooterCenter.Text),
+            Right  = NullIfEmpty(TxtFooterRight.Text),
+        };
+    }
+
+    private static string? NullIfEmpty(string s) =>
+        string.IsNullOrEmpty(s) ? null : s;
 
     // ── 미리보기 ─────────────────────────────────────────────────
 
