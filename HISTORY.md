@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — **머리말·꼬리말 렌더링 + 페이지 번호 토큰 치환**: `Section.PageSettings.Header`/`Footer`(좌·중·우 3분할) 모델을 편집창과 인쇄 미리보기에서 실제로 렌더링한다. 페이지 상단 마진(`MarginHeaderMm`)·하단 마진(`MarginFooterMm`) 위치에 텍스트 출력. 신규 `PolyDonky.Core/HeaderFooterTokens` 가 `{PAGE}`/`{NUMPAGES}`/`{DATE}`/`{TIME}`/`{TITLE}`/`{AUTHOR}`/`{FILENAME}` 및 한국어 별칭(`{페이지}`/`{전체페이지}`/`{날짜}`/`{시간}`/`{제목}`/`{저자}`/`{파일명}`)을 페이지마다 치환 — 토큰명은 대소문자 무시·공백 허용, 알 수 없는 토큰은 원본 보존(미래 호환), 리터럴 중괄호는 `\{`/`\}` 이스케이프. `PageNumberStart` 를 시작 페이지 번호로 사용. `PageViewBuilder.BuildHeaderFooterLayer` 가 `IsHitTestVisible=false` Canvas 에 좌·가운데·우 `TextBlock` 을 배치(편집은 `PageFormatWindow`); `MainWindow` 의 `HeaderFooterCanvas` 와 `PrintPreviewWindow` 의 `PreviewHeaderFooterCanvas` 모두 페이지 클립 적용. `RebuildPageFramesCore` 와 `BuildPreview` 양쪽에서 호출되어 페이지 설정 변경·문서 메타데이터 변경 시 즉시 반영. 1차 사이클은 모든 페이지 동일 — `DifferentFirstPage`/`DifferentOddEven` 모델 확장은 다음 사이클. 신규 단위 테스트 14건 (`HeaderFooterTokensTests`).
+
 ### Fixed
 - **Fixed** — **IWPF 읽을 때 외부 URL 이미지 참조로 `InvalidDataException` 발생**: HTML/Markdown 에서 ingest 된 원격 이미지(`<img src="https://...">`)는 `HtmlReader` 가 `ImageBlock.ResourcePath` 에 URL 을 그대로 채우는데, 다운로드되지 않아 `Data` 가 비어있는 상태로 IWPF 로 저장되면 `IwpfWriter` 는 ZIP 에 자원 파트를 만들지 않으면서 URL 만 `ResourcePath` 에 남긴다. 이후 `IwpfReader.RehydrateImageResources` 가 이 URL 을 ZIP 엔트리 경로로 오인해 `IWPF package is missing referenced image part 'https://...'` 예외를 던지면서 문서 열기가 실패. `IwpfReader` 의 `LoadResource` 가 `ResourcePath` 를 검사해 절대 URI(스킴 길이 ≥ 2) 또는 `data:` URI 면 외부 참조로 판단하고 ZIP 조회를 건너뛰며 `Data` 를 비운 채 `ResourcePath` 만 보존하도록 수정. 회귀 방지 테스트 2건 추가(`RoundTrip_PreservesExternalUrlImageReferenceWithoutThrowing`, `RoundTrip_PreservesDataUriImageReferenceWithoutThrowing`).
 

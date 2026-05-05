@@ -250,6 +250,8 @@
                     <Grid x:Name="PreviewPaperHost">
                         <!-- 레이어 0: 페이지 배경 (흰 Border + 그림자 + 여백 가이드) -->
                         <Canvas x:Name="PreviewPageBgCanvas" IsHitTestVisible="False"/>
+                        <!-- 머리말·꼬리말 -->
+                        <Canvas x:Name="PreviewHeaderFooterCanvas" IsHitTestVisible="False"/>
                         <!-- 그림/도형/표 언더레이 -->
                         <Canvas x:Name="PreviewUnderlayImageCanvas" IsHitTestVisible="False"/>
                         <Canvas x:Name="PreviewUnderlayShapeCanvas" IsHitTestVisible="False"/>

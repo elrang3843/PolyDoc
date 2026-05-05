@@ -1896,6 +1896,7 @@ public partial class MainWindow : Window
         OverlayTableCanvas.Clip  = overlayClip;
         UnderlayTableCanvas.Clip = overlayClip;
         FloatingCanvas.Clip      = overlayClip;
+        HeaderFooterCanvas.Clip  = overlayClip;
 
         // PageBackgroundCanvas 클리어 후 페이지마다 다시 그리기.
         PageBackgroundCanvas.Children.Clear();
@@ -2004,7 +2005,27 @@ public partial class MainWindow : Window
         }
 
         RenderWatermark(pg, pageCount);
+        RebuildHeaderFooterLayer(pg, pageCount, page);
         RebuildTypesettingMarks();
+    }
+
+    private void RebuildHeaderFooterLayer(
+        PolyDonky.App.Services.PageGeometry pg,
+        int pageCount,
+        PolyDonky.Core.PageSettings? page)
+    {
+        if (page is null)
+        {
+            HeaderFooterCanvas.Children.Clear();
+            return;
+        }
+        string? fileName = string.IsNullOrEmpty(_viewModel?.CurrentFilePath)
+            ? null
+            : System.IO.Path.GetFileNameWithoutExtension(_viewModel.CurrentFilePath);
+        PageViewBuilder.BuildHeaderFooterLayer(
+            HeaderFooterCanvas, page, pg, pageCount,
+            metadata: _viewModel?.Document?.Metadata,
+            fileNameWithoutExt: fileName);
     }
 
     // ── 조판부호 보기 ───────────────────────────────────────────────────────

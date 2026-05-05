@@ -231,4 +231,105 @@ public static class PageViewBuilder
         catch { }
         return new SolidColorBrush(Colors.Gray) { Opacity = opacity };
     }
+
+    // ── 머리말·꼬리말 렌더링 ─────────────────────────────────────────────────
+    /// <summary>
+    /// 모든 페이지에 머리말·꼬리말을 렌더링한다. 좌/가운데/우 3분할.
+    /// 토큰(<c>{PAGE}</c>, <c>{NUMPAGES}</c>, <c>{TITLE}</c> …) 은 페이지마다 치환된다.
+    /// 편집 차단(<see cref="UIElement.IsHitTestVisible"/> = false) — 편집은 PageFormatWindow 가 담당.
+    /// 1차 사이클: <c>DifferentFirstPage</c>/<c>DifferentOddEven</c> 모델 확장 전이라 모든 페이지 동일.
+    /// </summary>
+    public static void BuildHeaderFooterLayer(
+        Canvas         target,
+        PageSettings   page,
+        PageGeometry   geo,
+        int            pageCount,
+        DocumentMetadata? metadata = null,
+        string?        fileNameWithoutExt = null,
+        DateTime?      now = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(geo);
+
+        target.Children.Clear();
+        if (page.Header is null && page.Footer is null) return;
+
+        var resolvedNow = now ?? DateTime.Now;
+        double headerYDip = FlowDocumentBuilder.MmToDip(page.MarginHeaderMm);
+        double footerYDip = FlowDocumentBuilder.MmToDip(page.MarginFooterMm);
+        double bodyWidthDip = Math.Max(1.0, geo.PageWidthDip - geo.PadLeftDip - geo.PadRightDip);
+
+        var foreground = new SolidColorBrush(WpfColor.FromArgb(0xCC, 0x33, 0x33, 0x33));
+        foreground.Freeze();
+
+        for (int i = 0; i < pageCount; i++)
+        {
+            double topY = i * geo.PageStrideDip;
+            int pageNumber = page.PageNumberStart + i;
+            var ctx = new HeaderFooterTokens.Context
+            {
+                PageNumber = pageNumber,
+                TotalPages = pageCount,
+                Now        = resolvedNow,
+                Title      = metadata?.Title,
+                Author     = metadata?.Author,
+                FileName   = fileNameWithoutExt,
+            };
+
+            // 머리말: 페이지 상단 ~ 본문 시작 사이. baseline = topY + MarginHeaderMm
+            if (page.Header is { } header)
+            {
+                AddSlot(target, header.Left,   ctx, topY + headerYDip, geo.PadLeftDip, bodyWidthDip,
+                        TextAlignment.Left,   foreground);
+                AddSlot(target, header.Center, ctx, topY + headerYDip, geo.PadLeftDip, bodyWidthDip,
+                        TextAlignment.Center, foreground);
+                AddSlot(target, header.Right,  ctx, topY + headerYDip, geo.PadLeftDip, bodyWidthDip,
+                        TextAlignment.Right,  foreground);
+            }
+
+            // 꼬리말: 본문 끝 ~ 페이지 하단 사이. baseline = topY + pageHeight - MarginFooterMm - 행높이
+            if (page.Footer is { } footer)
+            {
+                // 한 줄 텍스트 가정 — 폰트 행높이 ≈ 14 DIP. 정확한 측정은 첫 자식 Measure 후 보정.
+                double approxLineHeight = 14.0;
+                double footerY = topY + geo.PageHeightDip - footerYDip - approxLineHeight;
+                AddSlot(target, footer.Left,   ctx, footerY, geo.PadLeftDip, bodyWidthDip,
+                        TextAlignment.Left,   foreground);
+                AddSlot(target, footer.Center, ctx, footerY, geo.PadLeftDip, bodyWidthDip,
+                        TextAlignment.Center, foreground);
+                AddSlot(target, footer.Right,  ctx, footerY, geo.PadLeftDip, bodyWidthDip,
+                        TextAlignment.Right,  foreground);
+            }
+        }
+    }
+
+    private static void AddSlot(
+        Canvas target,
+        string? template,
+        HeaderFooterTokens.Context ctx,
+        double topDip,
+        double leftDip,
+        double widthDip,
+        TextAlignment alignment,
+        Brush foreground)
+    {
+        if (string.IsNullOrEmpty(template)) return;
+        var text = HeaderFooterTokens.Resolve(template, ctx);
+        if (string.IsNullOrEmpty(text)) return;
+
+        var tb = new TextBlock
+        {
+            Text             = text,
+            Width            = widthDip,
+            TextAlignment    = alignment,
+            FontSize         = 11,
+            Foreground       = foreground,
+            TextTrimming     = TextTrimming.CharacterEllipsis,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(tb, leftDip);
+        Canvas.SetTop (tb, topDip);
+        target.Children.Add(tb);
+    }
 }

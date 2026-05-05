@@ -348,6 +348,9 @@
                     <!-- 레이어 0: 페이지 배경 — 페이지 별 흰 Border + 그림자 + 점선 여백 가이드.
                          code-behind RebuildPageFrames() 가 이 캔버스에 페이지마다 동적으로 추가. -->
                     <Canvas x:Name="PageBackgroundCanvas" IsHitTestVisible="False" />
+                    <!-- 머리말·꼬리말 — 페이지 배경 위, 본문/오버레이 뒤. PageFormatWindow 에서 편집,
+                         이 레이어 자체는 IsHitTestVisible=False. PageViewBuilder.BuildHeaderFooterLayer 가 채움. -->
+                    <Canvas x:Name="HeaderFooterCanvas" IsHitTestVisible="False" />
                     <!-- 그림 오버레이(BehindText) — 본문 텍스트 뒤에 위치. -->
                     <Canvas x:Name="UnderlayImageCanvas" />
                     <!-- 도형 오버레이(BehindText) -->
