@@ -6,6 +6,8 @@ using PolyDonky.Codecs.Markdown;
 using PolyDonky.Codecs.Text;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
+using PdXmlReader = PolyDonky.Codecs.Xml.XmlReader;
+using PdXmlWriter = PolyDonky.Codecs.Xml.XmlWriter;
 
 // PolyDonky.SmokeTest — BCL 만으로 동작하는 자체 스모크 러너.
 // xUnit/NuGet 차단 환경에서도 핵심 라운드트립을 검증하기 위한 임시 도구.
@@ -20,6 +22,7 @@ harness.Run("IWPF tampering detection", IwpfTamperingDetection);
 harness.Run("DOCX round-trip (headings + emphasis)", DocxRoundTrip);
 harness.Run("HWPX round-trip (KS X 6101 self interop)", HwpxRoundTrip);
 harness.Run("HTML round-trip (HTML5 + tables + links)", HtmlRoundTrip);
+harness.Run("XML/XHTML round-trip (well-formed XHTML5)", XmlRoundTrip);
 
 return harness.Finish();
 
@@ -240,6 +243,44 @@ static void HtmlRoundTrip()
 
     var reread = HtmlReader.FromHtml(rendered);
     SmokeHarness.Equal(OutlineLevel.H1, reread.EnumerateParagraphs().First().Style.Outline, "round-trip H1");
+}
+
+static void XmlRoundTrip()
+{
+    var doc = new PolyDonkyument();
+    doc.Sections.Add(new Section());
+    var h = new Paragraph { Style = { Outline = OutlineLevel.H1 } }; h.AddText("XML 스모크");
+    doc.Sections[0].Blocks.Add(h);
+    var p = new Paragraph(); p.AddText("본문 ");
+    p.AddText("굵게", new RunStyle { Bold = true });
+    p.AddText(" + ");
+    p.Runs.Add(new Run { Text = "링크", Style = new RunStyle(), Url = "https://x" });
+    doc.Sections[0].Blocks.Add(p);
+    doc.Sections[0].Blocks.Add(new Paragraph { Style = { IsThematicBreak = true } });
+
+    var xml = PdXmlWriter.ToXml(doc);
+    SmokeHarness.True(xml.StartsWith("<?xml "),                       "writer emits XML declaration");
+    SmokeHarness.True(xml.Contains("xmlns=\"http://www.w3.org/1999/xhtml\""), "writer emits xhtml namespace");
+    SmokeHarness.True(xml.Contains("<hr/>"),                          "writer self-closes hr");
+    SmokeHarness.True(xml.Contains("<meta charset=\"utf-8\"/>"),      "writer self-closes meta");
+
+    // System.Xml 로 well-formed 확인.
+    var settings = new System.Xml.XmlReaderSettings
+    {
+        DtdProcessing = System.Xml.DtdProcessing.Parse,
+        XmlResolver   = null,
+    };
+    using (var sr = new StringReader(xml))
+    using (var xr = System.Xml.XmlReader.Create(sr, settings))
+    {
+        while (xr.Read()) { }  // 형식 오류 시 예외.
+    }
+
+    var read = PdXmlReader.FromXml(xml);
+    var rps  = read.EnumerateParagraphs().ToList();
+    SmokeHarness.Equal(OutlineLevel.H1, rps[0].Style.Outline,        "round-trip H1");
+    SmokeHarness.True(rps.Any(r => r.Style.IsThematicBreak),         "round-trip thematic break");
+    SmokeHarness.True(rps.SelectMany(rp => rp.Runs).Any(r => r.Url == "https://x"), "round-trip link URL");
 }
 
 static byte[] TamperDocumentJson(byte[] original)

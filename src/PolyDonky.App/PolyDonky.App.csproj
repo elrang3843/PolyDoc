@@ -33,6 +33,7 @@
     <ProjectReference Include="..\PolyDonky.Codecs.Docx\PolyDonky.Codecs.Docx.csproj" />
     <ProjectReference Include="..\PolyDonky.Codecs.Hwpx\PolyDonky.Codecs.Hwpx.csproj" />
     <ProjectReference Include="..\PolyDonky.Codecs.Html\PolyDonky.Codecs.Html.csproj" />
+    <ProjectReference Include="..\PolyDonky.Codecs.Xml\PolyDonky.Codecs.Xml.csproj" />
   </ItemGroup>
 
   <!-- LICENSE 및 THIRD_PARTY_NOTICES.md 를 어셈블리에 내장 (라이선스 다이얼로그용) -->

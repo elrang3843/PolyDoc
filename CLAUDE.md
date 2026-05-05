@@ -131,6 +131,7 @@ src/
   PolyDonky.Codecs.Docx/      DOCX codec (DocumentFormat.OpenXml) — 1급 시민, 메인 앱 직접 처리
   PolyDonky.Codecs.Hwpx/      HWPX codec (자체 구현, KS X 6101) — 1급 시민
   PolyDonky.Codecs.Html/      HTML5 codec (AngleSharp) — 메인 앱 직접 처리
+  PolyDonky.Codecs.Xml/       XML / XHTML5 codec (Codecs.Html 위에 polyglot serializer)
   PolyDonky.App/              WPF 데스크톱 앱 (AssemblyName=PolyDonky)
                               MVVM (CommunityToolkit.Mvvm), Views/ViewModels/Services/Themes
                               FlowDocument 기반 에디터 — FlowDocumentBuilder/Parser/Search,

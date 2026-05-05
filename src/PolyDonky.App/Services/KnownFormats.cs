@@ -7,6 +7,8 @@ using PolyDonky.Codecs.Markdown;
 using PolyDonky.Codecs.Text;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
+using PdXmlReader = PolyDonky.Codecs.Xml.XmlReader;
+using PdXmlWriter = PolyDonky.Codecs.Xml.XmlWriter;
 
 namespace PolyDonky.App.Services;
 
@@ -31,6 +33,7 @@ public static class KnownFormats
             "docx" => new DocxReader(),
             "hwpx" => new HwpxReader(),
             "html" or "htm" => new HtmlReader(),
+            "xml" or "xhtml" => new PdXmlReader(),
             _ => null,
         };
     }
@@ -45,6 +48,7 @@ public static class KnownFormats
             "docx" => new DocxWriter(),
             "hwpx" => new HwpxWriter(),
             "html" or "htm" => new HtmlWriter(),
+            "xml" or "xhtml" => new PdXmlWriter(),
             _ => null,
         };
     }
@@ -64,11 +68,12 @@ public static class KnownFormats
 
     public const string OpenFilter =
         // 직접 처리
-        "PolyDonky 직접 지원 (IWPF·DOCX·HWPX·HTML·MD·TXT)|*.iwpf;*.docx;*.hwpx;*.html;*.htm;*.md;*.markdown;*.txt|" +
+        "PolyDonky 직접 지원 (IWPF·DOCX·HWPX·HTML·XML·MD·TXT)|*.iwpf;*.docx;*.hwpx;*.html;*.htm;*.xml;*.xhtml;*.md;*.markdown;*.txt|" +
         "PolyDonky 문서 (*.iwpf)|*.iwpf|" +
         "Word DOCX (*.docx)|*.docx|" +
         "한글 HWPX (*.hwpx)|*.hwpx|" +
         "HTML (*.html;*.htm)|*.html;*.htm|" +
+        "XML / XHTML (*.xml;*.xhtml)|*.xml;*.xhtml|" +
         "Markdown (*.md;*.markdown)|*.md;*.markdown|" +
         "텍스트 (*.txt)|*.txt|" +
         // 외부 컨버터 위탁
@@ -81,6 +86,7 @@ public static class KnownFormats
         "Word DOCX (*.docx)|*.docx|" +
         "한글 HWPX (*.hwpx)|*.hwpx|" +
         "HTML (*.html)|*.html|" +
+        "XML / XHTML (*.xml)|*.xml|" +
         "Markdown (*.md)|*.md|" +
         "텍스트 (*.txt)|*.txt";
 
