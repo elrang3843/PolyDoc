@@ -18,6 +18,10 @@ public sealed class Run
 
     /// <summary>이모지 기준선 정렬. null 이면 Center.</summary>
     public EmojiAlignment? EmojiAlignment { get; set; }
+
+    /// <summary>하이퍼링크 URL. null/빈 문자열이면 일반 텍스트.
+    /// Markdown 의 [text](url), 자동 링크 등에서 사용.</summary>
+    public string? Url { get; set; }
 }
 
 /// <summary>이모지 인라인 이미지의 기준선 정렬.</summary>
