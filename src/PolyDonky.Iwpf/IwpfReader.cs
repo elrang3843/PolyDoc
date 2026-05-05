@@ -185,7 +185,11 @@ public sealed class IwpfReader : IDocumentReader
                 switch (block)
                 {
                     case ImageBlock image when !string.IsNullOrEmpty(image.ResourcePath):
-                        image.Data = LoadResource(image.ResourcePath!);
+                        var loaded = LoadResource(image.ResourcePath!);
+                        if (loaded is not null)
+                        {
+                            image.Data = loaded;
+                        }
                         break;
                     case Table table:
                         foreach (var row in table.Rows)
@@ -199,8 +203,16 @@ public sealed class IwpfReader : IDocumentReader
             }
         }
 
-        byte[] LoadResource(string path)
+        byte[]? LoadResource(string path)
         {
+            // 외부 URI 참조(http/https/file/data: …)는 IWPF 내부 파트가 아니므로
+            // ZIP 엔트리로 간주하지 않고 ResourcePath 만 보존한 채 데이터는 비워둔다.
+            // HTML/Markdown 에서 ingest 된 원격 이미지가 그대로 IWPF 로 저장된 경우를 대비.
+            if (IsExternalReference(path))
+            {
+                return null;
+            }
+
             if (cache.TryGetValue(path, out var cached))
             {
                 return cached;
@@ -215,5 +227,17 @@ public sealed class IwpfReader : IDocumentReader
             cache[path] = payload;
             return payload;
         }
+    }
+
+    private static bool IsExternalReference(string path)
+    {
+        if (path.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        // 절대 URI 면 외부 참조 — 단, "C:" 같은 단일 문자 스킴은 거른다 (IWPF 내부 경로는
+        // 상대 ZIP 경로라 절대 URI 가 될 수 없다).
+        return Uri.TryCreate(path, UriKind.Absolute, out var uri)
+            && uri.Scheme.Length > 1;
     }
 }

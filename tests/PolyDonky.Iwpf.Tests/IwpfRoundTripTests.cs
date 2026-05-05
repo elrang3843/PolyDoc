@@ -157,6 +157,48 @@ public class IwpfRoundTripTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesExternalUrlImageReferenceWithoutThrowing()
+    {
+        // HTML/Markdown 에서 ingest 된 원격 이미지(URL) 가 Data 없이 IWPF 로 저장되는 경우,
+        // 다시 읽을 때 ZIP 엔트리로 오인해 InvalidDataException 이 터지면 안 된다.
+        const string remoteUrl = "https://via.placeholder.com/600x300.png?text=Placeholder+Image+for+Testing";
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        section.Blocks.Add(new ImageBlock
+        {
+            MediaType = "image/png",
+            ResourcePath = remoteUrl,
+            // Data 는 비어 있는 상태(원격 미로딩) — HtmlReader 에서 흔히 발생.
+        });
+        doc.Sections.Add(section);
+
+        var bytes = WriteToBytes(doc);
+        var read = ReadFromBytes(bytes);
+
+        var roundTripImage = read.Sections[0].Blocks.OfType<ImageBlock>().Single();
+        Assert.Equal(remoteUrl, roundTripImage.ResourcePath);
+        Assert.Empty(roundTripImage.Data);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesDataUriImageReferenceWithoutThrowing()
+    {
+        const string dataUri = "data:image/png;base64,iVBORw0KGgo=";
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        section.Blocks.Add(new ImageBlock
+        {
+            MediaType = "image/png",
+            ResourcePath = dataUri,
+        });
+        doc.Sections.Add(section);
+
+        var read = ReadFromBytes(WriteToBytes(doc));
+        var roundTripImage = read.Sections[0].Blocks.OfType<ImageBlock>().Single();
+        Assert.Equal(dataUri, roundTripImage.ResourcePath);
+    }
+
+    [Fact]
     public void RoundTrip_OpaqueBlockPreservesXml()
     {
         const string xml = "<vendor:custom xmlns:vendor=\"urn:x-vendor\">payload</vendor:custom>";

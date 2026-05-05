@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Fixed
+- **Fixed** — **IWPF 읽을 때 외부 URL 이미지 참조로 `InvalidDataException` 발생**: HTML/Markdown 에서 ingest 된 원격 이미지(`<img src="https://...">`)는 `HtmlReader` 가 `ImageBlock.ResourcePath` 에 URL 을 그대로 채우는데, 다운로드되지 않아 `Data` 가 비어있는 상태로 IWPF 로 저장되면 `IwpfWriter` 는 ZIP 에 자원 파트를 만들지 않으면서 URL 만 `ResourcePath` 에 남긴다. 이후 `IwpfReader.RehydrateImageResources` 가 이 URL 을 ZIP 엔트리 경로로 오인해 `IWPF package is missing referenced image part 'https://...'` 예외를 던지면서 문서 열기가 실패. `IwpfReader` 의 `LoadResource` 가 `ResourcePath` 를 검사해 절대 URI(스킴 길이 ≥ 2) 또는 `data:` URI 면 외부 참조로 판단하고 ZIP 조회를 건너뛰며 `Data` 를 비운 채 `ResourcePath` 만 보존하도록 수정. 회귀 방지 테스트 2건 추가(`RoundTrip_PreservesExternalUrlImageReferenceWithoutThrowing`, `RoundTrip_PreservesDataUriImageReferenceWithoutThrowing`).
+
 ### Internal
 - **Internal** — `CLAUDE.md` 에 솔루션 구조(7개 `src/` 프로젝트와 책임), `dotnet` 빌드/테스트/단일-테스트 필터/스모크 실행 명령, FlowDocument 기반 에디터 파이프라인(`FlowDocumentBuilder`/`Parser`/`Search`, `PageViewBuilder`, `PerPageEditorHost`) 갱신 규칙, i18n resx 짝 갱신·새 codec 의 `IDocumentCodec` + SmokeTest round-trip 추가 규칙을 추가. 더 이상 사실이 아닌 "코드는 아직 없다" 안내 제거. CLI 분리 원칙(§3) 이 HWP/DOC/HTML 한정이며 HWPX/DOCX 는 메인 앱에 직접 링크된다는 점 명시.
 
