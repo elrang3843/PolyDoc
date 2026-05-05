@@ -44,8 +44,8 @@ public static class HwpxNamespaces
     public const string Pgcd = Hancom + "pagecontentdef";
     public const string Master = Hancom + "masterpage";
 
-    /// <summary>version.xml 의 HCFVersion 루트가 사용하는 별도 schema 네임스페이스.</summary>
-    public const string HcfVersion = "http://www.hancom.co.kr/schema/2011/HCFVersion";
+    /// <summary>version.xml 의 HCFVersion 루트가 사용하는 네임스페이스 (hwpml/2011/version).</summary>
+    public const string HcfVersion = "http://www.hancom.co.kr/hwpml/2011/version";
 
     public const string OpfPackage = "http://www.idpf.org/2007/opf/";
     public const string DcMetadata = "http://purl.org/dc/elements/1.1/";
@@ -56,6 +56,7 @@ public static class HwpxNamespaces
     public const string PrefixHp = "hp";
     public const string PrefixHs = "hs";
     public const string PrefixHml = "hml";
+    public const string PrefixHv = "hv";
 }
 
 /// <summary>본 codec 이 출력하는 HWPX 의 자체 식별 정보.</summary>

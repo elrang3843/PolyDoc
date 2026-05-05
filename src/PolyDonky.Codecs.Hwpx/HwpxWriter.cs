@@ -19,6 +19,8 @@ public sealed class HwpxWriter : IDocumentWriter
     private static readonly XNamespace Hp = HwpxNamespaces.Paragraph;
     private static readonly XNamespace Hs = HwpxNamespaces.Section;
     private static readonly XNamespace Hc = HwpxNamespaces.Common;
+    private static readonly XNamespace Ha = HwpxNamespaces.Application;
+    private static readonly XNamespace Hv = HwpxNamespaces.HcfVersion;
 
     // ── key types for dynamic registry ──────────────────────────────────────
 
@@ -56,6 +58,7 @@ public sealed class HwpxWriter : IDocumentWriter
     private sealed class WriteContext
     {
         private int _nextImageId = 1;
+        private int _nextParaId = 0;
         private readonly Dictionary<string, string> _imageIdByHash = new(StringComparer.Ordinal);
 
         private readonly Dictionary<RunStyleKey, int> _runStyleIds = new();
@@ -80,6 +83,9 @@ public sealed class HwpxWriter : IDocumentWriter
         public IReadOnlyList<string> Fonts => _fonts;
         public IReadOnlyList<RunStyle> RunStyles => _runStyles;
         public IReadOnlyList<ParagraphStyle> ParaStyles => _paraStyles;
+
+        public void ResetParaId() => _nextParaId = 0;
+        public int NextParaId() => _nextParaId++;
 
         private int InternalRegisterFont(string family)
         {
@@ -177,6 +183,8 @@ public sealed class HwpxWriter : IDocumentWriter
         using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
         WriteRawText(archive, HwpxPaths.Mimetype, HwpxPaths.MimetypeContent, CompressionLevel.NoCompression);
         WriteContainerXml(archive);
+        WriteManifestXml(archive);
+        WriteSettingsXml(archive);
         WriteContentHpf(archive, document);
         WriteVersionXml(archive);
 
@@ -226,14 +234,38 @@ public sealed class HwpxWriter : IDocumentWriter
         WriteXml(archive, HwpxPaths.ContainerXml, doc);
     }
 
+    private void WriteManifestXml(ZipArchive archive)
+    {
+        // ODF-style empty manifest — required by Hangul's package validator.
+        var ns = XNamespace.Get("urn:oasis:names:tc:opendocument:xmlns:manifest:1.0");
+        var doc = new XDocument(new XDeclaration("1.0", "utf-8", null),
+            new XElement(ns + "manifest"));
+        WriteXml(archive, HwpxPaths.ManifestXml, doc);
+    }
+
+    private void WriteSettingsXml(ZipArchive archive)
+    {
+        var doc = new XDocument(new XDeclaration("1.0", "utf-8", null),
+            new XElement(Ha + "HWPApplicationSettings",
+                new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHa, Ha.NamespaceName)));
+        WriteXml(archive, HwpxPaths.SettingsXml, doc);
+    }
+
     private void WriteContentHpf(ZipArchive archive, PolyDonkyument document)
     {
+        // hrefs are relative to the location of content.hpf (Contents/), so section0.xml not Contents/section0.xml.
+        // settings.xml is at root, so go up one level with "../".
         var manifest = new XElement(Opf + "manifest",
             new XElement(Opf + "item",
                 new XAttribute("id", "header"),
                 new XAttribute("href", "header.xml"),
+                new XAttribute("media-type", "application/xml")),
+            new XElement(Opf + "item",
+                new XAttribute("id", "settings"),
+                new XAttribute("href", "../settings.xml"),
                 new XAttribute("media-type", "application/xml")));
 
+        // spine: only content sections (not header — header is structural, not a body section)
         var spine = new XElement(Opf + "spine");
 
         int sectionCount = Math.Max(document.Sections.Count, 1);
@@ -257,8 +289,6 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("name", "producer"),
             new XAttribute("content", $"{HwpxFormat.ProducedBy}/{HwpxFormat.Version}")));
 
-        // 실제 한컴 HWPX 와 동일하게 opf:/dc: 모두 root 에서 prefix 로 선언 — 일부 strict 파서는
-        // default namespace 보다 prefix 매칭을 우선해서 OPF 요소를 인식 못 하는 케이스가 있음.
         var package = new XElement(Opf + "package",
             new XAttribute(XNamespace.Xmlns + "opf", Opf.NamespaceName),
             new XAttribute(XNamespace.Xmlns + "dc",  Dc.NamespaceName),
@@ -271,16 +301,19 @@ public sealed class HwpxWriter : IDocumentWriter
 
     private void WriteVersionXml(ZipArchive archive)
     {
-        // version.xml 의 HCFVersion 은 본문 hwpml 네임스페이스가 아닌 별도 schema 네임스페이스를 쓴다.
+        // KS X 6101: "tagetApplication" is the canonical (intentionally misspelled) attribute name.
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", null),
-            new XElement(XName.Get("HCFVersion", HwpxNamespaces.HcfVersion),
-                new XAttribute("targetApplication", "WORDPROCESSOR"),
+            new XElement(Hv + "HCFVersion",
+                new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHv, Hv.NamespaceName),
+                new XAttribute("tagetApplication", "WORDPROCESSOR"),
                 new XAttribute("major", "5"),
-                new XAttribute("minor", "0"),
-                new XAttribute("micro", "5"),
+                new XAttribute("minor", "1"),
+                new XAttribute("micro", "1"),
                 new XAttribute("buildNumber", "0"),
-                new XAttribute("os", "windows"),
-                new XAttribute("xmlVersion", HwpxFormat.Version)));
+                new XAttribute("os", "10"),
+                new XAttribute("xmlVersion", "1.5"),
+                new XAttribute("application", "Hancom Office Hangul"),
+                new XAttribute("appVersion", "12.0.0.0")));
         WriteXml(archive, HwpxPaths.VersionXml, doc);
     }
 
@@ -294,20 +327,18 @@ public sealed class HwpxWriter : IDocumentWriter
     private const long A4W = 59528;
     private const long A4H = 84188;
     // Standard Korean default margins (mm → hwpunit: mm / 25.4 × 7200).
-    private const long MarginLeft   = 8503;   // 30 mm
-    private const long MarginRight  = 8503;   // 30 mm
-    private const long MarginTop    = 5669;   // 20 mm
+    private const long MarginLeft   = 8503;   // ~30 mm
+    private const long MarginRight  = 8503;   // ~30 mm
+    private const long MarginTop    = 5669;   // ~20 mm
     private const long MarginBottom = 4961;   // ~17.5 mm
-    private const long MarginHead   = 4252;   // 15 mm
-    private const long MarginFoot   = 4252;   // 15 mm
+    private const long MarginHead   = 4252;   // ~15 mm
+    private const long MarginFoot   = 4252;   // ~15 mm
 
     private void WriteHeaderXml(ZipArchive archive, WriteContext ctx, int sectionCount)
     {
         // fontfaces — 7 language groups, each carrying the full font registry.
-        // charPr.fontRef references per-language local indices, which match global
-        // IDs because all groups share the same ordered list.
         var fontFaces = new XElement(Hh + "fontfaces",
-            new XAttribute("itemCnt", (FontLangs.Length).ToString()));
+            new XAttribute("itemCnt", FontLangs.Length.ToString()));
         foreach (var lang in FontLangs)
         {
             var ff = new XElement(Hh + "fontface",
@@ -324,8 +355,7 @@ public sealed class HwpxWriter : IDocumentWriter
             fontFaces.Add(ff);
         }
 
-        // borderFills — id=0 default (no border, no fill). Required by charPr/tc
-        // borderFillIDRef="0" references.
+        // borderFills — id=0 default (no border, no fill).
         var borderFills = new XElement(Hh + "borderFills",
             new XAttribute("itemCnt", "1"),
             new XElement(Hh + "borderFill",
@@ -334,31 +364,34 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("shadow", "0"),
                 new XAttribute("centerLine", "0"),
                 new XAttribute("breakCellSeparateLine", "0"),
-                new XElement(Hh + "slash",       new XAttribute("style", "NONE")),
-                new XElement(Hh + "backSlash",   new XAttribute("style", "NONE")),
-                new XElement(Hh + "leftBorder",  new XAttribute("style", "NONE"), new XAttribute("width", "0.1"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "rightBorder", new XAttribute("style", "NONE"), new XAttribute("width", "0.1"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "topBorder",   new XAttribute("style", "NONE"), new XAttribute("width", "0.1"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "bottomBorder",new XAttribute("style", "NONE"), new XAttribute("width", "0.1"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "diagonal",    new XAttribute("style", "NONE"), new XAttribute("width", "0.1"), new XAttribute("color", "#000000")),
+                new XElement(Hh + "slash",
+                    new XAttribute("type", "NONE"),
+                    new XAttribute("Crooked", "0"),
+                    new XAttribute("isCounter", "0")),
+                new XElement(Hh + "backSlash",
+                    new XAttribute("type", "NONE"),
+                    new XAttribute("Crooked", "0"),
+                    new XAttribute("isCounter", "0")),
+                new XElement(Hh + "leftBorder",   new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
+                new XElement(Hh + "rightBorder",  new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
+                new XElement(Hh + "topBorder",    new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
+                new XElement(Hh + "bottomBorder", new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
+                new XElement(Hh + "diagonal",     new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
                 new XElement(Hh + "fillInfo", new XElement(Hh + "noFill"))));
 
-        // tabProperties — id=0 default (no custom tab stops). Required by
-        // paraPr tabPrIDRef="0" references.
+        // charProperties — one entry per unique RunStyle
+        var charProps = new XElement(Hh + "charProperties",
+            new XAttribute("itemCnt", ctx.RunStyles.Count.ToString()));
+        for (int id = 0; id < ctx.RunStyles.Count; id++)
+            charProps.Add(BuildDynamicCharPr(id, ctx.RunStyles[id], ctx));
+
+        // tabProperties — one default entry with no custom tab stops
         var tabProperties = new XElement(Hh + "tabProperties",
             new XAttribute("itemCnt", "1"),
             new XElement(Hh + "tabPr",
                 new XAttribute("id", "0"),
                 new XAttribute("autoTabLeft", "0"),
-                new XAttribute("autoTabRight", "0"),
-                new XElement(Hh + "tabItemList", new XAttribute("itemCnt", "0"))));
-
-        // charProperties — one entry per unique RunStyle
-        // charProperties before tabProperties — KS X 6101 hh:refList 순서.
-        var charProps = new XElement(Hh + "charProperties",
-            new XAttribute("itemCnt", ctx.RunStyles.Count.ToString()));
-        for (int id = 0; id < ctx.RunStyles.Count; id++)
-            charProps.Add(BuildDynamicCharPr(id, ctx.RunStyles[id], ctx));
+                new XAttribute("autoTabRight", "0")));
 
         // paraProperties — one entry per unique ParagraphStyle
         var paraProps = new XElement(Hh + "paraProperties",
@@ -366,13 +399,17 @@ public sealed class HwpxWriter : IDocumentWriter
         for (int id = 0; id < ctx.ParaStyles.Count; id++)
             paraProps.Add(BuildDynamicParaPr(id, ctx.ParaStyles[id]));
 
+        // numberings and bullets — empty lists (no ordered/unordered list styles)
+        var numberings = new XElement(Hh + "numberings", new XAttribute("itemCnt", "0"));
+        var bullets     = new XElement(Hh + "bullets",    new XAttribute("itemCnt", "0"));
+
         // styles: 0=바탕글(Normal), 1~6=개요 1~6(Heading1~6)
         var styles = new XElement(Hh + "styles", new XAttribute("itemCnt", "7"));
         styles.Add(new XElement(Hh + "style",
             new XAttribute("id", "0"), new XAttribute("type", "PARA"),
             new XAttribute("name", "바탕글"), new XAttribute("engName", "Normal"),
             new XAttribute("paraPrIDRef", "0"), new XAttribute("charPrIDRef", "0"),
-            new XAttribute("nextStyleIDRef", "0"), new XAttribute("langID", "1042"),
+            new XAttribute("nextStyleIDRef", "0"), new XAttribute("langIDRef", "1042"),
             new XAttribute("lockForm", "0")));
         for (int level = 1; level <= 6; level++)
         {
@@ -380,59 +417,17 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("id", level.ToString()), new XAttribute("type", "PARA"),
                 new XAttribute("name", $"개요 {level}"), new XAttribute("engName", $"Heading{level}"),
                 new XAttribute("paraPrIDRef", "0"), new XAttribute("charPrIDRef", "0"),
-                new XAttribute("nextStyleIDRef", "0"), new XAttribute("langID", "1042"),
+                new XAttribute("nextStyleIDRef", "0"), new XAttribute("langIDRef", "1042"),
                 new XAttribute("lockForm", "0")));
         }
 
         // KS X 6101 §5 규정 순서: fontfaces → borderFills → charProperties → tabProperties
-        //   → paraProperties → styles
+        //   → paraProperties → numberings → bullets → styles
         var refList = new XElement(Hh + "refList",
-            fontFaces, borderFills, charProps, tabProperties, paraProps, styles);
+            fontFaces, borderFills, charProps, tabProperties, paraProps,
+            numberings, bullets, styles);
 
-        // masterPageList — required by Hangul Office for page layout.
-        // masterPageIDRef="0" in each secPr references this entry.
-        // hh:headerFooter with inline empty paragraphs is REQUIRED — without it Hangul
-        // crashes (null-deref) when it tries to render the header/footer area.
-        var emptyHFPara = new Func<XElement>(() =>
-            new XElement(Hp + "p",
-                new XAttribute("paraPrIDRef", "0"),
-                new XAttribute("styleIDRef",  "0"),
-                new XElement(Hp + "run", new XAttribute("charPrIDRef", "0")),
-                new XElement(Hp + "linesegarray",
-                    new XElement(Hp + "lineseg",
-                        new XAttribute("textpos", "0"), new XAttribute("vertical", "0"),
-                        new XAttribute("height", "1600"), new XAttribute("textHeight", "1000"),
-                        new XAttribute("descent", "250"), new XAttribute("lineSpacing", "0"),
-                        new XAttribute("horzFmt", "0"), new XAttribute("vertFmt", "0"),
-                        new XAttribute("lineBreak", "0")))));
-
-        var masterPageList = new XElement(Hh + "masterPageList",
-            new XElement(Hh + "masterPage",
-                new XAttribute("id", "0"),
-                new XAttribute("name", "기본"),
-                new XAttribute("masterPageType", "NORMAL"),
-                new XElement(Hh + "pageDef",
-                    new XAttribute("width",       A4W.ToString()),
-                    new XAttribute("height",      A4H.ToString()),
-                    new XAttribute("orientation", "PORTRAIT"),
-                    new XAttribute("bookBinding", "LEFT"),
-                    new XAttribute("gutterPosition", "LEFT"),
-                    new XElement(Hh + "margin",
-                        new XAttribute("left",   MarginLeft.ToString()),
-                        new XAttribute("right",  MarginRight.ToString()),
-                        new XAttribute("top",    MarginTop.ToString()),
-                        new XAttribute("bottom", MarginBottom.ToString()),
-                        new XAttribute("header", MarginHead.ToString()),
-                        new XAttribute("footer", MarginFoot.ToString()),
-                        new XAttribute("gutter", "0"))),
-                new XElement(Hh + "headerFooter",
-                    new XAttribute("type", "BOTH_PAGES"),
-                    new XAttribute("headerLen", MarginHead.ToString()),
-                    new XAttribute("footerLen", MarginFoot.ToString()),
-                    new XElement(Hh + "header", emptyHFPara()),
-                    new XElement(Hh + "footer",  emptyHFPara()))));
-
-        // docInfo — document summary required before refList.
+        // docInfo — document metadata
         var docInfo = new XElement(Hh + "docInfo",
             new XElement(Hh + "summary",
                 new XElement(Hh + "title"),
@@ -442,19 +437,22 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XElement(Hh + "keyword"),
                 new XElement(Hh + "comment")));
 
+        // compatibleDocument — required for Hangul 2018+ compatibility flag
+        var compatDoc = new XElement(Hh + "compatibleDocument",
+            new XAttribute("targetProgram", "HWP2018"));
+
+        // page layout is now specified inline via hp:secPr in section0.xml — no masterPageList needed
         var head = new XElement(Hh + "head",
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHh, Hh.NamespaceName),
-            new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHp, Hp.NamespaceName),
-            new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHc, Hc.NamespaceName),
             new XAttribute("version", HwpxFormat.Version),
             new XAttribute("secCnt", sectionCount.ToString()),
+            docInfo,
             new XElement(Hh + "beginNum",
                 new XAttribute("page", "1"), new XAttribute("footnote", "1"),
                 new XAttribute("endnote", "1"), new XAttribute("pic", "1"),
                 new XAttribute("tbl", "1"), new XAttribute("equation", "1")),
-            docInfo,
             refList,
-            masterPageList);
+            compatDoc);
 
         WriteXml(archive, HwpxPaths.HeaderXml, new XDocument(new XDeclaration("1.0", "utf-8", null), head));
     }
@@ -474,21 +472,21 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("symMark", "NONE"),
             new XAttribute("borderFillIDRef", "0"));
 
-        if (s.Bold)         el.Add(new XElement(Hh + "bold"));
-        if (s.Italic)       el.Add(new XElement(Hh + "italic"));
-        if (s.Underline)    el.Add(new XElement(Hh + "underline",
-                                new XAttribute("type", "BOTTOM"),
-                                new XAttribute("shape", "SOLID"),
-                                new XAttribute("color", "#000000")));
+        if (s.Bold)          el.Add(new XElement(Hh + "bold"));
+        if (s.Italic)        el.Add(new XElement(Hh + "italic"));
+        if (s.Underline)     el.Add(new XElement(Hh + "underline",
+                                 new XAttribute("type", "BOTTOM"),
+                                 new XAttribute("shape", "SOLID"),
+                                 new XAttribute("color", "#000000")));
         if (s.Strikethrough) el.Add(new XElement(Hh + "strikeout",
-                                new XAttribute("shape", "SOLID"),
-                                new XAttribute("color", "#000000")));
-        if (s.Overline)     el.Add(new XElement(Hh + "overline",
-                                new XAttribute("type", "TOP"),
-                                new XAttribute("shape", "SOLID"),
-                                new XAttribute("color", "#000000")));
-        if (s.Superscript)  el.Add(new XElement(Hh + "supScript"));
-        if (s.Subscript)    el.Add(new XElement(Hh + "subScript"));
+                                 new XAttribute("shape", "SOLID"),
+                                 new XAttribute("color", "#000000")));
+        if (s.Overline)      el.Add(new XElement(Hh + "overline",
+                                 new XAttribute("type", "TOP"),
+                                 new XAttribute("shape", "SOLID"),
+                                 new XAttribute("color", "#000000")));
+        if (s.Superscript)   el.Add(new XElement(Hh + "supScript"));
+        if (s.Subscript)     el.Add(new XElement(Hh + "subScript"));
 
         var fontId = ctx.FontId(s.FontFamily).ToString();
         el.Add(new XElement(Hh + "fontRef",
@@ -499,6 +497,12 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("other",    fontId),
             new XAttribute("symbol",   fontId),
             new XAttribute("user",     fontId)));
+
+        // Required child elements for KS X 6101 charPr completeness
+        el.Add(new XElement(Hh + "ratio",   new XAttribute("value", "100")));
+        el.Add(new XElement(Hh + "spacing", new XAttribute("value", "0")));
+        el.Add(new XElement(Hh + "relSz",   new XAttribute("size", "100")));
+        el.Add(new XElement(Hh + "offset",  new XAttribute("value", "0")));
 
         return el;
     }
@@ -527,57 +531,121 @@ public sealed class HwpxWriter : IDocumentWriter
             new XElement(Hh + "align",
                 new XAttribute("horizontal", alignStr),
                 new XAttribute("vertical", "BASELINE")),
+            new XElement(Hh + "heading",
+                new XAttribute("type", "NONE"),
+                new XAttribute("idRef", "0"),
+                new XAttribute("level", "0")),
+            new XElement(Hh + "breakSetting",
+                new XAttribute("breakLatinWord", "KEEP_WORD"),
+                new XAttribute("breakNonLatinWord", "KEEP_WORD"),
+                new XAttribute("widowOrphan", "0"),
+                new XAttribute("keepWithNext", "0"),
+                new XAttribute("keepLines", "0"),
+                new XAttribute("pageBreakBefore", "0"),
+                new XAttribute("columnBreakBefore", "0")),
+            new XElement(Hh + "autoSpacing",
+                new XAttribute("eAsianEng", "0"),
+                new XAttribute("eAsianNum", "0")),
             new XElement(Hh + "margin",
+                new XAttribute("indent", ((long)Math.Round(s.IndentFirstLineMm / HwpUnitToMm)).ToString()),
                 new XAttribute("left",   ((long)Math.Round(s.IndentLeftMm      / HwpUnitToMm)).ToString()),
                 new XAttribute("right",  ((long)Math.Round(s.IndentRightMm     / HwpUnitToMm)).ToString()),
-                new XAttribute("indent", ((long)Math.Round(s.IndentFirstLineMm / HwpUnitToMm)).ToString()),
                 new XAttribute("prev",   ((long)Math.Round(s.SpaceBeforePt * 100)).ToString()),
                 new XAttribute("next",   ((long)Math.Round(s.SpaceAfterPt  * 100)).ToString())),
             new XElement(Hh + "lineSpacing",
                 new XAttribute("type", "PERCENT"),
-                new XAttribute("value", lineSpacingPct.ToString())));
+                new XAttribute("value", lineSpacingPct.ToString())),
+            new XElement(Hh + "border",
+                new XAttribute("borderFillIDRef", "0"),
+                new XAttribute("offsetLeft", "0"),
+                new XAttribute("offsetRight", "0"),
+                new XAttribute("offsetTop", "0"),
+                new XAttribute("offsetBottom", "0"),
+                new XAttribute("connect", "0"),
+                new XAttribute("ignoreMargin", "0")));
     }
 
     // ── section XML ──────────────────────────────────────────────────────────
 
     private void WriteSectionXml(ZipArchive archive, int sectionIndex, Section section, WriteContext ctx)
     {
+        ctx.ResetParaId();
+
         var sec = new XElement(Hs + "sec",
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHs, Hs.NamespaceName),
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHp, Hp.NamespaceName),
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHc, Hc.NamespaceName));
 
+        // secPr must be the first run of the first paragraph of the first section (KS X 6101).
+        bool injectSecPr = sectionIndex == 0;
+
         if (section.Blocks.Count == 0)
         {
-            sec.Add(BuildEmptyParagraph());
+            var para = BuildEmptyParagraph(ctx);
+            if (injectSecPr) PrependSecPrRun(para);
+            sec.Add(para);
         }
         else
         {
             foreach (var block in section.Blocks)
-                AppendBlock(sec, block, ctx);
+                AppendBlock(sec, block, ctx, ref injectSecPr);
         }
 
         WriteXml(archive, HwpxPaths.SectionXml(sectionIndex),
             new XDocument(new XDeclaration("1.0", "utf-8", null), sec));
     }
 
+    private void AppendBlock(XElement target, Block block, WriteContext ctx, ref bool injectSecPr)
+    {
+        XElement para = block switch
+        {
+            Paragraph p    => BuildParagraph(p, ctx),
+            Table t        => BuildTableHostingParagraph(t, ctx),
+            ImageBlock img => BuildImageHostingParagraph(img, ctx),
+            OpaqueBlock op => BuildOpaqueHostingParagraph(op, ctx),
+            _              => BuildEmptyParagraph(ctx),
+        };
+        if (injectSecPr) { PrependSecPrRun(para); injectSecPr = false; }
+        target.Add(para);
+    }
+
+    // Overload for table-cell inner blocks (no secPr injection, uses local dummy).
     private void AppendBlock(XElement target, Block block, WriteContext ctx)
     {
-        switch (block)
-        {
-            case Paragraph p:
-                target.Add(BuildParagraph(p, ctx));
-                break;
-            case Table t:
-                target.Add(BuildTableHostingParagraph(t, ctx));
-                break;
-            case ImageBlock img:
-                target.Add(BuildImageHostingParagraph(img, ctx));
-                break;
-            case OpaqueBlock op:
-                target.Add(BuildOpaqueHostingParagraph(op, ctx));
-                break;
-        }
+        bool dummy = false;
+        AppendBlock(target, block, ctx, ref dummy);
+    }
+
+    // Injects an hp:secPr control run as the very first child of the paragraph.
+    private void PrependSecPrRun(XElement para)
+    {
+        var secPrRun = new XElement(Hp + "run",
+            new XAttribute("charPrIDRef", "0"),
+            new XElement(Hp + "secPr",
+                new XAttribute("id", ""),
+                new XAttribute("textDirection", "HORIZONTAL"),
+                new XAttribute("spaceColumns", "1134"),
+                new XAttribute("tabStop", "8000"),
+                new XAttribute("tabStopVal", "4000"),
+                new XAttribute("tabStopUnit", "HWPUNIT"),
+                new XAttribute("outlineShapeIDRef", "0"),
+                new XAttribute("memoShapeIDRef", "0"),
+                new XAttribute("textVerticalWidthHead", "0"),
+                new XAttribute("masterPageCnt", "0"),
+                new XElement(Hp + "pagePr",
+                    new XAttribute("landscape", "PORTRAIT"),
+                    new XAttribute("width",  A4W.ToString()),
+                    new XAttribute("height", A4H.ToString()),
+                    new XAttribute("gutterType", "LEFT_ONLY"),
+                    new XElement(Hp + "margin",
+                        new XAttribute("header", MarginHead.ToString()),
+                        new XAttribute("footer", MarginFoot.ToString()),
+                        new XAttribute("gutter", "0"),
+                        new XAttribute("left",   MarginLeft.ToString()),
+                        new XAttribute("right",  MarginRight.ToString()),
+                        new XAttribute("top",    MarginTop.ToString()),
+                        new XAttribute("bottom", MarginBottom.ToString())))));
+        para.AddFirst(secPrRun);
     }
 
     private XElement BuildParagraph(Paragraph p, WriteContext ctx)
@@ -595,17 +663,18 @@ public sealed class HwpxWriter : IDocumentWriter
         };
 
         var para = new XElement(Hp + "p",
+            new XAttribute("id",          ctx.NextParaId().ToString()),
             new XAttribute("paraPrIDRef", paraPrID.ToString()),
-            new XAttribute("styleIDRef",  styleID.ToString()));
+            new XAttribute("styleIDRef",  styleID.ToString()),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"));
 
         foreach (var run in p.Runs)
             para.Add(BuildRun(run, ctx));
         if (p.Runs.Count == 0)
             para.Add(new XElement(Hp + "run", new XAttribute("charPrIDRef", "0")));
 
-        // hp:linesegarray — required by Hangul Office for line-layout metadata.
-        // Values are approximate; HWP re-calculates on open. Units: hwpunit (1/7200 in).
-        // 1 pt = 100 height-units = (7200/72) = 100 hwpunit — coincidentally the same number.
         double maxPt = p.Runs.Count > 0
             ? p.Runs.Max(r => r.Style.FontSizePt > 0 ? r.Style.FontSizePt : 10.0)
             : 10.0;
@@ -639,10 +708,14 @@ public sealed class HwpxWriter : IDocumentWriter
         return elem;
     }
 
-    private XElement BuildEmptyParagraph()
+    private XElement BuildEmptyParagraph(WriteContext ctx)
         => new(Hp + "p",
+            new XAttribute("id",          ctx.NextParaId().ToString()),
             new XAttribute("paraPrIDRef", "0"),
-            new XAttribute("styleIDRef", "0"),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
             new XElement(Hp + "run", new XAttribute("charPrIDRef", "0")),
             new XElement(Hp + "linesegarray",
                 new XElement(Hp + "lineseg",
@@ -664,8 +737,12 @@ public sealed class HwpxWriter : IDocumentWriter
                 var shapeElem = XElement.Parse(op.Xml);
                 var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"), shapeElem);
                 return new XElement(Hp + "p",
+                    new XAttribute("id",          ctx.NextParaId().ToString()),
                     new XAttribute("paraPrIDRef", "0"),
                     new XAttribute("styleIDRef",  "0"),
+                    new XAttribute("pageBreak",   "0"),
+                    new XAttribute("columnBreak", "0"),
+                    new XAttribute("merged",      "0"),
                     run);
             }
             catch (System.Xml.XmlException)
@@ -683,8 +760,12 @@ public sealed class HwpxWriter : IDocumentWriter
         var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
         run.Add(BuildTable(table, ctx));
         return new XElement(Hp + "p",
+            new XAttribute("id",          ctx.NextParaId().ToString()),
             new XAttribute("paraPrIDRef", "0"),
-            new XAttribute("styleIDRef", "0"),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
             run);
     }
 
@@ -730,7 +811,7 @@ public sealed class HwpxWriter : IDocumentWriter
 
                 var subList = new XElement(Hp + "subList");
                 if (cell.Blocks.Count == 0)
-                    subList.Add(BuildEmptyParagraph());
+                    subList.Add(BuildEmptyParagraph(ctx));
                 else
                     foreach (var inner in cell.Blocks)
                         AppendBlock(subList, inner, ctx);
@@ -765,8 +846,12 @@ public sealed class HwpxWriter : IDocumentWriter
         if (image.Data.Length > 0)
             run.Add(BuildPicture(image, ctx));
         return new XElement(Hp + "p",
+            new XAttribute("id",          ctx.NextParaId().ToString()),
             new XAttribute("paraPrIDRef", "0"),
-            new XAttribute("styleIDRef", "0"),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
             run);
     }
 
