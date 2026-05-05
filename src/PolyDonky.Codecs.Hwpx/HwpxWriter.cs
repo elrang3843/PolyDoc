@@ -318,7 +318,7 @@ public sealed class HwpxWriter : IDocumentWriter
                 ff.Add(new XElement(Hh + "font",
                     new XAttribute("id", i.ToString()),
                     new XAttribute("face", ctx.Fonts[i]),
-                    new XAttribute("type", "ttf"),
+                    new XAttribute("type", "TTF"),
                     new XAttribute("isEmbedded", "0")));
             }
             fontFaces.Add(ff);
@@ -354,6 +354,7 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XElement(Hh + "tabItemList", new XAttribute("itemCnt", "0"))));
 
         // charProperties — one entry per unique RunStyle
+        // charProperties before tabProperties — KS X 6101 hh:refList 순서.
         var charProps = new XElement(Hh + "charProperties",
             new XAttribute("itemCnt", ctx.RunStyles.Count.ToString()));
         for (int id = 0; id < ctx.RunStyles.Count; id++)
@@ -383,8 +384,10 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("lockForm", "0")));
         }
 
+        // KS X 6101 §5 규정 순서: fontfaces → borderFills → charProperties → tabProperties
+        //   → paraProperties → styles
         var refList = new XElement(Hh + "refList",
-            fontFaces, borderFills, tabProperties, charProps, paraProps, styles);
+            fontFaces, borderFills, charProps, tabProperties, paraProps, styles);
 
         // masterPageList — required by Hangul Office for page layout.
         // masterPageIDRef="0" in each secPr references this entry.
@@ -443,7 +446,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("id", id.ToString()),
             new XAttribute("height", heightUnit.ToString()),
             new XAttribute("textColor", s.Foreground is { } fg ? fg.ToHex() : "#000000"),
-            new XAttribute("shadeColor", s.Background is { } bg ? bg.ToHex() : "none"),
+            new XAttribute("shadeColor", s.Background is { } bg ? bg.ToHex() : "#FFFFFF"),
             new XAttribute("useFontSpace", "0"),
             new XAttribute("useKerning", "0"),
             new XAttribute("symMark", "NONE"),
@@ -505,7 +508,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XElement(Hh + "margin",
                 new XAttribute("left",   ((long)Math.Round(s.IndentLeftMm      / HwpUnitToMm)).ToString()),
                 new XAttribute("right",  ((long)Math.Round(s.IndentRightMm     / HwpUnitToMm)).ToString()),
-                new XAttribute("intent", ((long)Math.Round(s.IndentFirstLineMm / HwpUnitToMm)).ToString()),
+                new XAttribute("indent", ((long)Math.Round(s.IndentFirstLineMm / HwpUnitToMm)).ToString()),
                 new XAttribute("prev",   ((long)Math.Round(s.SpaceBeforePt * 100)).ToString()),
                 new XAttribute("next",   ((long)Math.Round(s.SpaceAfterPt  * 100)).ToString())),
             new XElement(Hh + "lineSpacing",
