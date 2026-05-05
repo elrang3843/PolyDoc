@@ -187,9 +187,8 @@ public sealed class HwpxWriter : IDocumentWriter
             foreach (var block in section.Blocks)
                 ctx.RegisterFromBlock(block);
 
-        WriteHeaderXml(archive, ctx);
-
         int cnt = document.Sections.Count;
+        WriteHeaderXml(archive, ctx, Math.Max(cnt, 1));
         for (int i = 0; i < cnt; i++)
             WriteSectionXml(archive, i, document.Sections[i], ctx);
         if (cnt == 0)
@@ -248,9 +247,10 @@ public sealed class HwpxWriter : IDocumentWriter
             spine.Add(new XElement(Opf + "itemref", new XAttribute("idref", id)));
         }
 
+        // Declare xmlns:dc here; do NOT re-declare xmlns:opf (it inherits the default
+        // namespace from <package>), otherwise LINQ to XML serializes <opf:metadata>.
         var metadata = new XElement(Opf + "metadata",
-            new XAttribute(XNamespace.Xmlns + "dc", Dc.NamespaceName),
-            new XAttribute(XNamespace.Xmlns + "opf", Opf.NamespaceName));
+            new XAttribute(XNamespace.Xmlns + "dc", Dc.NamespaceName));
         if (!string.IsNullOrEmpty(document.Metadata.Title))
             metadata.Add(new XElement(Dc + "title", document.Metadata.Title));
         if (!string.IsNullOrEmpty(document.Metadata.Author))
@@ -288,7 +288,18 @@ public sealed class HwpxWriter : IDocumentWriter
     private static readonly string[] FontLangs =
         { "HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER" };
 
-    private void WriteHeaderXml(ZipArchive archive, WriteContext ctx)
+    // A4 page in hwpunit (1 hwpunit = 1/7200 inch).  210mm×297mm.
+    private const long A4W = 59528;
+    private const long A4H = 84188;
+    // Standard Korean default margins (mm → hwpunit: mm / 25.4 × 7200).
+    private const long MarginLeft   = 8503;   // 30 mm
+    private const long MarginRight  = 8503;   // 30 mm
+    private const long MarginTop    = 5669;   // 20 mm
+    private const long MarginBottom = 4961;   // ~17.5 mm
+    private const long MarginHead   = 4252;   // 15 mm
+    private const long MarginFoot   = 4252;   // 15 mm
+
+    private void WriteHeaderXml(ZipArchive archive, WriteContext ctx, int sectionCount)
     {
         // fontfaces — 7 language groups, each carrying the full font registry.
         // charPr.fontRef references per-language local indices, which match global
@@ -372,16 +383,51 @@ public sealed class HwpxWriter : IDocumentWriter
 
         var refList = new XElement(Hh + "refList",
             fontFaces, borderFills, tabProperties, charProps, paraProps, styles);
+
+        // masterPageList — required by Hangul Office for page layout.
+        // masterPageIDRef="0" in each secPr references this entry.
+        var masterPageList = new XElement(Hh + "masterPageList",
+            new XElement(Hh + "masterPage",
+                new XAttribute("id", "0"),
+                new XAttribute("name", "기본"),
+                new XAttribute("masterPageType", "NORMAL"),
+                new XElement(Hh + "pageDef",
+                    new XAttribute("width",       A4W.ToString()),
+                    new XAttribute("height",      A4H.ToString()),
+                    new XAttribute("orientation", "PORTRAIT"),
+                    new XAttribute("bookBinding", "LEFT"),
+                    new XAttribute("gutterPosition", "LEFT"),
+                    new XElement(Hh + "margin",
+                        new XAttribute("left",   MarginLeft.ToString()),
+                        new XAttribute("right",  MarginRight.ToString()),
+                        new XAttribute("top",    MarginTop.ToString()),
+                        new XAttribute("bottom", MarginBottom.ToString()),
+                        new XAttribute("header", MarginHead.ToString()),
+                        new XAttribute("footer", MarginFoot.ToString()),
+                        new XAttribute("gutter", "0")))));
+
+        // docInfo — document summary required before refList.
+        var docInfo = new XElement(Hh + "docInfo",
+            new XElement(Hh + "summary",
+                new XElement(Hh + "title"),
+                new XElement(Hh + "subject"),
+                new XElement(Hh + "author"),
+                new XElement(Hh + "date", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss")),
+                new XElement(Hh + "keyword"),
+                new XElement(Hh + "comment")));
+
         var head = new XElement(Hh + "head",
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHh, Hh.NamespaceName),
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHc, Hc.NamespaceName),
             new XAttribute("version", HwpxFormat.Version),
-            new XAttribute("secCnt", "1"),
+            new XAttribute("secCnt", sectionCount.ToString()),
             new XElement(Hh + "beginNum",
                 new XAttribute("page", "1"), new XAttribute("footnote", "1"),
                 new XAttribute("endnote", "1"), new XAttribute("pic", "1"),
                 new XAttribute("tbl", "1"), new XAttribute("equation", "1")),
-            refList);
+            docInfo,
+            refList,
+            masterPageList);
 
         WriteXml(archive, HwpxPaths.HeaderXml, new XDocument(new XDeclaration("1.0", "utf-8", null), head));
     }
@@ -472,7 +518,23 @@ public sealed class HwpxWriter : IDocumentWriter
         var sec = new XElement(Hs + "sec",
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHs, Hs.NamespaceName),
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHp, Hp.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHh, Hh.NamespaceName),
             new XAttribute(XNamespace.Xmlns + HwpxNamespaces.PrefixHc, Hc.NamespaceName));
+
+        // secPr — section layout reference. masterPageIDRef must point to a valid
+        // hh:masterPage id in header.xml; without this Hangul Office rejects the file.
+        sec.Add(new XElement(Hh + "secPr",
+            new XAttribute("masterPageIDRef", "0"),
+            new XAttribute("masterPageCnt",   "1"),
+            new XAttribute("hideHeader",      "0"),
+            new XAttribute("hideFooter",      "0"),
+            new XAttribute("hidePageNum",     "0"),
+            new XAttribute("hideEmptyLineFill","0"),
+            new XAttribute("lineGrid",        "0"),
+            new XAttribute("charGrid",        "0"),
+            new XAttribute("snappedGrid",     "0"),
+            new XAttribute("startNum",        sectionIndex == 0 ? "1" : "0"),
+            new XAttribute("pageBreakBefore", "0")));
 
         if (section.Blocks.Count == 0)
         {
