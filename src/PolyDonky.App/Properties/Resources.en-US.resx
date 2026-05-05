@@ -119,6 +119,35 @@
   <data name="StatusSaveDone" xml:space="preserve"><value>Saved — {0}</value></data>
   <data name="StatusBusyOpen" xml:space="preserve"><value>Opening — {0}</value></data>
   <data name="StatusBusySave" xml:space="preserve"><value>Saving — {0}</value></data>
+  <data name="StatusBusyConvert" xml:space="preserve"><value>Converting — {0}</value></data>
+  <data name="StatusConvertedAndOpened" xml:space="preserve"><value>Converted {0} → {1} and opened the IWPF file.</value></data>
+  <data name="StatusSavedAndConverted" xml:space="preserve"><value>Saved {0} and exported {1}.</value></data>
+  <data name="DlgConvertOnOpenTitle" xml:space="preserve"><value>External format conversion</value></data>
+  <data name="DlgConvertOnOpenPrompt" xml:space="preserve"><value>This format cannot be edited directly in the main app.
+
+It will be converted to a regular IWPF document with the same name, saved, and the converted file will be opened.
+
+  Source     : {0}
+  Converted  : {1}
+
+Continue?</value></data>
+  <data name="DlgConvertOnSaveTitle" xml:space="preserve"><value>External format export</value></data>
+  <data name="DlgConvertOnSavePrompt" xml:space="preserve"><value>External formats are produced through an IWPF master.
+
+A same-named IWPF document is saved first, then converted to the external format. Both files remain on disk.
+
+  IWPF master : {0}
+  External    : {1}
+
+Continue?</value></data>
+  <data name="DlgConvertOverwriteTitle" xml:space="preserve"><value>IWPF file exists</value></data>
+  <data name="DlgConvertOverwritePrompt" xml:space="preserve"><value>An IWPF file with the same name already exists:
+
+  {0}
+
+[Yes] Re-convert and overwrite
+[No]  Open the existing IWPF file as-is
+[Cancel] Cancel</value></data>
   <data name="DlgHtmlTruncatedTitle" xml:space="preserve"><value>HTML truncated</value></data>
   <data name="DlgHtmlTruncatedPrompt" xml:space="preserve"><value>This HTML document exceeded the block limit (10,000) and was loaded only partially.
 

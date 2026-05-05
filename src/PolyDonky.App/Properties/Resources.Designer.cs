@@ -107,6 +107,15 @@ namespace PolyDonky.App.Properties
         internal static string StatusSaveDone        => Get(nameof(StatusSaveDone));
         internal static string StatusBusyOpen        => Get(nameof(StatusBusyOpen));
         internal static string StatusBusySave        => Get(nameof(StatusBusySave));
+        internal static string StatusBusyConvert     => Get(nameof(StatusBusyConvert));
+        internal static string StatusConvertedAndOpened => Get(nameof(StatusConvertedAndOpened));
+        internal static string StatusSavedAndConverted  => Get(nameof(StatusSavedAndConverted));
+        internal static string DlgConvertOnOpenTitle    => Get(nameof(DlgConvertOnOpenTitle));
+        internal static string DlgConvertOnOpenPrompt   => Get(nameof(DlgConvertOnOpenPrompt));
+        internal static string DlgConvertOnSaveTitle    => Get(nameof(DlgConvertOnSaveTitle));
+        internal static string DlgConvertOnSavePrompt   => Get(nameof(DlgConvertOnSavePrompt));
+        internal static string DlgConvertOverwriteTitle  => Get(nameof(DlgConvertOverwriteTitle));
+        internal static string DlgConvertOverwritePrompt => Get(nameof(DlgConvertOverwritePrompt));
         internal static string DlgHtmlTruncatedTitle => Get(nameof(DlgHtmlTruncatedTitle));
         internal static string DlgHtmlTruncatedPrompt => Get(nameof(DlgHtmlTruncatedPrompt));
         internal static string StatusInsert          => Get(nameof(StatusInsert));

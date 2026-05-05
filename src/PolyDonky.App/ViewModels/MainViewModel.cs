@@ -267,8 +267,9 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 외부 CLI 변환기로 입력 → 임시 IWPF 변환 후 메인 앱이 IWPF 를 읽는다 (CLAUDE.md §3).
-    /// 변환기 누락 시 안내 메시지를 표시하고 종료.
+    /// 외부 CLI 변환기로 입력을 같은 이름의 정식 IWPF 파일(예: book.html → book.iwpf)로 변환한 뒤
+    /// 그 IWPF 파일을 메인 앱이 연다 (CLAUDE.md §3 — IWPF 가 정본).
+    /// 사용자에게 변환 사실을 명시 안내하고, 같은 이름의 IWPF 가 이미 있으면 덮어쓰기/기존열기/취소 선택.
     /// </summary>
     private async Task OpenViaExternalConverterAsync(string sourcePath)
     {
@@ -283,14 +284,46 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        var tempIwpf = ExternalConverter.CreateTempIwpfPath();
+        var iwpfPath = Path.ChangeExtension(sourcePath, ".iwpf");
+
+        // 사용자 안내 — 변환 후 IWPF 를 연다는 사실을 분명히 알린다.
+        var promptMsg = string.Format(SR.DlgConvertOnOpenPrompt,
+            Path.GetFileName(sourcePath), Path.GetFileName(iwpfPath));
+        var promptResult = MessageBox.Show(
+            promptMsg,
+            SR.DlgConvertOnOpenTitle,
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information,
+            MessageBoxResult.OK);
+        if (promptResult != MessageBoxResult.OK) return;
+
+        // 같은 이름의 IWPF 가 이미 있으면 사용자 선택.
+        if (File.Exists(iwpfPath))
+        {
+            var owMsg = string.Format(SR.DlgConvertOverwritePrompt, Path.GetFileName(iwpfPath));
+            var ow = MessageBox.Show(
+                owMsg,
+                SR.DlgConvertOverwriteTitle,
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (ow == MessageBoxResult.Cancel) return;
+            if (ow == MessageBoxResult.No)
+            {
+                // 기존 IWPF 를 그대로 연다 (변환 건너뜀).
+                await OpenPathAsync(iwpfPath);
+                return;
+            }
+            // Yes → 변환 진행해 덮어쓰기.
+        }
+
         IsBusy      = true;
-        BusyMessage = string.Format(SR.StatusBusyOpen, Path.GetFileName(sourcePath));
+        BusyMessage = string.Format(SR.StatusBusyConvert, Path.GetFileName(sourcePath));
         try
         {
             try
             {
-                await ExternalConverter.ConvertAsync(converter, sourcePath, tempIwpf);
+                await ExternalConverter.ConvertAsync(converter, sourcePath, iwpfPath);
             }
             catch (Exception ex)
             {
@@ -301,9 +334,10 @@ public partial class MainViewModel : ObservableObject
             PolyDonkyument doc;
             try
             {
+                BusyMessage = string.Format(SR.StatusBusyOpen, Path.GetFileName(iwpfPath));
                 doc = await Task.Run(() =>
                 {
-                    using var fs = File.OpenRead(tempIwpf);
+                    using var fs = File.OpenRead(iwpfPath);
                     return new IwpfReader().Read(fs);
                 });
             }
@@ -313,12 +347,13 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
-            LoadDocument(doc, sourcePath, password: null);
-            StatusMessage = BuildOpenStatusMessage(sourcePath, doc);
+            // 정본은 IWPF — CurrentFilePath 가 .iwpf 가 되어 다음 저장은 IWPF 로 직행.
+            LoadDocument(doc, iwpfPath, password: null);
+            StatusMessage = string.Format(SR.StatusConvertedAndOpened,
+                Path.GetFileName(sourcePath), Path.GetFileName(iwpfPath));
         }
         finally
         {
-            try { if (File.Exists(tempIwpf)) File.Delete(tempIwpf); } catch { /* 임시파일 삭제 실패 무시 */ }
             IsBusy      = false;
             BusyMessage = string.Empty;
         }
@@ -911,21 +946,35 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        var tempIwpf = ExternalConverter.CreateTempIwpfPath();
+        // 같은 이름의 정식 .iwpf 와 외부 포맷을 함께 저장 (IWPF 정본 + 외부 export).
+        var iwpfPath = Path.ChangeExtension(targetPath, ".iwpf");
+
+        var promptMsg = string.Format(SR.DlgConvertOnSavePrompt,
+            Path.GetFileName(iwpfPath), Path.GetFileName(targetPath));
+        var promptResult = MessageBox.Show(
+            promptMsg,
+            SR.DlgConvertOnSaveTitle,
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information,
+            MessageBoxResult.OK);
+        if (promptResult != MessageBoxResult.OK) return;
+
         try
         {
-            // 1) 현재 모델을 IWPF 임시파일로 직렬화 (UI 스레드 의존: FlowDocument 파싱).
-            await Task.Run(() => SaveToCore(tempIwpf, showProgress: false));
-            if (!File.Exists(tempIwpf))
+            // 1) 현재 모델을 같은 이름의 IWPF 정본 파일로 저장 (UI 스레드 — FlowDocument 파싱).
+            BusyMessage = string.Format(SR.StatusBusySave, Path.GetFileName(iwpfPath));
+            await Task.Run(() => SaveToCore(iwpfPath, showProgress: false));
+            if (!File.Exists(iwpfPath))
             {
-                ReportError(SR.DlgSaveError, new InvalidOperationException("임시 IWPF 파일 생성 실패"));
+                ReportError(SR.DlgSaveError, new InvalidOperationException("IWPF 저장 실패"));
                 return;
             }
 
-            // 2) CLI 가 IWPF → 대상 포맷으로 변환.
+            // 2) CLI 가 IWPF 정본을 외부 포맷으로 변환.
+            BusyMessage = string.Format(SR.StatusBusyConvert, Path.GetFileName(iwpfPath));
             try
             {
-                await ExternalConverter.ConvertAsync(converter, tempIwpf, targetPath);
+                await ExternalConverter.ConvertAsync(converter, iwpfPath, targetPath);
             }
             catch (Exception ex)
             {
@@ -933,15 +982,16 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
-            // CurrentFilePath 는 외부 포맷 그대로 — 다음 저장도 같은 경로에 다시 변환.
-            CurrentFilePath = targetPath;
-            DocumentTitle   = Path.GetFileName(targetPath);
+            // 정본은 IWPF — CurrentFilePath 를 .iwpf 로 갱신해 이후 저장은 IWPF 로 직행.
+            CurrentFilePath = iwpfPath;
+            DocumentTitle   = Path.GetFileName(iwpfPath);
             HasUnsavedChanges = false;
-            StatusMessage   = string.Format(SR.StatusSaveDone, Path.GetFileName(targetPath));
+            StatusMessage   = string.Format(SR.StatusSavedAndConverted,
+                Path.GetFileName(iwpfPath), Path.GetFileName(targetPath));
         }
-        finally
+        catch (Exception ex)
         {
-            try { if (File.Exists(tempIwpf)) File.Delete(tempIwpf); } catch { /* 무시 */ }
+            ReportError(SR.DlgSaveError, ex);
         }
     }
 
