@@ -412,6 +412,31 @@
                                     </Grid>
                                 </Button>
                                 <Separator Margin="4,1"/>
+                                <ToggleButton x:Name="BtnHFAlignLeft"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignLeft, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignLeft">
+                                    <TextBlock Text="≡" FontSize="11" HorizontalAlignment="Left"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFAlignCenter"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignCenter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignCenter">
+                                    <TextBlock Text="≡" FontSize="11" HorizontalAlignment="Center"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFAlignRight"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignRight, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignRight">
+                                    <TextBlock Text="≡" FontSize="11" HorizontalAlignment="Right"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFAlignJustify"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignJustify, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignJustify">
+                                    <TextBlock Text="≡" FontSize="11"/>
+                                </ToggleButton>
+                                <Separator Margin="4,1"/>
                                 <ComboBox x:Name="CboHFToken"
                                           Width="136" Height="22" Margin="1,0"/>
                                 <Button Content="{Binding PageFormatHFTokenInsert, Source={x:Static svc:LocalizedStrings.Instance}}"

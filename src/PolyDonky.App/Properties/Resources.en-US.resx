@@ -393,7 +393,11 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageFormatHFToolbarUnderline" xml:space="preserve"><value>Underline (Ctrl+U)</value></data>
   <data name="PageFormatHFToolbarStrike"    xml:space="preserve"><value>Strikethrough</value></data>
   <data name="PageFormatHFToolbarFontSize"  xml:space="preserve"><value>Font Size (pt)</value></data>
-  <data name="PageFormatHFToolbarColor"     xml:space="preserve"><value>Font Color</value></data>
+  <data name="PageFormatHFToolbarColor"       xml:space="preserve"><value>Font Color</value></data>
+  <data name="PageFormatHFToolbarAlignLeft"   xml:space="preserve"><value>Align Left</value></data>
+  <data name="PageFormatHFToolbarAlignCenter" xml:space="preserve"><value>Align Center</value></data>
+  <data name="PageFormatHFToolbarAlignRight"  xml:space="preserve"><value>Align Right</value></data>
+  <data name="PageFormatHFToolbarAlignJustify" xml:space="preserve"><value>Justify</value></data>
   <data name="PageFormatHFTokenInsert"      xml:space="preserve"><value>Insert</value></data>
   <data name="PageFormatHFTokenPlaceholder" xml:space="preserve"><value>Select token…</value></data>
   <data name="PageFormatSizeLabel"          xml:space="preserve"><value>Paper size</value></data>

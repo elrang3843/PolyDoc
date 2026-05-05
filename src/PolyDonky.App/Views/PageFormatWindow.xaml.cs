@@ -452,6 +452,13 @@ public partial class PageFormatWindow : Window
             _suppressFontFamilyChange = false;
         }
 
+        var align = sel.GetPropertyValue(WpfDoc.Block.TextAlignmentProperty);
+        var ta = align is TextAlignment t ? t : TextAlignment.Left;
+        BtnHFAlignLeft.IsChecked    = ta == TextAlignment.Left;
+        BtnHFAlignCenter.IsChecked  = ta == TextAlignment.Center;
+        BtnHFAlignRight.IsChecked   = ta == TextAlignment.Right;
+        BtnHFAlignJustify.IsChecked = ta == TextAlignment.Justify;
+
         var fg = sel.GetPropertyValue(WpfDoc.TextElement.ForegroundProperty) as SolidColorBrush;
         if (fg is not null)
         {
@@ -485,6 +492,34 @@ public partial class PageFormatWindow : Window
             _focusedRtb?.Focus();
         }
         catch (ArgumentException) { }
+    }
+
+    private void OnHFAlignLeft(object sender, RoutedEventArgs e)
+    {
+        if (_focusedRtb is null) return;
+        WpfDoc.EditingCommands.AlignLeft.Execute(null, _focusedRtb);
+        _focusedRtb.Focus();
+    }
+
+    private void OnHFAlignCenter(object sender, RoutedEventArgs e)
+    {
+        if (_focusedRtb is null) return;
+        WpfDoc.EditingCommands.AlignCenter.Execute(null, _focusedRtb);
+        _focusedRtb.Focus();
+    }
+
+    private void OnHFAlignRight(object sender, RoutedEventArgs e)
+    {
+        if (_focusedRtb is null) return;
+        WpfDoc.EditingCommands.AlignRight.Execute(null, _focusedRtb);
+        _focusedRtb.Focus();
+    }
+
+    private void OnHFAlignJustify(object sender, RoutedEventArgs e)
+    {
+        if (_focusedRtb is null) return;
+        WpfDoc.EditingCommands.AlignJustify.Execute(null, _focusedRtb);
+        _focusedRtb.Focus();
     }
 
     private void OnHFBold(object sender, RoutedEventArgs e)
@@ -586,7 +621,18 @@ public partial class PageFormatWindow : Window
         {
             foreach (var para in slot.Paragraphs)
             {
-                var wpfPara = new WpfDoc.Paragraph { Margin = new Thickness(0) };
+                var wpfPara = new WpfDoc.Paragraph
+                {
+                    Margin        = new Thickness(0),
+                    TextAlignment = para.Style.Alignment switch
+                    {
+                        PolyDonky.Core.Alignment.Center      => TextAlignment.Center,
+                        PolyDonky.Core.Alignment.Right       => TextAlignment.Right,
+                        PolyDonky.Core.Alignment.Justify     => TextAlignment.Justify,
+                        PolyDonky.Core.Alignment.Distributed => TextAlignment.Justify,
+                        _                                    => TextAlignment.Left,
+                    },
+                };
                 foreach (var run in para.Runs)
                 {
                     var wpfRun = new WpfDoc.Run(run.Text);
@@ -608,6 +654,13 @@ public partial class PageFormatWindow : Window
         {
             if (block is not WpfDoc.Paragraph para) continue;
             var corePara = new PolyDonky.Core.Paragraph();
+            corePara.Style.Alignment = para.TextAlignment switch
+            {
+                TextAlignment.Center  => PolyDonky.Core.Alignment.Center,
+                TextAlignment.Right   => PolyDonky.Core.Alignment.Right,
+                TextAlignment.Justify => PolyDonky.Core.Alignment.Justify,
+                _                    => PolyDonky.Core.Alignment.Left,
+            };
             ExtractInlines(para.Inlines, corePara);
             if (corePara.Runs.Any(r => !string.IsNullOrEmpty(r.Text)))
                 slot.Paragraphs.Add(corePara);

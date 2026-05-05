@@ -388,7 +388,11 @@
   <data name="PageFormatHFToolbarUnderline" xml:space="preserve"><value>밑줄 (Ctrl+U)</value></data>
   <data name="PageFormatHFToolbarStrike"    xml:space="preserve"><value>취소선</value></data>
   <data name="PageFormatHFToolbarFontSize"  xml:space="preserve"><value>글자 크기 (pt)</value></data>
-  <data name="PageFormatHFToolbarColor"     xml:space="preserve"><value>글자 색</value></data>
+  <data name="PageFormatHFToolbarColor"       xml:space="preserve"><value>글자 색</value></data>
+  <data name="PageFormatHFToolbarAlignLeft"   xml:space="preserve"><value>왼쪽 정렬</value></data>
+  <data name="PageFormatHFToolbarAlignCenter" xml:space="preserve"><value>가운데 정렬</value></data>
+  <data name="PageFormatHFToolbarAlignRight"  xml:space="preserve"><value>오른쪽 정렬</value></data>
+  <data name="PageFormatHFToolbarAlignJustify" xml:space="preserve"><value>양쪽 정렬</value></data>
   <data name="PageFormatHFTokenInsert"      xml:space="preserve"><value>삽입</value></data>
   <data name="PageFormatHFTokenPlaceholder" xml:space="preserve"><value>토큰 선택…</value></data>
   <data name="PageFormatSizeLabel"          xml:space="preserve"><value>용지 크기</value></data>
