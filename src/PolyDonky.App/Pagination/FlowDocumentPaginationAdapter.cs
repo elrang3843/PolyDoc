@@ -27,6 +27,15 @@ namespace PolyDonky.App.Pagination;
 public static class FlowDocumentPaginationAdapter
 {
     /// <summary>
+    /// 정밀 페이지 매핑(블록별 GetCharacterRect)을 시도할 최대 블록 수.
+    /// 이 값을 초과하면 <see cref="MapBodyBlocksToPages"/> 가 fast-path 로 빠져
+    /// 전체 FlowDocument 측정·블록별 좌표 조회를 건너뛴다(매우 큰 HTML 등에서 분 단위 멈춤 방지).
+    /// fast-path 결과는 모든 블록을 page 0 에 일괄 배정 — 페이지 구분이 정확하지 않지만
+    /// 문서를 즉시 표시할 수 있어 "최소한 본다" 는 UX 가 보장된다.
+    /// </summary>
+    public const int MaxBlocksForPreciseMapping = 2_500;
+
+    /// <summary>
     /// 문서를 페이지 단위로 분할해 <see cref="PaginatedDocument"/> 로 반환한다.
     /// </summary>
     /// <param name="document">분할할 문서.</param>
@@ -137,6 +146,24 @@ public static class FlowDocumentPaginationAdapter
 
         int    colCount  = geo.ColumnCount;
         double colWidth  = geo.ColWidthDip;
+
+        // ── Fast path — 매우 큰 문서는 정밀 매핑을 건너뛴다 ─────────────────
+        // FlattenBlocks 를 한 번 평탄화해 카운트만 본 뒤, 임계 초과면 모든 블록을 page 0 에 배정.
+        // WPF FlowDocument 의 Measure/UpdateLayout 은 블록 수가 많을수록 슈퍼리니어로 느려지며,
+        // 위키 페이지 등 큰 HTML 은 여기서 분 단위로 UI 가 멈춘다. fast-path 는 정확한 페이지
+        // 경계를 잃지만 — 페이지 수는 ComputePageCountSync 결과를 그대로 사용 — 문서를 즉시
+        // 표시할 수 있게 한다.
+        var flat = FlattenBlocks(fd.Blocks).ToList();
+        if (flat.Count > MaxBlocksForPreciseMapping)
+        {
+            foreach (var wpfBlock in flat)
+            {
+                if (wpfBlock.Tag is not Block coreBlock) continue;
+                if (IsOverlayMode(coreBlock)) continue;
+                result.Add((0, 0, coreBlock, Rect.Empty));
+            }
+            return result;
+        }
 
         // 오프스크린 RichTextBox — 측정 폭은 단 폭(colWidth).
         // 다단일 때 전체 본문 폭으로 측정하면 줄바꿈이 적게 일어나
