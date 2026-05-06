@@ -23,6 +23,16 @@ public sealed class Run
     /// Markdown 의 [text](url), 자동 링크 등에서 사용.</summary>
     public string? Url { get; set; }
 
+    /// <summary>각주 참조 ID. null 이면 일반 Run.
+    /// PolyDonkyument.Footnotes 의 FootnoteEntry.Id 와 매핑.
+    /// DOCX: w:footnoteReference, HWPX: hp:ctrl ctrlID="FOOT_NOTE"</summary>
+    public string? FootnoteId { get; set; }
+
+    /// <summary>미주 참조 ID. null 이면 일반 Run.
+    /// PolyDonkyument.Endnotes 의 FootnoteEntry.Id 와 매핑.
+    /// DOCX: w:endnoteReference, HWPX: hp:ctrl ctrlID="END_NOTE"</summary>
+    public string? EndnoteId { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본 — Style 도 새 인스턴스로.</summary>
     public Run Clone() => new()
     {
@@ -33,6 +43,8 @@ public sealed class Run
         EmojiKey          = EmojiKey,
         EmojiAlignment    = EmojiAlignment,
         Url               = Url,
+        FootnoteId        = FootnoteId,
+        EndnoteId         = EndnoteId,
     };
 }
 

@@ -717,4 +717,61 @@ public class HtmlTests
         Assert.True(paras[1].Style.ForcePageBreakBefore);
         Assert.False(paras[2].Style.ForcePageBreakBefore);
     }
+
+    [Fact]
+    public void Writer_Footnote_EmitsPandocStyleSuperscript()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+
+        var fn = new FootnoteEntry { Id = "f1" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용"));
+        doc.Footnotes.Add(fn);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "f1" });
+        sec.Blocks.Add(p);
+
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("fnref-1", html);
+        Assert.Contains("fn-1", html);
+        Assert.Contains("각주 내용", html);
+        Assert.Contains("section class=\"footnotes\"", html);
+    }
+
+    [Fact]
+    public void RoundTrip_FootnotesPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+
+        var fn = new FootnoteEntry { Id = "f1" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용"));
+        doc.Footnotes.Add(fn);
+
+        var en = new FootnoteEntry { Id = "e1" };
+        en.Blocks.Add(Paragraph.Of("미주 내용"));
+        doc.Endnotes.Add(en);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "f1" });
+        p.AddText(" 텍스트");
+        p.Runs.Add(new Run { EndnoteId = "e1" });
+        sec.Blocks.Add(p);
+
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+
+        Assert.Single(rt.Footnotes);
+        Assert.Contains("각주 내용", rt.Footnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        Assert.Single(rt.Endnotes);
+        Assert.Contains("미주 내용", rt.Endnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        var runs = rt.Sections[0].Blocks.OfType<Paragraph>().First().Runs;
+        Assert.Contains(runs, r => r.FootnoteId is not null);
+        Assert.Contains(runs, r => r.EndnoteId is not null);
+    }
 }

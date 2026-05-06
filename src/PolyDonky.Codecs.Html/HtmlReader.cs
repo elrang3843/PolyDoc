@@ -65,6 +65,9 @@ public sealed class HtmlReader : IDocumentReader
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
 
+        // 각주/미주 섹션 먼저 추출 후 DOM 에서 제거 (본문 순회 전).
+        ExtractNotesSections(root, pd);
+
         var ctx = new InlineCtx { Shared = new ReadShared { MaxBlocks = maxBlocks } };
         ProcessChildren(root, section.Blocks, ctx);
 
@@ -85,6 +88,51 @@ public sealed class HtmlReader : IDocumentReader
         pd.Metadata.Custom["pagination.degraded"] = "true";
 
         return pd;
+    }
+
+    // ── 각주/미주 섹션 추출 ──────────────────────────────────────────────
+
+    private static void ExtractNotesSections(INode root, PolyDonkyument pd)
+    {
+        // IDocument 또는 IElement 에서 QuerySelectorAll 사용 가능.
+        IParentNode? queryRoot = root as IParentNode;
+        if (queryRoot is null) return;
+
+        // <section class="footnotes"> 처리.
+        foreach (var sect in queryRoot.QuerySelectorAll("section.footnotes").ToList())
+        {
+            ParseAndRemoveNotesSection(sect, pd.Footnotes, "fn-");
+        }
+
+        // <section class="endnotes"> 처리.
+        foreach (var sect in queryRoot.QuerySelectorAll("section.endnotes").ToList())
+        {
+            ParseAndRemoveNotesSection(sect, pd.Endnotes, "en-");
+        }
+    }
+
+    private static void ParseAndRemoveNotesSection(IElement sect, IList<FootnoteEntry> target, string idPrefix)
+    {
+        foreach (var li in sect.QuerySelectorAll("li"))
+        {
+            var liId = li.GetAttribute("id");
+            if (string.IsNullOrEmpty(liId)) continue;
+
+            // <li id="fn-N"> 또는 <li id="en-N">
+            var entry = new FootnoteEntry { Id = liId };
+            // 복귀 링크(<a href="#fnref-N">↩</a>) 제거 후 내용 파싱.
+            foreach (var backLink in li.QuerySelectorAll("a[href^=\"#fnref-\"],a[href^=\"#enref-\"]").ToList())
+                backLink.Remove();
+
+            var p = new Paragraph();
+            AppendInline(p, li);
+            if (p.Runs.Count > 0)
+                entry.Blocks.Add(p);
+            if (entry.Blocks.Count == 0)
+                entry.Blocks.Add(new Paragraph());
+            target.Add(entry);
+        }
+        sect.Remove();
     }
 
     // ── 처리 컨텍스트 ────────────────────────────────────────────────────
@@ -600,6 +648,27 @@ public sealed class HtmlReader : IDocumentReader
                 var style = MergeStyle(parentStyle, el);
                 style.Underline = true;
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, style, href ?? parentUrl);
+                return;
+            }
+
+            case "sup":
+            {
+                // Pandoc 스타일 각주/미주 참조: <sup id="fnref-N"> 또는 <sup id="enref-N">
+                var supId = el.GetAttribute("id");
+                if (supId is not null && supId.StartsWith("fnref-", StringComparison.Ordinal))
+                {
+                    p.Runs.Add(new Run { FootnoteId = $"fn-{supId[6..]}", Style = Clone(parentStyle) });
+                    return;
+                }
+                if (supId is not null && supId.StartsWith("enref-", StringComparison.Ordinal))
+                {
+                    p.Runs.Add(new Run { EndnoteId = $"en-{supId[6..]}", Style = Clone(parentStyle) });
+                    return;
+                }
+                // 일반 <sup> — 위첨자 처리.
+                var supStyle = MergeStyle(parentStyle, el);
+                ApplyTagStyle(el, ref supStyle);
+                foreach (var n in el.ChildNodes) AppendInlineNode(p, n, supStyle, parentUrl);
                 return;
             }
         }

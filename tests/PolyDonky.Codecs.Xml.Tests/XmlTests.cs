@@ -531,4 +531,26 @@ public class XmlTests
         Assert.True(paras[1].Style.ForcePageBreakBefore);
         Assert.False(paras[2].Style.ForcePageBreakBefore);
     }
+
+    [Fact]
+    public void Writer_Footnote_EmitsPandocStyleSuperscript()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+
+        var fn = new FootnoteEntry { Id = "f1" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용"));
+        doc.Footnotes.Add(fn);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "f1" });
+        sec.Blocks.Add(p);
+
+        var xml = PdXmlWriter.ToXml(doc);
+        Assert.Contains("fnref-1", xml);
+        Assert.Contains("fn-1", xml);
+        Assert.Contains("각주 내용", xml);
+        Assert.Contains("section class=\"footnotes\"", xml);
+    }
 }

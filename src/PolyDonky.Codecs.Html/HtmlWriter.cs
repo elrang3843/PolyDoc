@@ -48,6 +48,8 @@ public sealed class HtmlWriter : IDocumentWriter
     {
         ArgumentNullException.ThrowIfNull(document);
         var sb = new StringBuilder();
+        var notes = BuildNoteNums(document);
+        var indent = fullDocument ? "  " : "";
 
         if (fullDocument)
         {
@@ -67,19 +69,93 @@ public sealed class HtmlWriter : IDocumentWriter
         }
 
         foreach (var section in document.Sections)
-            WriteBlocks(sb, section.Blocks, indent: fullDocument ? "  " : "");
+            WriteBlocks(sb, section.Blocks, indent, notes);
 
         if (fullDocument)
         {
+            if (notes.HasNotes)
+                WriteNoteSections(sb, document, notes, indent);
             sb.Append("</body>\n</html>\n");
         }
 
         return sb.ToString();
     }
 
+    private sealed record NoteNums(
+        IReadOnlyDictionary<string, int> Footnotes,
+        IReadOnlyDictionary<string, int> Endnotes)
+    {
+        public bool HasNotes => Footnotes.Count > 0 || Endnotes.Count > 0;
+
+        public static readonly NoteNums Empty = new(
+            new Dictionary<string, int>(),
+            new Dictionary<string, int>());
+    }
+
+    private static NoteNums BuildNoteNums(PolyDonkyument doc)
+    {
+        if (doc.Footnotes.Count == 0 && doc.Endnotes.Count == 0) return NoteNums.Empty;
+        return new NoteNums(
+            doc.Footnotes.Select((f, i) => (f.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2),
+            doc.Endnotes.Select((e, i) => (e.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2));
+    }
+
+    private static void WriteNoteSections(StringBuilder sb, PolyDonkyument doc, NoteNums notes, string indent)
+    {
+        if (doc.Footnotes.Count > 0)
+        {
+            sb.Append(indent).Append("<section class=\"footnotes\">\n");
+            sb.Append(indent).Append("  <hr>\n");
+            sb.Append(indent).Append("  <ol>\n");
+            foreach (var entry in doc.Footnotes)
+            {
+                if (!notes.Footnotes.TryGetValue(entry.Id, out var num)) continue;
+                sb.Append(indent).Append("    <li id=\"fn-").Append(num).Append("\">");
+                sb.Append(RenderBlocks(entry.Blocks, notes));
+                sb.Append(" <a href=\"#fnref-").Append(num).Append("\">↩</a>");
+                sb.Append("</li>\n");
+            }
+            sb.Append(indent).Append("  </ol>\n");
+            sb.Append(indent).Append("</section>\n");
+        }
+
+        if (doc.Endnotes.Count > 0)
+        {
+            sb.Append(indent).Append("<section class=\"endnotes\">\n");
+            sb.Append(indent).Append("  <hr>\n");
+            sb.Append(indent).Append("  <ol>\n");
+            foreach (var entry in doc.Endnotes)
+            {
+                if (!notes.Endnotes.TryGetValue(entry.Id, out var num)) continue;
+                sb.Append(indent).Append("    <li id=\"en-").Append(num).Append("\">");
+                sb.Append(RenderBlocks(entry.Blocks, notes));
+                sb.Append(" <a href=\"#enref-").Append(num).Append("\">↩</a>");
+                sb.Append("</li>\n");
+            }
+            sb.Append(indent).Append("  </ol>\n");
+            sb.Append(indent).Append("</section>\n");
+        }
+    }
+
+    private static string RenderBlocks(IList<Block> blocks, NoteNums notes)
+    {
+        var sb = new StringBuilder();
+        bool first = true;
+        foreach (var b in blocks)
+        {
+            if (b is Paragraph p)
+            {
+                if (!first) sb.Append(' ');
+                sb.Append(RenderRuns(p.Runs, notes));
+                first = false;
+            }
+        }
+        return sb.ToString();
+    }
+
     // ── 블록 렌더링 ─────────────────────────────────────────────────────
 
-    private static void WriteBlocks(StringBuilder sb, IList<Block> blocks, string indent)
+    private static void WriteBlocks(StringBuilder sb, IList<Block> blocks, string indent, NoteNums? notes = null)
     {
         // 인접 리스트·인용은 묶어서 처리한다.
         int i = 0;
@@ -95,7 +171,7 @@ public sealed class HtmlWriter : IDocumentWriter
                 while (j < blocks.Count && QuoteLevelOf(blocks[j]) >= qLvl) j++;
                 var inner = blocks.Skip(i).Take(j - i).Select(StripQuoteLevel).ToList();
                 sb.Append(indent).Append("<blockquote>\n");
-                WriteBlocks(sb, inner, indent + "  ");
+                WriteBlocks(sb, inner, indent + "  ", notes);
                 sb.Append(indent).Append("</blockquote>\n");
                 i = j;
                 continue;
@@ -111,16 +187,16 @@ public sealed class HtmlWriter : IDocumentWriter
                        && lmj.Kind == lm0.Kind
                        && lmj.Level == lm0.Level)
                     j++;
-                WriteListGroup(sb, blocks, i, j, indent);
+                WriteListGroup(sb, blocks, i, j, indent, notes);
                 i = j;
                 continue;
             }
 
             switch (b)
             {
-                case Paragraph para: WriteParagraph(sb, para, indent); break;
-                case Table table:    WriteTable(sb, table, indent);     break;
-                case ImageBlock img: WriteImage(sb, img, indent);       break;
+                case Paragraph para: WriteParagraph(sb, para, indent, notes); break;
+                case Table table:    WriteTable(sb, table, indent, notes);     break;
+                case ImageBlock img: WriteImage(sb, img, indent);              break;
             }
             i++;
         }
@@ -154,7 +230,7 @@ public sealed class HtmlWriter : IDocumentWriter
         return copy;
     }
 
-    private static void WriteParagraph(StringBuilder sb, Paragraph p, string indent)
+    private static void WriteParagraph(StringBuilder sb, Paragraph p, string indent, NoteNums? notes = null)
     {
         if (p.Style.IsThematicBreak)
         {
@@ -178,14 +254,14 @@ public sealed class HtmlWriter : IDocumentWriter
             int lvl = (int)p.Style.Outline;
             var styleAttr = ParagraphStyleAttr(p.Style);
             sb.Append(indent).Append('<').Append('h').Append(lvl).Append(styleAttr).Append('>');
-            sb.Append(RenderRuns(p.Runs));
+            sb.Append(RenderRuns(p.Runs, notes));
             sb.Append("</h").Append(lvl).Append(">\n");
             return;
         }
 
         var pStyleAttr = ParagraphStyleAttr(p.Style);
         sb.Append(indent).Append("<p").Append(pStyleAttr).Append('>');
-        sb.Append(RenderRuns(p.Runs));
+        sb.Append(RenderRuns(p.Runs, notes));
         sb.Append("</p>\n");
     }
 
@@ -223,7 +299,7 @@ public sealed class HtmlWriter : IDocumentWriter
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
     }
 
-    private static void WriteListGroup(StringBuilder sb, IList<Block> blocks, int from, int to, string indent)
+    private static void WriteListGroup(StringBuilder sb, IList<Block> blocks, int from, int to, string indent, NoteNums? notes = null)
     {
         var p0 = (Paragraph)blocks[from];
         var lm = p0.Style.ListMarker!;
@@ -245,14 +321,14 @@ public sealed class HtmlWriter : IDocumentWriter
                 var ck = marker.Checked.Value ? " checked" : "";
                 sb.Append("<input type=\"checkbox\" disabled").Append(ck).Append("> ");
             }
-            sb.Append(RenderRuns(p.Runs));
+            sb.Append(RenderRuns(p.Runs, notes));
             sb.Append("</li>\n");
         }
 
         sb.Append(indent).Append("</").Append(tag).Append(">\n");
     }
 
-    private static void WriteTable(StringBuilder sb, Table t, string indent)
+    private static void WriteTable(StringBuilder sb, Table t, string indent, NoteNums? notes = null)
     {
         if (t.Rows.Count == 0) return;
 
@@ -297,20 +373,20 @@ public sealed class HtmlWriter : IDocumentWriter
         if (headerRows.Count > 0)
         {
             sb.Append(indent).Append("  <thead>\n");
-            foreach (var r in headerRows) WriteRow(sb, r, indent + "    ", isHeader: true);
+            foreach (var r in headerRows) WriteRow(sb, r, indent + "    ", isHeader: true, notes);
             sb.Append(indent).Append("  </thead>\n");
         }
         if (bodyRows.Count > 0)
         {
             sb.Append(indent).Append("  <tbody>\n");
-            foreach (var r in bodyRows) WriteRow(sb, r, indent + "    ", isHeader: false);
+            foreach (var r in bodyRows) WriteRow(sb, r, indent + "    ", isHeader: false, notes);
             sb.Append(indent).Append("  </tbody>\n");
         }
 
         sb.Append(indent).Append("</table>\n");
     }
 
-    private static void WriteRow(StringBuilder sb, TableRow row, string indent, bool isHeader)
+    private static void WriteRow(StringBuilder sb, TableRow row, string indent, bool isHeader, NoteNums? notes = null)
     {
         sb.Append(indent).Append("<tr>\n");
         foreach (var cell in row.Cells)
@@ -332,7 +408,7 @@ public sealed class HtmlWriter : IDocumentWriter
                 if (b is Paragraph p)
                 {
                     if (!first) sb.Append("<br>");
-                    sb.Append(RenderRuns(p.Runs));
+                    sb.Append(RenderRuns(p.Runs, notes));
                     first = false;
                 }
             }
@@ -458,15 +534,30 @@ public sealed class HtmlWriter : IDocumentWriter
 
     // ── 인라인 렌더링 ─────────────────────────────────────────────────
 
-    private static string RenderRuns(IList<Run> runs)
+    private static string RenderRuns(IList<Run> runs, NoteNums? notes = null)
     {
         var sb = new StringBuilder();
-        foreach (var r in runs) sb.Append(RenderRun(r));
+        foreach (var r in runs) sb.Append(RenderRun(r, notes));
         return sb.ToString();
     }
 
-    private static string RenderRun(Run run)
+    private static string RenderRun(Run run, NoteNums? notes = null)
     {
+        // 각주/미주 참조 런 — Pandoc 스타일 superscript 링크로 직렬화.
+        if (run.FootnoteId is { Length: > 0 } fnId
+            && notes is not null && notes.Footnotes.TryGetValue(fnId, out var fnNum))
+        {
+            return $"<sup id=\"fnref-{fnNum}\"><a href=\"#fn-{fnNum}\">{fnNum}</a></sup>";
+        }
+        if (run.EndnoteId is { Length: > 0 } enId
+            && notes is not null && notes.Endnotes.TryGetValue(enId, out var enNum))
+        {
+            return $"<sup id=\"enref-{enNum}\"><a href=\"#en-{enNum}\">{enNum}</a></sup>";
+        }
+        // FootnoteId/EndnoteId 가 있지만 notes 맵이 없는 경우 — 참조만 빈 텍스트로 무시.
+        if (run.FootnoteId is { Length: > 0 } || run.EndnoteId is { Length: > 0 })
+            return string.Empty;
+
         var s    = run.Style;
         var text = EscapeHtml(run.Text).Replace("\n", "<br>");
 

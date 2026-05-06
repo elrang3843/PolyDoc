@@ -90,17 +90,25 @@ public static class FlowDocumentBuilder
         }
 
 
+        var fnNums = document.Footnotes.Count > 0
+            ? document.Footnotes.Select((f, i) => (f.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2)
+            : null;
+        var enNums = document.Endnotes.Count > 0
+            ? document.Endnotes.Select((e, i) => (e.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2)
+            : null;
+
         foreach (var section in document.Sections)
         {
-            BuildSection(fd, section, outlineStyles);
+            BuildSection(fd, section, outlineStyles, fnNums, enNums);
         }
 
         return fd;
     }
 
-    private static void BuildSection(Wpf.FlowDocument fd, Section section, OutlineStyleSet outlineStyles)
+    private static void BuildSection(Wpf.FlowDocument fd, Section section, OutlineStyleSet outlineStyles,
+        IReadOnlyDictionary<string, int>? fnNums = null, IReadOnlyDictionary<string, int>? enNums = null)
     {
-        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles);
+        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles, fnNums, enNums);
     }
 
     /// <summary>
@@ -149,7 +157,9 @@ public static class FlowDocumentBuilder
 
     /// <summary>FlowDocument 또는 셀(TableCell) 양쪽에서 공유하는 블록 추가 로직.</summary>
     internal static void AppendBlocks(System.Collections.IList target, IList<Block> blocks,
-        OutlineStyleSet? outlineStyles = null)
+        OutlineStyleSet? outlineStyles = null,
+        IReadOnlyDictionary<string, int>? fnNums = null,
+        IReadOnlyDictionary<string, int>? enNums = null)
     {
         Wpf.List? currentList = null;
         ListKind? currentKind = null;
@@ -174,13 +184,13 @@ public static class FlowDocumentBuilder
                         target.Add(currentList);
                         currentKind = marker.Kind;
                     }
-                    currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles)));
+                    currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles, fnNums, enNums)));
                     break;
 
                 case Paragraph p:
                     currentList = null;
                     currentKind = null;
-                    target.Add(BuildParagraph(p, outlineStyles));
+                    target.Add(BuildParagraph(p, outlineStyles, fnNums, enNums));
                     break;
 
                 case Table t:
@@ -1361,13 +1371,14 @@ public static class FlowDocumentBuilder
         return paragraph;
     }
 
-    internal static Wpf.Paragraph BuildParagraph(Paragraph p, OutlineStyleSet? outlineStyles = null)
+    internal static Wpf.Paragraph BuildParagraph(Paragraph p, OutlineStyleSet? outlineStyles = null,
+        IReadOnlyDictionary<string, int>? fnNums = null, IReadOnlyDictionary<string, int>? enNums = null)
     {
         var wpfPara = new Wpf.Paragraph();
         ApplyParagraphStyle(wpfPara, p.Style, outlineStyles);
         foreach (var run in p.Runs)
         {
-            wpfPara.Inlines.Add(BuildInline(run));
+            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
         }
         // 원본 PolyDonky.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
@@ -1479,8 +1490,38 @@ public static class FlowDocumentBuilder
     /// <summary>글자폭 != 100% 또는 자간 != 0 이면 Span(per-char InlineUIContainer 들), 그 외에는 Run 반환.
     /// LatexSource 가 있으면 WpfMath FormulaControl 로 렌더링.
     /// EmojiKey 가 있으면 Resources/Emojis/{Section}/{name}.png 를 Image 로 렌더링.</summary>
-    public static Wpf.Inline BuildInline(Run run)
+    public static Wpf.Inline BuildInline(Run run,
+        IReadOnlyDictionary<string, int>? fnNums = null,
+        IReadOnlyDictionary<string, int>? enNums = null)
     {
+        // 각주/미주 참조 런 — 위첨자 숫자로 렌더링, Tag 에 원본 Run 보관.
+        if (run.FootnoteId is { Length: > 0 } fnId)
+        {
+            var fnNum = 0;
+            fnNums?.TryGetValue(fnId, out fnNum);
+            var label = fnNum > 0 ? fnNum.ToString(System.Globalization.CultureInfo.InvariantCulture) : "†";
+            var fnWpfRun = new Wpf.Run(label)
+            {
+                BaselineAlignment = BaselineAlignment.Superscript,
+                FontSize          = PtToDip(8),
+                Tag               = run,
+            };
+            return fnWpfRun;
+        }
+        if (run.EndnoteId is { Length: > 0 } enId)
+        {
+            var enNum = 0;
+            enNums?.TryGetValue(enId, out enNum);
+            var label = enNum > 0 ? enNum.ToString(System.Globalization.CultureInfo.InvariantCulture) : "‡";
+            var enWpfRun = new Wpf.Run(label)
+            {
+                BaselineAlignment = BaselineAlignment.Superscript,
+                FontSize          = PtToDip(8),
+                Tag               = run,
+            };
+            return enWpfRun;
+        }
+
         if (run.LatexSource is { Length: > 0 } latex)
             return BuildEquationInline(run, latex);
 

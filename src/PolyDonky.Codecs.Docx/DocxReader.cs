@@ -68,7 +68,49 @@ public sealed class DocxReader : IDocumentReader
         }
 
         ReadCoreProperties(package, document.Metadata);
+        ReadFootnotesAndEndnotes(mainPart, document, ctx);
         return document;
+    }
+
+    private static void ReadFootnotesAndEndnotes(MainDocumentPart mainPart, PolyDonkyument document, ReadContext ctx)
+    {
+        if (mainPart.FootnotesPart is { } fnPart && fnPart.Footnotes is not null)
+        {
+            foreach (var fn in fnPart.Footnotes.Elements<W.Footnote>())
+            {
+                var fnType = fn.Type?.Value;
+                if (fnType == W.FootnoteEndnoteValues.Separator
+                    || fnType == W.FootnoteEndnoteValues.ContinuationSeparator)
+                    continue;
+                var id = fn.Id?.ToString();
+                if (string.IsNullOrEmpty(id) || id == "0" || id == "-1") continue;
+                var entry = new FootnoteEntry { Id = id };
+                foreach (var para in fn.Elements<W.Paragraph>())
+                    AppendParagraphAndExtractedDrawings(entry.Blocks, para, ctx);
+                if (entry.Blocks.Count == 0)
+                    entry.Blocks.Add(new Paragraph());
+                document.Footnotes.Add(entry);
+            }
+        }
+
+        if (mainPart.EndnotesPart is { } enPart && enPart.Endnotes is not null)
+        {
+            foreach (var en in enPart.Endnotes.Elements<W.Endnote>())
+            {
+                var enType = en.Type?.Value;
+                if (enType == W.FootnoteEndnoteValues.Separator
+                    || enType == W.FootnoteEndnoteValues.ContinuationSeparator)
+                    continue;
+                var id = en.Id?.ToString();
+                if (string.IsNullOrEmpty(id) || id == "0" || id == "-1") continue;
+                var entry = new FootnoteEntry { Id = id };
+                foreach (var para in en.Elements<W.Paragraph>())
+                    AppendParagraphAndExtractedDrawings(entry.Blocks, para, ctx);
+                if (entry.Blocks.Count == 0)
+                    entry.Blocks.Add(new Paragraph());
+                document.Endnotes.Add(entry);
+            }
+        }
     }
 
     private sealed class ReadContext
@@ -97,6 +139,20 @@ public sealed class DocxReader : IDocumentReader
 
         foreach (var run in wp.Elements<W.Run>())
         {
+            // 각주·미주 참조 run 은 별도 처리 (텍스트·그림보다 우선 확인).
+            if (run.Descendants<W.FootnoteReference>().FirstOrDefault() is { } fnRef
+                && fnRef.Id?.Value is { } fnId)
+            {
+                paragraph.Runs.Add(new Run { FootnoteId = fnId.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+                continue;
+            }
+            if (run.Descendants<W.EndnoteReference>().FirstOrDefault() is { } enRef
+                && enRef.Id?.Value is { } enId)
+            {
+                paragraph.Runs.Add(new Run { EndnoteId = enId.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+                continue;
+            }
+
             foreach (var drawing in run.Elements<W.Drawing>())
             {
                 if (TryExtractImage(drawing, ctx, out var imageBlock))

@@ -447,6 +447,41 @@ public class HwpxRoundTripTests
         Assert.False(paragraphs[2].Style.ForcePageBreakBefore);
     }
 
+    [Fact]
+    public void RoundTrip_PreservesFootnotesAndEndnotes()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var fn = new FootnoteEntry { Id = "fn01" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용 A"));
+        doc.Footnotes.Add(fn);
+
+        var en = new FootnoteEntry { Id = "en01" };
+        en.Blocks.Add(Paragraph.Of("미주 내용 B"));
+        doc.Endnotes.Add(en);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "fn01" });
+        p.AddText(" 텍스트");
+        p.Runs.Add(new Run { EndnoteId = "en01" });
+        section.Blocks.Add(p);
+
+        var rt = WriteThenRead(doc);
+
+        Assert.Single(rt.Footnotes);
+        Assert.Equal("각주 내용 A", rt.Footnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        Assert.Single(rt.Endnotes);
+        Assert.Equal("미주 내용 B", rt.Endnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        var runs = rt.Sections[0].Blocks.OfType<Paragraph>().First().Runs;
+        Assert.Contains(runs, r => r.FootnoteId is not null);
+        Assert.Contains(runs, r => r.EndnoteId is not null);
+    }
+
     private static byte[] WriteToBytes(PolyDonkyument doc)
     {
         using var ms = new MemoryStream();

@@ -29,6 +29,8 @@ public static class FlowDocumentParser
             doc.Provenance = originalForMerge.Provenance;
             doc.Watermark = originalForMerge.Watermark;
             doc.OutlineStyles = originalForMerge.OutlineStyles;
+            doc.Footnotes = originalForMerge.Footnotes;
+            doc.Endnotes  = originalForMerge.Endnotes;
         }
 
         var section = new Section();
@@ -406,6 +408,12 @@ public static class FlowDocumentParser
         {
             case Wpf.Run r:
             {
+                // 각주/미주 참조 런 — Tag 의 원본 Run 을 그대로 회수 (FootnoteId/EndnoteId 보존).
+                if (r.Tag is Run origRef && (origRef.FootnoteId is not null || origRef.EndnoteId is not null))
+                {
+                    p.Runs.Add(origRef.Clone());
+                    break;
+                }
                 // Tag 에 원본 Run 이 있으면 그 RunStyle 을 base 로 두고 변경된 속성만 덮어쓴다.
                 var seed = r.Tag is Run original ? Clone(original.Style) : Clone(baseStyle);
                 ExtractRunStyle(r, seed);

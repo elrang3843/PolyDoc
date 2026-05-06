@@ -10,6 +10,10 @@ public sealed class HwpxWriter : IDocumentWriter
 {
     public string FormatId => "hwpx";
 
+    // BuildNoteCtrlRun 에서 참조하는 각주/미주 목록 — Write() 호출 간 스레드 안전하지 않으므로 인스턴스 필드.
+    private IList<FootnoteEntry> _pendingFootnotes = Array.Empty<FootnoteEntry>();
+    private IList<FootnoteEntry> _pendingEndnotes  = Array.Empty<FootnoteEntry>();
+
     private static readonly XNamespace OpfContainer = HwpxNamespaces.OpfContainer;
     private static readonly XNamespace Opf = HwpxNamespaces.OpfPackage;
     private static readonly XNamespace Dc = HwpxNamespaces.DcMetadata;
@@ -127,11 +131,16 @@ public sealed class HwpxWriter : IDocumentWriter
         public IReadOnlyList<RunStyle> RunStyles => _runStyles;
         public IReadOnlyList<ParagraphStyle> ParaStyles => _paraStyles;
 
+        private int _nextCtrlId = 1;
+        private int _nextSubListId = 1;
+
         public void ResetParaId() => _nextParaId = 0;
         public int  NextParaId()  => _nextParaId++;
         public long NextObjId()   => _nextObjId++;
         public int  NextZOrder()  => _nextZOrder++;
         public long NextInstId()  => _nextInstId++;
+        public int  NextCtrlId()  => _nextCtrlId++;
+        public int  NextSubListId() => _nextSubListId++;
 
         private int InternalRegisterFont(string family)
         {
@@ -341,6 +350,9 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(output);
+
+        _pendingFootnotes = document.Footnotes;
+        _pendingEndnotes  = document.Endnotes;
 
         using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
         WriteRawText(archive, HwpxPaths.Mimetype, HwpxPaths.MimetypeContent, CompressionLevel.NoCompression);
@@ -1195,12 +1207,66 @@ public sealed class HwpxWriter : IDocumentWriter
 
     private XElement BuildRun(Run run, WriteContext ctx)
     {
+        // 각주/미주 참조 run — hp:ctrl 을 품은 run 으로 출력.
+        if (run.FootnoteId is { Length: > 0 } fnId)
+            return BuildNoteCtrlRun("FOOT_NOTE", fnId, ctx);
+        if (run.EndnoteId is { Length: > 0 } enId)
+            return BuildNoteCtrlRun("END_NOTE", enId, ctx);
+
         int charPrID = ctx.RunStyleId(run.Style);
         var elem = new XElement(Hp + "run",
             new XAttribute("charPrIDRef", charPrID.ToString()));
         if (run.Text.Length > 0)
             elem.Add(new XElement(Hp + "t", run.Text));
         return elem;
+    }
+
+    private XElement BuildNoteCtrlRun(string ctrlID, string noteId, WriteContext ctx)
+    {
+        // 각주/미주 내용을 document 에서 찾아 subList 로 직렬화.
+        var entries = ctrlID == "FOOT_NOTE"
+            ? (IEnumerable<FootnoteEntry>)_pendingFootnotes
+            : _pendingEndnotes;
+        var entry = entries.FirstOrDefault(e => e.Id == noteId);
+
+        var subListId = ctx.NextSubListId();
+        var subList = new XElement(Hp + "subList",
+            new XAttribute("id",               subListId.ToString()),
+            new XAttribute("textDirection",    "HORIZONTAL"),
+            new XAttribute("lineWrap",         "BREAK"),
+            new XAttribute("vertAlign",        "NORMAL"),
+            new XAttribute("linkListIDRef",    "0"),
+            new XAttribute("linkListNextIDRef","0"),
+            new XAttribute("textWidth",        "0"),
+            new XAttribute("textHeight",       "0"));
+
+        if (entry is not null)
+        {
+            ctx.ResetParaId();
+            foreach (var block in entry.Blocks)
+            {
+                if (block is Paragraph p)
+                    subList.Add(BuildParagraph(p, ctx));
+                else
+                    subList.Add(BuildEmptyParagraph(ctx));
+            }
+        }
+        else
+        {
+            subList.Add(BuildEmptyParagraph(ctx));
+        }
+
+        var ctrl = new XElement(Hp + "ctrl",
+            new XAttribute("id",           ctx.NextCtrlId().ToString()),
+            new XAttribute("ctrlID",       ctrlID),
+            new XAttribute("numberingType","BOTH_ALIGN"),
+            new XAttribute("textRef",      "0"),
+            subList);
+
+        return new XElement(Hp + "run",
+            new XAttribute("charPrIDRef", "0"),
+            ctrl,
+            new XElement(Hp + "t"));
     }
 
     private XElement BuildEmptyParagraph(WriteContext ctx)
