@@ -306,24 +306,36 @@ public sealed class DocxReader : IDocumentReader
     {
         if (tcPr is null) return;
 
-        // 셀 테두리: tcBorders > w:top 을 대표값으로 읽는다.
         var borders = tcPr.TableCellBorders;
         if (borders is not null)
         {
-            var top = borders.TopBorder;
-            if (top?.Val?.Value is { } tv && !tv.Equals(W.BorderValues.None)
-                && top.Size?.Value is { } sz && sz > 0)
+            cell.BorderTop    = ReadBorderSide(borders.TopBorder);
+            cell.BorderBottom = ReadBorderSide(borders.BottomBorder);
+            cell.BorderLeft   = ReadBorderSide(borders.LeftBorder);
+            cell.BorderRight  = ReadBorderSide(borders.RightBorder);
+
+            // 공통값(BorderThicknessPt/BorderColor)은 상단 면에서 대표값으로 유지 (하위 호환).
+            if (cell.BorderTop is { } t)
             {
-                cell.BorderThicknessPt = sz / 8.0;
+                if (t.ThicknessPt > 0) cell.BorderThicknessPt = t.ThicknessPt;
+                if (t.Color is not null) cell.BorderColor = t.Color;
             }
-            if (top?.Color?.Value is { Length: 6 } tc && tc != "auto")
-                cell.BorderColor = "#" + tc.ToUpperInvariant();
         }
 
         // 셀 배경색: tcPr > w:shd/@fill
         var shd = tcPr.Shading;
         if (shd?.Fill?.Value is { Length: 6 } fill && fill != "auto")
             cell.BackgroundColor = "#" + fill.ToUpperInvariant();
+    }
+
+    private static CellBorderSide? ReadBorderSide(W.BorderType? border)
+    {
+        if (border is null) return null;
+        if (border.Val?.Value is { } v && v.Equals(W.BorderValues.None)) return null;
+        var pt = border.Size?.Value is { } sz && sz > 0 ? sz / 8.0 : 0;
+        var color = border.Color?.Value is { Length: 6 } c && c != "auto" ? "#" + c.ToUpperInvariant() : null;
+        if (pt <= 0 && color is null) return null;
+        return new CellBorderSide(pt, color);
     }
 
     private static double ParseTwipsToMm(string? twipsRaw)

@@ -324,6 +324,48 @@ public class DocxRoundTripTests
         Assert.Equal("#FFFFFF", cells[1].BackgroundColor, StringComparer.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void RoundTrip_PreservesPerSideCellBorders()
+    {
+        var table = new Table();
+        table.Columns.Add(new TableColumn { WidthMm = 60 });
+
+        var row = new TableRow();
+        row.Cells.Add(new TableCell
+        {
+            Blocks    = { Paragraph.Of("셀") },
+            BorderTop    = new CellBorderSide(3.0, "#FF0000"),
+            BorderBottom = new CellBorderSide(1.0, "#00FF00"),
+            BorderLeft   = new CellBorderSide(2.0, "#0000FF"),
+            BorderRight  = new CellBorderSide(0.5, "#FFFF00"),
+        });
+        table.Rows.Add(row);
+
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        section.Blocks.Add(table);
+        doc.Sections.Add(section);
+
+        var rt = WriteThenRead(doc);
+        var cell = rt.Sections[0].Blocks.OfType<Table>().Single().Rows[0].Cells[0];
+
+        Assert.NotNull(cell.BorderTop);
+        Assert.Equal(3.0,     cell.BorderTop!.Value.ThicknessPt, precision: 1);
+        Assert.Equal("#FF0000", cell.BorderTop.Value.Color,  StringComparer.OrdinalIgnoreCase);
+
+        Assert.NotNull(cell.BorderBottom);
+        Assert.Equal(1.0,     cell.BorderBottom!.Value.ThicknessPt, precision: 1);
+        Assert.Equal("#00FF00", cell.BorderBottom.Value.Color, StringComparer.OrdinalIgnoreCase);
+
+        Assert.NotNull(cell.BorderLeft);
+        Assert.Equal(2.0,     cell.BorderLeft!.Value.ThicknessPt, precision: 1);
+        Assert.Equal("#0000FF", cell.BorderLeft.Value.Color,  StringComparer.OrdinalIgnoreCase);
+
+        Assert.NotNull(cell.BorderRight);
+        Assert.Equal(0.5,     cell.BorderRight!.Value.ThicknessPt, precision: 1);
+        Assert.Equal("#FFFF00", cell.BorderRight.Value.Color, StringComparer.OrdinalIgnoreCase);
+    }
+
     // ── 도형 라운드트립 테스트 ────────────────────────────────────────────────
 
     [Fact]

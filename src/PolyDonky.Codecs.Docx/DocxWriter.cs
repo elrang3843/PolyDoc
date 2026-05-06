@@ -247,8 +247,10 @@ public sealed class DocxWriter : IDocumentWriter
                     });
                 }
 
-                // 셀 테두리
-                if (cell.BorderThicknessPt > 0 || !string.IsNullOrEmpty(cell.BorderColor))
+                // 셀 테두리 — 면별 지정이 하나라도 있으면 출력, 없으면 공통값 사용
+                if (cell.BorderTop is not null || cell.BorderBottom is not null ||
+                    cell.BorderLeft is not null || cell.BorderRight is not null ||
+                    cell.BorderThicknessPt > 0 || !string.IsNullOrEmpty(cell.BorderColor))
                 {
                     tcPr.AppendChild(BuildCellBorders(cell));
                 }
@@ -316,15 +318,25 @@ public sealed class DocxWriter : IDocumentWriter
 
     private static W.TableCellBorders BuildCellBorders(TableCell cell)
     {
-        uint sz    = cell.BorderThicknessPt > 0 ? (uint)Math.Round(cell.BorderThicknessPt * 8) : 4U;
-        string clr = !string.IsNullOrEmpty(cell.BorderColor)
+        uint   defSz  = cell.BorderThicknessPt > 0 ? (uint)Math.Round(cell.BorderThicknessPt * 8) : 4U;
+        string defClr = !string.IsNullOrEmpty(cell.BorderColor)
             ? cell.BorderColor!.TrimStart('#').ToUpperInvariant() : "auto";
 
         return new W.TableCellBorders(
-            new W.TopBorder    { Val = W.BorderValues.Single, Size = sz, Color = clr },
-            new W.LeftBorder   { Val = W.BorderValues.Single, Size = sz, Color = clr },
-            new W.BottomBorder { Val = W.BorderValues.Single, Size = sz, Color = clr },
-            new W.RightBorder  { Val = W.BorderValues.Single, Size = sz, Color = clr });
+            BuildOneBorder<W.TopBorder>   (cell.BorderTop,    defSz, defClr),
+            BuildOneBorder<W.LeftBorder>  (cell.BorderLeft,   defSz, defClr),
+            BuildOneBorder<W.BottomBorder>(cell.BorderBottom, defSz, defClr),
+            BuildOneBorder<W.RightBorder> (cell.BorderRight,  defSz, defClr));
+    }
+
+    private static T BuildOneBorder<T>(CellBorderSide? side, uint defSz, string defClr)
+        where T : W.BorderType, new()
+    {
+        uint   sz  = side.HasValue && side.Value.ThicknessPt > 0
+            ? (uint)Math.Round(side.Value.ThicknessPt * 8) : defSz;
+        string clr = side.HasValue && !string.IsNullOrEmpty(side.Value.Color)
+            ? side.Value.Color!.TrimStart('#').ToUpperInvariant() : defClr;
+        return new T { Val = W.BorderValues.Single, Size = sz, Color = clr };
     }
 
     private static W.Paragraph BuildImageParagraph(ImageBlock image, WriteContext ctx)

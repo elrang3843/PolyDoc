@@ -544,27 +544,41 @@ public sealed class HwpxReader : IDocumentReader
     }
 
     /// <summary>
-    /// 셀 borderFill 정의 → TableCell.BorderColor/BorderThicknessPt/BackgroundColor 매핑.
-    /// per-side spec 인 경우 안쪽 spec(=cell inner) 가 우선 — bottom/right 가 일반적으로 inner.
-    /// 4면 모두 동일하면 top 사용.
+    /// 셀 borderFill 정의 → TableCell 면별 테두리 프로퍼티 매핑.
+    /// 4면이 모두 동일하면 공통값(BorderThicknessPt/BorderColor)만 세팅하고 면별 값은 null 유지.
+    /// 면마다 다르면 per-side 프로퍼티를 채우고 공통값은 top 대표값으로 유지.
     /// </summary>
     private static void ApplyCellBorderFromDef(TableCell cell, HwpxBorderFillDef bf)
     {
-        // 안쪽 셀 spec 가능성 — bottom/right 가 더 자주 inner 로 사용됨.
-        // 4면 동일이면 top 사용. 다르면 bottom (inner 쪽) 우선.
         bool sideUniform = bf.TopColor == bf.BottomColor && bf.TopColor == bf.LeftColor && bf.TopColor == bf.RightColor
                         && Math.Abs(bf.TopWidthPt - bf.BottomWidthPt) < 0.01
                         && Math.Abs(bf.TopWidthPt - bf.LeftWidthPt)   < 0.01
                         && Math.Abs(bf.TopWidthPt - bf.RightWidthPt)  < 0.01;
-        var (color, widthPt) = sideUniform
-            ? (bf.TopColor, bf.TopWidthPt)
-            : (bf.BottomColor, bf.BottomWidthPt);
-        if (!string.IsNullOrEmpty(color))
-            cell.BorderColor = color;
-        if (widthPt > 0)
-            cell.BorderThicknessPt = widthPt;
+
+        if (sideUniform)
+        {
+            // 4면 동일 — 공통값만 세팅, per-side 는 null 유지.
+            if (!string.IsNullOrEmpty(bf.TopColor)) cell.BorderColor = bf.TopColor;
+            if (bf.TopWidthPt > 0)                  cell.BorderThicknessPt = bf.TopWidthPt;
+        }
+        else
+        {
+            // 면마다 다름 — per-side 채우기. 공통 대표값은 inner(bottom) 면 사용 (HWPX 관례).
+            cell.BorderTop    = MakeSide(bf.TopWidthPt,    bf.TopColor);
+            cell.BorderBottom = MakeSide(bf.BottomWidthPt, bf.BottomColor);
+            cell.BorderLeft   = MakeSide(bf.LeftWidthPt,   bf.LeftColor);
+            cell.BorderRight  = MakeSide(bf.RightWidthPt,  bf.RightColor);
+
+            var (repColor, repPt) = (bf.BottomColor, bf.BottomWidthPt);
+            if (!string.IsNullOrEmpty(repColor)) cell.BorderColor = repColor;
+            if (repPt > 0)                        cell.BorderThicknessPt = repPt;
+        }
+
         if (!string.IsNullOrEmpty(bf.FillFaceColor))
             cell.BackgroundColor = bf.FillFaceColor;
+
+        static CellBorderSide? MakeSide(double pt, string? color)
+            => (pt > 0 || !string.IsNullOrEmpty(color)) ? new CellBorderSide(pt, color) : null;
     }
 
     private static bool TryReadPicture(XElement pic, ReadContext ctx, out ImageBlock image)

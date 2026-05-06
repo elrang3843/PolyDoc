@@ -45,6 +45,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — **셀 테두리 상/하/좌/우 면별 스타일 지원 (`CellBorderSide`)**: `TableCell` 에 `BorderTop`/`BorderBottom`/`BorderLeft`/`BorderRight` (`CellBorderSide?`) 프로퍼티 추가. null 이면 기존 `BorderThicknessPt`/`BorderColor` 공통값 사용(하위 호환). DOCX 코덱: `DocxReader` 가 `w:tcBorders` 의 4면을 독립 파싱 → per-side 세팅; `DocxWriter` 가 `BuildOneBorder<T>` 로 면별 값 우선·공통값 폴백 출력. HWPX 코덱: `HwpxReader.ApplyCellBorderFromDef` 가 4면 동일이면 공통값만, 다르면 per-side 채움; `HwpxWriter.SideOrFallback` 이 외곽면·inner면별 per-side 우선 적용. 라운드트립 테스트(`RoundTrip_PreservesPerSideCellBorders`) 1건 추가.
+
 - **Added** — **DOCX 표/셀 테두리·배경색 보존**: `DocxReader` 가 `w:tblBorders`(두께·색상)·`w:shd`(배경색)를 `Table.BorderThicknessPt/BorderColor/BackgroundColor`로, 셀의 `w:tcBorders`·`w:shd`를 `TableCell.BorderThicknessPt/BorderColor/BackgroundColor`로 파싱. `DocxWriter` 가 이 값들을 DOCX로 출력. 단위 변환: 1/8pt ↔ pt. 라운드트립 테스트 3건 추가.
 
 - **Added** — **DOCX 도형(ShapeObject) 보존 지원**: `DocxReader` 가 DrawingML `wps:wsp` 도형을 `ShapeObject`로 파싱 (rect/ellipse/triangle/polygon/polyline/line 및 customGeometry), `DocxWriter` 가 `ShapeObject` → `wp:anchor`/`wp:inline` + `wps:wsp` DrawingML 로 출력. EMU ↔ mm 단위 변환·stroke dash·arrow·fill opacity·rotation·BehindText 래핑 지원. `DocxRoundTripTests` 에 라운드트립 테스트 6건 추가.

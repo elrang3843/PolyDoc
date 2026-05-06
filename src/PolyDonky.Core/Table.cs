@@ -1,5 +1,20 @@
 namespace PolyDonky.Core;
 
+using System.Text.Json.Serialization;
+
+/// <summary>셀/표 테두리 한 면의 스타일.</summary>
+public readonly struct CellBorderSide
+{
+    public double ThicknessPt { get; init; }
+    public string? Color { get; init; }
+
+    public CellBorderSide(double thicknessPt, string? color = null)
+    {
+        ThicknessPt = thicknessPt;
+        Color = color;
+    }
+}
+
 /// <summary>표 수평 정렬 (페이지 기준).</summary>
 public enum TableHAlign { Left, Center, Right }
 
@@ -99,10 +114,23 @@ public sealed class TableCell
     public double PaddingRightMm  { get; set; }
 
     // ── 테두리 ───────────────────────────────────────────────────────────
-    /// <summary>테두리 두께 (pt). 0 이하면 렌더러 기본값 (0.75pt) 사용.</summary>
+    /// <summary>테두리 두께 (pt). 0 이하면 렌더러 기본값 (0.75pt) 사용. 면별 지정이 없을 때 공통값.</summary>
     public double BorderThicknessPt { get; set; }
-    /// <summary>테두리 색상 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8).</summary>
+    /// <summary>테두리 색상 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8). 면별 지정이 없을 때 공통값.</summary>
     public string? BorderColor { get; set; }
+
+    /// <summary>위쪽 테두리. null 이면 BorderThicknessPt/BorderColor 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderTop { get; set; }
+    /// <summary>아래쪽 테두리. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderBottom { get; set; }
+    /// <summary>왼쪽 테두리. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderLeft { get; set; }
+    /// <summary>오른쪽 테두리. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderRight { get; set; }
 
     // ── 배경색 ───────────────────────────────────────────────────────────
     /// <summary>셀 배경색 hex. null / 빈 문자열이면 투명 (배경 없음).</summary>

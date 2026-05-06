@@ -292,11 +292,17 @@ public sealed class HwpxWriter : IDocumentWriter
                             : tableWidth;
                         string? cellFill = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
                                          : table.BackgroundColor;
+
+                        // 면별 per-side 값 우선, 없으면 inner 대표값 → 표 외곽이면 표 값으로 덮어씀.
+                        (string tc, string tw) = SideOrFallback(top,    cell.BorderTop,    tableColor, tableWidth, innerColor, innerWidth);
+                        (string bc, string bw) = SideOrFallback(bottom, cell.BorderBottom, tableColor, tableWidth, innerColor, innerWidth);
+                        (string lc, string lw) = SideOrFallback(left,   cell.BorderLeft,   tableColor, tableWidth, innerColor, innerWidth);
+                        (string rc, string rw) = SideOrFallback(right,  cell.BorderRight,  tableColor, tableWidth, innerColor, innerWidth);
                         RegisterCustomBorderFill(new BorderFillSpec(
-                            "SOLID", top    ? tableColor : innerColor, top    ? tableWidth : innerWidth,
-                            "SOLID", bottom ? tableColor : innerColor, bottom ? tableWidth : innerWidth,
-                            "SOLID", left   ? tableColor : innerColor, left   ? tableWidth : innerWidth,
-                            "SOLID", right  ? tableColor : innerColor, right  ? tableWidth : innerWidth,
+                            "SOLID", tc, tw,
+                            "SOLID", bc, bw,
+                            "SOLID", lc, lw,
+                            "SOLID", rc, rw,
                             cellFill));
                         foreach (var inner in cell.Blocks)
                             PreRegisterBorderFillsFromBlock(inner);
@@ -304,6 +310,18 @@ public sealed class HwpxWriter : IDocumentWriter
                     }
                 }
             }
+        }
+
+        // 외곽 여부 isOuter=true 이면 표 외곽선 값 고정, 아니면 per-side 값 → 공통 inner 값 순서로 사용.
+        private static (string color, string width) SideOrFallback(
+            bool isOuter, CellBorderSide? side,
+            string tableColor, string tableWidth,
+            string innerColor, string innerWidth)
+        {
+            if (isOuter) return (tableColor, tableWidth);
+            var c = side.HasValue && !string.IsNullOrEmpty(side.Value.Color) ? side.Value.Color! : innerColor;
+            var w = side.HasValue && side.Value.ThicknessPt > 0 ? SnapBorderWidthMm(side.Value.ThicknessPt) : innerWidth;
+            return (c, w);
         }
 
         private static string ExtensionForMediaType(string mt) => mt switch
