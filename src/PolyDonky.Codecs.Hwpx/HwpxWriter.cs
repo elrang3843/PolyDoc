@@ -1568,11 +1568,15 @@ public sealed class HwpxWriter : IDocumentWriter
         bool hasFill = !string.IsNullOrEmpty(shape.FillColor);
         if (hasFill && shape.Kind != ShapeKind.Line && shape.Kind != ShapeKind.Polyline)
         {
+            // FillOpacity (0.0=완전 투명 ~ 1.0=완전 불투명) → winBrush.alpha (0=불투명 ~ 255=투명).
+            // condition.hwpx 는 불투명 채움을 alpha="0" 로 표현 — 즉 alpha 는 \"투명도\".
+            double opacity = Math.Clamp(shape.FillOpacity, 0.0, 1.0);
+            int alpha = (int)Math.Round((1.0 - opacity) * 255);
             elem.Add(new XElement(Hc + "fillBrush",
                 new XElement(Hc + "winBrush",
                     new XAttribute("faceColor",  shape.FillColor!),
                     new XAttribute("hatchColor", "#000000"),
-                    new XAttribute("alpha",      "0"))));
+                    new XAttribute("alpha",      alpha.ToString()))));
         }
 
         elem.Add(new XElement(Hp + "shadow",
