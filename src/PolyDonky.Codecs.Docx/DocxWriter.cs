@@ -82,6 +82,9 @@ public sealed class DocxWriter : IDocumentWriter
             case ImageBlock image:
                 target.AppendChild(BuildImageParagraph(image, ctx));
                 break;
+            case ShapeObject shape:
+                target.AppendChild(BuildShapeParagraph(shape, ctx));
+                break;
             case OpaqueBlock opaque when !string.IsNullOrEmpty(opaque.Xml):
                 AppendOpaqueXml(target, opaque);
                 break;
@@ -341,6 +344,253 @@ public sealed class DocxWriter : IDocumentWriter
     }
 
     private static long MmToEmu(double mm) => (long)Math.Round(mm / 25.4 * 914400.0);
+
+    // ── 도형 출력 ─────────────────────────────────────────────────────────────
+
+    private static W.Paragraph BuildShapeParagraph(ShapeObject shape, WriteContext ctx)
+    {
+        var paragraph = new W.Paragraph();
+        var run = new W.Run();
+        run.AppendChild(BuildShapeDrawing(shape, ctx));
+        paragraph.AppendChild(run);
+        return paragraph;
+    }
+
+    private static W.Drawing BuildShapeDrawing(ShapeObject shape, WriteContext ctx)
+    {
+        long cx = MmToEmu(shape.WidthMm  > 0 ? shape.WidthMm  : 40);
+        long cy = MmToEmu(shape.HeightMm > 0 ? shape.HeightMm : 30);
+        var drawingId = ctx.NextDrawingId();
+        var name = $"Shape {drawingId}";
+
+        // a:graphicData の中身を XML 文字列で注入 (wps: はエクステンション名前空間)
+        var graphicData = new A.GraphicData
+        {
+            Uri = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+        };
+        graphicData.InnerXml = BuildWspXml(shape, cx, cy);
+
+        var graphic = new A.Graphic(graphicData);
+
+        if (shape.WrapMode is ImageWrapMode.InFrontOfText or ImageWrapMode.BehindText)
+        {
+            long posX = MmToEmu(shape.OverlayXMm);
+            long posY = MmToEmu(shape.OverlayYMm);
+            bool behind = shape.WrapMode == ImageWrapMode.BehindText;
+
+            var posH = new WP.HorizontalPosition { RelativeFrom = WP.HorizontalRelativePositionValues.Page };
+            posH.AppendChild(new WP.PositionOffset(posX.ToString(CultureInfo.InvariantCulture)));
+
+            var posV = new WP.VerticalPosition { RelativeFrom = WP.VerticalRelativePositionValues.Page };
+            posV.AppendChild(new WP.PositionOffset(posY.ToString(CultureInfo.InvariantCulture)));
+
+            var anchor = new WP.Anchor
+            {
+                DistanceFromTop    = 0U,
+                DistanceFromBottom = 0U,
+                DistanceFromLeft   = 0U,
+                DistanceFromRight  = 0U,
+                SimplePos          = false,
+                RelativeHeight     = 0U,
+                BehindDoc          = behind,
+                Locked             = false,
+                LayoutInCell       = true,
+                AllowOverlap       = true,
+            };
+            anchor.AppendChild(new WP.SimplePosition { X = 0L, Y = 0L });
+            anchor.AppendChild(posH);
+            anchor.AppendChild(posV);
+            anchor.AppendChild(new WP.Extent { Cx = cx, Cy = cy });
+            anchor.AppendChild(new WP.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L });
+            anchor.AppendChild(new WP.WrapNone());
+            anchor.AppendChild(new WP.DocProperties { Id = drawingId, Name = name });
+            anchor.AppendChild(new WP.NonVisualGraphicFrameDrawingProperties());
+            anchor.AppendChild(graphic);
+
+            return new W.Drawing(anchor);
+        }
+        else
+        {
+            // Inline (WrapMode.Inline 및 WrapLeft/WrapRight 1차 처리)
+            return new W.Drawing(
+                new WP.Inline(
+                    new WP.Extent { Cx = cx, Cy = cy },
+                    new WP.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
+                    new WP.DocProperties { Id = drawingId, Name = name },
+                    new WP.NonVisualGraphicFrameDrawingProperties(),
+                    graphic
+                )
+                {
+                    DistanceFromTop    = 0U,
+                    DistanceFromBottom = 0U,
+                    DistanceFromLeft   = 0U,
+                    DistanceFromRight  = 0U,
+                });
+        }
+    }
+
+    /// <summary>wps:wsp 요소의 OuterXml 을 반환한다.</summary>
+    private static string BuildWspXml(ShapeObject shape, long cx, long cy)
+    {
+        long rotEmu  = (long)Math.Round(shape.RotationAngleDeg * 60000);
+        var geomXml  = BuildGeometryXml(shape, cx, cy);
+        var fillXml  = BuildFillXml(shape);
+        var lineXml  = BuildOutlineXml(shape);
+        var txbxXml  = BuildLabelTxbxXml(shape);
+
+        return
+            "<wps:wsp" +
+            " xmlns:wps=\"http://schemas.microsoft.com/office/word/2010/wordprocessingShape\"" +
+            " xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"" +
+            " xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">" +
+            "<wps:spPr>" +
+            $"<a:xfrm rot=\"{rotEmu}\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm>" +
+            geomXml +
+            fillXml +
+            lineXml +
+            "</wps:spPr>" +
+            txbxXml +
+            "<wps:bodyPr/>" +
+            "</wps:wsp>";
+    }
+
+    private static string BuildGeometryXml(ShapeObject shape, long cx, long cy)
+    {
+        var preset = GetPresetGeometry(shape);
+        if (preset is not null)
+            return $"<a:prstGeom prst=\"{preset}\"><a:avLst/></a:prstGeom>";
+
+        return BuildCustomGeometryXml(shape, cx, cy);
+    }
+
+    private static string? GetPresetGeometry(ShapeObject shape) => shape.Kind switch
+    {
+        ShapeKind.Rectangle   => "rect",
+        ShapeKind.RoundedRect => "roundRect",
+        ShapeKind.Ellipse     => "ellipse",
+        ShapeKind.Triangle    => "triangle",
+        ShapeKind.Line when shape.Points.Count < 2 => "line",
+        ShapeKind.RegularPolygon => shape.SideCount switch
+        {
+            3  => "triangle",
+            4  => "rect",
+            5  => "pentagon",
+            6  => "hexagon",
+            7  => "heptagon",
+            8  => "octagon",
+            10 => "decagon",
+            12 => "dodecagon",
+            _  => null,
+        },
+        ShapeKind.Star => shape.SideCount switch
+        {
+            4  => "star4",
+            5  => "star5",
+            6  => "star6",
+            7  => "star7",
+            8  => "star8",
+            10 => "star10",
+            12 => "star12",
+            16 => "star16",
+            24 => "star24",
+            32 => "star32",
+            _  => null,
+        },
+        _ => null,
+    };
+
+    private static string BuildCustomGeometryXml(ShapeObject shape, long cx, long cy)
+    {
+        var pts = shape.Points;
+        if (pts.Count < 2)
+            return "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>";
+
+        double wMm = shape.WidthMm  > 0 ? shape.WidthMm  : 40;
+        double hMm = shape.HeightMm > 0 ? shape.HeightMm : 30;
+        bool closed = shape.Kind is ShapeKind.Polygon or ShapeKind.ClosedSpline;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>");
+        sb.Append("<a:rect l=\"0\" t=\"0\" r=\"r\" b=\"b\"/>");
+        sb.Append($"<a:pathLst><a:path w=\"{cx}\" h=\"{cy}\">");
+
+        long x0 = (long)Math.Round(pts[0].X / wMm * cx);
+        long y0 = (long)Math.Round(pts[0].Y / hMm * cy);
+        sb.Append($"<a:moveTo><a:pt x=\"{x0}\" y=\"{y0}\"/></a:moveTo>");
+
+        for (int i = 1; i < pts.Count; i++)
+        {
+            long xi = (long)Math.Round(pts[i].X / wMm * cx);
+            long yi = (long)Math.Round(pts[i].Y / hMm * cy);
+            sb.Append($"<a:lnTo><a:pt x=\"{xi}\" y=\"{yi}\"/></a:lnTo>");
+        }
+
+        if (closed) sb.Append("<a:close/>");
+        sb.Append("</a:path></a:pathLst></a:custGeom>");
+        return sb.ToString();
+    }
+
+    private static string BuildFillXml(ShapeObject shape)
+    {
+        if (string.IsNullOrEmpty(shape.FillColor))
+            return "<a:noFill/>";
+
+        var hex = shape.FillColor!.TrimStart('#').ToUpperInvariant();
+        if (Math.Abs(shape.FillOpacity - 1.0) < 0.001)
+            return $"<a:solidFill><a:srgbClr val=\"{hex}\"/></a:solidFill>";
+
+        var alphaVal = (int)Math.Round(shape.FillOpacity * 100000);
+        return $"<a:solidFill><a:srgbClr val=\"{hex}\"><a:alpha val=\"{alphaVal}\"/></a:srgbClr></a:solidFill>";
+    }
+
+    private static string BuildOutlineXml(ShapeObject shape)
+    {
+        if (shape.StrokeThicknessPt <= 0)
+            return "<a:ln><a:noFill/></a:ln>";
+
+        long strokeEmu = (long)Math.Round(shape.StrokeThicknessPt * 12700);
+        var hex = (shape.StrokeColor ?? "#000000").TrimStart('#').ToUpperInvariant();
+
+        var dashXml = shape.StrokeDash switch
+        {
+            StrokeDash.Dashed  => "<a:prstDash val=\"dash\"/>",
+            StrokeDash.Dotted  => "<a:prstDash val=\"dot\"/>",
+            StrokeDash.DashDot => "<a:prstDash val=\"dashDot\"/>",
+            _                  => string.Empty,
+        };
+
+        var headXml = shape.StartArrow != ShapeArrow.None
+            ? $"<a:headEnd type=\"{ArrowToType(shape.StartArrow)}\"/>" : string.Empty;
+        var tailXml = shape.EndArrow != ShapeArrow.None
+            ? $"<a:tailEnd type=\"{ArrowToType(shape.EndArrow)}\"/>" : string.Empty;
+
+        return $"<a:ln w=\"{strokeEmu}\">" +
+               $"<a:solidFill><a:srgbClr val=\"{hex}\"/></a:solidFill>" +
+               dashXml + headXml + tailXml +
+               "</a:ln>";
+    }
+
+    private static string BuildLabelTxbxXml(ShapeObject shape)
+    {
+        if (string.IsNullOrEmpty(shape.LabelText)) return string.Empty;
+        var escaped = shape.LabelText!
+            .Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        return
+            "<wps:txbx>" +
+            "<w:txbxContent><w:p><w:r><w:t>" +
+            escaped +
+            "</w:t></w:r></w:p></w:txbxContent>" +
+            "</wps:txbx>";
+    }
+
+    private static string ArrowToType(ShapeArrow arrow) => arrow switch
+    {
+        ShapeArrow.Open    => "arrow",
+        ShapeArrow.Filled  => "triangle",
+        ShapeArrow.Diamond => "diamond",
+        ShapeArrow.Circle  => "oval",
+        _                  => "none",
+    };
 
     /// <summary>
     /// OpaqueBlock 의 OuterXml 을 임시 Body 컨테이너로 파싱한 뒤 그 자식 요소들을 target 에 옮긴다.

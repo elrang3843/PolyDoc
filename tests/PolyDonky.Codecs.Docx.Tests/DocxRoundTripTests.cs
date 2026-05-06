@@ -238,6 +238,195 @@ public class DocxRoundTripTests
         Assert.Contains("opaque payload", preserved.Xml ?? string.Empty);
     }
 
+    // ── 도형 라운드트립 테스트 ────────────────────────────────────────────────
+
+    [Fact]
+    public void RoundTrip_PreservesRectangleShape()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind               = ShapeKind.Rectangle,
+            WrapMode           = ImageWrapMode.InFrontOfText,
+            WidthMm            = 60,
+            HeightMm           = 40,
+            OverlayXMm         = 20,
+            OverlayYMm         = 30,
+            FillColor          = "#FF0000",
+            StrokeColor        = "#0000FF",
+            StrokeThicknessPt  = 2.0,
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal(ShapeKind.Rectangle,          shape.Kind);
+        Assert.Equal(ImageWrapMode.InFrontOfText,  shape.WrapMode);
+        Assert.Equal(60,  shape.WidthMm,  precision: 0);
+        Assert.Equal(40,  shape.HeightMm, precision: 0);
+        Assert.Equal(20,  shape.OverlayXMm, precision: 0);
+        Assert.Equal(30,  shape.OverlayYMm, precision: 0);
+        Assert.Equal("#FF0000", shape.FillColor,   StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("#0000FF", shape.StrokeColor, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(2.0, shape.StrokeThicknessPt, precision: 1);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesEllipseShape()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind      = ShapeKind.Ellipse,
+            WrapMode  = ImageWrapMode.Inline,
+            WidthMm   = 50,
+            HeightMm  = 30,
+            FillColor = "#00FF00",
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal(ShapeKind.Ellipse,       shape.Kind);
+        Assert.Equal(ImageWrapMode.Inline,    shape.WrapMode);
+        Assert.Equal(50, shape.WidthMm,  precision: 0);
+        Assert.Equal(30, shape.HeightMm, precision: 0);
+        Assert.Equal("#00FF00", shape.FillColor, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesPolylineShape()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind     = ShapeKind.Polyline,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            WidthMm  = 80,
+            HeightMm = 40,
+            Points   = { new ShapePoint { X = 0, Y = 40 }, new ShapePoint { X = 40, Y = 0 }, new ShapePoint { X = 80, Y = 40 } },
+            FillColor = null,
+            StrokeColor = "#000000",
+            StrokeThicknessPt = 1.5,
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal(ShapeKind.Polyline, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+        Assert.Equal(80, shape.WidthMm,  precision: 0);
+        Assert.Equal(40, shape.HeightMm, precision: 0);
+        Assert.Equal(0,  shape.Points[0].X, precision: 0);
+        Assert.Equal(40, shape.Points[0].Y, precision: 0);
+        Assert.Equal(40, shape.Points[1].X, precision: 0);
+        Assert.Equal(0,  shape.Points[1].Y, precision: 0);
+        Assert.Equal(80, shape.Points[2].X, precision: 0);
+        Assert.Equal(40, shape.Points[2].Y, precision: 0);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesShapeRotation()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind             = ShapeKind.Rectangle,
+            WrapMode         = ImageWrapMode.InFrontOfText,
+            WidthMm          = 50,
+            HeightMm         = 30,
+            RotationAngleDeg = 45.0,
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal(45.0, shape.RotationAngleDeg, precision: 1);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesShapeStrokeDash()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind              = ShapeKind.Rectangle,
+            WrapMode          = ImageWrapMode.Inline,
+            WidthMm           = 40,
+            HeightMm          = 20,
+            StrokeDash        = StrokeDash.Dashed,
+            StrokeThicknessPt = 1.0,
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal(StrokeDash.Dashed, shape.StrokeDash);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesShapeLabel()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind      = ShapeKind.Ellipse,
+            WrapMode  = ImageWrapMode.InFrontOfText,
+            WidthMm   = 60,
+            HeightMm  = 40,
+            LabelText = "도형 레이블",
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal("도형 레이블", shape.LabelText);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesShapeBehindText()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ShapeObject
+        {
+            Kind       = ShapeKind.Rectangle,
+            WrapMode   = ImageWrapMode.BehindText,
+            WidthMm    = 50,
+            HeightMm   = 30,
+            FillColor  = "#CCCCCC",
+            OverlayXMm = 10,
+            OverlayYMm = 10,
+        });
+
+        var rt = WriteThenRead(doc);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+
+        Assert.Equal(ImageWrapMode.BehindText, shape.WrapMode);
+        Assert.Equal(50, shape.WidthMm,  precision: 0);
+        Assert.Equal(30, shape.HeightMm, precision: 0);
+    }
+
     private static PolyDonkyument WriteThenRead(PolyDonkyument document)
     {
         using var ms = new MemoryStream();

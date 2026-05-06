@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using DocumentFormat.OpenXml.Packaging;
 using PolyDonky.Core;
 using A = DocumentFormat.OpenXml.Drawing;
@@ -15,7 +16,8 @@ namespace PolyDonky.Codecs.Docx;
 ///   - 굵게·기울임·밑줄·취소선·위첨자·아래첨자·폰트·크기·색상
 ///   - 표 (w:tbl → Table, 셀 병합 포함)
 ///   - 인라인 이미지 (w:drawing → ImageBlock, ImagePart 바이너리 추출)
-///   - 미인식 블록 (도형·SDT 등) → OpaqueBlock 으로 원본 XML 보존
+///   - DrawingML 도형 (wps:wsp → ShapeObject: rect/ellipse/triangle/polygon/polyline/line 등)
+///   - 미인식 블록 (SDT 등) → OpaqueBlock 으로 원본 XML 보존
 ///
 /// 각주·필드·고급 표 속성은 후속 사이클에서 추가한다.
 /// </summary>
@@ -79,23 +81,31 @@ public sealed class DocxReader : IDocumentReader
         public MainDocumentPart MainPart { get; }
     }
 
+    // DrawingML / WordprocessingShape 네임스페이스
+    private static readonly XNamespace XnsA   = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    private static readonly XNamespace XnsWps = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+    private static readonly XNamespace XnsWp  = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+    private static readonly XNamespace XnsWml = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
     private static void AppendParagraphAndExtractedDrawings(IList<Block> target, W.Paragraph wp, ReadContext ctx)
     {
         var paragraph = new Paragraph();
         ApplyParagraphProperties(paragraph, wp.ParagraphProperties);
 
-        var images = new List<ImageBlock>();
+        // 그림·도형은 단락 뒤에 별도 블록으로 추가 (1차 정책).
+        var drawingBlocks = new List<Block>();
 
         foreach (var run in wp.Elements<W.Run>())
         {
-            // 1) 인라인 이미지(w:drawing) 가 있으면 추출해 별도 ImageBlock 으로 등록한다.
-            //    해당 Run 의 텍스트는 비어 있을 가능성이 크지만, 텍스트와 그림이 섞여 있어도 텍스트는 단락에,
-            //    그림은 단락 뒤 ImageBlock 으로 들어가는 단순한 1차 정책.
             foreach (var drawing in run.Elements<W.Drawing>())
             {
                 if (TryExtractImage(drawing, ctx, out var imageBlock))
                 {
-                    images.Add(imageBlock);
+                    drawingBlocks.Add(imageBlock);
+                }
+                else if (TryExtractShape(drawing, out var shapeBlock))
+                {
+                    drawingBlocks.Add(shapeBlock);
                 }
                 else
                 {
@@ -109,7 +119,6 @@ public sealed class DocxReader : IDocumentReader
                 }
             }
 
-            // 2) 텍스트 — 빈 텍스트도 RunProperties 의 의미를 살리고 싶지만 현 사이클에서는 무시.
             var text = string.Concat(run.Elements<W.Text>().Select(t => t.Text));
             if (text.Length == 0)
             {
@@ -123,9 +132,9 @@ public sealed class DocxReader : IDocumentReader
             paragraph.AddText(string.Empty);
         }
         target.Add(paragraph);
-        foreach (var img in images)
+        foreach (var block in drawingBlocks)
         {
-            target.Add(img);
+            target.Add(block);
         }
     }
 
@@ -393,6 +402,291 @@ public sealed class DocxReader : IDocumentReader
 
         return style;
     }
+
+    // ── 도형 파싱 ─────────────────────────────────────────────────────────────
+
+    private static bool TryExtractShape(W.Drawing drawing, out ShapeObject shape)
+    {
+        shape = null!;
+        XElement xml;
+        try { xml = XElement.Parse(drawing.OuterXml); }
+        catch (System.Xml.XmlException) { return false; }
+
+        // wps:wsp 가 있어야 DrawingML 도형
+        var wsp = xml.Descendants(XnsWps + "wsp").FirstOrDefault();
+        if (wsp is null) return false;
+
+        var spPr = wsp.Element(XnsWps + "spPr");
+        if (spPr is null) return false;
+
+        shape = new ShapeObject();
+
+        // ── 도형 종류 (geometry) ───────────────────────────────────────────────
+        var prstGeom = spPr.Descendants(XnsA + "prstGeom").FirstOrDefault();
+        var custGeom = spPr.Descendants(XnsA + "custGeom").FirstOrDefault();
+
+        if (prstGeom is not null)
+        {
+            var prst = prstGeom.Attribute("prst")?.Value ?? "rect";
+            shape.Kind = PrstToShapeKind(prst);
+            if (shape.Kind is ShapeKind.RegularPolygon or ShapeKind.Star or ShapeKind.Triangle)
+                shape.SideCount = PrstToSideCount(prst);
+        }
+        else if (custGeom is not null)
+        {
+            ParseCustomGeometry(custGeom, shape);
+        }
+
+        // ── 크기·회전 (xfrm) ─────────────────────────────────────────────────
+        var xfrm = spPr.Descendants(XnsA + "xfrm").FirstOrDefault();
+        if (xfrm is not null)
+        {
+            if (xfrm.Attribute("rot") is { } rotAttr
+                && long.TryParse(rotAttr.Value, out var rotVal))
+            {
+                shape.RotationAngleDeg = rotVal / 60000.0;
+            }
+
+            var ext = xfrm.Element(XnsA + "ext");
+            if (ext is not null)
+            {
+                if (long.TryParse(ext.Attribute("cx")?.Value, out var cxVal) && cxVal > 0)
+                    shape.WidthMm  = EmuToMm(cxVal);
+                if (long.TryParse(ext.Attribute("cy")?.Value, out var cyVal) && cyVal > 0)
+                    shape.HeightMm = EmuToMm(cyVal);
+            }
+        }
+
+        // ── 채우기 ────────────────────────────────────────────────────────────
+        if (spPr.Descendants(XnsA + "noFill").Any())
+        {
+            shape.FillColor = null;
+        }
+        else
+        {
+            var solidFill = spPr.Descendants(XnsA + "solidFill").FirstOrDefault();
+            if (solidFill is not null)
+            {
+                var srgbClr = solidFill.Element(XnsA + "srgbClr");
+                if (srgbClr?.Attribute("val") is { } cv && cv.Value.Length == 6)
+                    shape.FillColor = "#" + cv.Value.ToUpperInvariant();
+
+                var alpha = srgbClr?.Element(XnsA + "alpha")
+                    ?? solidFill.Descendants(XnsA + "alpha").FirstOrDefault();
+                if (alpha?.Attribute("val") is { } av
+                    && int.TryParse(av.Value, out var alphaVal))
+                {
+                    shape.FillOpacity = alphaVal / 100000.0;
+                }
+            }
+        }
+
+        // ── 선 (ln) ───────────────────────────────────────────────────────────
+        var ln = spPr.Descendants(XnsA + "ln").FirstOrDefault();
+        if (ln is not null)
+        {
+            if (ln.Descendants(XnsA + "noFill").Any())
+            {
+                shape.StrokeThicknessPt = 0;
+            }
+            else
+            {
+                if (ln.Attribute("w") is { } wAttr
+                    && long.TryParse(wAttr.Value, out var wVal))
+                {
+                    shape.StrokeThicknessPt = wVal / 12700.0;
+                }
+
+                var lnSolid = ln.Descendants(XnsA + "solidFill").FirstOrDefault();
+                if (lnSolid?.Element(XnsA + "srgbClr") is { } lnClr
+                    && lnClr.Attribute("val") is { } lv && lv.Value.Length == 6)
+                {
+                    shape.StrokeColor = "#" + lv.Value.ToUpperInvariant();
+                }
+
+                var prstDash = ln.Descendants(XnsA + "prstDash").FirstOrDefault();
+                if (prstDash?.Attribute("val") is { } dv)
+                {
+                    shape.StrokeDash = dv.Value switch
+                    {
+                        "dash" or "lgDash" or "lgDashDot" or "lgDashDotDot" or "sysDash" => StrokeDash.Dashed,
+                        "dot" or "sysDot" => StrokeDash.Dotted,
+                        "dashDot" or "sysDashDot" or "sysDashDotDot" => StrokeDash.DashDot,
+                        _ => StrokeDash.Solid,
+                    };
+                }
+
+                if (ln.Element(XnsA + "headEnd") is { } headEnd)
+                    shape.StartArrow = ArrowTypeFromAttr(headEnd.Attribute("type")?.Value);
+                if (ln.Element(XnsA + "tailEnd") is { } tailEnd)
+                    shape.EndArrow = ArrowTypeFromAttr(tailEnd.Attribute("type")?.Value);
+            }
+        }
+
+        // ── 위치·wrap (anchor / inline) ───────────────────────────────────────
+        var anchor = xml.Descendants(XnsWp + "anchor").FirstOrDefault();
+        var inline  = xml.Descendants(XnsWp + "inline").FirstOrDefault();
+
+        if (anchor is not null)
+        {
+            ParseAnchorPosition(anchor, shape);
+        }
+        else if (inline is not null)
+        {
+            shape.WrapMode = ImageWrapMode.Inline;
+            if (shape.WidthMm <= 0 || shape.HeightMm <= 0)
+            {
+                var ext = inline.Element(XnsWp + "extent");
+                if (ext is not null)
+                {
+                    if (long.TryParse(ext.Attribute("cx")?.Value, out var ecx) && ecx > 0)
+                        shape.WidthMm  = EmuToMm(ecx);
+                    if (long.TryParse(ext.Attribute("cy")?.Value, out var ecy) && ecy > 0)
+                        shape.HeightMm = EmuToMm(ecy);
+                }
+            }
+        }
+
+        // ── 레이블 (txbx) ─────────────────────────────────────────────────────
+        var txbx = wsp.Descendants(XnsWps + "txbx").FirstOrDefault();
+        if (txbx is not null)
+        {
+            var labelText = string.Concat(txbx.Descendants(XnsWml + "t").Select(t => t.Value));
+            if (!string.IsNullOrEmpty(labelText))
+                shape.LabelText = labelText;
+        }
+
+        return true;
+    }
+
+    private static void ParseAnchorPosition(XElement anchor, ShapeObject shape)
+    {
+        // behindDoc 속성
+        var behindDoc = anchor.Attribute("behindDoc")?.Value;
+        bool behind = behindDoc is "1" or "true";
+
+        if (anchor.Descendants(XnsWp + "wrapNone").Any())
+        {
+            shape.WrapMode = behind ? ImageWrapMode.BehindText : ImageWrapMode.InFrontOfText;
+        }
+        else if (anchor.Descendants(XnsWp + "wrapSquare").Any()
+              || anchor.Descendants(XnsWp + "wrapTopAndBottom").Any())
+        {
+            shape.WrapMode = ImageWrapMode.WrapLeft;
+        }
+        else
+        {
+            shape.WrapMode = ImageWrapMode.InFrontOfText;
+        }
+
+        if (anchor.Element(XnsWp + "positionH") is { } posH
+            && posH.Element(XnsWp + "posOffset") is { } phOff
+            && long.TryParse(phOff.Value, out var hOff))
+        {
+            shape.OverlayXMm = EmuToMm(hOff);
+        }
+
+        if (anchor.Element(XnsWp + "positionV") is { } posV
+            && posV.Element(XnsWp + "posOffset") is { } pvOff
+            && long.TryParse(pvOff.Value, out var vOff))
+        {
+            shape.OverlayYMm = EmuToMm(vOff);
+        }
+
+        var ext = anchor.Element(XnsWp + "extent");
+        if (ext is not null)
+        {
+            if (long.TryParse(ext.Attribute("cx")?.Value, out var ecx) && ecx > 0)
+                shape.WidthMm  = EmuToMm(ecx);
+            if (long.TryParse(ext.Attribute("cy")?.Value, out var ecy) && ecy > 0)
+                shape.HeightMm = EmuToMm(ecy);
+        }
+    }
+
+    private static void ParseCustomGeometry(XElement custGeom, ShapeObject shape)
+    {
+        var path = custGeom.Descendants(XnsA + "path").FirstOrDefault();
+        if (path is null) return;
+
+        long pathW = 1, pathH = 1;
+        if (long.TryParse(path.Attribute("w")?.Value, out var pw) && pw > 0) pathW = pw;
+        if (long.TryParse(path.Attribute("h")?.Value, out var ph) && ph > 0) pathH = ph;
+
+        // 라이터가 path w/h 를 cx/cy(EMU)로 설정했으므로 좌표도 EMU 단위.
+        // shape.WidthMm 은 이 시점에서 아직 기본값일 수 있으므로 pathW 기반으로 mm 환산.
+        double bboxWMm = EmuToMm(pathW);
+        double bboxHMm = EmuToMm(pathH);
+
+        bool hasClose = path.Descendants(XnsA + "close").Any();
+        shape.Kind = hasClose ? ShapeKind.Polygon : ShapeKind.Polyline;
+
+        foreach (var cmd in path.Elements())
+        {
+            var pt = cmd.Element(XnsA + "pt");
+            if (pt is null) continue;
+            if (long.TryParse(pt.Attribute("x")?.Value, out var px)
+                && long.TryParse(pt.Attribute("y")?.Value, out var py))
+            {
+                shape.Points.Add(new ShapePoint
+                {
+                    X = (double)px / pathW * bboxWMm,
+                    Y = (double)py / pathH * bboxHMm,
+                });
+            }
+        }
+
+        if (shape.Points.Count == 2 && shape.Kind == ShapeKind.Polyline)
+            shape.Kind = ShapeKind.Line;
+    }
+
+    private static ShapeKind PrstToShapeKind(string prst) => prst switch
+    {
+        "rect"                => ShapeKind.Rectangle,
+        "roundRect"           => ShapeKind.RoundedRect,
+        "ellipse" or "circle" => ShapeKind.Ellipse,
+        "line" or "straightConnector1" or "bentConnector2" or "bentConnector3" => ShapeKind.Line,
+        "triangle" or "rtTriangle" => ShapeKind.Triangle,
+        "pentagon"  => ShapeKind.RegularPolygon,
+        "hexagon"   => ShapeKind.RegularPolygon,
+        "heptagon"  => ShapeKind.RegularPolygon,
+        "octagon"   => ShapeKind.RegularPolygon,
+        "decagon"   => ShapeKind.RegularPolygon,
+        "dodecagon" => ShapeKind.RegularPolygon,
+        "star4" or "star5" or "star6" or "star7" or "star8" or "star10"
+            or "star12" or "star16" or "star24" or "star32" => ShapeKind.Star,
+        _ => ShapeKind.Rectangle,
+    };
+
+    private static int PrstToSideCount(string prst) => prst switch
+    {
+        "triangle" or "rtTriangle" => 3,
+        "pentagon"  => 5,
+        "hexagon"   => 6,
+        "heptagon"  => 7,
+        "octagon"   => 8,
+        "decagon"   => 10,
+        "dodecagon" => 12,
+        "star4"  => 4,
+        "star5"  => 5,
+        "star6"  => 6,
+        "star7"  => 7,
+        "star8"  => 8,
+        "star10" => 10,
+        "star12" => 12,
+        "star16" => 16,
+        "star24" => 24,
+        "star32" => 32,
+        _ => 5,
+    };
+
+    private static ShapeArrow ArrowTypeFromAttr(string? value) => value switch
+    {
+        "arrow" or "stealth" => ShapeArrow.Open,
+        "triangle"           => ShapeArrow.Filled,
+        "diamond"            => ShapeArrow.Diamond,
+        "oval"               => ShapeArrow.Circle,
+        _                    => ShapeArrow.None,
+    };
 
     private static void ReadCoreProperties(WordprocessingDocument package, DocumentMetadata metadata)
     {

@@ -44,6 +44,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+- **Added** — **DOCX 도형(ShapeObject) 보존 지원**: `DocxReader` 가 DrawingML `wps:wsp` 도형을 `ShapeObject`로 파싱 (rect/ellipse/triangle/polygon/polyline/line 및 customGeometry), `DocxWriter` 가 `ShapeObject` → `wp:anchor`/`wp:inline` + `wps:wsp` DrawingML 로 출력. EMU ↔ mm 단위 변환·stroke dash·arrow·fill opacity·rotation·BehindText 래핑 지원. `DocxRoundTripTests` 에 라운드트립 테스트 6건 추가.
+
 ### Docs
 - **Docs** — **HWPX 코덱 구현 참고 자료 출처와 감사 명시**: HWPX 호환성 작업이 그동안 샘플 1개만으로 추측에 의존했음을 인지하고, 사용자께서 알려주신 공식 자료원으로 전환. `README.md` 에 새 섹션 "HWPX / OWPML 구현 참고 자료" 추가, `THIRD_PARTY_NOTICES.md` 에 동일 내용 영문 포함. 참고 자료: (1) **KS X 6101 OWPML 국가표준** (https://standard.go.kr) — 워드프로세서 마크업 언어 표준 본문, (2) **한컴 HWP/OWPML 형식 안내** (https://www.hancom.com/support/downloadCenter/hwpOwpml) — 한컴 공식 형식 정의서, (3) **`hancom-io/hwpx-owpml-model`** Apache-2.0 (https://github.com/hancom-io/hwpx-owpml-model) — 한컴 공식 OWPML C++ 참조 모델 (`CPictureType`/`CRectangleType`/`CLineType` 등 요소·속성·자식 구조와 직렬화 순서 검증), (4) **`ai-screams/HwpForge`** (https://github.com/ai-screams/HwpForge) — Rust HWPX 독립 구현, 직렬화 패턴 비교, (5) **KS X 6101 ↔ 한컴 구현 차이 정리 스프레드시트** (https://docs.google.com/spreadsheets/d/1jqXPUVZv1QYcoruJgek2GKYXkhbyaZ68cDjbb1MeyYk) — 표준 오타·한컴 미구현·표준 외 추가 항목 정리. 위 자료의 코드는 PolyDonky 에 통합·재배포되지 않으며 명세 이해를 위한 참고 문헌으로만 사용. 정보 공개해 주신 모든 분께 감사.
 
