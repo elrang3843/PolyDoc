@@ -185,7 +185,7 @@ public sealed class DocxReader : IDocumentReader
         return true;
     }
 
-    private static double EmuToMm(long emu) => emu / 914400.0 * 25.4;
+    private static double EmuToMm(long emu) => UnitConverter.EmuToMm(emu);
 
     private static Table ReadTable(W.Table wtable, ReadContext ctx)
     {
@@ -339,15 +339,7 @@ public sealed class DocxReader : IDocumentReader
     }
 
     private static double ParseTwipsToMm(string? twipsRaw)
-    {
-        if (string.IsNullOrEmpty(twipsRaw))
-        {
-            return 0;
-        }
-        return double.TryParse(twipsRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var twips)
-            ? twips / 56.6929
-            : 0;
-    }
+        => UnitConverter.ParseTwipsToMm(twipsRaw);
 
     private static void ApplyParagraphProperties(Paragraph paragraph, W.ParagraphProperties? pPr)
     {

@@ -296,7 +296,7 @@ public sealed class DocxWriter : IDocumentWriter
     }
 
     private static string MmToTwipsString(double mm)
-        => ((int)Math.Round(mm * 56.6929)).ToString(CultureInfo.InvariantCulture);
+        => UnitConverter.MmToTwipsString(mm);
 
     // ── 표·셀 테두리 빌더 ─────────────────────────────────────────────────────
 
@@ -404,7 +404,7 @@ public sealed class DocxWriter : IDocumentWriter
             });
     }
 
-    private static long MmToEmu(double mm) => (long)Math.Round(mm / 25.4 * 914400.0);
+    private static long MmToEmu(double mm) => UnitConverter.MmToEmu(mm);
 
     // ── 도형 출력 ─────────────────────────────────────────────────────────────
 
@@ -732,24 +732,21 @@ public sealed class DocxWriter : IDocumentWriter
 
     private static W.SectionProperties BuildSectionProperties(PageSettings page)
     {
-        // DOCX 는 트위프(twentieth of a point, 1/1440 inch). mm → twips.
-        static uint MmToTwips(double mm) => (uint)Math.Round(mm * 56.6929);
-
         var props = new W.SectionProperties();
         props.AppendChild(new W.PageSize
         {
-            Width = MmToTwips(page.WidthMm),
-            Height = MmToTwips(page.HeightMm),
+            Width = UnitConverter.MmToTwipsUInt(page.WidthMm),
+            Height = UnitConverter.MmToTwipsUInt(page.HeightMm),
             Orient = page.Orientation == PageOrientation.Landscape
                 ? W.PageOrientationValues.Landscape
                 : W.PageOrientationValues.Portrait,
         });
         props.AppendChild(new W.PageMargin
         {
-            Top = (int)MmToTwips(page.MarginTopMm),
-            Right = MmToTwips(page.MarginRightMm),
-            Bottom = (int)MmToTwips(page.MarginBottomMm),
-            Left = MmToTwips(page.MarginLeftMm),
+            Top = UnitConverter.MmToTwipsInt(page.MarginTopMm),
+            Right = UnitConverter.MmToTwipsUInt(page.MarginRightMm),
+            Bottom = UnitConverter.MmToTwipsInt(page.MarginBottomMm),
+            Left = UnitConverter.MmToTwipsUInt(page.MarginLeftMm),
             Header = 720,
             Footer = 720,
             Gutter = 0,

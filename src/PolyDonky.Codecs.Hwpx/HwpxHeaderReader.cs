@@ -15,8 +15,6 @@ namespace PolyDonky.Codecs.Hwpx;
 /// </summary>
 internal static class HwpxHeaderReader
 {
-    private const double HwpUnitToMm = 25.4 / 7200.0;
-
     public static HwpxHeader Parse(XDocument? doc)
     {
         var header = new HwpxHeader();
@@ -165,9 +163,9 @@ internal static class HwpxHeaderReader
         var margin = elem.Elements().FirstOrDefault(c => c.Name.LocalName == "margin");
         if (margin is not null)
         {
-            if (TryGetDoubleAttr(margin, "left", out var lm)) ps.IndentLeftMm = lm * HwpUnitToMm;
-            if (TryGetDoubleAttr(margin, "right", out var rm)) ps.IndentRightMm = rm * HwpUnitToMm;
-            if (TryGetDoubleAttr(margin, "intent", out var im)) ps.IndentFirstLineMm = im * HwpUnitToMm;
+            if (TryGetDoubleAttr(margin, "left", out var lm)) ps.IndentLeftMm = UnitConverter.HwpUnitToMm(lm);
+            if (TryGetDoubleAttr(margin, "right", out var rm)) ps.IndentRightMm = UnitConverter.HwpUnitToMm(rm);
+            if (TryGetDoubleAttr(margin, "intent", out var im)) ps.IndentFirstLineMm = UnitConverter.HwpUnitToMm(im);
             if (TryGetDoubleAttr(margin, "prev", out var prev)) ps.SpaceBeforePt = prev / 100.0;     // hwpunit 가 아닌 pt*100 (사양 변종)
             if (TryGetDoubleAttr(margin, "next", out var next)) ps.SpaceAfterPt = next / 100.0;
         }

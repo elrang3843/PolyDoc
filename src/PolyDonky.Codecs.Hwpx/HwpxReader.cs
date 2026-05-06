@@ -492,7 +492,7 @@ public sealed class HwpxReader : IDocumentReader
                 if (sz is not null
                     && double.TryParse(sz.Attribute("width")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var widthHwp))
                 {
-                    tableCell.WidthMm = widthHwp * (25.4 / 7200.0);
+                    tableCell.WidthMm = UnitConverter.HwpUnitToMm(widthHwp);
                 }
 
                 // 셀 본문 — subList 안의 hp:p 들을 셀에 모은다 (인라인 그림은 같은 셀에 ImageBlock 으로).
@@ -626,9 +626,9 @@ public sealed class HwpxReader : IDocumentReader
         if (curSz is not null)
         {
             if (double.TryParse(curSz.Attribute("width")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var w))
-                widthMm = w * (25.4 / 7200.0);
+                widthMm = UnitConverter.HwpUnitToMm(w);
             if (double.TryParse(curSz.Attribute("height")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h))
-                heightMm = h * (25.4 / 7200.0);
+                heightMm = UnitConverter.HwpUnitToMm(h);
         }
 
         image = new ImageBlock
