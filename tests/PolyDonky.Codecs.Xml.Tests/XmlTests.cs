@@ -497,4 +497,38 @@ public class XmlTests
         using var xr = System.Xml.XmlReader.Create(sr, settings);
         while (xr.Read()) { }  // 형식 오류 시 예외.
     }
+
+    [Fact]
+    public void Writer_ForcePageBreakBefore_EmitsCss()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(Paragraph.Of("A"));
+        var p2 = Paragraph.Of("B");
+        p2.Style.ForcePageBreakBefore = true;
+        sec.Blocks.Add(p2);
+
+        var xml = PdXmlWriter.ToXml(doc);
+        Assert.Contains("page-break-before:always", xml);
+    }
+
+    [Fact]
+    public void RoundTrip_ForcePageBreakBefore_Preserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(Paragraph.Of("첫 번째 단락"));
+        var p2 = Paragraph.Of("두 번째 단락");
+        p2.Style.ForcePageBreakBefore = true;
+        sec.Blocks.Add(p2);
+        sec.Blocks.Add(Paragraph.Of("세 번째 단락"));
+
+        var xml  = PdXmlWriter.ToXml(doc);
+        var rt   = PdXmlReader.FromXml(xml);
+        var paras = rt.EnumerateParagraphs().ToList();
+
+        Assert.False(paras[0].Style.ForcePageBreakBefore);
+        Assert.True(paras[1].Style.ForcePageBreakBefore);
+        Assert.False(paras[2].Style.ForcePageBreakBefore);
+    }
 }

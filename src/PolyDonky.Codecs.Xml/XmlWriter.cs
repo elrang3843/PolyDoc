@@ -185,6 +185,9 @@ public sealed class XmlWriter : IDocumentWriter
         if (s.IndentRightMm > 0)
             parts.Add($"padding-right:{FmtMm(s.IndentRightMm)}");
 
+        if (s.ForcePageBreakBefore)
+            parts.Add("page-break-before:always");
+
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
     }
 

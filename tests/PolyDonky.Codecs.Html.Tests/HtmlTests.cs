@@ -664,4 +664,57 @@ public class HtmlTests
         Assert.Equal(5, cell.PaddingTopMm,    precision: 1);
         Assert.Equal(5, cell.PaddingLeftMm,   precision: 1);
     }
+
+    [Fact]
+    public void Writer_ForcePageBreakBefore_EmitsCss()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(Paragraph.Of("A"));
+        var p2 = Paragraph.Of("B");
+        p2.Style.ForcePageBreakBefore = true;
+        sec.Blocks.Add(p2);
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("page-break-before:always", html);
+    }
+
+    [Fact]
+    public void Reader_ForcePageBreakBefore_ParsesCss()
+    {
+        var src = "<p>A</p><p style=\"page-break-before:always\">B</p>";
+        var doc = HtmlReader.FromHtml(src);
+        var paragraphs = doc.EnumerateParagraphs().ToList();
+
+        Assert.False(paragraphs[0].Style.ForcePageBreakBefore);
+        Assert.True(paragraphs[1].Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void Reader_ForcePageBreakBefore_ParsesModernCss()
+    {
+        var src = "<p style=\"break-before:page\">C</p>";
+        var doc = HtmlReader.FromHtml(src);
+        Assert.True(doc.EnumerateParagraphs().Single().Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void RoundTrip_ForcePageBreakBefore_Preserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(Paragraph.Of("첫 번째 단락"));
+        var p2 = Paragraph.Of("두 번째 단락");
+        p2.Style.ForcePageBreakBefore = true;
+        sec.Blocks.Add(p2);
+        sec.Blocks.Add(Paragraph.Of("세 번째 단락"));
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        var rt   = HtmlReader.FromHtml(html);
+        var paras = rt.EnumerateParagraphs().ToList();
+
+        Assert.False(paras[0].Style.ForcePageBreakBefore);
+        Assert.True(paras[1].Style.ForcePageBreakBefore);
+        Assert.False(paras[2].Style.ForcePageBreakBefore);
+    }
 }

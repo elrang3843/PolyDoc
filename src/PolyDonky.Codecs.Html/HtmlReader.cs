@@ -924,6 +924,14 @@ public sealed class HtmlReader : IDocumentReader
             p.Style.IndentLeftMm = il;
         if (TryParseCssMm(StyleProp(style, "padding-right") ?? StyleProp(style, "margin-right"), out var ir))
             p.Style.IndentRightMm = ir;
+
+        // 강제 페이지 나누기: page-break-before:always (CSS2 legacy) 또는 break-before:page (CSS3).
+        var pbv = StyleProp(style, "page-break-before") ?? StyleProp(style, "break-before");
+        if (pbv is not null && (pbv.Equals("always", StringComparison.OrdinalIgnoreCase)
+                             || pbv.Equals("page",   StringComparison.OrdinalIgnoreCase)))
+        {
+            p.Style.ForcePageBreakBefore = true;
+        }
     }
 
     private static string? StyleProp(string? style, string prop)

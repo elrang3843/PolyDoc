@@ -45,7 +45,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
-- **Added** — **강제 페이지 나누기 (`ForcePageBreakBefore`) 지원**: `ParagraphStyle` 에 `ForcePageBreakBefore` 불리언 프로퍼티 추가. DOCX: `w:pageBreakBefore` 요소를 읽고 씀. HWPX: `hp:p pageBreak="1"` 속성을 읽고 씀(기존 하드코딩 `"0"` → 조건부). `FlowDocumentBuilder` 가 `Wpf.Paragraph.BreakPageBefore = true` 로 WPF 에 반영하고, `FlowDocumentParser` 가 `wpfPara.BreakPageBefore` 를 역파싱. 라운드트립 테스트 2건(`DocxRoundTripTests`, `HwpxRoundTripTests`) 추가.
+- **Added** — **강제 페이지 나누기 (`ForcePageBreakBefore`) 지원**: `ParagraphStyle` 에 `ForcePageBreakBefore` 불리언 프로퍼티 추가. DOCX: `w:pageBreakBefore` 요소를 읽고 씀. HWPX: `hp:p pageBreak="1"` 속성을 읽고 씀(기존 하드코딩 `"0"` → 조건부). HTML/XML: `page-break-before:always` CSS 를 쓰고, `page-break-before:always` + `break-before:page` (CSS3) 를 읽음. `FlowDocumentBuilder` 가 `Wpf.Paragraph.BreakPageBefore = true` 로 WPF 에 반영하고, `FlowDocumentParser` 가 `wpfPara.BreakPageBefore` 를 역파싱. 라운드트립 테스트 6건(Docx·Hwpx·Html·Xml) 추가 — 243/243 통과.
 
 - **Added** — **단위 변환 공통화 (`UnitConverter`)**: DOCX와 HWPX 코덱에 분산되어 있던 단위 변환 로직을 `PolyDonky.Core.UnitConverter` 정적 클래스로 통합. EMU↔mm (`EmuToMm`/`MmToEmu`), Twips↔mm (`TwipsToMm`/`MmToTwipsInt`/`MmToTwipsUInt`/`MmToTwipsString`/`ParseTwipsToMm`), HwpUnit↔mm (`HwpUnitToMm`/`MmToHwpUnit`) — 총 10개 함수. `DocxReader`, `DocxWriter`, `HwpxReader`, `HwpxWriter`, `HwpxHeaderReader` 5개 파일의 인라인 변환 32+ 곳을 모두 대체; 이전에 쓰던 `const HwpUnitToMm = 25.4/7200.0`·private helper `EmuToMm(long)`·`MmToEmu(double)`·`ParseTwipsToMm(string?)`·local fn `MmToTwips(uint)` 를 제거. 기존 239개 테스트 모두 통과.
 

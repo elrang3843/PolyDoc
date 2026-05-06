@@ -217,6 +217,9 @@ public sealed class HtmlWriter : IDocumentWriter
         if (s.IndentRightMm > 0)
             parts.Add($"padding-right:{s.IndentRightMm.ToString("0.##", CultureInfo.InvariantCulture)}mm");
 
+        if (s.ForcePageBreakBefore)
+            parts.Add("page-break-before:always");
+
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
     }
 
