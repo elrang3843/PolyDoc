@@ -244,15 +244,28 @@ public sealed class HwpxWriter : IDocumentWriter
                     PreRegisterBorderFillsFromBlock(block);
         }
 
+        private static string SnapBorderWidthMm(double pt)
+        {
+            if (pt <= 0) return "0.12 mm";
+            double mm = pt * 0.3527777778;
+            double[] standard = { 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0 };
+            double best = standard[0];
+            double bestDiff = Math.Abs(best - mm);
+            foreach (var s in standard)
+            {
+                double d = Math.Abs(s - mm);
+                if (d < bestDiff) { best = s; bestDiff = d; }
+            }
+            return $"{best:0.##} mm";
+        }
+
         private void PreRegisterBorderFillsFromBlock(Block block)
         {
             if (block is Table table)
             {
                 // 표 외곽 (전체 표 borderFillIDRef) — 4면 동일 spec.
                 string tableColor = string.IsNullOrEmpty(table.BorderColor) ? "#000000" : table.BorderColor!;
-                string tableWidth = table.BorderThicknessPt > 0
-                    ? $"{table.BorderThicknessPt * 0.3527777778:0.##} mm"
-                    : "0.12 mm";
+                string tableWidth = SnapBorderWidthMm(table.BorderThicknessPt);
                 RegisterCustomBorderFill(BorderFillSpec.Uniform(
                     "SOLID", tableColor, tableWidth, table.BackgroundColor));
 
@@ -268,7 +281,6 @@ public sealed class HwpxWriter : IDocumentWriter
                     {
                         int colSpan = Math.Max(cell.ColumnSpan, 1);
                         int rowSpan = Math.Max(cell.RowSpan, 1);
-                        // 외곽 면 검출: 표의 가장자리에 닿는 면.
                         bool top    = r == 0;
                         bool bottom = r + rowSpan >= rowCount;
                         bool left   = c == 0;
@@ -276,11 +288,10 @@ public sealed class HwpxWriter : IDocumentWriter
 
                         string innerColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor! : tableColor;
                         string innerWidth = cell.BorderThicknessPt > 0
-                            ? $"{cell.BorderThicknessPt * 0.3527777778:0.##} mm"
+                            ? SnapBorderWidthMm(cell.BorderThicknessPt)
                             : tableWidth;
                         string? cellFill = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
                                          : table.BackgroundColor;
-                        // 외곽쪽 면은 표 외곽선 spec, 그 외는 cell inner spec.
                         RegisterCustomBorderFill(new BorderFillSpec(
                             "SOLID", top    ? tableColor : innerColor, top    ? tableWidth : innerWidth,
                             "SOLID", bottom ? tableColor : innerColor, bottom ? tableWidth : innerWidth,
@@ -1330,9 +1341,22 @@ public sealed class HwpxWriter : IDocumentWriter
         const long OuterMarginAll      = 283;
 
         // 표 외곽선·배경색을 동적 borderFill 로 등록 (모델값 반영).
-        // pt 두께를 mm 로 (1 pt ≈ 0.3528 mm). 두께 0 이하면 기본 0.12 mm SOLID.
+        // pt 두께를 mm 로 (1 pt ≈ 0.3528 mm). 한컴이 인식하는 표준 너비 집합으로 snap.
+        // "0.71 mm" 같은 비표준 값은 한컴이 기본 thin (0.12 mm) 으로 fallback.
         static string BorderWidthMm(double pt)
-            => pt > 0 ? $"{pt * 0.3527777778:0.##} mm" : "0.12 mm";
+        {
+            if (pt <= 0) return "0.12 mm";
+            double mm = pt * 0.3527777778;
+            double[] standard = { 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0 };
+            double best = standard[0];
+            double bestDiff = Math.Abs(best - mm);
+            foreach (var s in standard)
+            {
+                double d = Math.Abs(s - mm);
+                if (d < bestDiff) { best = s; bestDiff = d; }
+            }
+            return $"{best:0.##} mm";
+        }
         string tableBorderColor = string.IsNullOrEmpty(table.BorderColor) ? "#000000" : table.BorderColor!;
         string tableBorderWidth = BorderWidthMm(table.BorderThicknessPt);
         // 표 자체의 borderFillIDRef — 4면 동일 (외곽선 spec).
