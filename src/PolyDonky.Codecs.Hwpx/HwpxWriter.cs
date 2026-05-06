@@ -85,11 +85,19 @@ public sealed class HwpxWriter : IDocumentWriter
         public const int FirstCustomBorderFillId = 4;
         private readonly List<BorderFillSpec> _customBorderFills = new();
         public IReadOnlyList<BorderFillSpec> CustomBorderFills => _customBorderFills;
+        // 4면 각각 type/color/width 가 다를 수 있도록 확장 — 표 외곽 cell 의 외곽쪽
+        // 면이 inner 면과 다른 색·두께를 가질 수 있게 함.
         public sealed record BorderFillSpec(
-            string BorderType,    // "SOLID" or "NONE"
-            string BorderColor,   // hex
-            string BorderWidth,   // e.g. "0.12 mm"
-            string? FillColor);   // hex or null (no fill)
+            string TopType,    string TopColor,    string TopWidth,
+            string BottomType, string BottomColor, string BottomWidth,
+            string LeftType,   string LeftColor,   string LeftWidth,
+            string RightType,  string RightColor,  string RightWidth,
+            string? FillColor)
+        {
+            // 4면 동일 spec 헬퍼 (대부분 케이스).
+            public static BorderFillSpec Uniform(string type, string color, string width, string? fill = null)
+                => new(type, color, width, type, color, width, type, color, width, type, color, width, fill);
+        }
         public int RegisterCustomBorderFill(BorderFillSpec spec)
         {
             int idx = _customBorderFills.IndexOf(spec);
@@ -240,26 +248,50 @@ public sealed class HwpxWriter : IDocumentWriter
         {
             if (block is Table table)
             {
+                // 표 외곽 (전체 표 borderFillIDRef) — 4면 동일 spec.
                 string tableColor = string.IsNullOrEmpty(table.BorderColor) ? "#000000" : table.BorderColor!;
                 string tableWidth = table.BorderThicknessPt > 0
                     ? $"{table.BorderThicknessPt * 0.3527777778:0.##} mm"
                     : "0.12 mm";
-                RegisterCustomBorderFill(new BorderFillSpec(
+                RegisterCustomBorderFill(BorderFillSpec.Uniform(
                     "SOLID", tableColor, tableWidth, table.BackgroundColor));
 
-                foreach (var row in table.Rows)
-                    foreach (var cell in row.Cells)
+                int rowCount = table.Rows.Count;
+                int colCount = table.Columns.Count;
+                if (colCount == 0 && rowCount > 0)
+                    colCount = table.Rows.Max(r => r.Cells.Sum(c => Math.Max(c.ColumnSpan, 1)));
+
+                for (int r = 0; r < rowCount; r++)
+                {
+                    int c = 0;
+                    foreach (var cell in table.Rows[r].Cells)
                     {
-                        string cColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor! : tableColor;
-                        string cWidth = cell.BorderThicknessPt > 0
+                        int colSpan = Math.Max(cell.ColumnSpan, 1);
+                        int rowSpan = Math.Max(cell.RowSpan, 1);
+                        // 외곽 면 검출: 표의 가장자리에 닿는 면.
+                        bool top    = r == 0;
+                        bool bottom = r + rowSpan >= rowCount;
+                        bool left   = c == 0;
+                        bool right  = c + colSpan >= colCount;
+
+                        string innerColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor! : tableColor;
+                        string innerWidth = cell.BorderThicknessPt > 0
                             ? $"{cell.BorderThicknessPt * 0.3527777778:0.##} mm"
                             : tableWidth;
-                        string? cFill = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
-                                      : table.BackgroundColor;
-                        RegisterCustomBorderFill(new BorderFillSpec("SOLID", cColor, cWidth, cFill));
+                        string? cellFill = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
+                                         : table.BackgroundColor;
+                        // 외곽쪽 면은 표 외곽선 spec, 그 외는 cell inner spec.
+                        RegisterCustomBorderFill(new BorderFillSpec(
+                            "SOLID", top    ? tableColor : innerColor, top    ? tableWidth : innerWidth,
+                            "SOLID", bottom ? tableColor : innerColor, bottom ? tableWidth : innerWidth,
+                            "SOLID", left   ? tableColor : innerColor, left   ? tableWidth : innerWidth,
+                            "SOLID", right  ? tableColor : innerColor, right  ? tableWidth : innerWidth,
+                            cellFill));
                         foreach (var inner in cell.Blocks)
                             PreRegisterBorderFillsFromBlock(inner);
+                        c += colSpan;
                     }
+                }
             }
         }
 
@@ -625,10 +657,10 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("breakCellSeparateLine", "0"),
                 new XElement(Hh + "slash",     new XAttribute("type", "NONE"), new XAttribute("Crooked", "0"), new XAttribute("isCounter", "0")),
                 new XElement(Hh + "backSlash", new XAttribute("type", "NONE"), new XAttribute("Crooked", "0"), new XAttribute("isCounter", "0")),
-                new XElement(Hh + "leftBorder",   new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
-                new XElement(Hh + "rightBorder",  new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
-                new XElement(Hh + "topBorder",    new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
-                new XElement(Hh + "bottomBorder", new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
+                new XElement(Hh + "leftBorder",   new XAttribute("type", spec.LeftType),   new XAttribute("width", spec.LeftWidth),   new XAttribute("color", spec.LeftColor)),
+                new XElement(Hh + "rightBorder",  new XAttribute("type", spec.RightType),  new XAttribute("width", spec.RightWidth),  new XAttribute("color", spec.RightColor)),
+                new XElement(Hh + "topBorder",    new XAttribute("type", spec.TopType),    new XAttribute("width", spec.TopWidth),    new XAttribute("color", spec.TopColor)),
+                new XElement(Hh + "bottomBorder", new XAttribute("type", spec.BottomType), new XAttribute("width", spec.BottomWidth), new XAttribute("color", spec.BottomColor)),
                 new XElement(Hh + "diagonal",     new XAttribute("type", "SOLID"),         new XAttribute("width", "0.1 mm"),         new XAttribute("color", "#000000")));
             if (!string.IsNullOrEmpty(spec.FillColor))
             {
@@ -1302,10 +1334,10 @@ public sealed class HwpxWriter : IDocumentWriter
         static string BorderWidthMm(double pt)
             => pt > 0 ? $"{pt * 0.3527777778:0.##} mm" : "0.12 mm";
         string tableBorderColor = string.IsNullOrEmpty(table.BorderColor) ? "#000000" : table.BorderColor!;
-        string tableBorderType  = "SOLID"; // 두께 0 이어도 한컴 호환 위해 SOLID 유지
         string tableBorderWidth = BorderWidthMm(table.BorderThicknessPt);
-        int tableBorderFillId = ctx.RegisterCustomBorderFill(new WriteContext.BorderFillSpec(
-            tableBorderType, tableBorderColor, tableBorderWidth, table.BackgroundColor));
+        // 표 자체의 borderFillIDRef — 4면 동일 (외곽선 spec).
+        int tableBorderFillId = ctx.RegisterCustomBorderFill(WriteContext.BorderFillSpec.Uniform(
+            "SOLID", tableBorderColor, tableBorderWidth, table.BackgroundColor));
 
         // 외곽 속성 — CTableType (CAbstractShapeObjectType 상속) 정의대로.
         var wtbl = new XElement(Hp + "tbl",
@@ -1375,14 +1407,23 @@ public sealed class HwpxWriter : IDocumentWriter
                 if (cellH <= 0) cellH = 1000;
 
                 // 셀 외곽선·배경색 — 셀이 명시 안하면 표 외곽선 설정 상속.
-                string cellBorderColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor!
-                                       : tableBorderColor;
-                string cellBorderWidth = cell.BorderThicknessPt > 0 ? BorderWidthMm(cell.BorderThicknessPt)
-                                       : tableBorderWidth;
-                string? cellFill       = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
-                                       : table.BackgroundColor;
+                // 외곽쪽 면은 표 외곽선 spec, 그 외는 cell inner spec → 표 외곽선 가시화.
+                string innerColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor!
+                                  : tableBorderColor;
+                string innerWidth = cell.BorderThicknessPt > 0 ? BorderWidthMm(cell.BorderThicknessPt)
+                                  : tableBorderWidth;
+                string? cellFill  = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
+                                  : table.BackgroundColor;
+                bool topEdge    = r == 0;
+                bool bottomEdge = r + rowSpan >= rowCount;
+                bool leftEdge   = c == 0;
+                bool rightEdge  = c + colSpan >= colCount;
                 int cellBorderFillId = ctx.RegisterCustomBorderFill(new WriteContext.BorderFillSpec(
-                    "SOLID", cellBorderColor, cellBorderWidth, cellFill));
+                    "SOLID", topEdge    ? tableBorderColor : innerColor, topEdge    ? tableBorderWidth : innerWidth,
+                    "SOLID", bottomEdge ? tableBorderColor : innerColor, bottomEdge ? tableBorderWidth : innerWidth,
+                    "SOLID", leftEdge   ? tableBorderColor : innerColor, leftEdge   ? tableBorderWidth : innerWidth,
+                    "SOLID", rightEdge  ? tableBorderColor : innerColor, rightEdge  ? tableBorderWidth : innerWidth,
+                    cellFill));
 
                 var wcell = new XElement(Hp + "tc",
                     new XAttribute("name",            string.Empty),
