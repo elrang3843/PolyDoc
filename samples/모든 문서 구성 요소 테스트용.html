@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="ko-KR" data-theme="light" style=""><head>
+    
+    <title>문서 구성 요소 종합 테스트 문서</title>
+    
+    
+    
+    
+    <style>
+      body {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 32px 80px;
+        position: relative;
+        box-sizing: border-box;
+        font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background-color: #fff;
+      }
+
+      .document-header {
+        text-align: center;
+        margin-bottom: 40px;
+        border-bottom: 2px solid #000;
+        padding-bottom: 20px;
+      }
+
+      .document-title {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        font-weight: 700;
+        color: #000;
+      }
+
+      .document-subtitle {
+        font-size: 1.5em;
+        color: #555;
+        margin-bottom: 20px;
+      }
+
+      .meta-info {
+        font-size: 0.9em;
+        color: #666;
+        text-align: right;
+      }
+
+      /* 목차 */
+      .toc {
+        background-color: #f9f9f9;
+        padding: 20px;
+        border: 1px solid #ddd;
+        margin-bottom: 30px;
+      }
+      .toc ul {
+        list-style-type: none;
+        padding-left: 20px;
+      }
+      .toc > ul {
+        padding-left: 0;
+      }
+      .toc a {
+        text-decoration: none;
+        color: #0056b3;
+      }
+
+      /* 제목 스타일 */
+      h1,
+      h2,
+      h3,
+      h4,
+      h5,
+      h6 {
+        color: #000;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+      }
+      h1 {
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 5px;
+      }
+
+      /* 정렬 */
+      .align-left {
+        text-align: left;
+      }
+      .align-center {
+        text-align: center;
+      }
+      .align-right {
+        text-align: right;
+      }
+      .align-justify {
+        text-align: justify;
+      }
+
+      /* 표 스타일 */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+      }
+      th,
+      td {
+        border: 1px solid #000;
+        padding: 8px 12px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+      }
+      .striped tr:nth-child(even) {
+        background-color: #f8f8f8;
+      }
+      caption {
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+
+      /* 인용문 */
+      blockquote {
+        border-left: 4px solid #ccc;
+        margin: 0;
+        padding-left: 20px;
+        color: #555;
+        font-style: italic;
+      }
+      .cite {
+        display: block;
+        text-align: right;
+        font-size: 0.9em;
+        margin-top: 10px;
+      }
+
+      /* 코드 블록 */
+      pre {
+        background-color: #282c34;
+        color: #abb2bf;
+        padding: 15px;
+        border-radius: 4px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+      }
+      code {
+        font-family: Consolas, Monaco, monospace;
+      }
+      p code {
+        background-color: #f0f0f0;
+        color: #e83e8c;
+        padding: 2px 4px;
+        border-radius: 3px;
+      }
+      .line-numbers {
+        counter-reset: line;
+      }
+      .line-numbers span {
+        display: block;
+        line-height: 1.5rem;
+      }
+      .line-numbers span:before {
+        counter-increment: line;
+        content: counter(line);
+        display: inline-block;
+        border-right: 1px solid #ddd;
+        padding-right: 0.5em;
+        margin-right: 0.5em;
+        color: #888;
+        width: 2em;
+        text-align: right;
+      }
+
+      /* 경고/알림 박스 */
+      .alert {
+        padding: 15px;
+        margin-bottom: 20px;
+        border-left: 5px solid;
+        background-color: #fdfdfd;
+      }
+      .alert-info {
+        border-left-color: #17a2b8;
+      }
+      .alert-warning {
+        border-left-color: #ffc107;
+      }
+      .alert-danger {
+        border-left-color: #dc3545;
+      }
+      .alert-success {
+        border-left-color: #28a745;
+      }
+
+      /* 수평선 */
+      hr {
+        border: 0;
+        border-top: 1px solid #000;
+        margin: 20px 0;
+      }
+      hr.dashed {
+        border-top: 1px dashed #666;
+      }
+      hr.dotted {
+        border-top: 1px dotted #999;
+      }
+      hr.thick {
+        border-top: 3px solid #000;
+      }
+
+      /* 다단 레이아웃 */
+      .columns {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+      .column {
+        flex: 1;
+      }
+
+      /* 체크리스트 */
+      .checklist {
+        list-style: none;
+        padding-left: 0;
+      }
+      .checklist li:before {
+        content: '☐ ';
+        font-family: monospace;
+      }
+      .checklist li.checked:before {
+        content: '☑ ';
+      }
+
+      /* 각주/참고문헌 */
+      .footnote-ref {
+        vertical-align: super;
+        font-size: smaller;
+        text-decoration: none;
+      }
+      .footnotes {
+        border-top: 1px solid #ccc;
+        margin-top: 40px;
+        padding-top: 10px;
+        font-size: 0.9em;
+      }
+
+      /* 페이지 나누기 (시각적 표시) */
+      .page-break {
+        text-align: center;
+        margin: 40px 0;
+        border-top: 2px dashed #ccc;
+        padding-top: 10px;
+        color: #999;
+        font-size: 0.8em;
+      }
+
+      /* 머리말/꼬리말 시뮬레이션 */
+      .header-sim {
+        border-bottom: 1px solid #eee;
+        margin-bottom: 20px;
+        font-size: 0.8em;
+        color: #888;
+        text-align: right;
+      }
+      .footer-sim {
+        border-top: 1px solid #eee;
+        margin-top: 40px;
+        padding-top: 10px;
+        font-size: 0.8em;
+        color: #888;
+        text-align: center;
+      }
+
+      figure {
+        margin: 0;
+        text-align: center;
+      }
+      figcaption {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: 5px;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+
+      /* 인쇄 방지 제약조건 처리 - 폼 요소 비활성화 디자인 */
+      .form-mockup div {
+        margin-bottom: 10px;
+      }
+      .form-mockup label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+      .form-mockup .input-mock {
+        display: block;
+        width: 100%;
+        border: 1px solid #ccc;
+        padding: 8px;
+        box-sizing: border-box;
+        background: #fff;
+      }
+      .form-mockup .btn-mock {
+        display: inline-block;
+        padding: 8px 16px;
+        background: #eee;
+        border: 1px solid #ccc;
+        text-align: center;
+      }
+
+      /* 미터/프로그레스바 목업 */
+      .progress-mock {
+        width: 100%;
+        background: #eee;
+        height: 20px;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+      .progress-mock-bar {
+        height: 100%;
+        background: #007bff;
+        width: 70%;
+      }
+
+      /* Details 목업 */
+      .details-mock {
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      .summary-mock {
+        font-weight: bold;
+        cursor: default;
+      }
+      .summary-mock:before {
+        content: '▼ ';
+        font-size: 0.8em;
+      }
+    </style>
+  </head>
+  <body style="">
+    <div class="header-sim">회사 내부 기밀 문서 - 열람 주의</div>
+
+    <div class="document-header">
+      <h1 class="document-title">문서 구성 요소 종합 테스트 문서</h1>
+      <div class="document-subtitle">HTML 문서 렌더링 검증용 표준 양식</div>
+      <div class="meta-info">
+        <p><strong>저자:</strong> 문서 관리팀 홍길동</p>
+        <p><strong>작성일:</strong> 2023년 10월 26일</p>
+        <p><strong>버전:</strong> v1.0.0 (최종 수정본)</p>
+      </div>
+    </div>
+
+    <div class="toc" id="toc">
+      <h2>2. 목차 (Table of Contents)</h2>
+      <ul>
+        <li><a href="#sec-headings">3. 제목 레벨 테스트</a></li>
+        <li><a href="#sec-paragraphs">4. 일반 단락</a></li>
+        <li><a href="#sec-formatting">5. 텍스트 서식</a></li>
+        <li><a href="#sec-alignment">6. 텍스트 정렬</a></li>
+        <li><a href="#sec-lists">7-10. 목록 및 체크리스트</a></li>
+        <li><a href="#sec-tables">11. 표 (Tables)</a></li>
+        <li><a href="#sec-quotes">12. 인용문</a></li>
+        <li><a href="#sec-code">13. 코드 블록</a></li>
+        <li><a href="#sec-math">14. 수식</a></li>
+        <li><a href="#sec-media">15. 이미지</a></li>
+        <li><a href="#sec-shapes">15-2. 도형 (그리기 요소)</a></li>
+        <li><a href="#sec-links">16. 링크</a></li>
+        <li><a href="#sec-alerts">19. 경고/알림 박스</a></li>
+        <li><a href="#sec-interactive">20-22. 상호작용 및 폼 요소</a></li>
+        <li><a href="#sec-layout">23. 다단 레이아웃</a></li>
+        <li><a href="#sec-reference">26-28. 색인, 참고문헌, 부록</a></li>
+      </ul>
+    </div>
+
+    <hr class="thick">
+
+    <section id="sec-headings">
+      <h2>3. 다양한 레벨의 제목 (H1 ~ H6)</h2>
+      <h1>H1: 문서의 주요 섹션 제목</h1>
+      <h2>H2: 중간 섹션 제목</h2>
+      <h3>H3: 하위 섹션 제목</h3>
+      <h4>H4: 소제목 레벨 1</h4>
+      <h5>H5: 소제목 레벨 2</h5>
+      <h6>H6: 가장 작은 단위의 소제목</h6>
+    </section>
+
+    <section id="sec-paragraphs">
+      <h2>4. 일반 단락</h2>
+      <p>
+        <strong>[짧은 단락]</strong> 이것은 짧은 단락입니다. 문서의 도입부나 간단한 설명을 제공할 때 주로 사용됩니다.
+      </p>
+      <p>
+        <strong>[긴 단락]</strong> 이것은 긴 단락입니다. 상세한 내용을 설명하거나 배경 지식을 제공할 때 사용됩니다.
+        한국어 웹 타이포그래피에서는 적절한 행간(line-height)과 자간(letter-spacing)이 가독성에 큰 영향을 미칩니다.
+        일반적으로 본문 텍스트는 16px 내외의 크기를 가지며, 줄 간격은 1.6 정도가 적당합니다. 양쪽 정렬을 적용할 경우
+        단어 사이의 간격이 불규칙해질 수 있으므로 주의가 필요합니다. 단락과 단락 사이에는 적절한 여백을 두어 문맥의
+        분리를 명확히 해야 합니다. 이러한 설정들은 독자가 문서를 읽는 동안 피로감을 느끼지 않고 내용에 집중할 수 있도록
+        돕습니다.
+      </p>
+    </section>
+
+    <section id="sec-formatting">
+      <h2>5. 텍스트 서식</h2>
+      <p>HTML은 텍스트의 의미와 형태를 표현하기 위한 다양한 태그를 제공합니다.</p>
+      <ul>
+        <li><strong>굵게 (Strong/B)</strong>: <strong>이 텍스트는 굵게 표시됩니다.</strong></li>
+        <li><em>기울임 (Em/I)</em>: <em>이 텍스트는 기울임꼴로 표시됩니다.</em></li>
+        <li><u>밑줄 (U)</u>: <u>이 텍스트에는 밑줄이 그어져 있습니다.</u></li>
+        <li><s>취소선 (S/Strike)</s>: <s>이 텍스트에는 취소선이 그어져 있습니다.</s></li>
+        <li>위첨자 (Sup): E = mc<sup>2</sup></li>
+        <li>아래첨자 (Sub): H<sub>2</sub>O</li>
+        <li><mark>형광펜 강조 (Mark)</mark>: 문서 내의 <mark>핵심 키워드</mark>를 강조합니다.</li>
+        <li>코드 인라인 (Code): <code>console.log('Hello World');</code> 함수를 실행하세요.</li>
+        <li>키보드 입력 (Kbd): 저장하려면 <kbd>Ctrl</kbd> + <kbd>S</kbd>를 누르세요.</li>
+        <li>변수 (Var): 수학 공식에서 <var>x</var>와 <var>y</var>는 변수입니다.</li>
+        <li>약어 (Abbr): <abbr title="HyperText Markup Language">HTML</abbr> 문서를 작성합니다.</li>
+        <li><small>작은 글씨 (Small)</small>: <small>저작권 정보나 부가적인 작은 설명에 사용됩니다.</small></li>
+      </ul>
+    </section>
+
+    <section id="sec-alignment">
+      <h2>6. 정렬</h2>
+      <p class="align-left">
+        <strong>[왼쪽 정렬]</strong> 기본 정렬 방식입니다. 텍스트가 왼쪽 가장자리에 맞춰 정렬되며 오른쪽 가장자리는
+        불규칙하게 남습니다.
+      </p>
+      <p class="align-center">
+        <strong>[가운데 정렬]</strong> 텍스트가 중앙에 맞춰 정렬됩니다. 주로 제목이나 중요한 짧은 문구에 사용됩니다.
+      </p>
+      <p class="align-right">
+        <strong>[오른쪽 정렬]</strong> 텍스트가 오른쪽 가장자리에 맞춰 정렬됩니다. 날짜나 서명 등에 주로 사용됩니다.
+      </p>
+      <p class="align-justify">
+        <strong>[양쪽 정렬]</strong> 텍스트가 양쪽 가장자리에 모두 맞춰 정렬됩니다. 단어 사이의 간격이 자동으로 조절되어
+        양쪽 여백이 반듯하게 떨어집니다. 신문이나 출판물에서 자주 볼 수 있는 정렬 방식입니다. 문장이 길어질 경우
+        가독성을 높이는 데 도움이 됩니다.
+      </p>
+    </section>
+
+    <div class="page-break">- Page Break -</div>
+
+    <section id="sec-lists">
+      <h2>7-10. 목록 및 체크리스트</h2>
+
+      <div class="columns">
+        <div class="column">
+          <h3>7. 순서 없는 목록 (ul)</h3>
+          <ul>
+            <li>1단계 항목 A</li>
+            <li>
+              1단계 항목 B
+              <ul>
+                <li>2단계 항목 B-1</li>
+                <li>
+                  2단계 항목 B-2
+                  <ul>
+                    <li>3단계 항목 B-2-a</li>
+                    <li>3단계 항목 B-2-b</li>
+                  </ul>
+                </li>
+              </ul>
+            </li>
+            <li>1단계 항목 C</li>
+          </ul>
+        </div>
+        <div class="column">
+          <h3>8. 순서 있는 목록 (ol)</h3>
+          <ol>
+            <li>1단계 (숫자)</li>
+            <li>
+              1단계 (숫자)
+              <ol type="A">
+                <li>2단계 (대문자 알파벳)</li>
+                <li>
+                  2단계 (대문자 알파벳)
+                  <ol type="i">
+                    <li>3단계 (소문자 로마숫자)</li>
+                    <li>3단계 (소문자 로마숫자)</li>
+                  </ol>
+                </li>
+              </ol>
+            </li>
+            <li>1단계 (숫자)</li>
+          </ol>
+        </div>
+      </div>
+
+      <h3>9. 정의 목록 (dl)</h3>
+      <dl>
+        <dt>HTML</dt>
+        <dd>웹 페이지의 구조를 정의하는 마크업 언어입니다.</dd>
+        <dt>CSS</dt>
+        <dd>HTML 문서의 스타일과 레이아웃을 지정하는 스타일시트 언어입니다.</dd>
+      </dl>
+
+      <h3>10. 체크리스트</h3>
+      <ul class="checklist">
+        <li class="checked">문서 기획 완료</li>
+        <li class="checked">초안 작성 완료</li>
+        <li>내부 리뷰 진행 중</li>
+        <li>최종 승인 대기</li>
+      </ul>
+    </section>
+
+    <section id="sec-tables">
+      <h2>11. 다양한 표</h2>
+
+      <h3>단순 및 줄무늬 표</h3>
+      <table class="striped">
+        <caption>
+          표 1: 부서별 인원 현황
+        </caption>
+        <thead>
+          <tr>
+            <th>부서명</th>
+            <th>인원수</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>개발팀</td>
+            <td>15명</td>
+            <td>충원 예정</td>
+          </tr>
+          <tr>
+            <td>디자인팀</td>
+            <td>8명</td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td>기획팀</td>
+            <td>5명</td>
+            <td>-</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <th>합계</th>
+            <th>28명</th>
+            <th></th>
+          </tr>
+        </tfoot>
+      </table>
+
+      <h3>병합 셀이 있는 표</h3>
+      <table>
+        <caption>
+          표 2: 주간 업무 일정
+        </caption>
+        <thead>
+          <tr>
+            <th>요일</th>
+            <th>오전 (09:00~12:00)</th>
+            <th>오후 (13:00~18:00)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>월요일</td>
+            <td colspan="2" class="align-center">전사 주간 회의 및 목표 설정</td>
+          </tr>
+          <tr>
+            <td>화요일</td>
+            <td>A 프로젝트 기획</td>
+            <td rowspan="2">A 프로젝트 개발</td>
+          </tr>
+          <tr>
+            <td>수요일</td>
+            <td>디자인 리뷰</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-quotes">
+      <h2>12. 인용문 (Blockquote)</h2>
+      <p>짧은 인용:</p>
+      <blockquote>
+        <p>단순함은 궁극의 정교함이다. (Simplicity is the ultimate sophistication.)</p>
+        <span class="cite">- 레오나르도 다 빈치</span>
+      </blockquote>
+
+      <p>긴 인용:</p>
+      <blockquote>
+        <p>
+          소프트웨어 설계에는 두 가지 방법이 있다. 하나는 너무 단순하게 만들어서 결함이 명백히 보이지 않게 하는 것이고,
+          다른 하나는 너무 복잡하게 만들어서 명백한 결함이 없게 하는 것이다. 첫 번째 방법이 훨씬 더 어렵다.
+        </p>
+        <span class="cite">- C.A.R. Hoare (토니 호어)</span>
+      </blockquote>
+    </section>
+
+    <div class="page-break">- Page Break -</div>
+
+    <section id="sec-code">
+      <h2>13. 코드 블록</h2>
+      <p>Python 예제 (줄 번호 시뮬레이션 적용):</p>
+      <pre class="line-numbers"><code><span>def calculate_fibonacci(n):</span>
+<span>    """피보나치 수열을 계산하는 함수"""</span>
+<span>    if n &lt;= 0:</span>
+<span>        return []</span>
+<span>    elif n == 1:</span>
+<span>        return [0]</span>
+<span>    </span>
+<span>    sequence = [0, 1]</span>
+<span>    while len(sequence) &lt; n:</span>
+<span>        next_val = sequence[-1] + sequence[-2]</span>
+<span>        sequence.append(next_val)</span>
+<span>        </span>
+<span>    return sequence</span></code></pre>
+    </section>
+
+    <section id="sec-math">
+      <h2>14. 수식 표현</h2>
+      <p>
+        HTML 표준 태그를 이용한 인라인 수식: <i>f(x) = a x<sup>2</sup> + b x + c</i>
+      </p>
+      <p>블록 수식 (테이블/텍스트 조합형):</p>
+      <div style="text-align: center; margin: 20px 0; font-family: serif; font-size: 1.2em">
+        <p>
+          <i>∫<sub>a</sub><sup>b</sup> f(x) dx = F(b) - F(a)</i>
+        </p>
+        <p>
+          ∑<sub>i=1</sub><sup>n</sup> i =
+          <span style="display: inline-block; vertical-align: middle; text-align: center">n(n+1)<br>
+            </span></p><hr style="margin: 2px 0; border-top: 1px solid #000">
+            2
+        <p></p>
+      </div>
+    </section>
+
+    <section id="sec-media">
+      <h2>15. 이미지 (Figure &amp; Caption)</h2>
+      <figure>
+        <img src="https://via.placeholder.com/600x300.png?text=Placeholder+Image+for+Testing" alt="테스트용 임시 이미지" data-height-listener-added="true">
+        <figcaption>그림 1: 시스템 구성도 예시 (Placeholder)</figcaption>
+      </figure>
+    </section>
+
+    <section id="sec-shapes">
+      <h2>15-2. 도형 (그리기 요소)</h2>
+      <p>HTML/SVG 및 CSS를 활용하여 표현 가능한 다양한 도형 요소들을 테스트합니다.</p>
+
+      <h3>기본 도형 (SVG)</h3>
+      <figure>
+        <svg width="600" height="160" xmlns="http://www.w3.org/2000/svg" style="border: 1px solid #ddd; background: #fafafa">
+          
+          <rect x="20" y="30" width="100" height="80" fill="#4A90E2" stroke="#003366" stroke-width="2"></rect>
+          <text x="70" y="135" text-anchor="middle" font-size="12" fill="#333">사각형</text>
+
+          
+          <rect x="140" y="30" width="100" height="80" rx="15" ry="15" fill="#7ED321" stroke="#3F7A0E" stroke-width="2"></rect>
+          <text x="190" y="135" text-anchor="middle" font-size="12" fill="#333">둥근 사각형</text>
+
+          
+          <circle cx="310" cy="70" r="40" fill="#F5A623" stroke="#8B5A0F" stroke-width="2"></circle>
+          <text x="310" y="135" text-anchor="middle" font-size="12" fill="#333">원</text>
+
+          
+          <ellipse cx="410" cy="70" rx="50" ry="35" fill="#BD10E0" stroke="#6A0880" stroke-width="2"></ellipse>
+          <text x="410" y="135" text-anchor="middle" font-size="12" fill="#333">타원</text>
+
+          
+          <polygon points="520,30 480,110 560,110" fill="#D0021B" stroke="#660111" stroke-width="2"></polygon>
+          <text x="520" y="135" text-anchor="middle" font-size="12" fill="#333">삼각형</text>
+        </svg>
+        <figcaption>그림 2: 기본 도형 (사각형, 둥근 사각형, 원, 타원, 삼각형)</figcaption>
+      </figure>
+
+      <h3>다각형 및 별모양</h3>
+      <figure>
+        <svg width="600" height="160" xmlns="http://www.w3.org/2000/svg" style="border: 1px solid #ddd; background: #fafafa">
+          
+          <polygon points="80,20 130,60 110,120 50,120 30,60" fill="#50E3C2" stroke="#1F8C73" stroke-width="2"></polygon>
+          <text x="80" y="145" text-anchor="middle" font-size="12" fill="#333">오각형</text>
+
+          
+          <polygon points="220,20 270,50 270,100 220,130 170,100 170,50" fill="#9013FE" stroke="#4A0C8C" stroke-width="2"></polygon>
+          <text x="220" y="145" text-anchor="middle" font-size="12" fill="#333">육각형</text>
+
+          
+          <polygon points="370,20 385,60 425,60 395,85 410,125 370,100 330,125 345,85 315,60 355,60" fill="#FFD700" stroke="#B8860B" stroke-width="2"></polygon>
+          <text x="370" y="145" text-anchor="middle" font-size="12" fill="#333">별</text>
+
+          
+          <polygon points="520,20 560,75 520,130 480,75" fill="#FF6B6B" stroke="#8B0000" stroke-width="2"></polygon>
+          <text x="520" y="145" text-anchor="middle" font-size="12" fill="#333">마름모</text>
+        </svg>
+        <figcaption>그림 3: 다각형 (오각형, 육각형, 별, 마름모)</figcaption>
+      </figure>
+
+      <h3>선과 화살표</h3>
+      <figure>
+        <svg width="600" height="180" xmlns="http://www.w3.org/2000/svg" style="border: 1px solid #ddd; background: #fafafa">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#333"></path>
+            </marker>
+          </defs>
+
+          
+          <line x1="30" y1="30" x2="200" y2="30" stroke="#000" stroke-width="2"></line>
+          <text x="115" y="50" text-anchor="middle" font-size="12">직선</text>
+
+          
+          <line x1="30" y1="70" x2="200" y2="70" stroke="#000" stroke-width="2" stroke-dasharray="5,5"></line>
+          <text x="115" y="90" text-anchor="middle" font-size="12">점선</text>
+
+          
+          <line x1="30" y1="110" x2="200" y2="110" stroke="#000" stroke-width="2" stroke-dasharray="10,3,3,3"></line>
+          <text x="115" y="130" text-anchor="middle" font-size="12">일점쇄선</text>
+
+          
+          <line x1="280" y1="30" x2="450" y2="30" stroke="#333" stroke-width="2" marker-end="url(#arrow)"></line>
+          <text x="365" y="50" text-anchor="middle" font-size="12">단방향 화살표</text>
+
+          
+          <line x1="280" y1="80" x2="450" y2="80" stroke="#333" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"></line>
+          <text x="365" y="100" text-anchor="middle" font-size="12">양방향 화살표</text>
+
+          
+          <path d="M 280 130 Q 365 160 450 130" stroke="#333" stroke-width="2" fill="none" marker-end="url(#arrow)"></path>
+          <text x="365" y="170" text-anchor="middle" font-size="12">곡선 화살표</text>
+        </svg>
+        <figcaption>그림 4: 선 종류 및 화살표</figcaption>
+      </figure>
+
+      <h3>플로우차트 (순서도)</h3>
+      <figure>
+        <svg width="600" height="320" xmlns="http://www.w3.org/2000/svg" style="border: 1px solid #ddd; background: #fafafa">
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#333"></path>
+            </marker>
+          </defs>
+
+          
+          <ellipse cx="300" cy="35" rx="60" ry="20" fill="#A8E6CF" stroke="#000" stroke-width="1.5"></ellipse>
+          <text x="300" y="40" text-anchor="middle" font-size="13" font-weight="bold">시작</text>
+
+          
+          <polygon points="240,90 380,90 360,130 220,130" fill="#FFD3B6" stroke="#000" stroke-width="1.5"></polygon>
+          <text x="300" y="115" text-anchor="middle" font-size="13">데이터 입력</text>
+
+          
+          <rect x="230" y="150" width="140" height="40" fill="#FFAAA5" stroke="#000" stroke-width="1.5"></rect>
+          <text x="300" y="175" text-anchor="middle" font-size="13">데이터 처리</text>
+
+          
+          <polygon points="300,205 380,245 300,285 220,245" fill="#FFEC9E" stroke="#000" stroke-width="1.5"></polygon>
+          <text x="300" y="250" text-anchor="middle" font-size="13">조건 판단</text>
+
+          
+          <ellipse cx="300" cy="305" rx="60" ry="15" fill="#A8E6CF" stroke="#000" stroke-width="1.5"></ellipse>
+          <text x="300" y="310" text-anchor="middle" font-size="13" font-weight="bold">종료</text>
+
+          
+          <line x1="300" y1="55" x2="300" y2="86" stroke="#333" stroke-width="2" marker-end="url(#arrow2)"></line>
+          <line x1="300" y1="130" x2="300" y2="146" stroke="#333" stroke-width="2" marker-end="url(#arrow2)"></line>
+          <line x1="300" y1="190" x2="300" y2="201" stroke="#333" stroke-width="2" marker-end="url(#arrow2)"></line>
+          <line x1="300" y1="285" x2="300" y2="290" stroke="#333" stroke-width="2" marker-end="url(#arrow2)"></line>
+        </svg>
+        <figcaption>그림 5: 플로우차트 도형 (타원, 평행사변형, 직사각형, 마름모)</figcaption>
+      </figure>
+
+      <h3>CSS 도형</h3>
+      <div style="display: flex; gap: 30px; justify-content: center; align-items: center; padding: 20px; background: #fafafa; border: 1px solid #ddd; flex-wrap: wrap">
+        <div style="text-align: center">
+          <div style="width: 80px; height: 80px; background: #4A90E2"></div>
+          <small>정사각형</small>
+        </div>
+        <div style="text-align: center">
+          <div style="width: 80px; height: 80px; background: #7ED321; border-radius: 50%"></div>
+          <small>원형</small>
+        </div>
+        <div style="text-align: center">
+          <div style="width: 0; height: 0; border-left: 40px solid transparent; border-right: 40px solid transparent; border-bottom: 70px solid #F5A623"></div>
+          <small>삼각형</small>
+        </div>
+        <div style="text-align: center">
+          <div style="width: 80px; height: 80px; background: #BD10E0; transform: rotate(45deg); margin: 10px"></div>
+          <small>회전 사각형</small>
+        </div>
+        <div style="text-align: center">
+          <div style="width: 80px; height: 40px; background: #D0021B; border-radius: 40px 40px 0 0"></div>
+          <small>반원</small>
+        </div>
+      </div>
+
+      <h3>도형에 텍스트 삽입</h3>
+      <figure>
+        <svg width="600" height="120" xmlns="http://www.w3.org/2000/svg" style="border: 1px solid #ddd; background: #fafafa">
+          <rect x="30" y="30" width="160" height="60" fill="#E3F2FD" stroke="#1976D2" stroke-width="2" rx="5"></rect>
+          <text x="110" y="65" text-anchor="middle" font-size="14" font-weight="bold" fill="#1976D2">중요 알림</text>
+
+          <circle cx="300" cy="60" r="40" fill="#FFF3E0" stroke="#F57C00" stroke-width="2"></circle>
+          <text x="300" y="65" text-anchor="middle" font-size="14" font-weight="bold" fill="#F57C00">주의</text>
+
+          <polygon points="450,30 510,90 390,90" fill="#FFEBEE" stroke="#C62828" stroke-width="2"></polygon>
+          <text x="450" y="78" text-anchor="middle" font-size="12" font-weight="bold" fill="#C62828">!</text>
+        </svg>
+        <figcaption>그림 6: 도형 내 텍스트 삽입 예시</figcaption>
+      </figure>
+    </section>
+
+
+
+    <section id="sec-links">
+      <h2>16. 링크</h2>
+      <ul>
+        <li>외부 링크: <a href="https://www.w3.org/" target="_blank">W3C 공식 웹사이트 방문</a></li>
+        <li>내부 앵커 링크: <a href="#toc">목차로 돌아가기</a></li>
+        <li>이메일 링크: <a href="/cdn-cgi/l/email-protection#6001040d090e200518010d100c054e030f0d">관리자에게 메일 보내기</a></li>
+      </ul>
+    </section>
+
+    <hr class="dashed">
+
+    <section id="sec-alerts">
+      <h2>19. 경고/알림 박스</h2>
+      <div class="alert alert-info"><strong>[정보]</strong> 새로운 시스템 업데이트가 예정되어 있습니다.</div>
+      <div class="alert alert-success"><strong>[성공]</strong> 데이터 백업이 성공적으로 완료되었습니다.</div>
+      <div class="alert alert-warning">
+        <strong>[경고]</strong> 디스크 용량이 80%를 초과했습니다. 불필요한 파일을 정리하세요.
+      </div>
+      <div class="alert alert-danger">
+        <strong>[위험]</strong> 서버 연결이 끊어졌습니다. 네트워크 상태를 확인하세요.
+      </div>
+    </section>
+
+    <section id="sec-interactive">
+      <h2>20-22. 폼 요소 및 상태 표시 목업</h2>
+      <p><em>* 본 문서는 정적 문서이므로 폼 요소는 디자인 목업 형태로 제공됩니다.</em></p>
+
+      <h3>상태 표시 (Progress &amp; Meter Mockup)</h3>
+      <div>
+        <p>프로젝트 진행률 (70%):</p>
+        <div class="progress-mock"><div class="progress-mock-bar"></div></div>
+      </div>
+
+      <h3>상세 정보 (Details/Summary Mockup)</h3>
+      <div class="details-mock">
+        <div class="summary-mock">상세 로그 정보 보기 (펼쳐진 상태)</div>
+        <p style="margin-top: 10px; font-size: 0.9em; color: #666">
+          2023-10-26 10:00:01 - 시스템 부팅 완료<br>2023-10-26 10:05:22 - 사용자 로그인 성공
+        </p>
+      </div>
+
+      <h3>입력 양식 (Form Mockup)</h3>
+      <div class="form-mockup" style="background: #f9f9f9; padding: 20px; border: 1px solid #ddd">
+        <div>
+          <label>텍스트 입력 (Input text)</label>
+          <div class="input-mock" style="color: #666">이름을 입력하세요</div>
+        </div>
+        <div>
+          <label>단일 선택 (Radio)</label>
+          <div>◉ 옵션 A &nbsp; ◯ 옵션 B</div>
+        </div>
+        <div>
+          <label>다중 선택 (Checkbox)</label>
+          <div>☑ 약관 동의 &nbsp; ☐ 마케팅 수신 동의</div>
+        </div>
+        <div>
+          <label>선택 목록 (Select)</label>
+          <div class="input-mock" style="display: flex; justify-content: space-between">
+            <span>항목을 선택하세요</span>
+            <span>▼</span>
+          </div>
+        </div>
+        <div>
+          <label>장문 입력 (Textarea)</label>
+          <div class="input-mock" style="height: 80px; color: #666">의견을 자유롭게 작성해주세요...</div>
+        </div>
+        <div style="text-align: center; margin-top: 20px">
+          <div class="btn-mock" style="background: #0056b3; color: white">제출하기 (Button)</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-layout">
+      <h2>23. 다단(컬럼) 레이아웃</h2>
+      <div class="columns">
+        <div class="column" style="border-right: 1px solid #ddd; padding-right: 20px">
+          <h4>왼쪽 단</h4>
+          <p>
+            다단 레이아웃은 신문이나 잡지 등에서 텍스트를 여러 단으로 나누어 배치할 때 사용됩니다. 화면의 가로 폭을
+            효율적으로 활용할 수 있습니다.
+          </p>
+        </div>
+        <div class="column" style="padding-left: 20px">
+          <h4>오른쪽 단</h4>
+          <p>
+            특히 텍스트의 줄 길이가 너무 길어지면 독자가 다음 줄을 찾는 데 어려움을 겪을 수 있으므로, 다단을 통해
+            가독성을 높일 수 있습니다.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="dotted">
+
+    <section id="sec-reference">
+      <h2>26. 색인 (Index)</h2>
+      <div class="columns">
+        <div class="column">
+          <p><strong>ㄱ</strong><br>가독성, 3<br>경고 박스, 7</p>
+        </div>
+        <div class="column">
+          <p><strong>ㄷ</strong><br>다단 레이아웃, 8<br>단락, 2</p>
+        </div>
+        <div class="column">
+          <p><strong>ㅍ</strong><br>표, 5<br>피보나치, 6</p>
+        </div>
+      </div>
+
+      <h2>27. 참고문헌</h2>
+      <ol>
+        <li>W3C, "HTML5 Specification", 2014.</li>
+        <li>홍길동, "웹 문서 표준 가이드", 한국출판사, 2022.</li>
+      </ol>
+
+      <h2>28. 부록</h2>
+      <p>본 문서에 사용된 테스트 환경 정보:</p>
+      <ul>
+        <li>인코딩: UTF-8</li>
+        <li>CSS 프레임워크: Pico.css (일부 활용)</li>
+        <li>폰트: Noto Sans KR</li>
+      </ul>
+    </section>
+
+    
+    <div class="footnotes">
+      <p><strong>각주:</strong></p>
+      <p id="fn1">[1] 이 문서는 HTML 요소의 렌더링을 테스트하기 위한 목적으로 작성되었습니다.</p>
+      <p id="fn2">[2] 일부 인터랙티브 요소는 인쇄용 문서 스타일에 맞게 목업(Mockup) 형태로 구현되었습니다.</p>
+    </div>
+
+    <div class="footer-sim">페이지 1 / 1 &nbsp;&nbsp;|&nbsp;&nbsp; 문서 보안 등급: 일반</div>
+  
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body></html>
