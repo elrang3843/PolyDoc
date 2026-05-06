@@ -1438,6 +1438,8 @@ public sealed class HwpxWriter : IDocumentWriter
     private XElement BuildShape(ShapeObject shape, WriteContext ctx)
     {
         // 종류별 hp: 요소 매핑 (공식 OWPML 클래스명 참고).
+        // Spline/ClosedSpline 은 hp:curve(<hp:seg> Bezier 구조) 가 필요한데 PolyDonky
+        // 모델엔 control point 가 없어 정확히 재현 불가 — 폴리곤으로 폴백 (직선 연결).
         string elemName = shape.Kind switch
         {
             ShapeKind.Line       => "line",
@@ -1446,26 +1448,30 @@ public sealed class HwpxWriter : IDocumentWriter
             or ShapeKind.Polygon
             or ShapeKind.Triangle
             or ShapeKind.RegularPolygon
-            or ShapeKind.Star    => "polygon",
-            ShapeKind.Spline
-            or ShapeKind.ClosedSpline => "curve",
+            or ShapeKind.Star
+            or ShapeKind.Spline
+            or ShapeKind.ClosedSpline => "polygon",
             _                    => "rect", // Rectangle/RoundedRect
         };
+
+        // 한컴 ground truth: 닫힌 도형은 numberingType="PICTURE", 선은 "NONE".
+        string numType = elemName == "line" ? "NONE" : "PICTURE";
 
         long w = (long)Math.Round((shape.WidthMm  > 0 ? shape.WidthMm  : 40) / HwpUnitToMm);
         long h = (long)Math.Round((shape.HeightMm > 0 ? shape.HeightMm : 30) / HwpUnitToMm);
         if (w <= 0) w = 1000;
         if (h <= 0) h = 1;
 
-        // 선·테두리 색·두께.
+        // 선·테두리 색·두께. 한컴 ground truth: 두께 0 이어도 style="SOLID" 유지.
         string strokeColor = string.IsNullOrEmpty(shape.StrokeColor) ? "#000000" : shape.StrokeColor;
-        long strokeWidth   = Math.Max(1, (long)Math.Round(shape.StrokeThicknessPt * 100));
-        string strokeStyle = shape.StrokeThicknessPt > 0 ? "SOLID" : "NONE";
+        long strokeWidth   = (long)Math.Round(shape.StrokeThicknessPt * 100);
+        if (strokeWidth < 0) strokeWidth = 0;
+        string strokeStyle = "SOLID";
 
         var elem = new XElement(Hp + elemName,
             new XAttribute("id",            ctx.NextObjId().ToString()),
             new XAttribute("zOrder",        ctx.NextZOrder().ToString()),
-            new XAttribute("numberingType", "NONE"),
+            new XAttribute("numberingType", numType),
             new XAttribute("textWrap",      "TOP_AND_BOTTOM"),
             new XAttribute("textFlow",      "BOTH_SIDES"),
             new XAttribute("lock",          "0"),
@@ -1546,16 +1552,16 @@ public sealed class HwpxWriter : IDocumentWriter
             elem.Add(new XElement(Hc + "endPt",
                 new XAttribute("x", exU.ToString()), new XAttribute("y", eyU.ToString())));
         }
-        else if (elemName == "polygon" || elemName == "curve")
+        else if (elemName == "polygon")
         {
-            // hp:polygon / hp:curve: 꼭짓점 hc:pt 시리즈 (마지막에 닫힘점 반복).
+            // hp:polygon: 꼭짓점 hc:pt 시리즈 (마지막에 닫힘점 반복).
             var verts = ResolvePolygonVertices(shape, w, h);
             foreach (var (vx, vy) in verts)
                 elem.Add(new XElement(Hc + "pt",
                     new XAttribute("x", vx.ToString()),
                     new XAttribute("y", vy.ToString())));
-            // polygon 은 닫힌 형태 — 첫 점 다시 추가해 명시적으로 닫는다.
-            if (elemName == "polygon" && verts.Count > 0
+            // 명시적으로 첫 점 다시 추가해 닫힌 형태 표시.
+            if (verts.Count > 0
                 && (verts[0].X != verts[^1].X || verts[0].Y != verts[^1].Y))
             {
                 elem.Add(new XElement(Hc + "pt",
