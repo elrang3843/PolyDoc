@@ -742,8 +742,9 @@ public sealed class HwpxWriter : IDocumentWriter
         var sec = new XElement(Hs + "sec");
         foreach (var a in nsAttrs) sec.Add(a);
 
-        // secPr must be the first run of the first paragraph of the first section (KS X 6101).
-        bool injectSecPr = sectionIndex == 0;
+        // secPr must be the first run of the first paragraph of EVERY section (KS X 6101).
+        // Without it Hangul Office rejects the file with "파일을 읽거나 저장하는데 오류가 있습니다".
+        bool injectSecPr = true;
 
         if (section.Blocks.Count == 0)
         {
