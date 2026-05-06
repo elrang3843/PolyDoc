@@ -530,31 +530,35 @@ public sealed class HwpxWriter : IDocumentWriter
             fontFaces.Add(ff);
         }
 
-        // borderFills — IDs start from 1 (real Hancom format is 1-indexed).
-        // id=1 = default "no border, no fill" entry referenced by all basic elements.
+        // borderFills — HwpForge / Hancom OWPML 관례를 따라 3개 등록.
+        //   id=1: page border (NONE 4면, secPr/pageBorderFill 참조)
+        //   id=2: char background (NONE + winBrush face=none alpha=0, charPr 참조)
+        //   id=3: table border (SOLID 0.12mm 4면, 표/셀 참조)
+        XElement BuildBorder(string borderType) => new(Hh + "borderFill",
+            new XAttribute("threeD", "0"),
+            new XAttribute("shadow", "0"),
+            new XAttribute("centerLine", "NONE"),
+            new XAttribute("breakCellSeparateLine", "0"),
+            new XElement(Hh + "slash",     new XAttribute("type", "NONE"), new XAttribute("Crooked", "0"), new XAttribute("isCounter", "0")),
+            new XElement(Hh + "backSlash", new XAttribute("type", "NONE"), new XAttribute("Crooked", "0"), new XAttribute("isCounter", "0")),
+            new XElement(Hh + "leftBorder",   new XAttribute("type", borderType), new XAttribute("width", "0.12 mm"), new XAttribute("color", "#000000")),
+            new XElement(Hh + "rightBorder",  new XAttribute("type", borderType), new XAttribute("width", "0.12 mm"), new XAttribute("color", "#000000")),
+            new XElement(Hh + "topBorder",    new XAttribute("type", borderType), new XAttribute("width", "0.12 mm"), new XAttribute("color", "#000000")),
+            new XElement(Hh + "bottomBorder", new XAttribute("type", borderType), new XAttribute("width", "0.12 mm"), new XAttribute("color", "#000000")),
+            new XElement(Hh + "diagonal",     new XAttribute("type", "SOLID"),    new XAttribute("width", "0.1 mm"),  new XAttribute("color", "#000000")));
+
+        var bf1 = BuildBorder("NONE");  bf1.SetAttributeValue("id", "1");
+        var bf2 = BuildBorder("NONE");  bf2.SetAttributeValue("id", "2");
+        // 문자 배경: NONE 4면 + winBrush (face=none, alpha=0).
+        bf2.Add(new XElement(Hc + "fillBrush",
+            new XElement(Hc + "winBrush",
+                new XAttribute("faceColor",  "none"),
+                new XAttribute("hatchColor", "#FF000000"),
+                new XAttribute("alpha",      "0"))));
+        var bf3 = BuildBorder("SOLID"); bf3.SetAttributeValue("id", "3");
         var borderFills = new XElement(Hh + "borderFills",
-            new XAttribute("itemCnt", "1"),
-            new XElement(Hh + "borderFill",
-                new XAttribute("id", "1"),
-                new XAttribute("threeD", "0"),
-                new XAttribute("shadow", "0"),
-                new XAttribute("centerLine", "NONE"),
-                new XAttribute("breakCellSeparateLine", "0"),
-                new XElement(Hh + "slash",
-                    new XAttribute("type", "NONE"),
-                    new XAttribute("Crooked", "0"),
-                    new XAttribute("isCounter", "0")),
-                new XElement(Hh + "backSlash",
-                    new XAttribute("type", "NONE"),
-                    new XAttribute("Crooked", "0"),
-                    new XAttribute("isCounter", "0")),
-                new XElement(Hh + "leftBorder",   new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "rightBorder",  new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "topBorder",    new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
-                new XElement(Hh + "bottomBorder", new XAttribute("type", "NONE"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000")),
-                // Real Hancom always has diagonal type="SOLID" even for no-border fills.
-                new XElement(Hh + "diagonal",     new XAttribute("type", "SOLID"), new XAttribute("width", "0.1 mm"), new XAttribute("color", "#000000"))));
-        // Note: no hh:fillInfo / hh:noFill — real Hancom omits fill element when there is no fill.
+            new XAttribute("itemCnt", "3"),
+            bf1, bf2, bf3);
 
         // charProperties — one entry per unique RunStyle
         var charProps = new XElement(Hh + "charProperties",
@@ -655,7 +659,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("useFontSpace", "0"),
             new XAttribute("useKerning", "0"),
             new XAttribute("symMark", "NONE"),
-            new XAttribute("borderFillIDRef", "1")); // 1-indexed
+            new XAttribute("borderFillIDRef", "2")); // char background border (id=2)
 
         if (s.Bold)          el.Add(new XElement(Hh + "bold"));
         if (s.Italic)        el.Add(new XElement(Hh + "italic"));
@@ -1137,7 +1141,9 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
         run.Add(BuildTable(table, ctx));
-        return new XElement(Hp + "p",
+        run.Add(new XElement(Hp + "t"));
+
+        var para = new XElement(Hp + "p",
             new XAttribute("id",          ctx.NextParaId().ToString()),
             new XAttribute("paraPrIDRef", "0"),
             new XAttribute("styleIDRef",  "0"),
@@ -1145,6 +1151,8 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("columnBreak", "0"),
             new XAttribute("merged",      "0"),
             run);
+        para.Add(BuildLineseg(10.0, 1.6));
+        return para;
     }
 
     private XElement BuildTable(Table table, WriteContext ctx)
@@ -1153,23 +1161,80 @@ public sealed class HwpxWriter : IDocumentWriter
         int colCount = table.Columns.Count;
         if (colCount == 0 && rowCount > 0)
             colCount = table.Rows.Max(r => r.Cells.Sum(c => Math.Max(c.ColumnSpan, 1)));
+        if (colCount <= 0) colCount = 1;
 
+        // 컬럼 너비 (HWPUNIT) — 정의 없으면 ContentWidth 균등.
+        long[] colWidths = new long[colCount];
+        bool colWidthsDefined = table.Columns.Count == colCount &&
+                                table.Columns.All(c => c.WidthMm > 0);
+        if (colWidthsDefined)
+            for (int i = 0; i < colCount; i++)
+                colWidths[i] = (long)Math.Round(table.Columns[i].WidthMm / HwpUnitToMm);
+        else
+        {
+            long even = ContentWidth / colCount;
+            for (int i = 0; i < colCount; i++) colWidths[i] = even;
+        }
+        long tableWidth = colWidths.Sum();
+        if (tableWidth <= 0) tableWidth = ContentWidth;
+
+        long[] rowHeights = new long[rowCount];
+        for (int i = 0; i < rowCount; i++)
+            rowHeights[i] = table.Rows[i].HeightMm > 0
+                ? (long)Math.Round(table.Rows[i].HeightMm / HwpUnitToMm)
+                : 1000;
+
+        // 한컴 기본 마진 (HwpForge DEFAULT_CELL_MARGIN/OUT_MARGIN)
+        const long CellMarginLeftRight = 510;
+        const long CellMarginTopBottom = 141;
+        const long OuterMarginAll      = 283;
+
+        // 외곽 속성 — CTableType (CAbstractShapeObjectType 상속) 정의대로.
         var wtbl = new XElement(Hp + "tbl",
-            new XAttribute("rowCnt", rowCount.ToString()),
-            new XAttribute("colCnt", colCount.ToString()),
-            new XAttribute("cellSpacing", "0"),
-            new XAttribute("borderFillIDRef", "1")); // 1-indexed
+            new XAttribute("id",              ctx.NextObjId().ToString()),
+            new XAttribute("zOrder",          ctx.NextZOrder().ToString()),
+            new XAttribute("numberingType",   "TABLE"),
+            new XAttribute("textWrap",        "TOP_AND_BOTTOM"),
+            new XAttribute("textFlow",        "BOTH_SIDES"),
+            new XAttribute("lock",            "0"),
+            new XAttribute("dropcapstyle",    "None"),
+            new XAttribute("pageBreak",       "TABLE"),
+            new XAttribute("repeatHeader",    "1"),
+            new XAttribute("rowCnt",          rowCount.ToString()),
+            new XAttribute("colCnt",          colCount.ToString()),
+            new XAttribute("cellSpacing",     "0"),
+            new XAttribute("borderFillIDRef", "3"),  // SOLID 4면 (id=3)
+            new XAttribute("noAdjust",        "0"));
 
         wtbl.Add(new XElement(Hp + "sz",
-            new XAttribute("width", "0"), new XAttribute("widthRelTo", "ABSOLUTE"),
-            new XAttribute("height", "0"), new XAttribute("heightRelTo", "ABSOLUTE"),
-            new XAttribute("protect", "0")));
+            new XAttribute("width",       tableWidth.ToString()),
+            new XAttribute("widthRelTo",  "ABSOLUTE"),
+            new XAttribute("height",      "0"),
+            new XAttribute("heightRelTo", "ABSOLUTE"),
+            new XAttribute("protect",     "0")));
+        // 표 위치 — anchored (treatAsChar=0, vertRelTo=PARA, horzRelTo=COLUMN).
+        wtbl.Add(new XElement(Hp + "pos",
+            new XAttribute("treatAsChar",     "0"),
+            new XAttribute("affectLSpacing",  "0"),
+            new XAttribute("flowWithText",    "1"),
+            new XAttribute("allowOverlap",    "0"),
+            new XAttribute("holdAnchorAndSO", "0"),
+            new XAttribute("vertRelTo",       "PARA"),
+            new XAttribute("horzRelTo",       "COLUMN"),
+            new XAttribute("vertAlign",       "TOP"),
+            new XAttribute("horzAlign",       "LEFT"),
+            new XAttribute("vertOffset",      "0"),
+            new XAttribute("horzOffset",      "0")));
         wtbl.Add(new XElement(Hp + "outMargin",
-            new XAttribute("left", "0"), new XAttribute("right", "0"),
-            new XAttribute("top", "0"), new XAttribute("bottom", "0")));
+            new XAttribute("left",   OuterMarginAll.ToString()),
+            new XAttribute("right",  OuterMarginAll.ToString()),
+            new XAttribute("top",    OuterMarginAll.ToString()),
+            new XAttribute("bottom", OuterMarginAll.ToString())));
         wtbl.Add(new XElement(Hp + "inMargin",
-            new XAttribute("left", "0"), new XAttribute("right", "0"),
-            new XAttribute("top", "0"), new XAttribute("bottom", "0")));
+            new XAttribute("left",   CellMarginLeftRight.ToString()),
+            new XAttribute("right",  CellMarginLeftRight.ToString()),
+            new XAttribute("top",    CellMarginTopBottom.ToString()),
+            new XAttribute("bottom", CellMarginTopBottom.ToString())));
 
         for (int r = 0; r < rowCount; r++)
         {
@@ -1178,16 +1243,40 @@ public sealed class HwpxWriter : IDocumentWriter
             int c = 0;
             foreach (var cell in row.Cells)
             {
-                var wcell = new XElement(Hp + "tc",
-                    new XAttribute("name", string.Empty),
-                    new XAttribute("header", "0"),
-                    new XAttribute("hasMargin", "0"),
-                    new XAttribute("protect", "0"),
-                    new XAttribute("editable", "0"),
-                    new XAttribute("dirty", "0"),
-                    new XAttribute("borderFillIDRef", "1")); // 1-indexed
+                int colSpan = Math.Max(cell.ColumnSpan, 1);
+                int rowSpan = Math.Max(cell.RowSpan, 1);
 
-                var subList = new XElement(Hp + "subList");
+                long cellW = 0;
+                for (int k = 0; k < colSpan && c + k < colCount; k++) cellW += colWidths[c + k];
+                if (cell.WidthMm > 0)
+                    cellW = (long)Math.Round(cell.WidthMm / HwpUnitToMm);
+                if (cellW <= 0) cellW = ContentWidth / Math.Max(colCount, 1);
+
+                long cellH = 0;
+                for (int k = 0; k < rowSpan && r + k < rowCount; k++) cellH += rowHeights[r + k];
+                if (cellH <= 0) cellH = 1000;
+
+                var wcell = new XElement(Hp + "tc",
+                    new XAttribute("name",            string.Empty),
+                    new XAttribute("header",          row.IsHeader ? "1" : "0"),
+                    new XAttribute("hasMargin",       "0"),
+                    new XAttribute("protect",         "0"),
+                    new XAttribute("editable",        "0"),
+                    new XAttribute("dirty",           "0"),
+                    new XAttribute("borderFillIDRef", "3")); // SOLID 4면 cells
+
+                // hp:subList — 셀 본문 컨테이너. 한컴 필수 속성 전체 포함.
+                var subList = new XElement(Hp + "subList",
+                    new XAttribute("id",                ""),
+                    new XAttribute("textDirection",     "HORIZONTAL"),
+                    new XAttribute("lineWrap",          "BREAK"),
+                    new XAttribute("vertAlign",         "CENTER"),
+                    new XAttribute("linkListIDRef",     "0"),
+                    new XAttribute("linkListNextIDRef", "0"),
+                    new XAttribute("textWidth",         "0"),
+                    new XAttribute("textHeight",        "0"),
+                    new XAttribute("hasTextRef",        "0"),
+                    new XAttribute("hasNumRef",         "0"));
                 if (cell.Blocks.Count == 0)
                     subList.Add(BuildEmptyParagraph(ctx));
                 else
@@ -1199,17 +1288,19 @@ public sealed class HwpxWriter : IDocumentWriter
                     new XAttribute("colAddr", c.ToString()),
                     new XAttribute("rowAddr", r.ToString())));
                 wcell.Add(new XElement(Hp + "cellSpan",
-                    new XAttribute("colSpan", Math.Max(cell.ColumnSpan, 1).ToString()),
-                    new XAttribute("rowSpan", Math.Max(cell.RowSpan, 1).ToString())));
+                    new XAttribute("colSpan", colSpan.ToString()),
+                    new XAttribute("rowSpan", rowSpan.ToString())));
                 wcell.Add(new XElement(Hp + "cellSz",
-                    new XAttribute("width", ((long)Math.Round(cell.WidthMm / HwpUnitToMm)).ToString()),
-                    new XAttribute("height", "0")));
+                    new XAttribute("width",  cellW.ToString()),
+                    new XAttribute("height", cellH.ToString())));
                 wcell.Add(new XElement(Hp + "cellMargin",
-                    new XAttribute("left", "0"), new XAttribute("right", "0"),
-                    new XAttribute("top", "0"), new XAttribute("bottom", "0")));
+                    new XAttribute("left",   CellMarginLeftRight.ToString()),
+                    new XAttribute("right",  CellMarginLeftRight.ToString()),
+                    new XAttribute("top",    CellMarginTopBottom.ToString()),
+                    new XAttribute("bottom", CellMarginTopBottom.ToString())));
 
                 wrow.Add(wcell);
-                c += Math.Max(cell.ColumnSpan, 1);
+                c += colSpan;
             }
             wtbl.Add(wrow);
         }
@@ -1299,8 +1390,8 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XElement(Hc + "pt2", new XAttribute("x", w.ToString()), new XAttribute("y", h.ToString())),
                 new XElement(Hc + "pt3", new XAttribute("x", "0"),         new XAttribute("y", h.ToString()))),
             new XElement(Hp + "imgClip",
-                new XAttribute("left", "0"), new XAttribute("top",    "0"),
-                new XAttribute("right","0"), new XAttribute("bottom", "0")),
+                new XAttribute("left",   "0"),         new XAttribute("top",    "0"),
+                new XAttribute("right",  w.ToString()), new XAttribute("bottom", h.ToString())),
             new XElement(Hp + "effects"),
             new XElement(Hp + "inMargin",
                 new XAttribute("left", "0"), new XAttribute("right",  "0"),
