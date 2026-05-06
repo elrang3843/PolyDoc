@@ -83,9 +83,8 @@ public sealed class HwpxReader : IDocumentReader
             var headerDoc = LoadXml(archive, headerPath, parseErrors);
             var header = HwpxHeaderReader.Parse(headerDoc);
 
-            var ctx = new ReadContext(archive, header, parseErrors);
-
             var document = new PolyDonkyument { Metadata = metadata };
+            var ctx = new ReadContext(archive, header, parseErrors, document);
             int totalParagraphs = 0;
             int totalTextRuns = 0;
             string? firstSectionRoot = null;
@@ -343,17 +342,19 @@ public sealed class HwpxReader : IDocumentReader
 
     private sealed class ReadContext
     {
-        public ReadContext(ZipArchive archive, HwpxHeader header, List<string> parseErrors)
+        public ReadContext(ZipArchive archive, HwpxHeader header, List<string> parseErrors, PolyDonkyument document)
         {
             Archive = archive;
             Header = header;
             ParseErrors = parseErrors;
             BinDataIndex = BuildBinDataIndex(archive);
+            Document = document;
         }
 
         public ZipArchive Archive { get; }
         public HwpxHeader Header { get; }
         public List<string> ParseErrors { get; }
+        public PolyDonkyument Document { get; }
         /// <summary>BinData 안의 파일들을 'basename(확장자 제외)' → FullName 으로 사전화.</summary>
         public Dictionary<string, string> BinDataIndex { get; }
 
@@ -407,7 +408,7 @@ public sealed class HwpxReader : IDocumentReader
             switch (elem.Name.LocalName)
             {
                 case "p":
-                    section.Blocks.Add(ReadParagraph(elem, ctx.Header));
+                    section.Blocks.Add(ReadParagraph(elem, ctx));
                     // paragraph 안에 인라인 그림·도형이 있을 수 있어 별도 블록으로 추출.
                     foreach (var pic in elem.Descendants().Where(d => d.Name.LocalName == "pic"))
                     {
@@ -492,7 +493,7 @@ public sealed class HwpxReader : IDocumentReader
                 if (sz is not null
                     && double.TryParse(sz.Attribute("width")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var widthHwp))
                 {
-                    tableCell.WidthMm = widthHwp * (25.4 / 7200.0);
+                    tableCell.WidthMm = UnitConverter.HwpUnitToMm(widthHwp);
                 }
 
                 // 셀 본문 — subList 안의 hp:p 들을 셀에 모은다 (인라인 그림은 같은 셀에 ImageBlock 으로).
@@ -502,7 +503,7 @@ public sealed class HwpxReader : IDocumentReader
                     switch (d.Name.LocalName)
                     {
                         case "p":
-                            tableCell.Blocks.Add(ReadParagraph(d, ctx.Header));
+                            tableCell.Blocks.Add(ReadParagraph(d, ctx));
                             foreach (var pic in d.Descendants().Where(x => x.Name.LocalName == "pic"))
                             {
                                 if (seenInCell.Add(pic) && TryReadPicture(pic, ctx, out var img))
@@ -626,9 +627,9 @@ public sealed class HwpxReader : IDocumentReader
         if (curSz is not null)
         {
             if (double.TryParse(curSz.Attribute("width")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var w))
-                widthMm = w * (25.4 / 7200.0);
+                widthMm = UnitConverter.HwpUnitToMm(w);
             if (double.TryParse(curSz.Attribute("height")?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h))
-                heightMm = h * (25.4 / 7200.0);
+                heightMm = UnitConverter.HwpUnitToMm(h);
         }
 
         image = new ImageBlock
@@ -657,8 +658,9 @@ public sealed class HwpxReader : IDocumentReader
         };
     }
 
-    private static Paragraph ReadParagraph(XElement wp, HwpxHeader header)
+    private static Paragraph ReadParagraph(XElement wp, ReadContext ctx)
     {
+        var header = ctx.Header;
         var paragraph = new Paragraph();
 
         // 1) styleIDRef 의 정의를 우선 적용 — outline + style 기본 paraPr/charPr 베이스로 둔다.
@@ -673,6 +675,11 @@ public sealed class HwpxReader : IDocumentReader
                 CopyParagraphStyle(styleParaStyle, paragraph.Style);
             }
             defaultCharPrId = styleDef.CharPrIdRef;
+        }
+
+        if (wp.Attribute("pageBreak")?.Value == "1")
+        {
+            paragraph.Style.ForcePageBreakBefore = true;
         }
 
         // 2) paragraph 자신의 paraPrIDRef 가 있으면 그 위에 override.
@@ -698,9 +705,14 @@ public sealed class HwpxReader : IDocumentReader
         // 중간 wrapper(예: <hp:linesegarray> 다음 위치 등) 를 둘 수 있어 descendants 로 안전 매칭.
         foreach (var elem in wp.Descendants())
         {
-            if (elem.Name.LocalName == "run")
+            switch (elem.Name.LocalName)
             {
-                ReadRun(paragraph, elem, header, defaultCharPrId);
+                case "run":
+                    ReadRun(paragraph, elem, ctx, defaultCharPrId);
+                    break;
+                case "ctrl":
+                    ReadCtrl(paragraph, elem, ctx);
+                    break;
             }
         }
 
@@ -711,8 +723,38 @@ public sealed class HwpxReader : IDocumentReader
         return paragraph;
     }
 
-    private static void ReadRun(Paragraph paragraph, XElement run, HwpxHeader header, int? defaultCharPrId)
+    private static void ReadCtrl(Paragraph paragraph, XElement ctrl, ReadContext ctx)
     {
+        var ctrlId = ctrl.Attribute("ctrlID")?.Value;
+        if (ctrlId is not ("FOOT_NOTE" or "END_NOTE")) return;
+
+        var subList = ctrl.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+        if (subList is null) return;
+
+        var entry = new FootnoteEntry { Id = Guid.NewGuid().ToString("N")[..8] };
+        foreach (var elem in subList.Elements())
+        {
+            if (elem.Name.LocalName == "p")
+                entry.Blocks.Add(ReadParagraph(elem, ctx));
+        }
+        if (entry.Blocks.Count == 0)
+            entry.Blocks.Add(new Paragraph());
+
+        if (ctrlId == "FOOT_NOTE")
+        {
+            ctx.Document.Footnotes.Add(entry);
+            paragraph.Runs.Add(new Run { FootnoteId = entry.Id });
+        }
+        else
+        {
+            ctx.Document.Endnotes.Add(entry);
+            paragraph.Runs.Add(new Run { EndnoteId = entry.Id });
+        }
+    }
+
+    private static void ReadRun(Paragraph paragraph, XElement run, ReadContext ctx, int? defaultCharPrId)
+    {
+        var header = ctx.Header;
         var directCharPrId = TryParseInt(run.Attribute("charPrIDRef")?.Value);
         // 우선순위: run 의 charPrIDRef → style 의 charPrIDRef → 빈 RunStyle.
         var resolvedId = directCharPrId ?? defaultCharPrId;

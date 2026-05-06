@@ -29,6 +29,8 @@ public static class FlowDocumentParser
             doc.Provenance = originalForMerge.Provenance;
             doc.Watermark = originalForMerge.Watermark;
             doc.OutlineStyles = originalForMerge.OutlineStyles;
+            doc.Footnotes = originalForMerge.Footnotes;
+            doc.Endnotes  = originalForMerge.Endnotes;
         }
 
         var section = new Section();
@@ -359,6 +361,8 @@ public static class FlowDocumentParser
             p.Style.Outline = InferHeadingFromFontSize(wpfPara.FontSize);
         }
 
+        p.Style.ForcePageBreakBefore = wpfPara.BreakPageBefore;
+
         // 들여쓰기·간격은 사용자가 직접 변경할 가능성 높지만, 본 사이클에서는 단순 보존만.
         if (wpfPara.Tag is Paragraph baseP)
         {
@@ -404,6 +408,12 @@ public static class FlowDocumentParser
         {
             case Wpf.Run r:
             {
+                // 각주/미주 참조 런 — Tag 의 원본 Run 을 그대로 회수 (FootnoteId/EndnoteId 보존).
+                if (r.Tag is Run origRef && (origRef.FootnoteId is not null || origRef.EndnoteId is not null))
+                {
+                    p.Runs.Add(origRef.Clone());
+                    break;
+                }
                 // Tag 에 원본 Run 이 있으면 그 RunStyle 을 base 로 두고 변경된 속성만 덮어쓴다.
                 var seed = r.Tag is Run original ? Clone(original.Style) : Clone(baseStyle);
                 ExtractRunStyle(r, seed);
@@ -455,6 +465,23 @@ public static class FlowDocumentParser
             case Wpf.LineBreak:
                 p.AddText("\n", Clone(baseStyle));
                 break;
+            case Wpf.Hyperlink hl:
+            {
+                // URL 은 Tag(원본 Run) 또는 NavigateUri 에서 복원.
+                // 내부 텍스트는 항상 실제 자식 Inline 으로부터 파싱 — 사용자 편집 반영.
+                var url = (hl.Tag is Run origHl ? origHl.Url : null)
+                          ?? hl.NavigateUri?.ToString()
+                          ?? string.Empty;
+                var hlStyle = Clone(baseStyle);
+                hlStyle.Underline = true;
+                var startIdx = p.Runs.Count;
+                foreach (var child in hl.Inlines)
+                    ParseInline(p, child, hlStyle);
+                if (!string.IsNullOrEmpty(url))
+                    for (var i = startIdx; i < p.Runs.Count; i++)
+                        p.Runs[i].Url = url;
+                break;
+            }
             case Wpf.Span span:
             {
                 // 글자폭·자간 시각화 Span — Tag 가 PolyDonky.Run 이고 자식이 모두 같은 Tag 의 per-char IUC 면

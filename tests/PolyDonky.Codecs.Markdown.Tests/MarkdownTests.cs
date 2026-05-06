@@ -400,6 +400,156 @@ public class MarkdownTests
         Assert.Contains("`printf()`", MarkdownWriter.ToMarkdown(doc));
     }
 
+    // ── Writer: 이스케이프 보완 ─────────────────────────────────────────
+
+    [Fact]
+    public void Writer_EscapesCaretToPreventSuperscript()
+    {
+        // EmphasisExtras 가 ^text^ 를 superscript 로 파싱하므로 일반 ^ 는 이스케이프 필요.
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var p = new Paragraph();
+        p.AddText("2^10 = 1024");
+        sec.Blocks.Add(p);
+
+        var md = MarkdownWriter.ToMarkdown(doc);
+        Assert.Contains(@"\^", md);
+        // 이스케이프된 출력이 다시 파싱돼도 원문 텍스트가 보존돼야 한다.
+        var reread = MarkdownReader.FromMarkdown(md);
+        Assert.Contains("2^10 = 1024", reread.EnumerateParagraphs().Single().GetPlainText());
+    }
+
+    [Fact]
+    public void Writer_CodeFence_LongerWhenCodeContainsBackticks()
+    {
+        // 코드 내에 ``` 이 있으면 기본 3-backtick 펜스가 충돌 — 4-backtick 이상으로 자동 확장.
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var p = new Paragraph { Style = { CodeLanguage = "md" } };
+        p.AddText("use ```code``` here");  // 3-backtick 이 코드 내에 있음.
+        sec.Blocks.Add(p);
+
+        var md = MarkdownWriter.ToMarkdown(doc);
+        // 펜스는 4개 이상 백틱이어야 한다.
+        Assert.Contains("````", md);
+        // 파싱해도 코드 내용이 보존돼야 한다.
+        var reread = MarkdownReader.FromMarkdown(md);
+        var rp     = reread.EnumerateParagraphs().Single();
+        Assert.Equal("md", rp.Style.CodeLanguage);
+        Assert.Contains("```code```", rp.GetPlainText());
+    }
+
+    // ── Writer: Sub/Superscript ─────────────────────────────────────
+
+    [Fact]
+    public void Writer_SubAndSuperscript_Emitted()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var p = new Paragraph();
+        p.AddText("H", new RunStyle());
+        p.Runs.Add(new Run { Text = "2", Style = new RunStyle { Subscript = true } });
+        p.AddText("O of X", new RunStyle());
+        p.Runs.Add(new Run { Text = "2", Style = new RunStyle { Superscript = true } });
+        sec.Blocks.Add(p);
+
+        var md = MarkdownWriter.ToMarkdown(doc);
+        Assert.Contains("~2~", md);  // subscript
+        Assert.Contains("^2^", md);  // superscript
+    }
+
+    [Fact]
+    public void RoundTrip_SubAndSuperscript_Preserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var p = new Paragraph();
+        p.Runs.Add(new Run { Text = "2", Style = new RunStyle { Subscript   = true } });
+        p.Runs.Add(new Run { Text = "n", Style = new RunStyle { Superscript = true } });
+        sec.Blocks.Add(p);
+
+        var md      = MarkdownWriter.ToMarkdown(doc);
+        var reread  = MarkdownReader.FromMarkdown(md);
+        var runs    = reread.EnumerateParagraphs().Single().Runs;
+        Assert.Contains(runs, r => r.Style.Subscript   && r.Text == "2");
+        Assert.Contains(runs, r => r.Style.Superscript && r.Text == "n");
+    }
+
+    // ── Writer: 이미지 임베디드 data URI ────────────────────────────
+
+    [Fact]
+    public void Writer_Image_EmitsDataUri_WhenNoResourcePath()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var img = new ImageBlock
+        {
+            Description = "test",
+            MediaType   = "image/png",
+            Data        = new byte[] { 0x89, 0x50, 0x4E, 0x47 },  // PNG 매직 바이트
+        };
+        sec.Blocks.Add(img);
+
+        var md = MarkdownWriter.ToMarkdown(doc);
+        Assert.Contains("![test](data:image/png;base64,", md);
+        Assert.Contains("iVBORw==", md);  // 위 4바이트의 base64
+    }
+
+    // ── Reader/Writer: 수식 round-trip ───────────────────────────────
+
+    [Fact]
+    public void RoundTrip_InlineAndDisplayMath_Preserved()
+    {
+        const string source = "인라인 $a^2$ 및\n\n$$\nE=mc^2\n$$\n";
+
+        var doc      = MarkdownReader.FromMarkdown(source);
+        var rendered = MarkdownWriter.ToMarkdown(doc);
+        var reread   = MarkdownReader.FromMarkdown(rendered);
+
+        var ps = reread.EnumerateParagraphs().ToList();
+        Assert.Contains(ps[0].Runs, r => r.LatexSource == "a^2" && !r.IsDisplayEquation);
+        Assert.Contains(ps[1].Runs, r => r.LatexSource!.Contains("E=mc^2") && r.IsDisplayEquation);
+    }
+
+    // ── Writer: 중첩 리스트 들여쓰기 ───────────────────────────────
+
+    [Fact]
+    public void RoundTrip_NestedBulletList_Preserved()
+    {
+        const string source =
+            "- 상위 A\n" +
+            "  - 하위 A1\n" +
+            "  - 하위 A2\n" +
+            "- 상위 B\n";
+
+        var doc     = MarkdownReader.FromMarkdown(source);
+        var md      = MarkdownWriter.ToMarkdown(doc);
+        var reread  = MarkdownReader.FromMarkdown(md);
+        var ps      = reread.EnumerateParagraphs().ToList();
+
+        Assert.Equal(4, ps.Count);
+        Assert.Equal(0, ps[0].Style.ListMarker!.Level);  // 상위
+        Assert.Equal(1, ps[1].Style.ListMarker!.Level);  // 하위
+        Assert.Equal(1, ps[2].Style.ListMarker!.Level);  // 하위
+        Assert.Equal(0, ps[3].Style.ListMarker!.Level);  // 상위
+    }
+
+    [Fact]
+    public void RoundTrip_OrderedListStartNumber_Preserved()
+    {
+        const string source = "5. 다섯째\n6. 여섯째\n7. 일곱째\n";
+
+        var doc    = MarkdownReader.FromMarkdown(source);
+        var md     = MarkdownWriter.ToMarkdown(doc);
+        var reread = MarkdownReader.FromMarkdown(md);
+        var ps     = reread.EnumerateParagraphs().ToList();
+
+        Assert.Equal(3, ps.Count);
+        Assert.Equal(5, ps[0].Style.ListMarker!.OrderedNumber);
+        Assert.Equal(6, ps[1].Style.ListMarker!.OrderedNumber);
+        Assert.Equal(7, ps[2].Style.ListMarker!.OrderedNumber);
+    }
+
     [Fact]
     public void RoundTrip_GfmFeatures_Preserved()
     {

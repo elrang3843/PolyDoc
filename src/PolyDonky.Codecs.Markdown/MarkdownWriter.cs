@@ -91,12 +91,25 @@ public sealed class MarkdownWriter : IDocumentWriter
 
         if (p.Style.CodeLanguage is not null)
         {
-            // 펜스드 코드 블록.
-            sb.Append(indent).Append(quotePrefix).Append("```").Append(p.Style.CodeLanguage).Append('\n');
-            var code = p.GetPlainText();
+            // 펜스드 코드 블록 — 코드 내 백틱 연속 최대 길이보다 1 더 긴 펜스 사용.
+            var code     = p.GetPlainText();
+            int maxBt    = LongestBacktickRun(code);
+            int fenceLen = Math.Max(3, maxBt + 1);
+            var fence    = new string('`', fenceLen);
+            sb.Append(indent).Append(quotePrefix).Append(fence).Append(p.Style.CodeLanguage).Append('\n');
             foreach (var line in code.Split('\n'))
                 sb.Append(indent).Append(quotePrefix).Append(line).Append('\n');
-            sb.Append(indent).Append(quotePrefix).Append("```\n");
+            sb.Append(indent).Append(quotePrefix).Append(fence).Append('\n');
+            return;
+        }
+
+        // 별행 수식 — display equation 단일 run 이면 $$ 블록으로 출력 (한 줄 $$…$$ 는 inline 으로 파싱됨).
+        if (p.Runs.Count == 1 && p.Runs[0].IsDisplayEquation && !string.IsNullOrEmpty(p.Runs[0].LatexSource))
+        {
+            sb.Append(indent).Append(quotePrefix).Append("$$\n");
+            foreach (var line in p.Runs[0].LatexSource!.Split('\n'))
+                sb.Append(indent).Append(quotePrefix).Append(line).Append('\n');
+            sb.Append(indent).Append(quotePrefix).Append("$$\n");
             return;
         }
 
@@ -136,7 +149,22 @@ public sealed class MarkdownWriter : IDocumentWriter
     private static void WriteImage(StringBuilder sb, ImageBlock img, string indent)
     {
         var alt  = EscapeText(img.Description ?? string.Empty);
-        var path = img.ResourcePath ?? string.Empty;
+        string path;
+        if (!string.IsNullOrEmpty(img.ResourcePath))
+        {
+            path = img.ResourcePath;
+        }
+        else if (img.Data.Length > 0)
+        {
+            // 임베디드 바이너리 → data URI (Markdown 자체는 표준이 아니지만 브라우저·VSCode 등이 지원).
+            var b64  = Convert.ToBase64String(img.Data);
+            var mime = string.IsNullOrEmpty(img.MediaType) ? "application/octet-stream" : img.MediaType;
+            path = $"data:{mime};base64,{b64}";
+        }
+        else
+        {
+            path = string.Empty;
+        }
         sb.Append(indent).Append("![").Append(alt).Append("](").Append(path).Append(")\n");
     }
 
@@ -279,13 +307,14 @@ public sealed class MarkdownWriter : IDocumentWriter
         foreach (var ch in text)
         {
             // CommonMark ASCII punctuation 중 의미 있는 것만 이스케이프.
+            // `^` 포함: EmphasisExtras extension 이 `^sup^` 구문을 활성화하므로 일반 텍스트의 ^ 를 보호.
             switch (ch)
             {
                 case '\\': case '`': case '*': case '_':
                 case '[':  case ']':
                 case '<':  case '>':
                 case '#':  case '~':
-                case '|':
+                case '|':  case '^':
                     sb.Append('\\').Append(ch);
                     break;
                 default:

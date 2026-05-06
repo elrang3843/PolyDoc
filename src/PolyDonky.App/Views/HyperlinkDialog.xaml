@@ -1,0 +1,74 @@
+<Window x:Class="PolyDonky.App.Views.HyperlinkDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="clr-namespace:PolyDonky.App.Services"
+        Title="{Binding HyperlinkDlgTitle, Source={x:Static svc:LocalizedStrings.Instance}}"
+        Width="440" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource UiFont}"
+        Background="{DynamicResource Surface}"
+        Foreground="{DynamicResource OnSurface}">
+
+    <StackPanel Margin="16">
+
+        <!-- URL 입력 -->
+        <TextBlock Text="{Binding HyperlinkDlgUrl, Source={x:Static svc:LocalizedStrings.Instance}}"
+                   Margin="0,0,0,4" />
+        <TextBox x:Name="TxtUrl"
+                 Background="{DynamicResource SurfaceAlt}"
+                 Foreground="{DynamicResource OnSurface}"
+                 CaretBrush="{DynamicResource OnSurface}"
+                 BorderBrush="{DynamicResource Divider}"
+                 Padding="6,4"
+                 TextChanged="OnUrlChanged" />
+
+        <!-- 표시 텍스트 -->
+        <TextBlock Margin="0,10,0,4">
+            <Run Text="{Binding HyperlinkDlgDisplayText, Source={x:Static svc:LocalizedStrings.Instance}, Mode=OneWay}" />
+            <Run Text=" " />
+            <Run Text="{Binding HyperlinkDlgDisplayHint, Source={x:Static svc:LocalizedStrings.Instance}, Mode=OneWay}"
+                 Foreground="{DynamicResource OnSurfaceMuted}" />
+        </TextBlock>
+        <TextBox x:Name="TxtDisplayText"
+                 Background="{DynamicResource SurfaceAlt}"
+                 Foreground="{DynamicResource OnSurface}"
+                 CaretBrush="{DynamicResource OnSurface}"
+                 BorderBrush="{DynamicResource Divider}"
+                 Padding="6,4" />
+
+        <!-- 버튼 행 -->
+        <Grid Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 링크 제거 — 기존 링크 편집 시에만 표시 -->
+            <Button x:Name="BtnRemove"
+                    Grid.Column="0"
+                    Content="{Binding HyperlinkDlgRemove, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="10,5"
+                    Visibility="Collapsed"
+                    Click="OnRemove" />
+
+            <Button x:Name="BtnOk"
+                    Grid.Column="2"
+                    Content="{Binding DlgConfirm, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="14,5"
+                    IsDefault="True"
+                    IsEnabled="False"
+                    Click="OnOk" />
+            <Button Grid.Column="3"
+                    Content="{Binding FindReplaceClose, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="14,5"
+                    Margin="8,0,0,0"
+                    IsCancel="True"
+                    Click="OnCancel" />
+        </Grid>
+
+    </StackPanel>
+</Window>

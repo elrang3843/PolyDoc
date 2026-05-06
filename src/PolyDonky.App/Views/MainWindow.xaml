@@ -110,6 +110,13 @@
                 </MenuItem>
                 <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertImage" />
+                <Separator />
+                <MenuItem Header="{Binding MenuInsertHyperlink, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertHyperlink" InputGestureText="Ctrl+K" />
+                <MenuItem Header="{Binding MenuInsertFootnote, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertFootnote" />
+                <MenuItem Header="{Binding MenuInsertEndnote, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertEndnote" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuFormat, Source={x:Static svc:LocalizedStrings.Instance}}">
@@ -132,6 +139,10 @@
                           IsCheckable="True"
                           Click="OnTypesettingMarksToggle"
                           InputGestureText="Ctrl+Shift+F8" />
+                <MenuItem x:Name="MiFootnotePanel"
+                          Header="{Binding MenuViewFootnotePanel, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsCheckable="True"
+                          Click="OnToggleFootnotePanel" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuTools, Source={x:Static svc:LocalizedStrings.Instance}}">
@@ -323,6 +334,17 @@
                            TextTrimming="CharacterEllipsis" />
             </StatusBarItem>
         </StatusBar>
+
+        <!-- 각주/미주 편집 패널 — StatusBar 위, 본문 영역 아래에 dock.
+             기본은 숨김(보기 메뉴로 토글 / 항목 삽입 시 자동 표시). -->
+        <Border x:Name="FootnotePanelHost"
+                DockPanel.Dock="Bottom"
+                Height="200"
+                Visibility="Collapsed"
+                BorderBrush="{DynamicResource Divider}"
+                BorderThickness="0,1,0,0">
+            <views:FootnoteEditorPanel x:Name="FootnotePanel" />
+        </Border>
 
         <!-- 본문 영역 — 다중 페이지 뷰: 페이지마다 별도의 종이 모양 Border 가 스택되어
              10 DIP 갭으로 분리된 형태. 본문 RichTextBox 는 모든 페이지를 가로질러

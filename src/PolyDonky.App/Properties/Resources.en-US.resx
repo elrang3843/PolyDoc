@@ -64,6 +64,35 @@
   <data name="MenuInsertEmoji" xml:space="preserve"><value>E_moji</value></data>
   <data name="MenuInsertShape" xml:space="preserve"><value>S_hape</value></data>
   <data name="MenuInsertImage" xml:space="preserve"><value>_Image</value></data>
+  <data name="MenuInsertHyperlink" xml:space="preserve"><value>Hyper_link...</value></data>
+  <data name="MenuInsertFootnote"  xml:space="preserve"><value>_Footnote</value></data>
+  <data name="MenuInsertEndnote"   xml:space="preserve"><value>E_ndnote</value></data>
+
+  <!-- Footnote/Endnote editor panel -->
+  <data name="FootnotePanelTitle"      xml:space="preserve"><value>Footnotes/Endnotes</value></data>
+  <data name="FootnotePanelTabFn"      xml:space="preserve"><value>Footnotes</value></data>
+  <data name="FootnotePanelTabEn"      xml:space="preserve"><value>Endnotes</value></data>
+  <data name="FootnotePanelClose"      xml:space="preserve"><value>Close panel</value></data>
+  <data name="FootnotePanelDelete"     xml:space="preserve"><value>Delete this entry</value></data>
+  <data name="FootnotePanelEmpty"      xml:space="preserve"><value>No footnotes/endnotes. Select text in the body and choose Insert &gt; Footnote (or Endnote) to add one.</value></data>
+  <data name="FootnotePanelGotoRef"    xml:space="preserve"><value>Go to reference in body</value></data>
+  <data name="MenuViewFootnotePanel"   xml:space="preserve"><value>Footnote/Endnote _Panel</value></data>
+
+  <!-- Context menu -->
+  <data name="CtxInsertFootnote"   xml:space="preserve"><value>Insert _Footnote</value></data>
+  <data name="CtxInsertEndnote"    xml:space="preserve"><value>Insert E_ndnote</value></data>
+  <data name="CtxFootnoteEdit"     xml:space="preserve"><value>Edit _Footnote</value></data>
+  <data name="CtxEndnoteEdit"      xml:space="preserve"><value>Edit E_ndnote</value></data>
+
+  <!-- Hyperlink dialog -->
+  <data name="HyperlinkDlgTitle"       xml:space="preserve"><value>Hyperlink</value></data>
+  <data name="HyperlinkDlgUrl"         xml:space="preserve"><value>_URL:</value></data>
+  <data name="HyperlinkDlgDisplayText" xml:space="preserve"><value>_Display text:</value></data>
+  <data name="HyperlinkDlgDisplayHint" xml:space="preserve"><value>(leave blank to use URL as text)</value></data>
+  <data name="HyperlinkDlgRemove"      xml:space="preserve"><value>_Remove link</value></data>
+  <data name="HyperlinkDlgUrlEmpty"    xml:space="preserve"><value>Please enter a URL.</value></data>
+  <data name="CtxHyperlinkEdit"        xml:space="preserve"><value>Edit _Hyperlink...</value></data>
+  <data name="CtxHyperlinkOpen"        xml:space="preserve"><value>_Open Link</value></data>
 
   <!-- Menu: Format -->
   <data name="MenuFormat" xml:space="preserve"><value>F_ormat</value></data>

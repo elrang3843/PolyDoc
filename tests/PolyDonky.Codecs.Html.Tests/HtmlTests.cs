@@ -430,4 +430,348 @@ public class HtmlTests
         Assert.Contains(reread.EnumerateParagraphs().SelectMany(p => p.Runs),
             r => r.Url == "https://x");
     }
+
+    // ── 추가 Writer 테스트 ─────────────────────────────────────────
+
+    [Fact]
+    public void Writer_FragmentMode_NoDoctype()
+    {
+        var doc = new PolyDonkyument();
+        doc.Sections.Add(new Section());
+        doc.Sections[0].Blocks.Add(Paragraph.Of("안녕"));
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.DoesNotContain("<!DOCTYPE", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<html", html);
+        Assert.Contains("<p>안녕</p>", html);
+    }
+
+    [Fact]
+    public void Writer_CustomDocumentTitle()
+    {
+        var doc = new PolyDonkyument();
+        doc.Sections.Add(new Section());
+        doc.Sections[0].Blocks.Add(Paragraph.Of("본문"));
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: true, title: "내 문서");
+        Assert.Contains("<title>내 문서</title>", html);
+    }
+
+    [Fact]
+    public void Writer_OverlineEmitsCss()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        var p = new Paragraph();
+        p.AddText("윗줄", new RunStyle { Overline = true });
+        section.Blocks.Add(p);
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("text-decoration:overline", html);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesOverline()
+    {
+        var src = "<p><span style=\"text-decoration:overline\">윗줄</span></p>";
+        var doc = HtmlReader.FromHtml(src);
+        var run = doc.EnumerateParagraphs().Single().Runs.First(r => r.Text.Trim() == "윗줄");
+        Assert.True(run.Style.Overline);
+
+        var rendered = HtmlWriter.ToHtml(doc, fullDocument: false);
+        var doc2 = HtmlReader.FromHtml(rendered);
+        var run2 = doc2.EnumerateParagraphs().Single().Runs.First(r => r.Text.Trim() == "윗줄");
+        Assert.True(run2.Style.Overline);
+    }
+
+    [Fact]
+    public void Writer_ParagraphSpacingAndIndent()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+        var p = new Paragraph();
+        p.Style.SpaceBeforePt     = 12;
+        p.Style.SpaceAfterPt      = 6;
+        p.Style.IndentFirstLineMm = 10;
+        p.Style.IndentLeftMm      = 5;
+        p.AddText("들여쓰기 단락");
+        section.Blocks.Add(p);
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("margin-top:12pt", html);
+        Assert.Contains("margin-bottom:6pt", html);
+        Assert.Contains("text-indent:10mm", html);
+        Assert.Contains("padding-left:5mm", html);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesParagraphSpacing()
+    {
+        var src = "<p style=\"margin-top:12pt;margin-bottom:6pt;text-indent:10mm;padding-left:5mm\">텍스트</p>";
+        var doc = HtmlReader.FromHtml(src);
+        var p   = doc.EnumerateParagraphs().Single();
+        Assert.Equal(12, p.Style.SpaceBeforePt,     precision: 1);
+        Assert.Equal(6,  p.Style.SpaceAfterPt,      precision: 1);
+        Assert.Equal(10, p.Style.IndentFirstLineMm,  precision: 1);
+        Assert.Equal(5,  p.Style.IndentLeftMm,       precision: 1);
+
+        var rendered = HtmlWriter.ToHtml(doc, fullDocument: false);
+        var doc2 = HtmlReader.FromHtml(rendered);
+        var p2   = doc2.EnumerateParagraphs().Single();
+        Assert.Equal(p.Style.SpaceBeforePt,    p2.Style.SpaceBeforePt,    precision: 1);
+        Assert.Equal(p.Style.SpaceAfterPt,     p2.Style.SpaceAfterPt,     precision: 1);
+        Assert.Equal(p.Style.IndentFirstLineMm, p2.Style.IndentFirstLineMm, precision: 1);
+        Assert.Equal(p.Style.IndentLeftMm,     p2.Style.IndentLeftMm,     precision: 1);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesLineHeight()
+    {
+        var src = "<p style=\"line-height:1.8\">줄간격</p>";
+        var doc = HtmlReader.FromHtml(src);
+        var p   = doc.EnumerateParagraphs().Single();
+        Assert.Equal(1.8, p.Style.LineHeightFactor, precision: 2);
+
+        var rendered = HtmlWriter.ToHtml(doc, fullDocument: false);
+        var doc2 = HtmlReader.FromHtml(rendered);
+        Assert.Equal(1.8, doc2.EnumerateParagraphs().Single().Style.LineHeightFactor, precision: 2);
+    }
+
+    [Fact]
+    public void Writer_TableColumnWidthsAndCellBackground()
+    {
+        var table = new PolyDonky.Core.Table();
+        table.Columns.Add(new TableColumn { WidthMm = 40 });
+        table.Columns.Add(new TableColumn { WidthMm = 60 });
+        var row = new TableRow();
+        row.Cells.Add(new TableCell
+        {
+            Blocks          = { Paragraph.Of("셀1") },
+            BackgroundColor = "#FFCC00",
+        });
+        row.Cells.Add(new TableCell { Blocks = { Paragraph.Of("셀2") } });
+        table.Rows.Add(row);
+
+        var doc = new PolyDonkyument();
+        doc.Sections.Add(new Section());
+        doc.Sections[0].Blocks.Add(table);
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("<colgroup>", html);
+        Assert.Contains("width:40mm", html);
+        Assert.Contains("width:60mm", html);
+        Assert.Contains("background-color:#FFCC00", html);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesTableColumnWidthsAndCellBackground()
+    {
+        var src = "<table><colgroup><col style=\"width:40mm\"><col style=\"width:60mm\"></colgroup>" +
+                  "<tbody><tr><td style=\"background-color:#FFCC00\">A</td><td>B</td></tr></tbody></table>";
+        var doc = HtmlReader.FromHtml(src);
+        var t   = doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Single();
+
+        Assert.Equal(40, t.Columns[0].WidthMm, precision: 0);
+        Assert.Equal(60, t.Columns[1].WidthMm, precision: 0);
+        Assert.Equal("#FFCC00", t.Rows[0].Cells[0].BackgroundColor, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Writer_TableCellBorderAndPadding()
+    {
+        var table = new PolyDonky.Core.Table();
+        table.Columns.Add(new TableColumn { WidthMm = 50 });
+        var row   = new TableRow();
+        row.Cells.Add(new TableCell
+        {
+            Blocks            = { Paragraph.Of("X") },
+            BorderThicknessPt = 2.0,
+            BorderColor       = "#0000FF",
+            PaddingTopMm      = 3,
+            PaddingLeftMm     = 5,
+        });
+        table.Rows.Add(row);
+
+        var doc = new PolyDonkyument();
+        doc.Sections.Add(new Section());
+        doc.Sections[0].Blocks.Add(table);
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("border-top:2pt solid #0000FF", html);
+        Assert.Contains("padding:", html);
+    }
+
+    [Fact]
+    public void Writer_ImageWrapModeAndHAlign()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(new ImageBlock
+        {
+            ResourcePath = "img/a.png",
+            WidthMm  = 50,
+            HeightMm = 30,
+            WrapMode = ImageWrapMode.WrapRight,
+        });
+        section.Blocks.Add(new ImageBlock
+        {
+            ResourcePath = "img/b.png",
+            WidthMm  = 50,
+            HeightMm = 30,
+            HAlign   = ImageHAlign.Center,
+        });
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("float:left", html);
+        Assert.Contains("display:block;margin-left:auto;margin-right:auto", html);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesImageAlignment()
+    {
+        var src = "<img src=\"img/a.png\" style=\"float:left\">" +
+                  "<img src=\"img/b.png\" style=\"display:block;margin-left:auto;margin-right:auto\">";
+        var doc    = HtmlReader.FromHtml(src);
+        var images = doc.Sections[0].Blocks.OfType<ImageBlock>().ToList();
+
+        Assert.Equal(ImageWrapMode.WrapRight, images[0].WrapMode);
+        Assert.Equal(ImageHAlign.Center,      images[1].HAlign);
+    }
+
+    [Fact]
+    public void Reader_NamedColors()
+    {
+        var doc  = HtmlReader.FromHtml(
+            "<p><span style=\"color:orange\">A</span> " +
+            "<span style=\"color:navy\">B</span> " +
+            "<span style=\"color:teal\">C</span></p>");
+        var runs = doc.EnumerateParagraphs().Single().Runs.Where(r => r.Style.Foreground.HasValue).ToList();
+        Assert.Contains(runs, r => r.Style.Foreground!.Value.R == 255 && r.Style.Foreground!.Value.G == 165); // orange
+        Assert.Contains(runs, r => r.Style.Foreground!.Value.B == 128 && r.Style.Foreground!.Value.R == 0);   // navy
+        Assert.Contains(runs, r => r.Style.Foreground!.Value.R == 0   && r.Style.Foreground!.Value.G == 128 && r.Style.Foreground!.Value.B == 128); // teal
+    }
+
+    [Fact]
+    public void Reader_TableCellPadding()
+    {
+        var src = "<table><tr><td style=\"padding:5mm\">X</td></tr></table>";
+        var doc = HtmlReader.FromHtml(src);
+        var cell = doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Single().Rows[0].Cells[0];
+        Assert.Equal(5, cell.PaddingTopMm,    precision: 1);
+        Assert.Equal(5, cell.PaddingLeftMm,   precision: 1);
+    }
+
+    [Fact]
+    public void Writer_ForcePageBreakBefore_EmitsCss()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(Paragraph.Of("A"));
+        var p2 = Paragraph.Of("B");
+        p2.Style.ForcePageBreakBefore = true;
+        sec.Blocks.Add(p2);
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("page-break-before:always", html);
+    }
+
+    [Fact]
+    public void Reader_ForcePageBreakBefore_ParsesCss()
+    {
+        var src = "<p>A</p><p style=\"page-break-before:always\">B</p>";
+        var doc = HtmlReader.FromHtml(src);
+        var paragraphs = doc.EnumerateParagraphs().ToList();
+
+        Assert.False(paragraphs[0].Style.ForcePageBreakBefore);
+        Assert.True(paragraphs[1].Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void Reader_ForcePageBreakBefore_ParsesModernCss()
+    {
+        var src = "<p style=\"break-before:page\">C</p>";
+        var doc = HtmlReader.FromHtml(src);
+        Assert.True(doc.EnumerateParagraphs().Single().Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void RoundTrip_ForcePageBreakBefore_Preserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(Paragraph.Of("첫 번째 단락"));
+        var p2 = Paragraph.Of("두 번째 단락");
+        p2.Style.ForcePageBreakBefore = true;
+        sec.Blocks.Add(p2);
+        sec.Blocks.Add(Paragraph.Of("세 번째 단락"));
+
+        var html = HtmlWriter.ToHtml(doc, fullDocument: false);
+        var rt   = HtmlReader.FromHtml(html);
+        var paras = rt.EnumerateParagraphs().ToList();
+
+        Assert.False(paras[0].Style.ForcePageBreakBefore);
+        Assert.True(paras[1].Style.ForcePageBreakBefore);
+        Assert.False(paras[2].Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void Writer_Footnote_EmitsPandocStyleSuperscript()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+
+        var fn = new FootnoteEntry { Id = "f1" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용"));
+        doc.Footnotes.Add(fn);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "f1" });
+        sec.Blocks.Add(p);
+
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("fnref-1", html);
+        Assert.Contains("fn-1", html);
+        Assert.Contains("각주 내용", html);
+        Assert.Contains("section class=\"footnotes\"", html);
+    }
+
+    [Fact]
+    public void RoundTrip_FootnotesPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+
+        var fn = new FootnoteEntry { Id = "f1" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용"));
+        doc.Footnotes.Add(fn);
+
+        var en = new FootnoteEntry { Id = "e1" };
+        en.Blocks.Add(Paragraph.Of("미주 내용"));
+        doc.Endnotes.Add(en);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "f1" });
+        p.AddText(" 텍스트");
+        p.Runs.Add(new Run { EndnoteId = "e1" });
+        sec.Blocks.Add(p);
+
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+
+        Assert.Single(rt.Footnotes);
+        Assert.Contains("각주 내용", rt.Footnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        Assert.Single(rt.Endnotes);
+        Assert.Contains("미주 내용", rt.Endnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        var runs = rt.Sections[0].Blocks.OfType<Paragraph>().First().Runs;
+        Assert.Contains(runs, r => r.FootnoteId is not null);
+        Assert.Contains(runs, r => r.EndnoteId is not null);
+    }
 }

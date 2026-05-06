@@ -51,21 +51,26 @@ public sealed class ParagraphStyle
     /// <summary>구분선(thematic break / horizontal rule) 단락. true 이면 본문이 무시되고 가로선만 그려진다.</summary>
     public bool IsThematicBreak { get; set; }
 
+    /// <summary>강제 페이지 나누기. true 이면 이 단락 앞에 페이지 브레이크를 삽입한다.
+    /// DOCX: w:pageBreakBefore, HWPX: hp:p pageBreak="1"</summary>
+    public bool ForcePageBreakBefore { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본 — ListMarker 도 새 인스턴스로.</summary>
     public ParagraphStyle Clone() => new()
     {
-        Alignment         = Alignment,
-        LineHeightFactor  = LineHeightFactor,
-        SpaceBeforePt     = SpaceBeforePt,
-        SpaceAfterPt      = SpaceAfterPt,
-        IndentFirstLineMm = IndentFirstLineMm,
-        IndentLeftMm      = IndentLeftMm,
-        IndentRightMm     = IndentRightMm,
-        Outline           = Outline,
-        ListMarker        = ListMarker?.Clone(),
-        QuoteLevel        = QuoteLevel,
-        CodeLanguage      = CodeLanguage,
-        IsThematicBreak   = IsThematicBreak,
+        Alignment              = Alignment,
+        LineHeightFactor       = LineHeightFactor,
+        SpaceBeforePt          = SpaceBeforePt,
+        SpaceAfterPt           = SpaceAfterPt,
+        IndentFirstLineMm      = IndentFirstLineMm,
+        IndentLeftMm           = IndentLeftMm,
+        IndentRightMm          = IndentRightMm,
+        Outline                = Outline,
+        ListMarker             = ListMarker?.Clone(),
+        QuoteLevel             = QuoteLevel,
+        CodeLanguage           = CodeLanguage,
+        IsThematicBreak        = IsThematicBreak,
+        ForcePageBreakBefore   = ForcePageBreakBefore,
     };
 }
 

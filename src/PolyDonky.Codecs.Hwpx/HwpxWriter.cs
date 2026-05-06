@@ -10,7 +10,9 @@ public sealed class HwpxWriter : IDocumentWriter
 {
     public string FormatId => "hwpx";
 
-    private const double HwpUnitToMm = 25.4 / 7200.0;
+    // BuildNoteCtrlRun 에서 참조하는 각주/미주 목록 — Write() 호출 간 스레드 안전하지 않으므로 인스턴스 필드.
+    private IList<FootnoteEntry> _pendingFootnotes = Array.Empty<FootnoteEntry>();
+    private IList<FootnoteEntry> _pendingEndnotes  = Array.Empty<FootnoteEntry>();
 
     private static readonly XNamespace OpfContainer = HwpxNamespaces.OpfContainer;
     private static readonly XNamespace Opf = HwpxNamespaces.OpfPackage;
@@ -129,11 +131,16 @@ public sealed class HwpxWriter : IDocumentWriter
         public IReadOnlyList<RunStyle> RunStyles => _runStyles;
         public IReadOnlyList<ParagraphStyle> ParaStyles => _paraStyles;
 
+        private int _nextCtrlId = 1;
+        private int _nextSubListId = 1;
+
         public void ResetParaId() => _nextParaId = 0;
         public int  NextParaId()  => _nextParaId++;
         public long NextObjId()   => _nextObjId++;
         public int  NextZOrder()  => _nextZOrder++;
         public long NextInstId()  => _nextInstId++;
+        public int  NextCtrlId()  => _nextCtrlId++;
+        public int  NextSubListId() => _nextSubListId++;
 
         private int InternalRegisterFont(string family)
         {
@@ -343,6 +350,9 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(output);
+
+        _pendingFootnotes = document.Footnotes;
+        _pendingEndnotes  = document.Endnotes;
 
         using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
         WriteRawText(archive, HwpxPaths.Mimetype, HwpxPaths.MimetypeContent, CompressionLevel.NoCompression);
@@ -857,9 +867,9 @@ public sealed class HwpxWriter : IDocumentWriter
         long lineSpacingPct = (long)Math.Round(s.LineHeightFactor * 100);
         if (lineSpacingPct <= 0) lineSpacingPct = 160;
 
-        long indentHwp = (long)Math.Round(s.IndentFirstLineMm / HwpUnitToMm);
-        long leftHwp   = (long)Math.Round(s.IndentLeftMm      / HwpUnitToMm);
-        long rightHwp  = (long)Math.Round(s.IndentRightMm     / HwpUnitToMm);
+        long indentHwp = UnitConverter.MmToHwpUnit(s.IndentFirstLineMm);
+        long leftHwp   = UnitConverter.MmToHwpUnit(s.IndentLeftMm     );
+        long rightHwp  = UnitConverter.MmToHwpUnit(s.IndentRightMm    );
         long prevHwp   = (long)Math.Round(s.SpaceBeforePt * 100);
         long nextHwp   = (long)Math.Round(s.SpaceAfterPt  * 100);
 
@@ -1177,7 +1187,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("id",          ctx.NextParaId().ToString()),
             new XAttribute("paraPrIDRef", paraPrID.ToString()),
             new XAttribute("styleIDRef",  styleID.ToString()),
-            new XAttribute("pageBreak",   "0"),
+            new XAttribute("pageBreak",   p.Style.ForcePageBreakBefore ? "1" : "0"),
             new XAttribute("columnBreak", "0"),
             new XAttribute("merged",      "0"));
 
@@ -1197,12 +1207,66 @@ public sealed class HwpxWriter : IDocumentWriter
 
     private XElement BuildRun(Run run, WriteContext ctx)
     {
+        // 각주/미주 참조 run — hp:ctrl 을 품은 run 으로 출력.
+        if (run.FootnoteId is { Length: > 0 } fnId)
+            return BuildNoteCtrlRun("FOOT_NOTE", fnId, ctx);
+        if (run.EndnoteId is { Length: > 0 } enId)
+            return BuildNoteCtrlRun("END_NOTE", enId, ctx);
+
         int charPrID = ctx.RunStyleId(run.Style);
         var elem = new XElement(Hp + "run",
             new XAttribute("charPrIDRef", charPrID.ToString()));
         if (run.Text.Length > 0)
             elem.Add(new XElement(Hp + "t", run.Text));
         return elem;
+    }
+
+    private XElement BuildNoteCtrlRun(string ctrlID, string noteId, WriteContext ctx)
+    {
+        // 각주/미주 내용을 document 에서 찾아 subList 로 직렬화.
+        var entries = ctrlID == "FOOT_NOTE"
+            ? (IEnumerable<FootnoteEntry>)_pendingFootnotes
+            : _pendingEndnotes;
+        var entry = entries.FirstOrDefault(e => e.Id == noteId);
+
+        var subListId = ctx.NextSubListId();
+        var subList = new XElement(Hp + "subList",
+            new XAttribute("id",               subListId.ToString()),
+            new XAttribute("textDirection",    "HORIZONTAL"),
+            new XAttribute("lineWrap",         "BREAK"),
+            new XAttribute("vertAlign",        "NORMAL"),
+            new XAttribute("linkListIDRef",    "0"),
+            new XAttribute("linkListNextIDRef","0"),
+            new XAttribute("textWidth",        "0"),
+            new XAttribute("textHeight",       "0"));
+
+        if (entry is not null)
+        {
+            ctx.ResetParaId();
+            foreach (var block in entry.Blocks)
+            {
+                if (block is Paragraph p)
+                    subList.Add(BuildParagraph(p, ctx));
+                else
+                    subList.Add(BuildEmptyParagraph(ctx));
+            }
+        }
+        else
+        {
+            subList.Add(BuildEmptyParagraph(ctx));
+        }
+
+        var ctrl = new XElement(Hp + "ctrl",
+            new XAttribute("id",           ctx.NextCtrlId().ToString()),
+            new XAttribute("ctrlID",       ctrlID),
+            new XAttribute("numberingType","BOTH_ALIGN"),
+            new XAttribute("textRef",      "0"),
+            subList);
+
+        return new XElement(Hp + "run",
+            new XAttribute("charPrIDRef", "0"),
+            ctrl,
+            new XElement(Hp + "t"));
     }
 
     private XElement BuildEmptyParagraph(WriteContext ctx)
@@ -1338,7 +1402,7 @@ public sealed class HwpxWriter : IDocumentWriter
                                 table.Columns.All(c => c.WidthMm > 0);
         if (colWidthsDefined)
             for (int i = 0; i < colCount; i++)
-                colWidths[i] = (long)Math.Round(table.Columns[i].WidthMm / HwpUnitToMm);
+                colWidths[i] = UnitConverter.MmToHwpUnit(table.Columns[i].WidthMm);
         else
         {
             long even = ContentWidth / colCount;
@@ -1350,7 +1414,7 @@ public sealed class HwpxWriter : IDocumentWriter
         long[] rowHeights = new long[rowCount];
         for (int i = 0; i < rowCount; i++)
             rowHeights[i] = table.Rows[i].HeightMm > 0
-                ? (long)Math.Round(table.Rows[i].HeightMm / HwpUnitToMm)
+                ? UnitConverter.MmToHwpUnit(table.Rows[i].HeightMm)
                 : 1000;
 
         // 한컴 기본 마진 (HwpForge DEFAULT_CELL_MARGIN/OUT_MARGIN)
@@ -1441,7 +1505,7 @@ public sealed class HwpxWriter : IDocumentWriter
                 long cellW = 0;
                 for (int k = 0; k < colSpan && c + k < colCount; k++) cellW += colWidths[c + k];
                 if (cell.WidthMm > 0)
-                    cellW = (long)Math.Round(cell.WidthMm / HwpUnitToMm);
+                    cellW = UnitConverter.MmToHwpUnit(cell.WidthMm);
                 if (cellW <= 0) cellW = ContentWidth / Math.Max(colCount, 1);
 
                 long cellH = 0;
@@ -1542,8 +1606,8 @@ public sealed class HwpxWriter : IDocumentWriter
     private XElement BuildPicture(ImageBlock image, WriteContext ctx)
     {
         var binId = ctx.AddImage(image.Data, image.MediaType);
-        long w = (long)Math.Round((image.WidthMm  > 0 ? image.WidthMm  : 80) / HwpUnitToMm);
-        long h = (long)Math.Round((image.HeightMm > 0 ? image.HeightMm : 60) / HwpUnitToMm);
+        long w = UnitConverter.MmToHwpUnit((image.WidthMm  > 0 ? image.WidthMm  : 80));
+        long h = UnitConverter.MmToHwpUnit((image.HeightMm > 0 ? image.HeightMm : 60));
 
         // 외곽 속성과 sz/pos/outMargin 이 없으면 한컴 오피스가 거부.
         // treatAsChar="1" 로 인라인 배치 — 위치 계산 불필요.
@@ -1668,8 +1732,8 @@ public sealed class HwpxWriter : IDocumentWriter
         // 한컴 ground truth: 닫힌 도형은 numberingType="PICTURE", 선은 "NONE".
         string numType = elemName == "line" ? "NONE" : "PICTURE";
 
-        long w = (long)Math.Round((shape.WidthMm  > 0 ? shape.WidthMm  : 40) / HwpUnitToMm);
-        long h = (long)Math.Round((shape.HeightMm > 0 ? shape.HeightMm : 30) / HwpUnitToMm);
+        long w = UnitConverter.MmToHwpUnit((shape.WidthMm  > 0 ? shape.WidthMm  : 40));
+        long h = UnitConverter.MmToHwpUnit((shape.HeightMm > 0 ? shape.HeightMm : 30));
         if (w <= 0) w = 1000;
         if (h <= 0) h = 1;
 
@@ -1787,10 +1851,10 @@ public sealed class HwpxWriter : IDocumentWriter
                 sx = shape.Points[0].X; sy = shape.Points[0].Y;
                 ex = shape.Points[1].X; ey = shape.Points[1].Y;
             }
-            long sxU = (long)Math.Round(sx / HwpUnitToMm);
-            long syU = (long)Math.Round(sy / HwpUnitToMm);
-            long exU = (long)Math.Round(ex / HwpUnitToMm);
-            long eyU = (long)Math.Round(ey / HwpUnitToMm);
+            long sxU = UnitConverter.MmToHwpUnit(sx);
+            long syU = UnitConverter.MmToHwpUnit(sy);
+            long exU = UnitConverter.MmToHwpUnit(ex);
+            long eyU = UnitConverter.MmToHwpUnit(ey);
             elem.Add(new XElement(Hc + "startPt",
                 new XAttribute("x", sxU.ToString()), new XAttribute("y", syU.ToString())));
             elem.Add(new XElement(Hc + "endPt",
@@ -1851,8 +1915,8 @@ public sealed class HwpxWriter : IDocumentWriter
         // 직선만 InFrontOfText 라서 정상이고, 사각형/타원/폴리곤 등 Inline 기본값
         // 도형은 모두 다음 페이지로 넘어감. 한컴 ground truth 도 도형은 anchored.
         // OverlayXMm/Y 가 설정되어 있으면 그 값, 아니면 (0,0) 기본 위치.
-        long xOff = (long)Math.Round(shape.OverlayXMm / HwpUnitToMm);
-        long yOff = (long)Math.Round(shape.OverlayYMm / HwpUnitToMm);
+        long xOff = UnitConverter.MmToHwpUnit(shape.OverlayXMm);
+        long yOff = UnitConverter.MmToHwpUnit(shape.OverlayYMm);
         elem.Add(new XElement(Hp + "pos",
             new XAttribute("treatAsChar",     "0"),
             new XAttribute("affectLSpacing",  "0"),
@@ -1886,8 +1950,8 @@ public sealed class HwpxWriter : IDocumentWriter
         {
             foreach (var p in shape.Points)
             {
-                long px = (long)Math.Round(p.X / HwpUnitToMm);
-                long py = (long)Math.Round(p.Y / HwpUnitToMm);
+                long px = UnitConverter.MmToHwpUnit(p.X);
+                long py = UnitConverter.MmToHwpUnit(p.Y);
                 if (px < 0) px = 0; if (py < 0) py = 0;
                 if (px > w) px = w; if (py > h) py = h;
                 result.Add((px, py));

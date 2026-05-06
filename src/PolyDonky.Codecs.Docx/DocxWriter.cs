@@ -52,7 +52,52 @@ public sealed class DocxWriter : IDocumentWriter
         var firstSection = document.Sections.FirstOrDefault();
         body.AppendChild(BuildSectionProperties(firstSection?.Page ?? new PageSettings()));
 
+        WriteFootnotesAndEndnotes(mainPart, document, ctx);
         WriteCoreProperties(package, document.Metadata);
+    }
+
+    private static void WriteFootnotesAndEndnotes(MainDocumentPart mainPart, PolyDonkyument document, WriteContext ctx)
+    {
+        if (document.Footnotes.Count > 0)
+        {
+            var fnPart = mainPart.AddNewPart<FootnotesPart>();
+            var footnotes = new W.Footnotes();
+            // OOXML 필수 separator 각주.
+            footnotes.AppendChild(new W.Footnote { Type = W.FootnoteEndnoteValues.Separator, Id = -1 });
+            footnotes.AppendChild(new W.Footnote { Type = W.FootnoteEndnoteValues.ContinuationSeparator, Id = 0 });
+            foreach (var entry in document.Footnotes)
+            {
+                if (!int.TryParse(entry.Id, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fnId))
+                    continue;
+                var fn = new W.Footnote { Id = fnId };
+                foreach (var block in entry.Blocks)
+                    fn.AppendChild(block is Paragraph p ? BuildParagraph(p) : BuildParagraph(Paragraph.Of(string.Empty)));
+                if (fn.ChildElements.Count == 0) fn.AppendChild(BuildParagraph(Paragraph.Of(string.Empty)));
+                footnotes.AppendChild(fn);
+            }
+            fnPart.Footnotes = footnotes;
+        }
+
+        if (document.Endnotes.Count > 0)
+        {
+            var enPart = mainPart.AddNewPart<EndnotesPart>();
+            var endnotes = new W.Endnotes();
+            endnotes.AppendChild(new W.Endnote { Type = W.FootnoteEndnoteValues.Separator, Id = -1 });
+            endnotes.AppendChild(new W.Endnote { Type = W.FootnoteEndnoteValues.ContinuationSeparator, Id = 0 });
+            foreach (var entry in document.Endnotes)
+            {
+                if (!int.TryParse(entry.Id, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var enId))
+                    continue;
+                var en = new W.Endnote { Id = enId };
+                foreach (var block in entry.Blocks)
+                    en.AppendChild(block is Paragraph p ? BuildParagraph(p) : BuildParagraph(Paragraph.Of(string.Empty)));
+                if (en.ChildElements.Count == 0) en.AppendChild(BuildParagraph(Paragraph.Of(string.Empty)));
+                endnotes.AppendChild(en);
+            }
+            enPart.Endnotes = endnotes;
+        }
     }
 
     private sealed class WriteContext
@@ -118,6 +163,11 @@ public sealed class DocxWriter : IDocumentWriter
                 new W.NumberingId { Val = 1 });
         }
 
+        if (p.Style.ForcePageBreakBefore)
+        {
+            pPr.PageBreakBefore = new W.PageBreakBefore();
+        }
+
         if (pPr.HasChildren)
         {
             wpara.AppendChild(pPr);
@@ -125,6 +175,30 @@ public sealed class DocxWriter : IDocumentWriter
 
         foreach (var run in p.Runs)
         {
+            if (run.FootnoteId is { Length: > 0 } fnId
+                && int.TryParse(fnId, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fnInt))
+            {
+                var fnRpr = new W.RunProperties();
+                fnRpr.AppendChild(new W.VerticalTextAlignment { Val = W.VerticalPositionValues.Superscript });
+                var fnRun = new W.Run();
+                fnRun.AppendChild(fnRpr);
+                fnRun.AppendChild(new W.FootnoteReference { Id = fnInt });
+                wpara.AppendChild(fnRun);
+                continue;
+            }
+            if (run.EndnoteId is { Length: > 0 } enId
+                && int.TryParse(enId, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var enInt))
+            {
+                var enRpr = new W.RunProperties();
+                enRpr.AppendChild(new W.VerticalTextAlignment { Val = W.VerticalPositionValues.Superscript });
+                var enRun = new W.Run();
+                enRun.AppendChild(enRpr);
+                enRun.AppendChild(new W.EndnoteReference { Id = enInt });
+                wpara.AppendChild(enRun);
+                continue;
+            }
             wpara.AppendChild(BuildRun(run));
         }
         return wpara;
@@ -296,7 +370,7 @@ public sealed class DocxWriter : IDocumentWriter
     }
 
     private static string MmToTwipsString(double mm)
-        => ((int)Math.Round(mm * 56.6929)).ToString(CultureInfo.InvariantCulture);
+        => UnitConverter.MmToTwipsString(mm);
 
     // ── 표·셀 테두리 빌더 ─────────────────────────────────────────────────────
 
@@ -404,7 +478,7 @@ public sealed class DocxWriter : IDocumentWriter
             });
     }
 
-    private static long MmToEmu(double mm) => (long)Math.Round(mm / 25.4 * 914400.0);
+    private static long MmToEmu(double mm) => UnitConverter.MmToEmu(mm);
 
     // ── 도형 출력 ─────────────────────────────────────────────────────────────
 
@@ -732,24 +806,21 @@ public sealed class DocxWriter : IDocumentWriter
 
     private static W.SectionProperties BuildSectionProperties(PageSettings page)
     {
-        // DOCX 는 트위프(twentieth of a point, 1/1440 inch). mm → twips.
-        static uint MmToTwips(double mm) => (uint)Math.Round(mm * 56.6929);
-
         var props = new W.SectionProperties();
         props.AppendChild(new W.PageSize
         {
-            Width = MmToTwips(page.WidthMm),
-            Height = MmToTwips(page.HeightMm),
+            Width = UnitConverter.MmToTwipsUInt(page.WidthMm),
+            Height = UnitConverter.MmToTwipsUInt(page.HeightMm),
             Orient = page.Orientation == PageOrientation.Landscape
                 ? W.PageOrientationValues.Landscape
                 : W.PageOrientationValues.Portrait,
         });
         props.AppendChild(new W.PageMargin
         {
-            Top = (int)MmToTwips(page.MarginTopMm),
-            Right = MmToTwips(page.MarginRightMm),
-            Bottom = (int)MmToTwips(page.MarginBottomMm),
-            Left = MmToTwips(page.MarginLeftMm),
+            Top = UnitConverter.MmToTwipsInt(page.MarginTopMm),
+            Right = UnitConverter.MmToTwipsUInt(page.MarginRightMm),
+            Bottom = UnitConverter.MmToTwipsInt(page.MarginBottomMm),
+            Left = UnitConverter.MmToTwipsUInt(page.MarginLeftMm),
             Header = 720,
             Footer = 720,
             Gutter = 0,

@@ -630,6 +630,63 @@ public class DocxRoundTripTests
         Assert.Equal(30, shape.HeightMm, precision: 0);
     }
 
+    [Fact]
+    public void RoundTrip_PreservesForcePageBreakBefore()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(Paragraph.Of("첫 번째 단락"));
+        var p2 = Paragraph.Of("두 번째 단락 — 강제 페이지 나누기");
+        p2.Style.ForcePageBreakBefore = true;
+        section.Blocks.Add(p2);
+        section.Blocks.Add(Paragraph.Of("세 번째 단락"));
+
+        var rt = WriteThenRead(doc);
+        var paragraphs = rt.Sections[0].Blocks.OfType<Paragraph>().ToList();
+
+        Assert.Equal(3, paragraphs.Count);
+        Assert.False(paragraphs[0].Style.ForcePageBreakBefore);
+        Assert.True(paragraphs[1].Style.ForcePageBreakBefore);
+        Assert.False(paragraphs[2].Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesFootnotesAndEndnotes()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var fn = new FootnoteEntry { Id = "1" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용 A"));
+        doc.Footnotes.Add(fn);
+
+        var en = new FootnoteEntry { Id = "2" };
+        en.Blocks.Add(Paragraph.Of("미주 내용 B"));
+        doc.Endnotes.Add(en);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "1" });
+        p.AddText(" 텍스트");
+        p.Runs.Add(new Run { EndnoteId = "2" });
+        section.Blocks.Add(p);
+
+        var rt = WriteThenRead(doc);
+
+        Assert.Single(rt.Footnotes);
+        Assert.Equal("각주 내용 A", rt.Footnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        Assert.Single(rt.Endnotes);
+        Assert.Equal("미주 내용 B", rt.Endnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        var runs = rt.Sections[0].Blocks.OfType<Paragraph>().First().Runs;
+        Assert.Contains(runs, r => r.FootnoteId is not null);
+        Assert.Contains(runs, r => r.EndnoteId is not null);
+    }
+
     private static PolyDonkyument WriteThenRead(PolyDonkyument document)
     {
         using var ms = new MemoryStream();

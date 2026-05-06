@@ -19,6 +19,12 @@ public sealed class PolyDonkyument
     /// <summary>개요 수준별 서식 세트 (선택). null 이면 내장 기본값 사용.</summary>
     public OutlineStyleSet? OutlineStyles { get; set; }
 
+    /// <summary>문서 수준 각주 목록. Run.FootnoteId 가 여기 FootnoteEntry.Id 를 참조한다.</summary>
+    public IList<FootnoteEntry> Footnotes { get; set; } = new List<FootnoteEntry>();
+
+    /// <summary>문서 수준 미주 목록. Run.EndnoteId 가 여기 FootnoteEntry.Id 를 참조한다.</summary>
+    public IList<FootnoteEntry> Endnotes { get; set; } = new List<FootnoteEntry>();
+
     /// <summary>비어 있지 않은 단일 섹션 단일 문단을 가진 최소 문서를 생성한다.</summary>
     public static PolyDonkyument Empty()
     {

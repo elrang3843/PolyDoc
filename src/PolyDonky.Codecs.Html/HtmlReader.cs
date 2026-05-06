@@ -65,6 +65,9 @@ public sealed class HtmlReader : IDocumentReader
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
 
+        // 각주/미주 섹션 먼저 추출 후 DOM 에서 제거 (본문 순회 전).
+        ExtractNotesSections(root, pd);
+
         var ctx = new InlineCtx { Shared = new ReadShared { MaxBlocks = maxBlocks } };
         ProcessChildren(root, section.Blocks, ctx);
 
@@ -85,6 +88,51 @@ public sealed class HtmlReader : IDocumentReader
         pd.Metadata.Custom["pagination.degraded"] = "true";
 
         return pd;
+    }
+
+    // ── 각주/미주 섹션 추출 ──────────────────────────────────────────────
+
+    private static void ExtractNotesSections(INode root, PolyDonkyument pd)
+    {
+        // IDocument 또는 IElement 에서 QuerySelectorAll 사용 가능.
+        IParentNode? queryRoot = root as IParentNode;
+        if (queryRoot is null) return;
+
+        // <section class="footnotes"> 처리.
+        foreach (var sect in queryRoot.QuerySelectorAll("section.footnotes").ToList())
+        {
+            ParseAndRemoveNotesSection(sect, pd.Footnotes, "fn-");
+        }
+
+        // <section class="endnotes"> 처리.
+        foreach (var sect in queryRoot.QuerySelectorAll("section.endnotes").ToList())
+        {
+            ParseAndRemoveNotesSection(sect, pd.Endnotes, "en-");
+        }
+    }
+
+    private static void ParseAndRemoveNotesSection(IElement sect, IList<FootnoteEntry> target, string idPrefix)
+    {
+        foreach (var li in sect.QuerySelectorAll("li"))
+        {
+            var liId = li.GetAttribute("id");
+            if (string.IsNullOrEmpty(liId)) continue;
+
+            // <li id="fn-N"> 또는 <li id="en-N">
+            var entry = new FootnoteEntry { Id = liId };
+            // 복귀 링크(<a href="#fnref-N">↩</a>) 제거 후 내용 파싱.
+            foreach (var backLink in li.QuerySelectorAll("a[href^=\"#fnref-\"],a[href^=\"#enref-\"]").ToList())
+                backLink.Remove();
+
+            var p = new Paragraph();
+            AppendInline(p, li);
+            if (p.Runs.Count > 0)
+                entry.Blocks.Add(p);
+            if (entry.Blocks.Count == 0)
+                entry.Blocks.Add(new Paragraph());
+            target.Add(entry);
+        }
+        sect.Remove();
     }
 
     // ── 처리 컨텍스트 ────────────────────────────────────────────────────
@@ -150,6 +198,7 @@ public sealed class HtmlReader : IDocumentReader
                 p.Style.Outline    = (OutlineLevel)(el.LocalName[1] - '0');
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
+                ApplyBlockStyle(p, el);
                 AppendInline(p, el);
                 target.Add(p);
                 break;
@@ -218,7 +267,7 @@ public sealed class HtmlReader : IDocumentReader
 
             case "table":
             {
-                target.Add(BuildTable(el));
+                target.Add(BuildTable(el, ctx));
                 break;
             }
 
@@ -384,13 +433,35 @@ public sealed class HtmlReader : IDocumentReader
         return null;
     }
 
-    private static PdTable BuildTable(IElement tableEl)
+    private static PdTable BuildTable(IElement tableEl, InlineCtx ctx)
     {
         var t = new PdTable();
 
+        // 표 배경색.
+        var tblStyle = tableEl.GetAttribute("style");
+        if (StyleProp(tblStyle, "background-color") is { } tblBg
+            && TryParseCssColor(tblBg, out var tblBgColor))
+            t.BackgroundColor = ColorToHex(tblBgColor);
+
+        // 표 정렬 (margin:auto).
+        var marginL = StyleProp(tblStyle, "margin-left");
+        var marginR = StyleProp(tblStyle, "margin-right");
+        if (marginL == "auto" && marginR == "auto")       t.HAlign = TableHAlign.Center;
+        else if (marginL == "auto" && marginR != "auto")  t.HAlign = TableHAlign.Right;
+
         var rows = tableEl.QuerySelectorAll("tr").ToList();
-        int maxCols = rows.Max(r => r.QuerySelectorAll("td,th").Count(_ => true));
+        int maxCols = rows.Count > 0 ? rows.Max(r => r.QuerySelectorAll("td,th").Count(_ => true)) : 0;
         for (int i = 0; i < maxCols; i++) t.Columns.Add(new TableColumn());
+
+        // <colgroup><col> 에서 열 너비 파싱.
+        var colEls = tableEl.QuerySelectorAll("col").ToList();
+        for (int i = 0; i < colEls.Count && i < t.Columns.Count; i++)
+        {
+            var wVal = colEls[i].GetAttribute("width")
+                    ?? StyleProp(colEls[i].GetAttribute("style"), "width");
+            if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
+                t.Columns[i].WidthMm = wMm;
+        }
 
         foreach (var rowEl in rows)
         {
@@ -401,14 +472,36 @@ public sealed class HtmlReader : IDocumentReader
 
             foreach (var cellEl in rowEl.QuerySelectorAll("td,th"))
             {
+                var cellStyleStr = cellEl.GetAttribute("style");
                 var cell = new PdTableCell
                 {
                     TextAlign  = ParseCellAlign(cellEl.GetAttribute("align")
-                                              ?? StyleProp(cellEl.GetAttribute("style"), "text-align")),
+                                              ?? StyleProp(cellStyleStr, "text-align")),
                     ColumnSpan = TryAttrInt(cellEl, "colspan", 1),
                     RowSpan    = TryAttrInt(cellEl, "rowspan", 1),
                 };
-                ProcessChildren(cellEl, cell.Blocks, new InlineCtx());
+
+                // 셀 배경색 (style 속성 또는 bgcolor 속성).
+                var bgVal = cellEl.GetAttribute("bgcolor")
+                          ?? StyleProp(cellStyleStr, "background-color");
+                if (bgVal is not null && TryParseCssColor(bgVal, out var bgColor))
+                    cell.BackgroundColor = ColorToHex(bgColor);
+
+                // 셀 안여백 (padding: …mm).
+                if (TryParseCssMm(StyleProp(cellStyleStr, "padding"), out var padAll) && padAll > 0)
+                {
+                    cell.PaddingTopMm    = padAll;
+                    cell.PaddingBottomMm = padAll;
+                    cell.PaddingLeftMm   = padAll;
+                    cell.PaddingRightMm  = padAll;
+                }
+                if (TryParseCssMm(StyleProp(cellStyleStr, "padding-top"),    out var pt) && pt > 0) cell.PaddingTopMm    = pt;
+                if (TryParseCssMm(StyleProp(cellStyleStr, "padding-bottom"), out var pb) && pb > 0) cell.PaddingBottomMm = pb;
+                if (TryParseCssMm(StyleProp(cellStyleStr, "padding-left"),   out var pl) && pl > 0) cell.PaddingLeftMm   = pl;
+                if (TryParseCssMm(StyleProp(cellStyleStr, "padding-right"),  out var pr) && pr > 0) cell.PaddingRightMm  = pr;
+
+                // 블록 한도는 부모 ctx 와 공유.
+                ProcessChildren(cellEl, cell.Blocks, new InlineCtx { Shared = ctx.Shared });
                 if (cell.Blocks.Count == 0)
                 {
                     var p = new Paragraph();
@@ -459,6 +552,22 @@ public sealed class HtmlReader : IDocumentReader
         // 너비/높이 (px → mm 변환은 96 DPI 기준).
         if (TryAttrDouble(imgEl, "width", out var wPx))  img.WidthMm  = wPx * 25.4 / 96.0;
         if (TryAttrDouble(imgEl, "height", out var hPx)) img.HeightMm = hPx * 25.4 / 96.0;
+
+        // CSS float/margin → WrapMode / HAlign.
+        var imgStyle = imgEl.GetAttribute("style");
+        var floatVal = StyleProp(imgStyle, "float")?.ToLowerInvariant();
+        switch (floatVal)
+        {
+            case "left":  img.WrapMode = ImageWrapMode.WrapRight; break;
+            case "right": img.WrapMode = ImageWrapMode.WrapLeft;  break;
+        }
+        if (floatVal is null)
+        {
+            var marginL = StyleProp(imgStyle, "margin-left")?.Trim().ToLowerInvariant();
+            var marginR = StyleProp(imgStyle, "margin-right")?.Trim().ToLowerInvariant();
+            if (marginL == "auto" && marginR == "auto") img.HAlign = ImageHAlign.Center;
+            else if (marginL == "auto")                 img.HAlign = ImageHAlign.Right;
+        }
 
         return img;
     }
@@ -541,6 +650,27 @@ public sealed class HtmlReader : IDocumentReader
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, style, href ?? parentUrl);
                 return;
             }
+
+            case "sup":
+            {
+                // Pandoc 스타일 각주/미주 참조: <sup id="fnref-N"> 또는 <sup id="enref-N">
+                var supId = el.GetAttribute("id");
+                if (supId is not null && supId.StartsWith("fnref-", StringComparison.Ordinal))
+                {
+                    p.Runs.Add(new Run { FootnoteId = $"fn-{supId[6..]}", Style = Clone(parentStyle) });
+                    return;
+                }
+                if (supId is not null && supId.StartsWith("enref-", StringComparison.Ordinal))
+                {
+                    p.Runs.Add(new Run { EndnoteId = $"en-{supId[6..]}", Style = Clone(parentStyle) });
+                    return;
+                }
+                // 일반 <sup> — 위첨자 처리.
+                var supStyle = MergeStyle(parentStyle, el);
+                ApplyTagStyle(el, ref supStyle);
+                foreach (var n in el.ChildNodes) AppendInlineNode(p, n, supStyle, parentUrl);
+                return;
+            }
         }
 
         var s = MergeStyle(parentStyle, el);
@@ -587,6 +717,7 @@ public sealed class HtmlReader : IDocumentReader
         if (inline.Italic)        s.Italic        = true;
         if (inline.Underline)     s.Underline     = true;
         if (inline.Strikethrough) s.Strikethrough = true;
+        if (inline.Overline)      s.Overline      = true;
         if (inline.Foreground is { } fg) s.Foreground = fg;
         if (inline.Background is { } bg) s.Background = bg;
         return s;
@@ -672,17 +803,149 @@ public sealed class HtmlReader : IDocumentReader
             color = new Color(r, g, b, a);
             return true;
         }
-        // 명명 색상 — 일부만 지원.
-        var named = val.ToLowerInvariant() switch
+        // CSS Level 1/2/3 명명 색상 (주요 141개 중 빈번하게 쓰이는 것).
+        Color? named = val.ToLowerInvariant() switch
         {
-            "black"   => new Color(0, 0, 0),
-            "white"   => new Color(255, 255, 255),
-            "red"     => new Color(255, 0, 0),
-            "green"   => new Color(0, 128, 0),
-            "blue"    => new Color(0, 0, 255),
-            "yellow"  => new Color(255, 255, 0),
-            "gray" or "grey" => new Color(128, 128, 128),
-            _         => (Color?)null,
+            // 기본 16색 (CSS Level 1+2)
+            "black"    => new Color(  0,   0,   0),
+            "silver"   => new Color(192, 192, 192),
+            "gray" or "grey"
+                       => new Color(128, 128, 128),
+            "white"    => new Color(255, 255, 255),
+            "maroon"   => new Color(128,   0,   0),
+            "red"      => new Color(255,   0,   0),
+            "purple"   => new Color(128,   0, 128),
+            "fuchsia" or "magenta"
+                       => new Color(255,   0, 255),
+            "green"    => new Color(  0, 128,   0),
+            "lime"     => new Color(  0, 255,   0),
+            "olive"    => new Color(128, 128,   0),
+            "yellow"   => new Color(255, 255,   0),
+            "navy"     => new Color(  0,   0, 128),
+            "blue"     => new Color(  0,   0, 255),
+            "teal"     => new Color(  0, 128, 128),
+            "aqua" or "cyan"
+                       => new Color(  0, 255, 255),
+            // 추가 CSS3 명명 색상
+            "orange"      => new Color(255, 165,   0),
+            "orangered"   => new Color(255,  69,   0),
+            "gold"        => new Color(255, 215,   0),
+            "pink"        => new Color(255, 192, 203),
+            "hotpink"     => new Color(255, 105, 180),
+            "deeppink"    => new Color(255,  20, 147),
+            "crimson"     => new Color(220,  20,  60),
+            "darkred"     => new Color(139,   0,   0),
+            "tomato"      => new Color(255,  99,  71),
+            "coral"       => new Color(255, 127,  80),
+            "salmon"      => new Color(250, 128, 114),
+            "brown"       => new Color(165,  42,  42),
+            "chocolate"   => new Color(210, 105,  30),
+            "sienna"      => new Color(160,  82,  45),
+            "tan"         => new Color(210, 180, 140),
+            "khaki"       => new Color(240, 230, 140),
+            "goldenrod"   => new Color(218, 165,  32),
+            "darkgoldenrod" => new Color(184, 134,  11),
+            "peachpuff"   => new Color(255, 218, 185),
+            "bisque"      => new Color(255, 228, 196),
+            "wheat"       => new Color(245, 222, 179),
+            "beige"       => new Color(245, 245, 220),
+            "linen"       => new Color(250, 240, 230),
+            "ivory"       => new Color(255, 255, 240),
+            "lightyellow" => new Color(255, 255, 224),
+            "lightgreen"  => new Color(144, 238, 144),
+            "palegreen"   => new Color(152, 251, 152),
+            "darkgreen"   => new Color(  0, 100,   0),
+            "forestgreen" => new Color( 34, 139,  34),
+            "seagreen"    => new Color( 46, 139,  87),
+            "mediumseagreen" => new Color( 60, 179, 113),
+            "springgreen" => new Color(  0, 255, 127),
+            "lawngreen"   => new Color(124, 252,   0),
+            "chartreuse"  => new Color(127, 255,   0),
+            "yellowgreen" => new Color(154, 205,  50),
+            "greenyellow" => new Color(173, 255,  47),
+            "turquoise"   => new Color( 64, 224, 208),
+            "mediumturquoise" => new Color( 72, 209, 204),
+            "darkturquoise" => new Color(  0, 206, 209),
+            "lightcyan"   => new Color(224, 255, 255),
+            "paleturquoise" => new Color(175, 238, 238),
+            "skyblue"     => new Color(135, 206, 235),
+            "lightskyblue" => new Color(135, 206, 250),
+            "deepskyblue" => new Color(  0, 191, 255),
+            "dodgerblue"  => new Color( 30, 144, 255),
+            "cornflowerblue" => new Color(100, 149, 237),
+            "steelblue"   => new Color( 70, 130, 180),
+            "royalblue"   => new Color( 65, 105, 225),
+            "darkblue"    => new Color(  0,   0, 139),
+            "mediumblue"  => new Color(  0,   0, 205),
+            "slateblue"   => new Color(106,  90, 205),
+            "mediumpurple" => new Color(147, 112, 219),
+            "blueviolet"  => new Color(138,  43, 226),
+            "darkviolet"  => new Color(148,   0, 211),
+            "darkorchid"  => new Color(153,  50, 204),
+            "darkmagenta" => new Color(139,   0, 139),
+            "plum"        => new Color(221, 160, 221),
+            "violet"      => new Color(238, 130, 238),
+            "orchid"      => new Color(218, 112, 214),
+            "lavender"    => new Color(230, 230, 250),
+            "thistle"     => new Color(216, 191, 216),
+            "lightgray" or "lightgrey"
+                          => new Color(211, 211, 211),
+            "darkgray" or "darkgrey"
+                          => new Color(169, 169, 169),
+            "dimgray" or "dimgrey"
+                          => new Color(105, 105, 105),
+            "gainsboro"   => new Color(220, 220, 220),
+            "whitesmoke"  => new Color(245, 245, 245),
+            "snow"        => new Color(255, 250, 250),
+            "ghostwhite"  => new Color(248, 248, 255),
+            "aliceblue"   => new Color(240, 248, 255),
+            "azure"       => new Color(240, 255, 255),
+            "honeydew"    => new Color(240, 255, 240),
+            "mintcream"   => new Color(245, 255, 250),
+            "seashell"    => new Color(255, 245, 238),
+            "floralwhite" => new Color(255, 250, 240),
+            "oldlace"     => new Color(253, 245, 230),
+            "antiquewhite" => new Color(250, 235, 215),
+            "moccasin"    => new Color(255, 228, 181),
+            "papayawhip"  => new Color(255, 239, 213),
+            "blanchedalmond" => new Color(255, 235, 205),
+            "mistyrose"   => new Color(255, 228, 225),
+            "lightpink"   => new Color(255, 182, 193),
+            "mediumvioletred" => new Color(199,  21, 133),
+            "palevioletred" => new Color(219, 112, 147),
+            "rosybrown"   => new Color(188, 143, 143),
+            "indianred"   => new Color(205,  92,  92),
+            "lightcoral"  => new Color(240, 128, 128),
+            "lightsalmon" => new Color(255, 160, 122),
+            "darksalmon"  => new Color(233, 150, 122),
+            "burlywood"   => new Color(222, 184, 135),
+            "sandybrown"  => new Color(244, 164,  96),
+            "peru"        => new Color(205, 133,  63),
+            "saddlebrown" => new Color(139,  69,  19),
+            "darkkhaki"   => new Color(189, 183, 107),
+            "palegoldenrod" => new Color(238, 232, 170),
+            "lemonchiffon" => new Color(255, 250, 205),
+            "lightgoldenrodyellow" => new Color(250, 250, 210),
+            "cornsilk"    => new Color(255, 248, 220),
+            "mediumspringgreen" => new Color(  0, 250, 154),
+            "darkseagreen" => new Color(143, 188, 143),
+            "lightseagreen" => new Color( 32, 178, 170),
+            "darkcyan"    => new Color(  0, 139, 139),
+            "cadetblue"   => new Color( 95, 158, 160),
+            "powderblue"  => new Color(176, 224, 230),
+            "lightblue"   => new Color(173, 216, 230),
+            "lightsteelblue" => new Color(176, 196, 222),
+            "mediumslateblue" => new Color(123, 104, 238),
+            "darkslateblue" => new Color( 72,  61, 139),
+            "darkslategray" or "darkslategrey"
+                          => new Color( 47,  79,  79),
+            "slategray" or "slategrey"
+                          => new Color(112, 128, 144),
+            "lightslategray" or "lightslategrey"
+                          => new Color(119, 136, 153),
+            "mediumaquamarine" => new Color(102, 205, 170),
+            "aquamarine"  => new Color(127, 255, 212),
+            _             => (Color?)null,
         };
         if (named.HasValue) { color = named.Value; return true; }
         return false;
@@ -698,7 +961,14 @@ public sealed class HtmlReader : IDocumentReader
 
     private static void ApplyBlockAlignment(Paragraph p, IElement el)
     {
-        var align = el.GetAttribute("align") ?? StyleProp(el.GetAttribute("style"), "text-align");
+        ApplyBlockStyle(p, el);
+    }
+
+    /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.</summary>
+    private static void ApplyBlockStyle(Paragraph p, IElement el)
+    {
+        var style = el.GetAttribute("style");
+        var align = el.GetAttribute("align") ?? StyleProp(style, "text-align");
         p.Style.Alignment = align?.ToLowerInvariant() switch
         {
             "center"  => Alignment.Center,
@@ -706,6 +976,31 @@ public sealed class HtmlReader : IDocumentReader
             "justify" => Alignment.Justify,
             _         => p.Style.Alignment,
         };
+
+        if (TryParseLineHeight(StyleProp(style, "line-height"), out var lh))
+            p.Style.LineHeightFactor = lh;
+
+        if (TryParseCssPt(StyleProp(style, "margin-top"), out var mt))
+            p.Style.SpaceBeforePt = mt;
+        if (TryParseCssPt(StyleProp(style, "margin-bottom"), out var mb))
+            p.Style.SpaceAfterPt = mb;
+
+        if (TryParseCssMm(StyleProp(style, "text-indent"), out var ti))
+            p.Style.IndentFirstLineMm = ti;
+
+        // padding-left 우선, 없으면 margin-left (들여쓰기 호환).
+        if (TryParseCssMm(StyleProp(style, "padding-left") ?? StyleProp(style, "margin-left"), out var il))
+            p.Style.IndentLeftMm = il;
+        if (TryParseCssMm(StyleProp(style, "padding-right") ?? StyleProp(style, "margin-right"), out var ir))
+            p.Style.IndentRightMm = ir;
+
+        // 강제 페이지 나누기: page-break-before:always (CSS2 legacy) 또는 break-before:page (CSS3).
+        var pbv = StyleProp(style, "page-break-before") ?? StyleProp(style, "break-before");
+        if (pbv is not null && (pbv.Equals("always", StringComparison.OrdinalIgnoreCase)
+                             || pbv.Equals("page",   StringComparison.OrdinalIgnoreCase)))
+        {
+            p.Style.ForcePageBreakBefore = true;
+        }
     }
 
     private static string? StyleProp(string? style, string prop)
@@ -756,6 +1051,53 @@ public sealed class HtmlReader : IDocumentReader
 
     private static bool TryAttrDouble(IElement el, string name, out double v)
         => double.TryParse(el.GetAttribute(name), NumberStyles.Any, CultureInfo.InvariantCulture, out v);
+
+    private static string ColorToHex(Color c)
+        => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    /// <summary>CSS 길이값 → mm 변환. 지원 단위: mm/cm/px/pt/in.</summary>
+    private static bool TryParseCssMm(string? val, out double mm)
+    {
+        mm = 0;
+        if (string.IsNullOrWhiteSpace(val)) return false;
+        val = val.Trim().ToLowerInvariant();
+        if (val.EndsWith("mm")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) { mm = v; return true; }
+        if (val.EndsWith("cm")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 10; return true; }
+        if (val.EndsWith("px")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 25.4 / 96.0; return true; }
+        if (val.EndsWith("pt")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 25.4 / 72.0; return true; }
+        if (val.EndsWith("in")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 25.4; return true; }
+        return false;
+    }
+
+    /// <summary>CSS 길이값 → pt 변환. 지원 단위: pt/px/mm/cm/in.</summary>
+    private static bool TryParseCssPt(string? val, out double pt)
+    {
+        pt = 0;
+        if (string.IsNullOrWhiteSpace(val)) return false;
+        val = val.Trim().ToLowerInvariant();
+        if (val.EndsWith("pt") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) { pt = v; return true; }
+        if (val.EndsWith("px") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0 / 96.0; return true; }
+        if (val.EndsWith("mm") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0 / 25.4; return true; }
+        if (val.EndsWith("cm") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 720.0 / 25.4; return true; }
+        if (val.EndsWith("in") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0; return true; }
+        return false;
+    }
+
+    /// <summary>CSS line-height → 배율 변환. 단위 없음(배율)/em/% 지원.</summary>
+    private static bool TryParseLineHeight(string? val, out double factor)
+    {
+        factor = 0;
+        if (string.IsNullOrWhiteSpace(val)) return false;
+        val = val.Trim().ToLowerInvariant();
+        if (val == "normal") { factor = 1.2; return true; }
+        // 단위 없음 → 직접 배율.
+        if (double.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) && v > 0) { factor = v; return true; }
+        // em = 배율과 동일 의미.
+        if (val.EndsWith("em") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v) && v > 0) { factor = v; return true; }
+        // % → 배율.
+        if (val.EndsWith('%')  && double.TryParse(val[..^1], NumberStyles.Any, CultureInfo.InvariantCulture, out v) && v > 0) { factor = v / 100.0; return true; }
+        return false;
+    }
 
     private static string GuessMediaType(string? url)
     {
