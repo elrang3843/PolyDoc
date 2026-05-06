@@ -1478,41 +1478,66 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("dropcapstyle",  "None"),
             new XAttribute("href",          ""),
             new XAttribute("groupLevel",    "0"),
-            new XAttribute("instid",        ctx.NextInstId().ToString()),
-            new XAttribute("isReverseHV",   "0"),
+            new XAttribute("instid",        ctx.NextInstId().ToString()));
 
-            new XElement(Hp + "offset", new XAttribute("x", "0"), new XAttribute("y", "0")),
-            new XElement(Hp + "orgSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())),
-            new XElement(Hp + "curSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())),
-            new XElement(Hp + "flip",   new XAttribute("horizontal", "0"), new XAttribute("vertical", "0")),
-            new XElement(Hp + "rotationInfo",
-                new XAttribute("angle",       "0"),
-                new XAttribute("centerX",     (w / 2).ToString()),
-                new XAttribute("centerY",     (h / 2).ToString()),
-                new XAttribute("rotateimage", "1")),
-            new XElement(Hp + "renderingInfo",
-                new XElement(Hc + "transMatrix",
-                    new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
-                    new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0")),
-                new XElement(Hc + "scaMatrix",
-                    new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
-                    new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0")),
-                new XElement(Hc + "rotMatrix",
-                    new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
-                    new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0"))),
-            new XElement(Hp + "lineShape",
-                new XAttribute("color",        strokeColor),
-                new XAttribute("width",        strokeWidth.ToString()),
-                new XAttribute("style",        strokeStyle),
-                new XAttribute("endCap",       "FLAT"),
-                new XAttribute("headStyle",    "NORMAL"),
-                new XAttribute("tailStyle",    "NORMAL"),
-                new XAttribute("headfill",     "1"),
-                new XAttribute("tailfill",     "1"),
-                new XAttribute("headSz",       "SMALL_SMALL"),
-                new XAttribute("tailSz",       "SMALL_SMALL"),
-                new XAttribute("outlineStyle", "NORMAL"),
-                new XAttribute("alpha",        "0")));
+        // 도형별 추가 속성.
+        if (elemName == "line")
+            elem.Add(new XAttribute("isReverseHV", "0"));
+        else if (elemName == "rect")
+        {
+            // ratio = 모서리 반지름 비율 (0~50, 단위는 셈프상 ‱ 같음).
+            // RoundedRect 면 CornerRadiusMm 를 width/height 의 짧은 변 대비 비율로 변환.
+            int ratio = 0;
+            if (shape.Kind == ShapeKind.RoundedRect && shape.CornerRadiusMm > 0)
+            {
+                double minSide = Math.Min(shape.WidthMm, shape.HeightMm);
+                if (minSide > 0)
+                {
+                    double frac = shape.CornerRadiusMm / (minSide / 2.0);
+                    ratio = (int)Math.Round(Math.Clamp(frac, 0.0, 1.0) * 50);
+                }
+            }
+            elem.Add(new XAttribute("ratio", ratio.ToString()));
+        }
+        else if (elemName == "ellipse")
+        {
+            elem.Add(new XAttribute("intervalDirty", "0"));
+            elem.Add(new XAttribute("hasArcPr",      "0"));
+            elem.Add(new XAttribute("arcType",       "NORMAL"));
+        }
+
+        elem.Add(new XElement(Hp + "offset", new XAttribute("x", "0"), new XAttribute("y", "0")));
+        elem.Add(new XElement(Hp + "orgSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())));
+        elem.Add(new XElement(Hp + "curSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())));
+        elem.Add(new XElement(Hp + "flip",   new XAttribute("horizontal", "0"), new XAttribute("vertical", "0")));
+        elem.Add(new XElement(Hp + "rotationInfo",
+            new XAttribute("angle",       "0"),
+            new XAttribute("centerX",     (w / 2).ToString()),
+            new XAttribute("centerY",     (h / 2).ToString()),
+            new XAttribute("rotateimage", "1")));
+        elem.Add(new XElement(Hp + "renderingInfo",
+            new XElement(Hc + "transMatrix",
+                new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
+                new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0")),
+            new XElement(Hc + "scaMatrix",
+                new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
+                new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0")),
+            new XElement(Hc + "rotMatrix",
+                new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
+                new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0"))));
+        elem.Add(new XElement(Hp + "lineShape",
+            new XAttribute("color",        strokeColor),
+            new XAttribute("width",        strokeWidth.ToString()),
+            new XAttribute("style",        strokeStyle),
+            new XAttribute("endCap",       "FLAT"),
+            new XAttribute("headStyle",    "NORMAL"),
+            new XAttribute("tailStyle",    "NORMAL"),
+            new XAttribute("headfill",     "1"),
+            new XAttribute("tailfill",     "1"),
+            new XAttribute("headSz",       "SMALL_SMALL"),
+            new XAttribute("tailSz",       "SMALL_SMALL"),
+            new XAttribute("outlineStyle", "NORMAL"),
+            new XAttribute("alpha",        "0")));
 
         // hc:fillBrush 는 채울 색이 있을 때만 추가. 한컴 ground truth 도 빈 채우기는 생략.
         // Line 은 시각적으로 채우기 없으므로 fillBrush 자체를 출력하지 않는다.
@@ -1554,14 +1579,16 @@ public sealed class HwpxWriter : IDocumentWriter
         }
         else if (elemName == "polygon")
         {
-            // hp:polygon: 꼭짓점 hc:pt 시리즈 (마지막에 닫힘점 반복).
+            // hp:polygon: 꼭짓점 hc:pt 시리즈.
+            // 닫힌 도형 (Polygon/Triangle/RegularPolygon/Star/ClosedSpline) → 첫 점 반복으로 닫음.
+            // 열린 도형 (Polyline/Spline) → 닫힘점 추가하지 않음.
             var verts = ResolvePolygonVertices(shape, w, h);
             foreach (var (vx, vy) in verts)
                 elem.Add(new XElement(Hc + "pt",
                     new XAttribute("x", vx.ToString()),
                     new XAttribute("y", vy.ToString())));
-            // 명시적으로 첫 점 다시 추가해 닫힌 형태 표시.
-            if (verts.Count > 0
+            bool isOpen = shape.Kind == ShapeKind.Polyline || shape.Kind == ShapeKind.Spline;
+            if (!isOpen && verts.Count > 0
                 && (verts[0].X != verts[^1].X || verts[0].Y != verts[^1].Y))
             {
                 elem.Add(new XElement(Hc + "pt",
@@ -1569,10 +1596,23 @@ public sealed class HwpxWriter : IDocumentWriter
                     new XAttribute("y", verts[0].Y.ToString())));
             }
         }
+        else if (elemName == "ellipse")
+        {
+            // hp:ellipse: center / ax1 / ax2 / start1 / start2 / end1 / end2 (모두 hc:).
+            // 전체 타원: start = end = ax1 (시작 = 끝 같은 점이면 닫힌 타원으로 그려짐).
+            long cx = w / 2, cy = h / 2;
+            // ax1 = 가로축 끝점 (오른쪽 중간). ax2 = 세로축 끝점 (아래 중간).
+            elem.Add(new XElement(Hc + "center", new XAttribute("x", cx.ToString()), new XAttribute("y", cy.ToString())));
+            elem.Add(new XElement(Hc + "ax1",    new XAttribute("x", w.ToString()),  new XAttribute("y", cy.ToString())));
+            elem.Add(new XElement(Hc + "ax2",    new XAttribute("x", cx.ToString()), new XAttribute("y", h.ToString())));
+            elem.Add(new XElement(Hc + "start1", new XAttribute("x", w.ToString()),  new XAttribute("y", cy.ToString())));
+            elem.Add(new XElement(Hc + "start2", new XAttribute("x", w.ToString()),  new XAttribute("y", cy.ToString())));
+            elem.Add(new XElement(Hc + "end1",   new XAttribute("x", w.ToString()),  new XAttribute("y", cy.ToString())));
+            elem.Add(new XElement(Hc + "end2",   new XAttribute("x", w.ToString()),  new XAttribute("y", cy.ToString())));
+        }
         else
         {
-            // Rectangle / RoundedRect / Ellipse: 4 코너 좌표 (HWPUNIT, 좌상단 기준).
-            // 한컴은 hp:rect/ellipse 등 닫힌 도형에 hc:pt0~pt3 를 요구 — 누락 시 거부.
+            // Rectangle / RoundedRect: 4 코너 좌표 (HWPUNIT, 좌상단 기준).
             elem.Add(new XElement(Hc + "pt0", new XAttribute("x", "0"),         new XAttribute("y", "0")));
             elem.Add(new XElement(Hc + "pt1", new XAttribute("x", w.ToString()), new XAttribute("y", "0")));
             elem.Add(new XElement(Hc + "pt2", new XAttribute("x", w.ToString()), new XAttribute("y", h.ToString())));
