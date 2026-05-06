@@ -80,6 +80,24 @@ public sealed class HwpxWriter : IDocumentWriter
         public IReadOnlyList<BinDataInfo> BinData => _binData;
         public sealed record BinDataInfo(string Id, string MediaType, string Extension, string ZipPath);
 
+        // 표·셀의 외곽선/배경색을 위한 동적 borderFill 등록.
+        // id 1=page, 2=char, 3=table-default(고정 SOLID 0.12mm), 4 부터 custom.
+        public const int FirstCustomBorderFillId = 4;
+        private readonly List<BorderFillSpec> _customBorderFills = new();
+        public IReadOnlyList<BorderFillSpec> CustomBorderFills => _customBorderFills;
+        public sealed record BorderFillSpec(
+            string BorderType,    // "SOLID" or "NONE"
+            string BorderColor,   // hex
+            string BorderWidth,   // e.g. "0.12 mm"
+            string? FillColor);   // hex or null (no fill)
+        public int RegisterCustomBorderFill(BorderFillSpec spec)
+        {
+            int idx = _customBorderFills.IndexOf(spec);
+            if (idx >= 0) return idx + FirstCustomBorderFillId;
+            _customBorderFills.Add(spec);
+            return _customBorderFills.Count - 1 + FirstCustomBorderFillId;
+        }
+
         private readonly Dictionary<RunStyleKey, int> _runStyleIds = new();
         private readonly List<RunStyle> _runStyles = new();
 
@@ -209,6 +227,42 @@ public sealed class HwpxWriter : IDocumentWriter
             }
         }
 
+        // 표·셀의 동적 borderFill 사전 등록 — header.xml 쓰기 전에 호출되어야
+        // 모든 borderFill id 가 헤더에 포함되고 section 의 borderFillIDRef 가 dangling 되지 않는다.
+        public void PreRegisterTableBorderFills(PolyDonkyument document)
+        {
+            foreach (var section in document.Sections)
+                foreach (var block in section.Blocks)
+                    PreRegisterBorderFillsFromBlock(block);
+        }
+
+        private void PreRegisterBorderFillsFromBlock(Block block)
+        {
+            if (block is Table table)
+            {
+                string tableColor = string.IsNullOrEmpty(table.BorderColor) ? "#000000" : table.BorderColor!;
+                string tableWidth = table.BorderThicknessPt > 0
+                    ? $"{table.BorderThicknessPt * 0.3527777778:0.##} mm"
+                    : "0.12 mm";
+                RegisterCustomBorderFill(new BorderFillSpec(
+                    "SOLID", tableColor, tableWidth, table.BackgroundColor));
+
+                foreach (var row in table.Rows)
+                    foreach (var cell in row.Cells)
+                    {
+                        string cColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor! : tableColor;
+                        string cWidth = cell.BorderThicknessPt > 0
+                            ? $"{cell.BorderThicknessPt * 0.3527777778:0.##} mm"
+                            : tableWidth;
+                        string? cFill = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
+                                      : table.BackgroundColor;
+                        RegisterCustomBorderFill(new BorderFillSpec("SOLID", cColor, cWidth, cFill));
+                        foreach (var inner in cell.Blocks)
+                            PreRegisterBorderFillsFromBlock(inner);
+                    }
+            }
+        }
+
         private static string ExtensionForMediaType(string mt) => mt switch
         {
             "image/png"     => ".png",
@@ -249,6 +303,9 @@ public sealed class HwpxWriter : IDocumentWriter
         // Must precede WriteContentHpf (manifest needs BinData items) and WriteHeaderXml
         // (refList needs binDataList for binaryItemIDRef resolution).
         ctx.PreRegisterImages(document);
+
+        // 표 동적 borderFill 사전 등록 — header.xml 쓰기 전에 모든 borderFill id 확정.
+        ctx.PreRegisterTableBorderFills(document);
 
         WriteContentHpf(archive, document, ctx);
 
@@ -556,9 +613,40 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("hatchColor", "#FF000000"),
                 new XAttribute("alpha",      "0"))));
         var bf3 = BuildBorder("SOLID"); bf3.SetAttributeValue("id", "3");
+
+        // 동적 등록된 custom borderFill (표/셀 색·두께·배경) 추가.
+        XElement BuildCustomBorder(int id, WriteContext.BorderFillSpec spec)
+        {
+            var bf = new XElement(Hh + "borderFill",
+                new XAttribute("id", id.ToString()),
+                new XAttribute("threeD", "0"),
+                new XAttribute("shadow", "0"),
+                new XAttribute("centerLine", "NONE"),
+                new XAttribute("breakCellSeparateLine", "0"),
+                new XElement(Hh + "slash",     new XAttribute("type", "NONE"), new XAttribute("Crooked", "0"), new XAttribute("isCounter", "0")),
+                new XElement(Hh + "backSlash", new XAttribute("type", "NONE"), new XAttribute("Crooked", "0"), new XAttribute("isCounter", "0")),
+                new XElement(Hh + "leftBorder",   new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
+                new XElement(Hh + "rightBorder",  new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
+                new XElement(Hh + "topBorder",    new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
+                new XElement(Hh + "bottomBorder", new XAttribute("type", spec.BorderType), new XAttribute("width", spec.BorderWidth), new XAttribute("color", spec.BorderColor)),
+                new XElement(Hh + "diagonal",     new XAttribute("type", "SOLID"),         new XAttribute("width", "0.1 mm"),         new XAttribute("color", "#000000")));
+            if (!string.IsNullOrEmpty(spec.FillColor))
+            {
+                bf.Add(new XElement(Hc + "fillBrush",
+                    new XElement(Hc + "winBrush",
+                        new XAttribute("faceColor",  spec.FillColor),
+                        new XAttribute("hatchColor", "#000000"),
+                        new XAttribute("alpha",      "0"))));
+            }
+            return bf;
+        }
+
+        int totalBorderFills = 3 + ctx.CustomBorderFills.Count;
         var borderFills = new XElement(Hh + "borderFills",
-            new XAttribute("itemCnt", "3"),
+            new XAttribute("itemCnt", totalBorderFills.ToString()),
             bf1, bf2, bf3);
+        for (int i = 0; i < ctx.CustomBorderFills.Count; i++)
+            borderFills.Add(BuildCustomBorder(i + WriteContext.FirstCustomBorderFillId, ctx.CustomBorderFills[i]));
 
         // charProperties — one entry per unique RunStyle
         var charProps = new XElement(Hh + "charProperties",
@@ -1209,6 +1297,16 @@ public sealed class HwpxWriter : IDocumentWriter
         const long CellMarginTopBottom = 141;
         const long OuterMarginAll      = 283;
 
+        // 표 외곽선·배경색을 동적 borderFill 로 등록 (모델값 반영).
+        // pt 두께를 mm 로 (1 pt ≈ 0.3528 mm). 두께 0 이하면 기본 0.12 mm SOLID.
+        static string BorderWidthMm(double pt)
+            => pt > 0 ? $"{pt * 0.3527777778:0.##} mm" : "0.12 mm";
+        string tableBorderColor = string.IsNullOrEmpty(table.BorderColor) ? "#000000" : table.BorderColor!;
+        string tableBorderType  = "SOLID"; // 두께 0 이어도 한컴 호환 위해 SOLID 유지
+        string tableBorderWidth = BorderWidthMm(table.BorderThicknessPt);
+        int tableBorderFillId = ctx.RegisterCustomBorderFill(new WriteContext.BorderFillSpec(
+            tableBorderType, tableBorderColor, tableBorderWidth, table.BackgroundColor));
+
         // 외곽 속성 — CTableType (CAbstractShapeObjectType 상속) 정의대로.
         var wtbl = new XElement(Hp + "tbl",
             new XAttribute("id",              ctx.NextObjId().ToString()),
@@ -1223,7 +1321,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("rowCnt",          rowCount.ToString()),
             new XAttribute("colCnt",          colCount.ToString()),
             new XAttribute("cellSpacing",     "0"),
-            new XAttribute("borderFillIDRef", "3"),  // SOLID 4면 (id=3)
+            new XAttribute("borderFillIDRef", tableBorderFillId.ToString()),
             new XAttribute("noAdjust",        "0"));
 
         wtbl.Add(new XElement(Hp + "sz",
@@ -1276,6 +1374,16 @@ public sealed class HwpxWriter : IDocumentWriter
                 for (int k = 0; k < rowSpan && r + k < rowCount; k++) cellH += rowHeights[r + k];
                 if (cellH <= 0) cellH = 1000;
 
+                // 셀 외곽선·배경색 — 셀이 명시 안하면 표 외곽선 설정 상속.
+                string cellBorderColor = !string.IsNullOrEmpty(cell.BorderColor) ? cell.BorderColor!
+                                       : tableBorderColor;
+                string cellBorderWidth = cell.BorderThicknessPt > 0 ? BorderWidthMm(cell.BorderThicknessPt)
+                                       : tableBorderWidth;
+                string? cellFill       = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
+                                       : table.BackgroundColor;
+                int cellBorderFillId = ctx.RegisterCustomBorderFill(new WriteContext.BorderFillSpec(
+                    "SOLID", cellBorderColor, cellBorderWidth, cellFill));
+
                 var wcell = new XElement(Hp + "tc",
                     new XAttribute("name",            string.Empty),
                     new XAttribute("header",          row.IsHeader ? "1" : "0"),
@@ -1283,7 +1391,7 @@ public sealed class HwpxWriter : IDocumentWriter
                     new XAttribute("protect",         "0"),
                     new XAttribute("editable",        "0"),
                     new XAttribute("dirty",           "0"),
-                    new XAttribute("borderFillIDRef", "3")); // SOLID 4면 cells
+                    new XAttribute("borderFillIDRef", cellBorderFillId.ToString()));
 
                 // hp:subList — 셀 본문 컨테이너. 한컴 필수 속성 전체 포함.
                 var subList = new XElement(Hp + "subList",
