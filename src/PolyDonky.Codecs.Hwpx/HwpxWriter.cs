@@ -1508,14 +1508,17 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("outlineStyle", "NORMAL"),
                 new XAttribute("alpha",        "0")));
 
-        // 공식 OWPML CAbstractDrawingObjectType 의 fillBrush 는 hp:line/rect/ellipse 등
-        // 모든 drawing object 의 필수 자식. 채움색 없으면 winBrush alpha=255 (투명).
+        // hc:fillBrush 는 채울 색이 있을 때만 추가. 한컴 ground truth 도 빈 채우기는 생략.
+        // Line 은 시각적으로 채우기 없으므로 fillBrush 자체를 출력하지 않는다.
         bool hasFill = !string.IsNullOrEmpty(shape.FillColor);
-        elem.Add(new XElement(Hc + "fillBrush",
-            new XElement(Hc + "winBrush",
-                new XAttribute("faceColor",  hasFill ? shape.FillColor! : "#FFFFFF"),
-                new XAttribute("hatchColor", "#000000"),
-                new XAttribute("alpha",      hasFill ? "0" : "255"))));
+        if (hasFill && shape.Kind != ShapeKind.Line && shape.Kind != ShapeKind.Polyline)
+        {
+            elem.Add(new XElement(Hc + "fillBrush",
+                new XElement(Hc + "winBrush",
+                    new XAttribute("faceColor",  shape.FillColor!),
+                    new XAttribute("hatchColor", "#000000"),
+                    new XAttribute("alpha",      "0"))));
+        }
 
         elem.Add(new XElement(Hp + "shadow",
             new XAttribute("type",    "NONE"),
