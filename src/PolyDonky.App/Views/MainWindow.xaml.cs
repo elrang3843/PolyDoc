@@ -2753,6 +2753,38 @@ public partial class MainWindow : Window
         new WpfDocs.TextRange(hl.ElementStart, hl.ElementEnd).Text = text;
     }
 
+    // ── 페이지 나누기 ───────────────────────────────────────────────────────
+
+    private void OnInsertPageBreak(object sender, RoutedEventArgs e)
+        => InsertPageBreakAtCaret();
+
+    private void InsertPageBreakAtCaret()
+    {
+        if (_viewModel is null) return;
+        var caret = BodyEditor.CaretPosition;
+
+        if (IsCaretInTableCell(caret))
+        {
+            System.Windows.MessageBox.Show(
+                SR.MsgPageBreakInTableCell,
+                SR.MenuInsertPageBreak,
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        // 캐럿 위치에서 단락 분할 — 새 단락이 생기며 포인터는 그 안으로 이동
+        var newPtr = caret.InsertParagraphBreak();
+        var newPara = newPtr?.Paragraph;
+        if (newPara is not null)
+        {
+            newPara.BreakPageBefore = true;
+            try { BodyEditor.CaretPosition = newPara.ContentStart; } catch { }
+        }
+
+        _viewModel.MarkDirty();
+    }
+
     // ── 각주 / 미주 ─────────────────────────────────────────────────────────
 
     private void OnInsertFootnote(object sender, RoutedEventArgs e)
@@ -3615,6 +3647,15 @@ public partial class MainWindow : Window
         miFormatPara.Click += OnFormatPara;
         menu.Items.Add(miFormatPara);
 
+        var miPageBreak = new System.Windows.Controls.MenuItem
+        {
+            Header = SR.MenuInsertPageBreak,
+            InputGestureText = "Ctrl+Enter",
+            IsEnabled = !IsCaretInTableCell(BodyEditor.CaretPosition),
+        };
+        miPageBreak.Click += OnInsertPageBreak;
+        menu.Items.Add(miPageBreak);
+
         // ② 표 컨텍스트 — 멀티 셀 선택이 우선, 없으면 캐럿 위치 셀
         if (FindSelectedTableCells() is { Count: > 1 } multiCells)
         {
@@ -4441,6 +4482,14 @@ public partial class MainWindow : Window
             if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down
                       or Key.Home or Key.End or Key.PageDown or Key.PageUp)
                 ClearCrossColumnSelection();
+        }
+
+        // Ctrl+Enter → 페이지 나누기 삽입
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            InsertPageBreakAtCaret();
+            e.Handled = true;
+            return;
         }
 
         // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동을 직접 처리.

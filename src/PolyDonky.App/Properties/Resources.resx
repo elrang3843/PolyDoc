@@ -67,6 +67,8 @@
   <data name="MenuInsertHyperlink"    xml:space="preserve"><value>하이퍼링크(_K)...</value></data>
   <data name="MenuInsertFootnote"    xml:space="preserve"><value>각주(_F)</value></data>
   <data name="MenuInsertEndnote"     xml:space="preserve"><value>미주(_N)</value></data>
+  <data name="MenuInsertPageBreak"   xml:space="preserve"><value>페이지 나누기(_G)</value></data>
+  <data name="MsgPageBreakInTableCell" xml:space="preserve"><value>표 셀 안에서는 페이지 나누기를 삽입할 수 없습니다.</value></data>
   <data name="MenuInsertToc"         xml:space="preserve"><value>목차 삽입(_O)</value></data>
   <data name="MenuInsertTocRefresh"  xml:space="preserve"><value>목차 새로고침(_R)</value></data>
   <data name="MenuInsertField"       xml:space="preserve"><value>필드 삽입(_D)</value></data>
