@@ -34,6 +34,50 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public Func<PolyDonkyument?>? LiveDocumentProvider { get; set; }
 
+    /// <summary>편집 작업의 Undo/Redo 스냅샷 스택. MainWindow 가 액션 시점에 PushUndo 한다.</summary>
+    public UndoRedoManager UndoRedo { get; } = new();
+
+    /// <summary>Undo 가능 여부 (메뉴 활성/비활성 바인딩용).</summary>
+    public bool CanUndo => UndoRedo.CanUndo;
+
+    /// <summary>Redo 가능 여부 (메뉴 활성/비활성 바인딩용).</summary>
+    public bool CanRedo => UndoRedo.CanRedo;
+
+    public MainViewModel()
+    {
+        UndoRedo.StateChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(CanUndo));
+            OnPropertyChanged(nameof(CanRedo));
+        };
+    }
+
+    /// <summary>
+    /// Undo/Redo 가 호출 직후 사용. 모델을 통째로 교체하고 FlowDocument 를 재빌드한다.
+    /// HasUnsavedChanges 는 호출자가 따로 관리(보통 true 로 유지).
+    /// </summary>
+    internal void ReplaceDocumentForUndo(PolyDonkyument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        _document = document;
+        _suppressDirty = true;
+        FlowDocument = FlowDocumentBuilder.Build(document);
+        _suppressDirty = false;
+        // RTB·오버레이 재구성은 MainWindow.ApplyFlowDocument 가 처리.
+    }
+
+    /// <summary>
+    /// 텍스트 입력 burst 종료 시 호출 — 라이브로 파싱한 결과를 _document 에 동기화.
+    /// MarkDirty 를 트리거하지 않는다 (이미 dirty).
+    /// </summary>
+    internal void SyncDocumentFromLive(PolyDonkyument live)
+    {
+        ArgumentNullException.ThrowIfNull(live);
+        _suppressDirty = true;
+        _document = live;
+        _suppressDirty = false;
+    }
+
     /// <summary>
     /// 열기 보호(Read/Both)에 사용할 비밀번호. null/빈 문자열이면 평문 저장.
     /// 메모리 외 어디에도 저장되지 않는다 (ViewModel 인스턴스 생명 주기 내에서만 유효).
@@ -175,6 +219,7 @@ public partial class MainViewModel : ObservableObject
         CurrentFilePath = path ?? string.Empty;
         DocumentTitle = string.IsNullOrEmpty(path) ? SR.DlgNewDocTitle : Path.GetFileName(path);
         HasUnsavedChanges = false;
+        UndoRedo.Clear(); // 새 문서·로드된 문서는 이전 편집 이력과 무관
     }
 
     [RelayCommand]

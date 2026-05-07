@@ -46,6 +46,8 @@
 
   <!-- Menu: Edit -->
   <data name="MenuEdit" xml:space="preserve"><value>_Edit</value></data>
+  <data name="MenuEditUndo" xml:space="preserve"><value>_Undo</value></data>
+  <data name="MenuEditRedo" xml:space="preserve"><value>_Redo</value></data>
   <data name="MenuEditCopy" xml:space="preserve"><value>_Copy</value></data>
   <data name="MenuEditCut" xml:space="preserve"><value>Cu_t</value></data>
   <data name="MenuEditPaste" xml:space="preserve"><value>_Paste</value></data>

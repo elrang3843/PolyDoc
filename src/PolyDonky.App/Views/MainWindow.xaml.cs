@@ -576,6 +576,8 @@ public partial class MainWindow : Window
     /// <summary>Core 블록 목록을 현재 캐럿 위치에 삽입한다 (붙여넣기·가져오기 공통 경로).</summary>
     private void InsertCoreBlocksAtCaret(List<PolyDonky.Core.Block> blocks)
     {
+        // 임의 블록 삽입(붙여넣기·표·이미지·TOC 등)은 한 번의 undo 단위로 묶는다.
+        BeginUndoableAction();
         var caret = BodyEditor.CaretPosition;
 
         // 단일 단락 콘텐츠 → 캐럿 위치에 인라인 삽입 (새 단락 블록 생성 않음)
@@ -2393,9 +2395,123 @@ public partial class MainWindow : Window
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged) return;
+        // 텍스트 입력 burst 가 시작되는 시점에 pre-edit 스냅샷을 저장 (이미 burst 중이면 타이머만 갱신).
+        BeginTextEditUndoBurst();
         _viewModel?.MarkDirty();
         // 본문이 변경되면 페이지 수가 달라질 수 있으므로 라이브 페이지네이션 갱신 디바운스.
         ScheduleLivePaginationRefresh();
+    }
+
+    // ── Undo / Redo ─────────────────────────────────────────────────────────────────
+    //
+    // 모델 스냅샷 기반 Undo/Redo. 텍스트 입력은 "burst" 단위로 묶어 1.5초 idle 마다 새 burst 로 분리.
+    //   ① OnEditorTextChanged 가 fire 되면 — 첫 화 keypress 일 경우 (_textEditUndoBurstActive=false)
+    //      _viewModel.Document (현재 RTB 가 아직 model 에 동기화되지 않은 pre-edit 상태) 를 PushUndo.
+    //   ② idle 타이머가 만료되면 EndTextEditUndoBurst — ParseAllPageEditors 결과를 _document 에 동기화.
+    //   ③ 비-텍스트 액션(오버레이 드래그·Ctrl+Enter 페이지 나누기·서식 변경 등) 은 BeginUndoableAction()
+    //      을 직접 호출 — burst 종료 후 현재 _document 를 PushUndo.
+    //   ④ Undo/Redo 실행 시: settle (parse → _document 갱신) → UndoRedoManager 가 swap → ApplyFlowDocument.
+
+    private System.Windows.Threading.DispatcherTimer? _textEditUndoIdleTimer;
+    private bool                                      _textEditUndoBurstActive;
+
+    /// <summary>텍스트 입력 burst idle 임계 (이 시간 동안 입력이 없으면 burst 가 종료된다).</summary>
+    private static readonly TimeSpan TextEditBurstIdle = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
+    /// 텍스트 입력 burst 가 시작되는 시점에 한 번만 pre-edit 스냅샷을 저장한다.
+    /// 이후 같은 burst 의 입력은 timer 만 재시작해 합쳐진다.
+    /// </summary>
+    private void BeginTextEditUndoBurst()
+    {
+        if (_viewModel is null) return;
+
+        if (!_textEditUndoBurstActive)
+        {
+            // 이 시점의 _viewModel.Document 는 사용자가 입력하기 전 모델 상태.
+            // (RTB FlowDocument 만 변경됐고 ParseAllPageEditors 는 아직 호출되지 않았다.)
+            _viewModel.UndoRedo.PushUndo(_viewModel.Document);
+            _textEditUndoBurstActive = true;
+        }
+
+        if (_textEditUndoIdleTimer is null)
+        {
+            _textEditUndoIdleTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TextEditBurstIdle,
+            };
+            _textEditUndoIdleTimer.Tick += OnTextEditUndoIdle;
+        }
+        _textEditUndoIdleTimer.Stop();
+        _textEditUndoIdleTimer.Start();
+    }
+
+    private void OnTextEditUndoIdle(object? sender, EventArgs e)
+        => EndTextEditUndoBurst();
+
+    /// <summary>
+    /// 텍스트 입력 burst 를 즉시 종료. 현재 RTB 의 라이브 상태를 파싱해 <c>_viewModel.Document</c> 에
+    /// 동기화한다 — 다음 액션(또는 Undo) 가 올바른 "post-text" 상태를 기준으로 작동.
+    /// </summary>
+    private void EndTextEditUndoBurst()
+    {
+        if (!_textEditUndoBurstActive) return;
+        _textEditUndoBurstActive = false;
+        _textEditUndoIdleTimer?.Stop();
+
+        if (_viewModel is null) return;
+        if (PageEditorHost.PageCount == 0) return;
+        try
+        {
+            var live = ParseAllPageEditors();
+            _viewModel.SyncDocumentFromLive(live);
+        }
+        catch
+        {
+            // 파싱 실패해도 burst 만 종료하고 계속 (다음 BeginTextEditUndoBurst 가 새 스냅샷을 만든다).
+        }
+    }
+
+    /// <summary>
+    /// 비-텍스트 액션(오버레이 변경·페이지 나누기·서식 변경 등) 직전에 호출.
+    /// 현재까지의 텍스트 burst 를 종료해 _document 를 최신화한 뒤, 그 상태를 undo 스택에 push.
+    /// 이후 호출자는 _viewModel.Document 를 자유롭게 변형 + MarkDirty 만 하면 된다.
+    /// </summary>
+    private void BeginUndoableAction()
+    {
+        if (_viewModel is null) return;
+        EndTextEditUndoBurst();
+        _viewModel.UndoRedo.PushUndo(_viewModel.Document);
+    }
+
+    private void OnEditUndo(object sender, RoutedEventArgs e) => PerformUndo();
+    private void OnEditRedo(object sender, RoutedEventArgs e) => PerformRedo();
+
+    private void PerformUndo()
+    {
+        if (_viewModel is null) return;
+        // settle: 라이브 RTB 상태를 _document 에 반영해 사용자가 친 마지막 burst 도 redo 에 보존.
+        EndTextEditUndoBurst();
+
+        var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+        if (prev is null) return;
+
+        _viewModel.ReplaceDocumentForUndo(prev);
+        _viewModel.MarkDirty();
+        ApplyFlowDocument(_viewModel.FlowDocument);
+    }
+
+    private void PerformRedo()
+    {
+        if (_viewModel is null) return;
+        EndTextEditUndoBurst();
+
+        var next = _viewModel.UndoRedo.Redo(_viewModel.Document);
+        if (next is null) return;
+
+        _viewModel.ReplaceDocumentForUndo(next);
+        _viewModel.MarkDirty();
+        ApplyFlowDocument(_viewModel.FlowDocument);
     }
 
     private void OnFindReplaceRequested(object? sender, EventArgs e)
@@ -2773,6 +2889,9 @@ public partial class MainWindow : Window
                 System.Windows.MessageBoxImage.Information);
             return;
         }
+
+        // 모델 스냅샷 기반 Undo 등록 — 페이지 나누기 자체가 한 번의 액션 단위.
+        BeginUndoableAction();
 
         // 캐럿 위치에서 단락 분할 — 새 단락이 생기며 포인터는 그 안으로 이동
         var newPtr  = caret.InsertParagraphBreak();
@@ -4493,6 +4612,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Ctrl+Z → Undo, Ctrl+Y / Ctrl+Shift+Z → Redo.
+        // RichTextBox 자체 Undo 는 페이지별 RTB 단위로만 작동해 오버레이·페이지 분포 변경 등을
+        // 되돌리지 못하므로 모델 스냅샷 기반 Undo 를 사용한다.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
+            if (e.Key == Key.Z && !shift) { PerformUndo(); e.Handled = true; return; }
+            if (e.Key == Key.Y)           { PerformRedo(); e.Handled = true; return; }
+            if (e.Key == Key.Z &&  shift) { PerformRedo(); e.Handled = true; return; }
+        }
+
         // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동을 직접 처리.
         TryHandlePageBoundaryNavigation(rtb, e);
     }
@@ -5757,6 +5887,7 @@ public partial class MainWindow : Window
             int idx = FloatingCanvas.Children.IndexOf(overlay);
             if (idx < FloatingCanvas.Children.Count - 1)
             {
+                BeginUndoableAction();
                 FloatingCanvas.Children.RemoveAt(idx);
                 FloatingCanvas.Children.Insert(idx + 1, overlay);
                 model.ZOrder++;
@@ -5769,6 +5900,7 @@ public partial class MainWindow : Window
             int idx = FloatingCanvas.Children.IndexOf(overlay);
             if (idx > 0)
             {
+                BeginUndoableAction();
                 FloatingCanvas.Children.RemoveAt(idx);
                 FloatingCanvas.Children.Insert(idx - 1, overlay);
                 model.ZOrder--;
@@ -5776,10 +5908,16 @@ public partial class MainWindow : Window
             }
         };
 
-        overlay.AppearanceChangedCommitted += (_, _) => _viewModel?.NotifyOverlayChanged();
+        overlay.AppearanceChangedCommitted += (_, _) =>
+        {
+            BeginUndoableAction();
+            _viewModel?.NotifyOverlayChanged();
+        };
 
         overlay.GeometryChangedCommitted += (_, _) =>
         {
+            // 핸들러 진입 시점엔 model 위치/크기가 아직 변경되지 않았다 — pre-edit 스냅샷 등록.
+            BeginUndoableAction();
             // Canvas 절대 DIP → (페이지 인덱스, 페이지 로컬 mm) 변환.
             double left = Canvas.GetLeft(overlay); if (double.IsNaN(left)) left = 0;
             double top  = Canvas.GetTop(overlay);  if (double.IsNaN(top))  top  = 0;
@@ -5790,10 +5928,15 @@ public partial class MainWindow : Window
             _viewModel?.NotifyOverlayChanged();
         };
 
-        overlay.ContentChangedCommitted += (_, _) => _viewModel?.NotifyOverlayChanged();
+        overlay.ContentChangedCommitted += (_, _) =>
+        {
+            BeginUndoableAction();
+            _viewModel?.NotifyOverlayChanged();
+        };
 
         overlay.DeleteRequested += (_, _) =>
         {
+            BeginUndoableAction();
             FloatingCanvas.Children.Remove(overlay);
             _viewModel?.RemoveOverlayBlock(model);
             if (ReferenceEquals(_selectedOverlay, overlay)) _selectedOverlay = null;

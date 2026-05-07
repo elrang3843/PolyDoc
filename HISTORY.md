@@ -45,6 +45,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+
+- **Added** — **실행 취소 / 다시 실행 (Undo/Redo)**: 편집 메뉴에 `실행 취소(Ctrl+Z)` · `다시 실행(Ctrl+Y / Ctrl+Shift+Z)` 항목 추가. 모델 스냅샷 기반(JSON 직렬화) — 텍스트·오버레이·페이지 나누기·블록 삽입·Z-순서·서식 변경 등 거의 모든 편집을 되돌린다. 텍스트 입력은 1.5초 idle "burst" 단위로 묶어 한 글자마다 스냅샷이 쌓이지 않게 합치며, 비-텍스트 액션은 액션 단위로 한 번씩 스냅샷을 등록. 스택 깊이는 최대 100 (초과 시 가장 오래된 항목부터 폐기) — 메모리 안전. 새 문서·파일 로드 시 스택 자동 비움. 단위 테스트 12종 추가(`UndoRedoManagerTests`).
+
 - **Added** — **스플라인 제어점 삽입·삭제 UI**: 점-기반 도형(Spline/ClosedSpline/Polyline/Polygon) 선택 시 세그먼트 중간에 다이아몬드 모양 핸들 표시 — 클릭하면 곡선 위(스플라인은 t=0.5 De Casteljau 지점) 에 새 앵커 포인트 삽입. 기존 정점 핸들 우클릭으로 포인트 삭제 (최소 2개/3개 유지). `ShapePoint` 에 `OutCtrlX/Y`·`InCtrlX/Y` (nullable) 베지어 제어점 속성 추가. `NormalizeShapeBoundingBox` 가 이동 시 제어점 좌표도 함께 보정.
 
 - **Added** — **DOCX 스플라인 라운드트립 정밀도 개선**: DOCX `cubicBezTo` 읽기 시 c1·c2 제어점을 `ShapePoint.OutCtrl`/`InCtrl` 에 보존, 쓰기 시 명시적 제어점이 있으면 그것을 그대로 사용 (기존엔 항상 Catmull-Rom 재계산). DOCX → PolyDonky → DOCX 라운드트립 시 곡선 형태 유지.
