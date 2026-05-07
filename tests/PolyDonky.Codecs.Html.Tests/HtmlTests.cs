@@ -1322,4 +1322,147 @@ public class HtmlTests
         var p  = rt.EnumerateParagraphs().Single();
         Assert.Equal(Alignment.Right, p.Style.Alignment);
     }
+
+    // ── list-style-type 파싱 ────────────────────────────────────────────
+
+    [Fact]
+    public void Reader_OlTypeA_BecomesOrderedAlpha()
+    {
+        // <ol type="A"> → OrderedAlpha
+        const string html = "<ol type=\"A\"><li>a</li><li>b</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.All(markers, m => Assert.Equal(ListKind.OrderedAlpha, m!.Kind));
+    }
+
+    [Fact]
+    public void Reader_OlStyleUpperRoman_BecomesOrderedRoman()
+    {
+        // <ol style="list-style-type: upper-roman"> → OrderedRoman
+        const string html = "<ol style=\"list-style-type: upper-roman\"><li>i</li><li>ii</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.All(markers, m => Assert.Equal(ListKind.OrderedRoman, m!.Kind));
+    }
+
+    [Fact]
+    public void Reader_OlStyleLowerAlpha_BecomesOrderedAlpha()
+    {
+        // <ol style="list-style-type: lower-alpha"> → OrderedAlpha
+        const string html = "<ol style=\"list-style-type: lower-alpha\"><li>a</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Equal(ListKind.OrderedAlpha, marker.Kind);
+    }
+
+    [Fact]
+    public void Reader_OlDefault_BecomesOrderedDecimal()
+    {
+        // <ol> 기본값 → OrderedDecimal
+        const string html = "<ol><li>1</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Equal(ListKind.OrderedDecimal, marker.Kind);
+    }
+
+    [Fact]
+    public void Reader_LiTypeOverridesOlType()
+    {
+        // <li type="i"> 개별 항목 지정이 부모 <ol> 을 오버라이드함.
+        const string html = "<ol type=\"A\"><li type=\"i\">first</li><li>second</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.Equal(ListKind.OrderedRoman,   markers[0]!.Kind);
+        Assert.Equal(ListKind.OrderedAlpha,   markers[1]!.Kind);
+    }
+
+    // ── CSS Grid/Flex → Table 변환 ──────────────────────────────────
+
+    [Fact]
+    public void Reader_CssGrid2Col_BecomesTable()
+    {
+        // display:grid; grid-template-columns: 1fr 1fr → 2-column Table
+        const string html = """
+            <div style="display:grid;grid-template-columns:1fr 1fr">
+              <div><p>Left</p></div>
+              <div><p>Right</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(2, table.Columns.Count);
+        var row = Assert.Single(table.Rows);
+        Assert.Equal(2, row.Cells.Count);
+        Assert.Contains(row.Cells[0].Blocks.OfType<Paragraph>(), p => p.GetPlainText() == "Left");
+        Assert.Contains(row.Cells[1].Blocks.OfType<Paragraph>(), p => p.GetPlainText() == "Right");
+    }
+
+    [Fact]
+    public void Reader_CssGrid3Col_BecomesTable()
+    {
+        // grid-template-columns: repeat(3, 1fr) → 3-column Table
+        const string html = """
+            <div style="display:grid;grid-template-columns:repeat(3,1fr)">
+              <div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(3, table.Columns.Count);
+    }
+
+    [Fact]
+    public void Reader_CssFlex2Col_BecomesTable()
+    {
+        // display:flex with 2 child divs → 2-column Table
+        const string html = """
+            <div style="display:flex">
+              <div><p>Col A</p></div>
+              <div><p>Col B</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(2, table.Columns.Count);
+    }
+
+    [Fact]
+    public void Reader_CssFlexColumnDirection_NotConvertedToTable()
+    {
+        // flex-direction:column → 세로 배치이므로 Table 로 변환하지 않아야 함.
+        const string html = """
+            <div style="display:flex;flex-direction:column">
+              <div><p>A</p></div>
+              <div><p>B</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.Null(table);
+    }
+
+    [Fact]
+    public void Reader_CssGridOddCells_LastRowPadded()
+    {
+        // 3개 셀을 2열 그리드에 배치 → 2행(2+1), 마지막 행은 빈 셀 패딩
+        const string html = """
+            <div style="display:grid;grid-template-columns:1fr 1fr">
+              <div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(2, table.Rows.Count);
+        Assert.Equal(2, table.Rows[1].Cells.Count);
+    }
 }

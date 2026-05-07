@@ -503,6 +503,16 @@ public static class FlowDocumentPaginationAdapter
     {
         try
         {
+            // BlockUIContainer 는 GetCharacterRect 가 캐럿 높이만 반환하는 경우가 있어
+            // 내부 UIElement 의 ActualHeight 를 직접 읽어 bottomY 를 계산한다.
+            if (block is WpfDocs.BlockUIContainer buc && buc.Child is FrameworkElement fe
+                && !double.IsNaN(fe.ActualHeight) && fe.ActualHeight > 0)
+            {
+                double topY = TryGetTopY(block);
+                if (!double.IsNaN(topY))
+                    return topY + fe.ActualHeight + block.Margin.Top + block.Margin.Bottom;
+            }
+
             var r = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
             if (r == Rect.Empty || double.IsNaN(r.Bottom) || double.IsInfinity(r.Bottom))
                 return double.NaN;
@@ -531,11 +541,23 @@ public static class FlowDocumentPaginationAdapter
                 return Rect.Empty;
 
             double globalTop    = topRect.Y;
-            double globalBottom = (botRect != Rect.Empty
-                                   && !double.IsNaN(botRect.Bottom)
-                                   && !double.IsInfinity(botRect.Bottom))
-                ? botRect.Bottom
-                : globalTop;
+
+            // BlockUIContainer 는 ContentEnd.GetCharacterRect 가 캐럿 높이만 반환할 수 있어
+            // 내부 UIElement.ActualHeight 로 globalBottom 을 계산한다.
+            double globalBottom;
+            if (block is WpfDocs.BlockUIContainer buc2 && buc2.Child is FrameworkElement fe2
+                && !double.IsNaN(fe2.ActualHeight) && fe2.ActualHeight > 0)
+            {
+                globalBottom = globalTop + fe2.ActualHeight + block.Margin.Top + block.Margin.Bottom;
+            }
+            else
+            {
+                globalBottom = (botRect != Rect.Empty
+                                       && !double.IsNaN(botRect.Bottom)
+                                       && !double.IsInfinity(botRect.Bottom))
+                    ? botRect.Bottom
+                    : globalTop;
+            }
 
             // 단 슬롯 인덱스 (다단에서 페이지·단을 통합 순서로 열거)
             int    slotIdx     = pageIdx * colCount + colIdx;

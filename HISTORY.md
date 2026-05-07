@@ -137,6 +137,14 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Added** — **DOCX 도형(ShapeObject) 보존 지원**: `DocxReader` 가 DrawingML `wps:wsp` 도형을 `ShapeObject`로 파싱 (rect/ellipse/triangle/polygon/polyline/line 및 customGeometry), `DocxWriter` 가 `ShapeObject` → `wp:anchor`/`wp:inline` + `wps:wsp` DrawingML 로 출력. EMU ↔ mm 단위 변환·stroke dash·arrow·fill opacity·rotation·BehindText 래핑 지원. `DocxRoundTripTests` 에 라운드트립 테스트 6건 추가.
 
+- **Added** — **HtmlReader `<ol>/<ul>` 인라인 list-style-type 파싱**: `type="A"/"a"/"I"/"i"/"1"` HTML 속성 및 `style="list-style-type: upper-alpha"` CSS 속성을 읽어 `ListKind.OrderedAlpha`/`OrderedRoman`/`OrderedDecimal` 으로 변환. `<li>` 개별 항목에 지정된 `type`은 부모 `<ol>` 보다 우선 적용. `ResolveListKind` 헬퍼 추가. xUnit 테스트 5건 추가.
+
+- **Added** — **HtmlReader CSS Grid/Flex 다단 레이아웃 → Table 변환 (`TryBuildGridAsTable`)**: `display:grid; grid-template-columns: 1fr 1fr` / `display:flex` 컨테이너 `<div>` 를 테두리 없는 다단 `Table` 로 근사 변환 — 열 수는 `grid-template-columns` 공백 구분 개수 또는 `repeat(N,…)` 구문, Flex 는 자식 div 개수. `flex-direction:column` 은 변환 제외(세로 배치). `gap`/`grid-gap` 을 우측 셀 패딩에 적용. 나머지 셀은 빈 단락으로 패딩. xUnit 테스트 5건 추가.
+
+- **Fixed** — **FlowDocumentBuilder Rectangle/RoundedRect/Ellipse 렌더링 안정화**: WPF `Path` + `RectangleGeometry`/`EllipseGeometry` + `Stretch.None` 조합에서 일부 환경·버전에서 채우기가 보이지 않는 문제. 단순 박스 도형 3종은 `System.Windows.Shapes.Rectangle`/`Ellipse` 전용 컨트롤로 교체 (`Width`/`Height`/`Fill`/`Stroke`/`RadiusX`/`RadiusY` 직접 설정). 나머지 Path 계열 도형(Polyline/Polygon/Spline/Triangle/Star 등)은 기존 `Path` + `BuildShapeGeometry` 경로 유지. `StrokeThickness=0` 일 때 `Stroke` 를 `Transparent` 로 설정해 렌더링 경계 계산 오류 방지.
+
+- **Fixed** — **FlowDocumentPaginationAdapter BlockUIContainer 높이 측정 누락**: `BlockUIContainer` (SVG 다이어그램 placeholder, ShapeObject Inline 블록)의 `ContentEnd.GetCharacterRect` 가 캐럿 높이만 반환해 실제 UIElement 높이를 `blockH = 0` 으로 잘못 측정하던 문제. `TryGetBottomY`/`TryGetColumnLocalRect` 에서 `BlockUIContainer.Child` 가 `FrameworkElement` 이면 `ActualHeight` 를 사용해 `bottomY` 를 계산하도록 수정 — 이미지/도형 블록이 페이지 경계를 차지하는 높이를 올바르게 추적해 페이지 분할 정확도 향상.
+
 ### Docs
 - **Docs** — **HWPX 코덱 구현 참고 자료 출처와 감사 명시**: HWPX 호환성 작업이 그동안 샘플 1개만으로 추측에 의존했음을 인지하고, 사용자께서 알려주신 공식 자료원으로 전환. `README.md` 에 새 섹션 "HWPX / OWPML 구현 참고 자료" 추가, `THIRD_PARTY_NOTICES.md` 에 동일 내용 영문 포함. 참고 자료: (1) **KS X 6101 OWPML 국가표준** (https://standard.go.kr) — 워드프로세서 마크업 언어 표준 본문, (2) **한컴 HWP/OWPML 형식 안내** (https://www.hancom.com/support/downloadCenter/hwpOwpml) — 한컴 공식 형식 정의서, (3) **`hancom-io/hwpx-owpml-model`** Apache-2.0 (https://github.com/hancom-io/hwpx-owpml-model) — 한컴 공식 OWPML C++ 참조 모델 (`CPictureType`/`CRectangleType`/`CLineType` 등 요소·속성·자식 구조와 직렬화 순서 검증), (4) **`ai-screams/HwpForge`** (https://github.com/ai-screams/HwpForge) — Rust HWPX 독립 구현, 직렬화 패턴 비교, (5) **KS X 6101 ↔ 한컴 구현 차이 정리 스프레드시트** (https://docs.google.com/spreadsheets/d/1jqXPUVZv1QYcoruJgek2GKYXkhbyaZ68cDjbb1MeyYk) — 표준 오타·한컴 미구현·표준 외 추가 항목 정리. 위 자료의 코드는 PolyDonky 에 통합·재배포되지 않으며 명세 이해를 위한 참고 문헌으로만 사용. 정보 공개해 주신 모든 분께 감사.
 

@@ -1079,8 +1079,6 @@ public static class FlowDocumentBuilder
             Height = hDip,
         };
 
-        var geometry = BuildShapeGeometry(shape, wDip, hDip);
-
         // 채우기 브러시
         WpfMedia.Brush fillBrush = WpfMedia.Brushes.Transparent;
         if (!string.IsNullOrEmpty(shape.FillColor))
@@ -1095,30 +1093,72 @@ public static class FlowDocumentBuilder
         }
 
         // 선 브러시
-        WpfMedia.Brush strokeBrush = WpfMedia.Brushes.Black;
+        WpfMedia.Brush strokeBrushVal = WpfMedia.Brushes.Black;
         if (!string.IsNullOrEmpty(shape.StrokeColor))
         {
             try
             {
                 var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(shape.StrokeColor)!;
-                strokeBrush = new WpfMedia.SolidColorBrush(c);
+                strokeBrushVal = new WpfMedia.SolidColorBrush(c);
             }
             catch { }
         }
 
         double strokeDip = shape.StrokeThicknessPt > 0 ? PtToDip(shape.StrokeThicknessPt) : 0;
+        // StrokeThickness=0 일 때 Stroke 를 Transparent 로 설정해 렌더링 경계 계산 오류를 방지한다.
+        WpfMedia.Brush effectiveStroke = strokeDip > 0 ? strokeBrushVal : WpfMedia.Brushes.Transparent;
 
+        // 단순 박스 도형(Rectangle·RoundedRect·Ellipse)은 WPF 전용 Shape 컨트롤 사용.
+        // Path + RectangleGeometry + Stretch.None 조합은 일부 WPF 버전에서 채우기가 보이지 않는 경우가 있어
+        // WPF Shape(System.Windows.Shapes.Rectangle / Ellipse) 으로 대체한다.
+        if (shape.Kind is ShapeKind.Rectangle or ShapeKind.RoundedRect)
+        {
+            double rx = shape.Kind == ShapeKind.RoundedRect
+                ? Math.Clamp(MmToDip(shape.CornerRadiusMm), 0, Math.Min(wDip, hDip) / 2.0)
+                : 0;
+            var rect = new WpfShapes.Rectangle
+            {
+                Width           = wDip,
+                Height          = hDip,
+                Fill            = fillBrush,
+                Stroke          = effectiveStroke,
+                StrokeThickness = strokeDip,
+                RadiusX         = rx,
+                RadiusY         = rx,
+            };
+            if (strokeDip > 0)
+                rect.StrokeDashArray = BuildDashArray(shape.StrokeDash, strokeDip);
+            canvas.Children.Add(rect);
+        }
+        else if (shape.Kind == ShapeKind.Ellipse)
+        {
+            var ellipse = new WpfShapes.Ellipse
+            {
+                Width           = wDip,
+                Height          = hDip,
+                Fill            = fillBrush,
+                Stroke          = effectiveStroke,
+                StrokeThickness = strokeDip,
+            };
+            if (strokeDip > 0)
+                ellipse.StrokeDashArray = BuildDashArray(shape.StrokeDash, strokeDip);
+            canvas.Children.Add(ellipse);
+        }
+        else
+        {
+        var geometry = BuildShapeGeometry(shape, wDip, hDip);
         var path = new WpfShapes.Path
         {
             Data            = geometry,
             Fill            = fillBrush,
-            Stroke          = strokeBrush,
+            Stroke          = effectiveStroke,
             StrokeThickness = strokeDip,
             StrokeDashArray = BuildDashArray(shape.StrokeDash, strokeDip),
             Stretch         = WpfMedia.Stretch.None,
         };
 
         canvas.Children.Add(path);
+        }
 
         // 끝모양 (선 계열 — 열린 선에만); path 추가 후 그 위에 그림
         if (shape.Kind is ShapeKind.Line or ShapeKind.Polyline or ShapeKind.Spline)
@@ -1128,7 +1168,7 @@ public static class FlowDocumentBuilder
             {
                 ptsDip = new List<Point> { new(0, hDip / 2), new(wDip, hDip / 2) };
             }
-            AddArrowHeads(canvas, shape.StartArrow, shape.EndArrow, shape.EndShapeSizeMm, ptsDip, strokeBrush, strokeDip);
+            AddArrowHeads(canvas, shape.StartArrow, shape.EndArrow, shape.EndShapeSizeMm, ptsDip, strokeBrushVal, strokeDip);
         }
 
         // 레이블

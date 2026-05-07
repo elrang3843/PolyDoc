@@ -304,6 +304,9 @@ public sealed class HtmlReader : IDocumentReader
                     target.Add(cssShape!);
                     break;
                 }
+                // CSS Grid/Flex 다단 레이아웃 → Table 로 근사 변환.
+                if (TryBuildGridAsTable(el, target, ctx))
+                    break;
                 ProcessChildren(el, target, ctx);
                 break;
             }
@@ -413,6 +416,11 @@ public sealed class HtmlReader : IDocumentReader
         int  start     = 1;
         if (isOrdered && int.TryParse(el.GetAttribute("start"), out var s)) start = s;
 
+        // list-style-type 속성 또는 CSS inline style에서 ListKind 결정.
+        var listStyle = el.GetAttribute("type")
+            ?? StyleProp(el.GetAttribute("style") ?? "", "list-style-type");
+        var listKind = ResolveListKind(isOrdered, listStyle);
+
         int counter = 0;
         foreach (var child in el.ChildNodes)
         {
@@ -428,18 +436,23 @@ public sealed class HtmlReader : IDocumentReader
                 firstInput.Remove();
             }
 
+            // <li> 자체의 list-style-type 이 있으면 개별 마커에 적용.
+            var liStyle = li.GetAttribute("type")
+                ?? StyleProp(li.GetAttribute("style") ?? "", "list-style-type");
+            var lmKind = liStyle is not null ? ResolveListKind(isOrdered, liStyle) : listKind;
+
             int order = li.GetAttribute("value") is { } v && int.TryParse(v, out var ov) ? ov : start + counter - 1;
             var lm = isOrdered
                 ? new ListMarker
                 {
-                    Kind          = ListKind.OrderedDecimal,
+                    Kind          = lmKind,
                     OrderedNumber = order,
                     Level         = ctx.ListLevel,
                     Checked       = checkedState,
                 }
                 : new ListMarker
                 {
-                    Kind    = ListKind.Bullet,
+                    Kind    = lmKind,
                     Level   = ctx.ListLevel,
                     Checked = checkedState,
                 };
@@ -1321,6 +1334,21 @@ public sealed class HtmlReader : IDocumentReader
         => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
     /// <summary>CSS 길이값 → mm 변환. 지원 단위: mm/cm/px/pt/in.</summary>
+    /// <summary>HTML list-style-type 값을 ListKind 로 변환한다.</summary>
+    private static ListKind ResolveListKind(bool isOrdered, string? styleType)
+    {
+        if (styleType is null) return isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet;
+        return styleType.Trim().ToLowerInvariant() switch
+        {
+            "1" or "decimal" or "decimal-leading-zero"      => ListKind.OrderedDecimal,
+            "a" or "lower-alpha" or "lower-latin"
+              or "upper-alpha" or "upper-latin"              => ListKind.OrderedAlpha,
+            "i" or "lower-roman" or "upper-roman"           => ListKind.OrderedRoman,
+            "disc" or "circle" or "square" or "none"        => ListKind.Bullet,
+            _ => isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet,
+        };
+    }
+
     private static bool TryParseCssMm(string? val, out double mm)
     {
         mm = 0;
@@ -1379,6 +1407,101 @@ public sealed class HtmlReader : IDocumentReader
             ".svg"  => "image/svg+xml",
             _       => "application/octet-stream",
         };
+    }
+
+    /// <summary>
+    /// CSS Grid / Flexbox 다단 컨테이너를 간단한 Table 로 근사 변환한다.
+    /// grid-template-columns 또는 flex 속성으로 열 수를 결정하고, 자식 div·section 을 셀로 배치.
+    /// 감지하지 못하거나 단일 열인 경우 false 를 반환해 호출측이 fallback 을 시도하도록 한다.
+    /// </summary>
+    private static bool TryBuildGridAsTable(IElement divEl, IList<PdBlock> target, InlineCtx ctx)
+    {
+        var style = divEl.GetAttribute("style") ?? "";
+        var display = StyleProp(style, "display");
+        if (display is null) return false;
+
+        bool isGrid = display.Equals("grid", StringComparison.OrdinalIgnoreCase)
+                   || display.Equals("inline-grid", StringComparison.OrdinalIgnoreCase);
+        bool isFlex = display.Equals("flex", StringComparison.OrdinalIgnoreCase)
+                   || display.Equals("inline-flex", StringComparison.OrdinalIgnoreCase);
+
+        if (!isGrid && !isFlex) return false;
+
+        // 열 수 결정.
+        int colCount = 1;
+        if (isGrid)
+        {
+            var gtc = StyleProp(style, "grid-template-columns");
+            if (gtc is not null)
+            {
+                // "1fr 1fr" / "50% 50%" / "repeat(3, 1fr)" 등 공백으로 구분된 개수를 열 수로 사용.
+                var m = System.Text.RegularExpressions.Regex.Match(gtc.Trim(), @"^repeat\s*\(\s*(\d+)");
+                if (m.Success) int.TryParse(m.Groups[1].Value, out colCount);
+                else colCount = gtc.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            }
+        }
+        else // flex
+        {
+            // flex-direction: column 이면 세로 배치 → 단일 열처럼 처리.
+            var flexDir = StyleProp(style, "flex-direction");
+            if (flexDir is not null && flexDir.Contains("column", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // 자식에서 flex: 1 / flex-basis 으로 균등 열 수 추정.
+            var flexChildren = divEl.Children.ToList();
+            if (flexChildren.Count >= 2)
+                colCount = flexChildren.Count;
+        }
+
+        if (colCount <= 1) return false; // 단일 열이면 일반 ProcessChildren 이 더 적합.
+
+        // 자식 블록 요소를 셀로 수집 (텍스트 노드 무시).
+        var cells = divEl.Children
+            .Where(c => c.LocalName is "div" or "section" or "article" or "aside" or "main" or "p")
+            .ToList();
+
+        if (cells.Count == 0) return false;
+
+        // gap 에서 셀 간격(mm) 추출.
+        var gapStr = StyleProp(style, "gap") ?? StyleProp(style, "grid-gap");
+        double gapMm = TryParseCssMm(gapStr, out var gv) ? gv : 3.0; // 기본 3mm
+
+        // Table 생성 — 테두리 없음(격자 없는 레이아웃 표).
+        var table = new Table
+        {
+            BorderThicknessPt = 0,
+        };
+
+        // 열 너비: 균등 배분 (0 = 자동, 균등 배분은 렌더러가 처리)
+        for (int c = 0; c < colCount; c++)
+            table.Columns.Add(new TableColumn { WidthMm = 0 });
+
+        int i = 0;
+        while (i < cells.Count)
+        {
+            var row = new TableRow();
+            for (int c = 0; c < colCount && i < cells.Count; c++, i++)
+            {
+                var cell = new TableCell
+                {
+                    BorderThicknessPt = 0,
+                    PaddingRightMm    = c < colCount - 1 ? gapMm : 0,
+                };
+                var cellContent = new List<PdBlock>();
+                ProcessChildren(cells[i], cellContent, ctx);
+                foreach (var b in cellContent) cell.Blocks.Add(b);
+                if (cell.Blocks.Count == 0)
+                    cell.Blocks.Add(new Paragraph());
+                row.Cells.Add(cell);
+            }
+            // 마지막 행의 빈 셀 채우기.
+            while (row.Cells.Count < colCount)
+                row.Cells.Add(new TableCell { BorderThicknessPt = 0, Blocks = { new Paragraph() } });
+            table.Rows.Add(row);
+        }
+
+        target.Add(table);
+        return true;
     }
 
     private static void ProcessDefinitionList(IElement dlEl, IList<PdBlock> target, InlineCtx ctx)
