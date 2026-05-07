@@ -62,7 +62,7 @@ public partial class MainWindow
             {
                 var h = CreateHandle($"{VertexHandleTagPrefix}{i}", isVertex: true);
                 PositionVertexHandle(h, shapeCtrl, shape, pts[i]);
-                h.MouseRightButtonDown += OnVertexHandleRightClick;
+                AttachVertexContextMenu(h, shape);
                 parent.Children.Add(h);
                 _shapeEditHandles.Add(h);
             }
@@ -95,9 +95,8 @@ public partial class MainWindow
         foreach (var h in _shapeEditHandles)
         {
             if (h.Parent is Canvas c) c.Children.Remove(h);
-            h.MouseLeftButtonDown  -= OnShapeHandleMouseDown;
-            h.MouseRightButtonDown -= OnVertexHandleRightClick;
-            h.MouseLeftButtonDown  -= OnSegmentHandleClick;
+            h.MouseLeftButtonDown -= OnShapeHandleMouseDown;
+            h.MouseLeftButtonDown -= OnSegmentHandleClick;
         }
         _shapeEditHandles.Clear();
     }
@@ -150,6 +149,35 @@ public partial class MainWindow
         h.MouseLeftButtonDown += OnShapeHandleMouseDown;
         Panel.SetZIndex(h, 1000);
         return h;
+    }
+
+    /// <summary>정점 핸들에 우클릭 컨텍스트 메뉴("이 점 삭제")를 연결한다.</summary>
+    private void AttachVertexContextMenu(Rectangle h, ShapeObject shape)
+    {
+        var deleteItem = new MenuItem { Header = "이 점 삭제" };
+        deleteItem.Click += (_, _) =>
+        {
+            if (h.Tag is not string tag) return;
+            if (!tag.StartsWith(VertexHandleTagPrefix, StringComparison.Ordinal)) return;
+            if (!int.TryParse(tag.AsSpan(1), out int idx)) return;
+            if (_selectedShape is null || _selectedShapeCtrl is null) return;
+
+            var pts    = _selectedShape.Points;
+            bool closed = _selectedShape.Kind == ShapeKind.ClosedSpline
+                       || _selectedShape.Kind == ShapeKind.Polygon;
+            int minPts = closed ? 3 : 2;
+            if (pts.Count <= minPts || idx < 0 || idx >= pts.Count) return;
+
+            pts.RemoveAt(idx);
+            _selectedShape.Status = NodeStatus.Modified;
+            _viewModel?.MarkDirty();
+
+            HideShapeEditHandles();
+            ShowShapeEditHandles(_selectedShapeCtrl, _selectedShape);
+            RefreshSelectedShapeVisual();
+        };
+
+        h.ContextMenu = new ContextMenu { Items = { deleteItem } };
     }
 
     private Rectangle CreateSegmentHandle(string tag)
@@ -386,35 +414,6 @@ public partial class MainWindow
         _viewModel?.MarkDirty();
 
         // 핸들 재구성 (인덱스가 바뀌어 기존 핸들은 무효).
-        HideShapeEditHandles();
-        ShowShapeEditHandles(_selectedShapeCtrl, _selectedShape);
-        RefreshSelectedShapeVisual();
-        e.Handled = true;
-    }
-
-    /// <summary>정점 핸들 우클릭 — 해당 포인트를 삭제한다 (최소 2개/3개 유지).</summary>
-    private void OnVertexHandleRightClick(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not Rectangle h) return;
-        if (h.Tag is not string tag) return;
-        if (!tag.StartsWith(VertexHandleTagPrefix, StringComparison.Ordinal)) return;
-        if (!int.TryParse(tag.AsSpan(1), out int idx)) return;
-        if (_selectedShape is null || _selectedShapeCtrl is null) return;
-
-        var pts = _selectedShape.Points;
-        // 최소 포인트 수: Line/Polyline/Spline = 2, 닫힌 도형 = 3.
-        bool closed  = _selectedShape.Kind == ShapeKind.ClosedSpline || _selectedShape.Kind == ShapeKind.Polygon;
-        int  minPts  = closed ? 3 : 2;
-        if (pts.Count <= minPts || idx < 0 || idx >= pts.Count)
-        {
-            e.Handled = true;
-            return;
-        }
-
-        pts.RemoveAt(idx);
-        _selectedShape.Status = NodeStatus.Modified;
-        _viewModel?.MarkDirty();
-
         HideShapeEditHandles();
         ShowShapeEditHandles(_selectedShapeCtrl, _selectedShape);
         RefreshSelectedShapeVisual();
