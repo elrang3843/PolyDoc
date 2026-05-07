@@ -1,5 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using AngleSharp;
+using AngleSharp.Css;
+using AngleSharp.Css.Dom;
+using AngleSharp.Dom;
 using PolyDonky.Codecs.Html;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
@@ -218,9 +222,19 @@ try
     {
         WriteProgress(0, $"HTML 읽는 중 (인코딩 {encLabel})");
         // 한도 0 = 무제한 — CLI 호출자가 명시적으로 변환을 시작했으므로 잘림 없이 처리.
-        var reader = new HtmlReader { MaxBlocks = 0 };
+        var htmlBaseDir = Path.GetDirectoryName(inPath) ?? ".";
         var text = htmlEnc.GetString(htmlBytes!);
+
+        // CSS 전처리: 외부 stylesheet 인라인 → 캐스케이드 계산 후 style="" 인라이닝.
+        WriteProgress(10, "CSS 인라이닝 중");
+        text = InlineExternalStylesheets(text, htmlBaseDir);
+        text = ComputeAndInlineCss(text);
+
         var doc = HtmlReader.FromHtml(text, maxBlocks: 0);
+
+        // HTML 파일 기준 상대 경로 이미지를 디스크에서 읽어 data 로 내장.
+        WriteProgress(30, "이미지 내장 중");
+        EmbedLocalImages(doc, htmlBaseDir);
 
         WriteProgress(60, "IWPF 로 변환 중");
         using (var ofs = File.Create(tempOut))
@@ -355,6 +369,189 @@ static (Encoding enc, string label) DetectEncoding(byte[] bytes)
     }
 
     return (new UTF8Encoding(false), "UTF-8 (기본값)");
+}
+
+/// <summary>
+/// 문서 전체를 순회하며 ResourcePath 만 있고 Data 가 없는 ImageBlock 을
+/// 디스크에서 읽어 Data 에 내장한다.
+/// http(s):// · data: · // 등 외부 URL 은 건너뛴다.
+/// </summary>
+static void EmbedLocalImages(PolyDonkyument doc, string baseDir)
+{
+    foreach (var section in doc.Sections)
+        EmbedImagesInBlocks(section.Blocks, baseDir);
+}
+
+static void EmbedImagesInBlocks(IList<Block> blocks, string baseDir)
+{
+    foreach (var block in blocks)
+    {
+        switch (block)
+        {
+            case ImageBlock img when img.Data.Length == 0
+                                  && !string.IsNullOrEmpty(img.ResourcePath)
+                                  && !IsExternalUrl(img.ResourcePath):
+                TryEmbedImageFromDisk(img, baseDir);
+                break;
+
+            case Table t:
+                foreach (var row in t.Rows)
+                    foreach (var cell in row.Cells)
+                        EmbedImagesInBlocks(cell.Blocks, baseDir);
+                break;
+        }
+    }
+}
+
+static bool IsExternalUrl(string path) =>
+    path.StartsWith("//",       StringComparison.Ordinal) ||
+    path.StartsWith("http://",  StringComparison.OrdinalIgnoreCase) ||
+    path.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+    path.StartsWith("ftp://",   StringComparison.OrdinalIgnoreCase) ||
+    path.StartsWith("data:",    StringComparison.OrdinalIgnoreCase) ||
+    path.StartsWith("mailto:",  StringComparison.OrdinalIgnoreCase);
+
+static void TryEmbedImageFromDisk(ImageBlock img, string baseDir)
+{
+    try
+    {
+        // 쿼리스트링/프래그먼트 제거 후 경로 정규화.
+        var resourcePath = img.ResourcePath!;
+        var sep = resourcePath.IndexOfAny(['?', '#']);
+        if (sep >= 0) resourcePath = resourcePath[..sep];
+
+        // URL 인코딩 디코드 (%20 → 공백 등).
+        resourcePath = Uri.UnescapeDataString(resourcePath);
+
+        var fullPath = Path.GetFullPath(Path.Combine(baseDir, resourcePath));
+        if (!File.Exists(fullPath)) return;
+
+        img.Data         = File.ReadAllBytes(fullPath);
+        img.ResourcePath = null;
+
+        // MediaType 이 모호(application/octet-stream)거나 비어 있으면 확장자로 재추정.
+        if (string.IsNullOrEmpty(img.MediaType) || img.MediaType == "application/octet-stream")
+            img.MediaType = GuessMediaTypeByExt(Path.GetExtension(fullPath));
+    }
+    catch { /* 로드 실패 시 ResourcePath 유지 — 메인 앱이 placeholder 를 표시 */ }
+}
+
+static string GuessMediaTypeByExt(string ext) => ext.ToLowerInvariant() switch
+{
+    ".png"              => "image/png",
+    ".jpg" or ".jpeg"   => "image/jpeg",
+    ".gif"              => "image/gif",
+    ".bmp"              => "image/bmp",
+    ".tif" or ".tiff"   => "image/tiff",
+    ".webp"             => "image/webp",
+    ".svg"              => "image/svg+xml",
+    _                   => "application/octet-stream",
+};
+
+/// <summary>
+/// HTML 내 &lt;link rel="stylesheet" href="local.css"&gt; 를 파일 내용으로 인라인화.
+/// 외부 URL(http://, //, data: 등) 은 그대로 둔다.
+/// </summary>
+static string InlineExternalStylesheets(string html, string baseDir)
+{
+    return Regex.Replace(html,
+        @"<link\b[^>]*\brel\s*=\s*[""']stylesheet[""'][^>]*>",
+        match =>
+        {
+            var hrefMatch = Regex.Match(match.Value,
+                @"\bhref\s*=\s*[""']([^""']+)[""']",
+                RegexOptions.IgnoreCase);
+            if (!hrefMatch.Success) return "";
+            var href = hrefMatch.Groups[1].Value;
+            if (IsExternalUrl(href)) return match.Value;
+            try
+            {
+                var cssPath = Path.GetFullPath(
+                    Path.Combine(baseDir, Uri.UnescapeDataString(href)));
+                if (!File.Exists(cssPath)) return "";
+                var css = File.ReadAllText(cssPath, Encoding.UTF8);
+                return $"<style>{css}</style>";
+            }
+            catch { return ""; }
+        },
+        RegexOptions.IgnoreCase | RegexOptions.Singleline);
+}
+
+/// <summary>
+/// AngleSharp.Css 로 CSS 캐스케이드를 계산한 뒤 모든 요소의 style="" 속성으로 인라이닝.
+/// 문서 CSS 규칙에 등장하는 속성만 처리(UA 기본값 제외).
+/// 기존 인라인 style="" 은 CSS 규칙보다 우선(캐스케이드 규칙 준수).
+/// </summary>
+static string ComputeAndInlineCss(string html)
+    => ComputeAndInlineCssAsync(html).GetAwaiter().GetResult();
+
+static async Task<string> ComputeAndInlineCssAsync(string html)
+{
+    var config = Configuration.Default.WithCss();
+    var context = BrowsingContext.New(config);
+    var document = await context.OpenAsync(req => req.Content(html));
+
+    // 문서 CSS 규칙에서 사용된 속성명 수집 — UA 기본값 제외의 핵심.
+    var usedProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var sheet in document.StyleSheets.OfType<ICssStyleSheet>())
+        CollectUsedProperties(sheet.Rules, usedProps);
+
+    if (usedProps.Count == 0) return html;
+
+    var skipTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "script", "style", "head", "title", "meta", "link", "base", "noscript", "template" };
+
+    foreach (var element in document.All)
+    {
+        if (skipTags.Contains(element.LocalName)) continue;
+
+        ICssStyleDeclaration? computed;
+        try { computed = element.ComputeCurrentStyle(); }
+        catch { continue; }
+        if (computed is null) continue;
+
+        var applied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in usedProps)
+        {
+            var value = computed.GetPropertyValue(prop);
+            if (!string.IsNullOrEmpty(value))
+                applied[prop] = value;
+        }
+
+        if (applied.Count == 0) continue;
+
+        // 기존 인라인 style="" 이 우선 — 캐스케이드 규칙(inline > author).
+        var existing = element.GetAttribute("style");
+        if (!string.IsNullOrWhiteSpace(existing))
+        {
+            foreach (var part in existing.Split(';',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var colon = part.IndexOf(':');
+                if (colon <= 0) continue;
+                applied[part[..colon].Trim()] = part[(colon + 1)..].Trim();
+            }
+        }
+
+        element.SetAttribute("style",
+            string.Join(";", applied.Select(kv => $"{kv.Key}:{kv.Value}")));
+    }
+
+    return document.DocumentElement?.OuterHtml ?? html;
+}
+
+static void CollectUsedProperties(ICssRuleList rules, HashSet<string> result)
+{
+    foreach (var rule in rules)
+    {
+        if (rule is ICssStyleRule styleRule)
+        {
+            foreach (ICssProperty prop in styleRule.Style)
+                result.Add(prop.Name);
+        }
+        else if (rule is ICssGroupingRule groupRule)
+            CollectUsedProperties(groupRule.Rules, result);
+    }
 }
 
 static void PrintHelp()

@@ -134,8 +134,6 @@ namespace PolyDonky.App.Properties
         internal static string DlgConvertOverwritePrompt => Get(nameof(DlgConvertOverwritePrompt));
         internal static string DlgUnsupportedVersionTitle  => Get(nameof(DlgUnsupportedVersionTitle));
         internal static string DlgUnsupportedVersionPrompt => Get(nameof(DlgUnsupportedVersionPrompt));
-        internal static string DlgHtmlTruncatedTitle => Get(nameof(DlgHtmlTruncatedTitle));
-        internal static string DlgHtmlTruncatedPrompt => Get(nameof(DlgHtmlTruncatedPrompt));
         internal static string StatusInsert          => Get(nameof(StatusInsert));
         internal static string StatusOverwrite       => Get(nameof(StatusOverwrite));
         internal static string StatusDocClosed       => Get(nameof(StatusDocClosed));

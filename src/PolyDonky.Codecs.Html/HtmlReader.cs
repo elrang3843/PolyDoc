@@ -77,15 +77,7 @@ public sealed class HtmlReader : IDocumentReader
             warn.AddText($"[잘림: 원본 HTML 의 블록 수가 한도({maxBlocks:N0})를 초과했습니다]",
                 new RunStyle { Italic = true });
             section.Blocks.Add(warn);
-            // 호출측(메인 앱)이 사용자에게 한도 없이 재시도 안내를 띄울 수 있게 표시.
-            pd.Metadata.Custom["html.truncated"]    = "true";
-            pd.Metadata.Custom["html.maxBlocks"]    = maxBlocks.ToString();
         }
-
-        // HTML 문서는 일반적으로 본문 블록이 매우 많아 WPF FlowDocument 의 정밀
-        // 페이지네이션(블록별 GetCharacterRect)이 브라우저와 다르게 매우 느리다.
-        // 메인 앱의 Paginate 가 이 플래그를 보고 fast-path(전체 page 0 배정) 를 쓰게 한다.
-        pd.Metadata.Custom["pagination.degraded"] = "true";
 
         return pd;
     }
@@ -257,9 +249,10 @@ public sealed class HtmlReader : IDocumentReader
             {
                 // 단독 <code>(블록) — 모노스페이스 단락. <pre> 안의 <code> 는 위에서 처리됨.
                 var p = new Paragraph();
-                p.Style.QuoteLevel = ctx.QuoteLevel;
-                p.Style.ListMarker = CloneMarker(ctx.Marker);
-                p.Style.CodeLanguage = ExtractCodeLanguage(el);
+                p.Style.QuoteLevel   = ctx.QuoteLevel;
+                p.Style.ListMarker   = CloneMarker(ctx.Marker);
+                // null 이면 일반 단락과 구별 불가 → 언어 없는 코드 블록은 "" 로 통일.
+                p.Style.CodeLanguage = ExtractCodeLanguage(el) ?? "";
                 p.AddText(el.TextContent, MonoStyle());
                 target.Add(p);
                 break;

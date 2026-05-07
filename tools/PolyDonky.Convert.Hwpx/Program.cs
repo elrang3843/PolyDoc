@@ -127,7 +127,8 @@ if (isImport)
     if (!HwpxFileChecker.HasValidMimetype(inPath))
     {
         Console.Error.WriteLine(
-            $"HWPX 파일이 아닙니다 — `mimetype` 엔트리가 없거나 내용이 '{HwpxFileChecker.ExpectedMimetype}' 가 아닙니다: {inPath}");
+            $"HWPX 파일이 아닙니다 — `mimetype` 이 '{HwpxFileChecker.ExpectedMimetype}' 와 다르고 " +
+            $"Contents/header.xml · section*.xml 도 없습니다: {inPath}");
         Console.Error.Flush();
         return ExitConvertError;
     }

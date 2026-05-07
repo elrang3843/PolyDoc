@@ -204,11 +204,6 @@ Supported range:
   • DOC / DOCX — 2012 or later (Word 2013 / AppVersion 15.0+)
 
 Re-save the file in a recent Hancom Office or Microsoft Word and try again.</value></data>
-  <data name="DlgHtmlTruncatedTitle" xml:space="preserve"><value>HTML truncated</value></data>
-  <data name="DlgHtmlTruncatedPrompt" xml:space="preserve"><value>This HTML document exceeded the block limit (10,000) and was loaded only partially.
-
-Reload the entire document with no limit?
-(Very large documents may take several minutes to paginate.)</value></data>
   <data name="StatusInsert" xml:space="preserve"><value>INS</value></data>
   <data name="StatusOverwrite" xml:space="preserve"><value>OVR</value></data>
   <data name="StatusDocClosed" xml:space="preserve"><value>Document closed.</value></data>

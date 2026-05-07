@@ -161,41 +161,94 @@ public static class FlowDocumentBuilder
         IReadOnlyDictionary<string, int>? fnNums = null,
         IReadOnlyDictionary<string, int>? enNums = null)
     {
-        Wpf.List? currentList = null;
-        ListKind? currentKind = null;
+        // 중첩 리스트 지원: (WPF List, Kind) 스택.
+        // 인덱스 0 = 최상위 리스트, 인덱스 n = n 단계 중첩 리스트.
+        // 비-리스트 블록이 오면 스택을 비워 리스트 컨텍스트를 종료한다.
+        var listStack = new Stack<(Wpf.List List, ListKind Kind)>();
+
+        // 지정 level·kind 의 WPF List 를 반환한다.
+        // 스택이 부족하면 새 List 를 생성해 부모 ListItem 에 붙이고 push 한다.
+        Wpf.List EnsureList(int level, ListKind kind, int startIndex)
+        {
+            // 초과 레벨 팝
+            while (listStack.Count > level + 1)
+                listStack.Pop();
+
+            // 현재 레벨에 같은 Kind 리스트가 있으면 재사용
+            if (listStack.Count == level + 1 && listStack.Peek().Kind == kind)
+                return listStack.Peek().List;
+
+            // 현재 레벨에 다른 Kind 리스트가 있으면 교체 준비
+            if (listStack.Count == level + 1)
+                listStack.Pop();
+
+            // 레벨이 스택보다 깊으면 중간 레벨을 채운다 (정상 HTML 에선 발생하지 않음)
+            while (listStack.Count < level)
+            {
+                var mid = new Wpf.List { MarkerStyle = TextMarkerStyle.Disc };
+                AppendListToParent(mid);
+                listStack.Push((mid, ListKind.Bullet));
+            }
+
+            var newList = new Wpf.List
+            {
+                MarkerStyle = kind == ListKind.Bullet ? TextMarkerStyle.Disc : TextMarkerStyle.Decimal,
+            };
+            if (kind != ListKind.Bullet && startIndex >= 1)
+                newList.StartIndex = startIndex;
+            AppendListToParent(newList);
+            listStack.Push((newList, kind));
+            return newList;
+        }
+
+        // 새 WPF List 를 최상위(target) 또는 부모 ListItem 의 Blocks 에 붙인다.
+        void AppendListToParent(Wpf.List newList)
+        {
+            if (listStack.Count == 0)
+            {
+                target.Add(newList);
+            }
+            else
+            {
+                var parentList = listStack.Peek().List;
+                if (parentList.ListItems.Count > 0)
+                {
+                    parentList.ListItems.Cast<Wpf.ListItem>().Last().Blocks.Add(newList);
+                }
+                else
+                {
+                    var stub = new Wpf.ListItem();
+                    parentList.ListItems.Add(stub);
+                    stub.Blocks.Add(newList);
+                }
+            }
+        }
 
         foreach (var block in blocks)
         {
             switch (block)
             {
                 case Paragraph p when p.Style.ListMarker is { } marker:
-                    if (currentList is null || currentKind != marker.Kind)
-                    {
-                        currentList = new Wpf.List
-                        {
-                            MarkerStyle = marker.Kind == ListKind.Bullet
-                                ? TextMarkerStyle.Disc
-                                : TextMarkerStyle.Decimal,
-                        };
-                        if (marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } start && start >= 1)
-                        {
-                            currentList.StartIndex = start;
-                        }
-                        target.Add(currentList);
-                        currentKind = marker.Kind;
-                    }
-                    currentList.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles, fnNums, enNums)));
+                {
+                    int level = Math.Max(0, marker.Level);
+                    int start = marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } s && s >= 1 ? s : 1;
+                    var list  = EnsureList(level, marker.Kind, start);
+                    list.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles, fnNums, enNums)));
+                    break;
+                }
+
+                case Paragraph p when p.Style.IsThematicBreak:
+                    listStack.Clear();
+                    target.Add(BuildThematicBreak());
                     break;
 
                 case Paragraph p:
-                    currentList = null;
-                    currentKind = null;
+                    listStack.Clear();
                     target.Add(BuildParagraph(p, outlineStyles, fnNums, enNums));
                     break;
 
                 case Table t:
-                    currentList = null;
-                    currentKind = null;
+                    listStack.Clear();
                     if (t.WrapMode == TableWrapMode.Block)
                         target.Add(BuildTable(t, outlineStyles));
                     else
@@ -203,26 +256,22 @@ public static class FlowDocumentBuilder
                     break;
 
                 case ImageBlock image:
-                    currentList = null;
-                    currentKind = null;
+                    listStack.Clear();
                     target.Add(BuildImage(image));
                     break;
 
                 case ShapeObject shape:
-                    currentList = null;
-                    currentKind = null;
+                    listStack.Clear();
                     target.Add(BuildShape(shape));
                     break;
 
                 case OpaqueBlock opaque:
-                    currentList = null;
-                    currentKind = null;
+                    listStack.Clear();
                     target.Add(BuildOpaquePlaceholder(opaque));
                     break;
 
                 case TocBlock toc:
-                    currentList = null;
-                    currentKind = null;
+                    listStack.Clear();
                     target.Add(BuildTocBlock(toc));
                     break;
             }
@@ -442,6 +491,19 @@ public static class FlowDocumentBuilder
     }
 
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
+
+    /// <summary><c>IsThematicBreak</c> 단락(hr)을 1px 수평선 BlockUIContainer 로 렌더링한다.</summary>
+    private static Wpf.BlockUIContainer BuildThematicBreak()
+    {
+        var line = new System.Windows.Controls.Border
+        {
+            Height              = 1,
+            Margin              = new Thickness(0, 4, 0, 4),
+            Background          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xCC, 0xCC, 0xCC)),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        return new Wpf.BlockUIContainer(line);
+    }
 
     /// <summary>오버레이(InFrontOfText/BehindText/Fixed) 모드 표를 위한 최소 앵커 단락을 반환한다.</summary>
     internal static Wpf.Paragraph BuildTableAnchor(Table table)
@@ -1561,6 +1623,7 @@ public static class FlowDocumentBuilder
 
             if (Math.Abs(style.IndentFirstLineMm) > 0.001)
                 wpfPara.TextIndent = MmToDip(style.IndentFirstLineMm);
+            ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
             return;
         }
 
@@ -1590,6 +1653,41 @@ public static class FlowDocumentBuilder
 
         if (Math.Abs(style.LineHeightFactor - 1.2) > 0.01)
             wpfPara.LineHeight = wpfPara.FontSize * style.LineHeightFactor;
+
+        ApplyCodeBlockStyle(wpfPara, style.CodeLanguage);
+        ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
+    }
+
+    /// <summary>
+    /// 블록쿼트 들여쓰기 + 왼쪽 테두리. 레벨당 5mm 들여쓰고 회색 3px 왼쪽 테두리를 그린다.
+    /// heading 분기와 body 분기 양쪽에서 호출되므로 별도 메서드로 분리.
+    /// </summary>
+    private static void ApplyQuoteLevelStyle(Wpf.Paragraph wpfPara, int quoteLevel)
+    {
+        if (quoteLevel <= 0) return;
+        double indentDip = MmToDip(5.0 * quoteLevel);
+        var m = wpfPara.Margin;
+        wpfPara.Margin          = new Thickness(indentDip + m.Left, m.Top > 0 ? m.Top : 2, m.Right, m.Bottom > 0 ? m.Bottom : 2);
+        wpfPara.Padding         = new Thickness(MmToDip(3.0), 0, 0, 0);
+        wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0));
+        wpfPara.BorderThickness = new Thickness(3, 0, 0, 0);
+    }
+
+    /// <summary>
+    /// CodeLanguage != null(= pre/code 블록)이면 회색 배경·테두리·모노스페이스를 적용.
+    /// null 이면 일반 단락 — 아무것도 하지 않는다.
+    /// </summary>
+    private static void ApplyCodeBlockStyle(Wpf.Paragraph wpfPara, string? codeLanguage)
+    {
+        if (codeLanguage is null) return;
+        wpfPara.FontFamily      = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
+        wpfPara.Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xF8, 0xF8, 0xF8));
+        wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xD0, 0xD0, 0xD0));
+        wpfPara.BorderThickness = new Thickness(1);
+        wpfPara.Padding         = new Thickness(MmToDip(3.0), MmToDip(1.5), MmToDip(3.0), MmToDip(1.5));
+        var m = wpfPara.Margin;
+        if (m.Top < 2 && m.Bottom < 2)
+            wpfPara.Margin = new Thickness(m.Left, 4, m.Right, 4);
     }
 
     /// <summary>글자폭 != 100% 또는 자간 != 0 이면 Span(per-char InlineUIContainer 들), 그 외에는 Run 반환.

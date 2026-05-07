@@ -475,23 +475,6 @@ public partial class MainViewModel : ObservableObject
     private static string BuildOpenStatusMessage(string path, PolyDonkyument doc)
     {
         var name = Path.GetFileName(path);
-        if (doc.Metadata.Custom.TryGetValue("hwpx.paragraphCount", out var pCount)
-            && int.TryParse(pCount, out var pc) && pc == 0)
-        {
-            doc.Metadata.Custom.TryGetValue("hwpx.sectionFilesFound", out var sCount);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionEntryHit", out var hit);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionPath", out var firstPath);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionRoot", out var rootName);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionTags", out var tags);
-            doc.Metadata.Custom.TryGetValue("hwpx.xmlEntries", out var xmlEntries);
-            doc.Metadata.Custom.TryGetValue("hwpx.parseErrors", out var parseErrors);
-            var errPart = string.IsNullOrEmpty(parseErrors) ? "" : $" | XML 오류: {parseErrors}";
-            return $"열기 완료 — {name} | 본문 0건, 섹션 {sCount ?? "?"}개 (entry-hit={hit ?? "?"}) | path={firstPath ?? "?"} | root=<{rootName ?? "?"}> | 자식: {tags ?? "(없음)"} | xml: {xmlEntries ?? "(없음)"}{errPart}";
-        }
-        if (doc.Metadata.Custom.TryGetValue("hwpx.parseErrors", out var perr) && !string.IsNullOrEmpty(perr))
-        {
-            return $"열기 완료 — {name} (일부 XML 파싱 경고: {perr})";
-        }
         return string.Format(SR.StatusOpenDone, name);
     }
 

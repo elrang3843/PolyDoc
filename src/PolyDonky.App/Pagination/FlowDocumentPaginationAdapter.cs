@@ -53,15 +53,6 @@ public static class FlowDocumentPaginationAdapter
             ?? new PageSettings();
         var geo = new PageGeometry(page);
 
-        // 코덱이 fast-path 를 요청한 경우(예: HTML/XML 리더) 정밀 측정 일체를 건너뛴다.
-        // FlowDocument 빌드 → 모든 본문 블록을 page 0 에 배정한 단일 페이지 문서 반환.
-        bool degraded = document.Metadata.Custom.TryGetValue("pagination.degraded", out var d)
-                        && d == "true";
-        if (degraded)
-        {
-            return BuildDegradedPaginatedDocument(document, page);
-        }
-
         // 1. FlowDocument 빌드 (PageHeight·PagePadding 으로 paginator 페이지 구분 설정)
         var fd = FlowDocumentBuilder.Build(document);
         fd.PageWidth   = geo.PageWidthDip;
@@ -600,63 +591,6 @@ public static class FlowDocumentPaginationAdapter
     };
 
     // ── PaginatedPage 조립 ───────────────────────────────────────────────────
-
-    /// <summary>
-    /// 페이지네이션 fast-path — 정밀 측정 없이 모든 본문 블록을 page 0 에 일괄 배정.
-    /// HTML/XML 같이 본문 블록이 매우 많은 코덱이 사용 (Metadata.Custom["pagination.degraded"]="true").
-    /// 페이지 경계는 부정확하지만 분 단위 hang 없이 즉시 표시 가능.
-    /// </summary>
-    private static PaginatedDocument BuildDegradedPaginatedDocument(PolyDonkyument document, PageSettings page)
-    {
-        var bodyBlocks = new List<BlockOnPage>();
-        foreach (var section in document.Sections)
-        {
-            foreach (var b in section.Blocks)
-            {
-                if (b is null) continue;
-                if (IsOverlayMode(b)) continue;
-                bodyBlocks.Add(new BlockOnPage
-                {
-                    Source        = b,
-                    PageIndex     = 0,
-                    ColumnIndex   = 0,
-                    BodyLocalRect = Rect.Empty,
-                });
-            }
-        }
-
-        var overlayAssignments = CollectOverlayBlocks(document);
-        int pageCount = 1;
-        if (overlayAssignments.Count > 0)
-            pageCount = Math.Max(pageCount, overlayAssignments.Max(o => o.pageIdx) + 1);
-
-        var pages = new PaginatedPage[pageCount];
-        for (int i = 0; i < pageCount; i++)
-        {
-            pages[i] = new PaginatedPage
-            {
-                PageIndex     = i,
-                BodyBlocks    = i == 0 ? bodyBlocks.ToArray() : Array.Empty<BlockOnPage>(),
-                OverlayBlocks = overlayAssignments
-                    .Where(o => o.pageIdx == i)
-                    .Select(o => new OverlayOnPage
-                    {
-                        Source          = o.coreBlock,
-                        AnchorPageIndex = i,
-                        XMm             = o.xMm,
-                        YMm             = o.yMm,
-                    })
-                    .ToArray(),
-            };
-        }
-
-        return new PaginatedDocument
-        {
-            Source       = document,
-            PageSettings = page,
-            Pages        = pages,
-        };
-    }
 
     private static IReadOnlyList<PaginatedPage> BuildPages(
         int                                                                    pageCount,
