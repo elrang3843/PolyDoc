@@ -547,14 +547,32 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteImage(StringBuilder sb, ImageBlock img, string indent)
     {
+        var imgStyle  = BuildImageStyle(img);
+        var styleAttr = imgStyle.Length > 0 ? $" style=\"{imgStyle}\"" : "";
+
+        // SVG ImageBlock → inline <svg> (base64 대신 직접 삽입해 가독성·재임포트 유지).
+        if (img.MediaType == "image/svg+xml" && img.Data.Length > 0)
+        {
+            var svgContent = Encoding.UTF8.GetString(img.Data);
+            if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
+            {
+                sb.Append(indent).Append("<figure").Append(styleAttr).Append(">\n");
+                sb.Append(indent).Append("  ").Append(svgContent).Append('\n');
+                sb.Append(indent).Append("  <figcaption>").Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
+                sb.Append(indent).Append("</figure>\n");
+            }
+            else
+            {
+                sb.Append(indent).Append(svgContent).Append('\n');
+            }
+            return;
+        }
+
         var src      = img.ResourcePath ?? BuildDataUri(img);
         var alt      = EscapeAttr(img.Description ?? "");
         var sizeAttr = new StringBuilder();
         if (img.WidthMm  > 0) sizeAttr.Append(" width=\"")  .Append(MmToPx(img.WidthMm) .ToString("0", CultureInfo.InvariantCulture)).Append('"');
         if (img.HeightMm > 0) sizeAttr.Append(" height=\"") .Append(MmToPx(img.HeightMm).ToString("0", CultureInfo.InvariantCulture)).Append('"');
-
-        var imgStyle = BuildImageStyle(img);
-        var styleAttr = imgStyle.Length > 0 ? $" style=\"{imgStyle}\"" : "";
 
         if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
         {

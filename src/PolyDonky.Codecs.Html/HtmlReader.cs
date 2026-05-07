@@ -294,6 +294,12 @@ public sealed class HtmlReader : IDocumentReader
                     target.Add(pb);
                     break;
                 }
+                // CSS 도형 패턴 감지 (텍스트·자식 없는 순수 모양 div).
+                if (TryParseCssShapeFromDiv(el, out var cssShape))
+                {
+                    target.Add(cssShape!);
+                    break;
+                }
                 ProcessChildren(el, target, ctx);
                 break;
             }
@@ -320,11 +326,16 @@ public sealed class HtmlReader : IDocumentReader
                 break;
 
             case "svg":
-                if (TryParseShapeFromSvgElement(el, out var shapeFromSvg))
+            {
+                // PolyDonky 자체 출력 (단일 도형, 텍스트 레이블 없음) → ShapeObject.
+                // 복합 SVG (텍스트·복수 도형 포함 다이어그램) → ImageBlock 으로 보존.
+                bool isSingleShape = CountSvgShapeElements(el) == 1 && !SvgHasTextElements(el);
+                if (isSingleShape && TryParseShapeFromSvgElement(el, out var shapeFromSvg))
                     target.Add(shapeFromSvg!);
                 else
-                    target.Add(new OpaqueBlock { Format = "html", Xml = el.OuterHtml, DisplayLabel = "[SVG 도형]" });
+                    target.Add(BuildImageFromSvg(el));
                 break;
+            }
 
             case "math":
             {
@@ -683,8 +694,19 @@ public sealed class HtmlReader : IDocumentReader
         }
         else
         {
-            // img 없는 figure — 자식만 평탄화.
-            ProcessChildren(figEl, target, ctx);
+            // SVG 포함 figure → 도표·다이어그램이므로 ImageBlock 으로 보존.
+            var svgChild = figEl.QuerySelector("svg");
+            if (svgChild is not null)
+            {
+                var captionEl3  = figEl.QuerySelector("figcaption");
+                var captionText = captionEl3?.TextContent.Trim();
+                target.Add(BuildImageFromSvg(svgChild, captionText));
+            }
+            else
+            {
+                // img/svg 없는 figure — 자식만 평탄화.
+                ProcessChildren(figEl, target, ctx);
+            }
         }
     }
 
@@ -1664,6 +1686,182 @@ public sealed class HtmlReader : IDocumentReader
     }
 
     // ── 편집용지 설정 파싱 ──────────────────────────────────────────────
+
+    // ── 복합 SVG → ImageBlock 변환 ───────────────────────────────────────────
+
+    /// <summary>
+    /// SVG 를 <see cref="ImageBlock"/> (image/svg+xml) 으로 보존한다.
+    /// 복수 도형·텍스트 레이블이 포함된 외부 다이어그램용.
+    /// </summary>
+    private static ImageBlock BuildImageFromSvg(IElement svgEl, string? caption = null)
+    {
+        var img = new ImageBlock { MediaType = "image/svg+xml" };
+        img.Data = Encoding.UTF8.GetBytes(svgEl.OuterHtml);
+        if (TryAttrDouble(svgEl, "width",  out var wPx) && wPx > 0) img.WidthMm  = wPx * 25.4 / 96.0;
+        if (TryAttrDouble(svgEl, "height", out var hPx) && hPx > 0) img.HeightMm = hPx * 25.4 / 96.0;
+        if (caption is { Length: > 0 })
+        {
+            img.ShowTitle     = true;
+            img.Title         = caption;
+            img.TitlePosition = ImageTitlePosition.Below;
+        }
+        return img;
+    }
+
+    /// <summary>SVG 내 실질 도형 요소 수 (rect/ellipse/circle/line/polyline/polygon/path).</summary>
+    private static int CountSvgShapeElements(IElement svgEl)
+    {
+        int count = 0;
+        foreach (var child in svgEl.Children)
+        {
+            switch (child.LocalName)
+            {
+                case "rect": case "ellipse": case "circle":
+                case "line": case "polyline": case "polygon": case "path":
+                    count++;
+                    break;
+                case "g":
+                    foreach (var gc in child.Children)
+                        switch (gc.LocalName)
+                        {
+                            case "rect": case "ellipse": case "circle":
+                            case "line": case "polyline": case "polygon": case "path":
+                                count++;
+                                break;
+                        }
+                    break;
+            }
+        }
+        return count;
+    }
+
+    /// <summary>SVG 내 &lt;text&gt; 요소 존재 여부 — true 면 레이블이 있는 복합 도면.</summary>
+    private static bool SvgHasTextElements(IElement svgEl)
+        => svgEl.QuerySelector("text") is not null;
+
+    // ── CSS 도형 파서 ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 텍스트·자식이 없고 CSS 만으로 모양을 표현한 div 를 <see cref="ShapeObject"/> 로 변환한다.
+    /// border-trick 삼각형, background+width+height 박스, border-radius, transform:rotate 지원.
+    /// </summary>
+    private static bool TryParseCssShapeFromDiv(IElement divEl, out ShapeObject? shape)
+    {
+        shape = null;
+        if (divEl.ChildElementCount > 0) return false;
+        if (divEl.TextContent.Trim().Length > 0) return false;
+
+        var style = divEl.GetAttribute("style") ?? "";
+        if (style.Length == 0) return false;
+
+        var widthStr  = StyleProp(style, "width");
+        var heightStr = StyleProp(style, "height");
+        if (widthStr is null) return false;
+
+        bool isZeroW = widthStr.Trim()  is "0" or "0px";
+        bool isZeroH = heightStr is null || heightStr.Trim() is "0" or "0px";
+
+        // CSS border-trick 삼각형: width:0; height:0
+        if (isZeroW && isZeroH)
+            return TryParseBorderTrickTriangle(style, out shape);
+
+        // 일반 박스 도형: width + height + background
+        if (!TryParseCssMm(widthStr, out var wMm)) return false;
+        if (heightStr is null || !TryParseCssMm(heightStr, out var hMm)) return false;
+
+        var bgStr = StyleProp(style, "background-color") ?? StyleProp(style, "background");
+        if (bgStr is null) return false;
+        if (!TryParseCssColor(bgStr.Trim().Split(' ')[0], out var bgColor)) return false;
+
+        var s = new ShapeObject { WidthMm = wMm, HeightMm = hMm, FillColor = ColorToHex(bgColor) };
+
+        var brStr = StyleProp(style, "border-radius");
+        var trStr = StyleProp(style, "transform");
+
+        if (brStr is not null)
+        {
+            var firstTok = brStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            if (firstTok.Equals("50%", StringComparison.Ordinal))
+            {
+                s.Kind = ShapeKind.Ellipse;
+            }
+            else
+            {
+                s.Kind = ShapeKind.RoundedRect;
+                if (TryParseCssMm(firstTok, out var rMm))
+                    s.CornerRadiusMm = rMm;
+                else if (firstTok.EndsWith('%')
+                         && double.TryParse(firstTok.TrimEnd('%'), NumberStyles.Any, CultureInfo.InvariantCulture, out var rPct))
+                    s.CornerRadiusMm = Math.Min(wMm, hMm) * rPct / 100.0;
+            }
+        }
+        else if (trStr is not null && trStr.Contains("rotate(45deg)", StringComparison.OrdinalIgnoreCase))
+        {
+            s.Kind             = ShapeKind.Rectangle;
+            s.RotationAngleDeg = 45;
+        }
+        else
+        {
+            s.Kind = ShapeKind.Rectangle;
+        }
+
+        shape = s;
+        return true;
+    }
+
+    /// <summary>CSS border-trick 삼각형 파싱 (width:0; height:0; border-* solid color).</summary>
+    private static bool TryParseBorderTrickTriangle(string style, out ShapeObject? shape)
+    {
+        shape = null;
+        ExtractBorderSizeColor(StyleProp(style, "border-top"),    out double topSz,    out string? topColor);
+        ExtractBorderSizeColor(StyleProp(style, "border-bottom"), out double bottomSz, out string? bottomColor);
+        ExtractBorderSizeColor(StyleProp(style, "border-left"),   out double leftSz,   out string? leftColor);
+        ExtractBorderSizeColor(StyleProp(style, "border-right"),  out double rightSz,  out string? rightColor);
+
+        double wMm, hMm, rot;
+        string? fill;
+
+        if (bottomColor is not null)
+        { wMm = (leftSz + rightSz) * 25.4 / 96.0; hMm = bottomSz * 25.4 / 96.0; fill = bottomColor; rot = 0; }
+        else if (topColor is not null)
+        { wMm = (leftSz + rightSz) * 25.4 / 96.0; hMm = topSz    * 25.4 / 96.0; fill = topColor;    rot = 180; }
+        else if (rightColor is not null)
+        { wMm = rightSz * 25.4 / 96.0; hMm = (topSz + bottomSz) * 25.4 / 96.0; fill = rightColor;  rot = 90; }
+        else if (leftColor is not null)
+        { wMm = leftSz  * 25.4 / 96.0; hMm = (topSz + bottomSz) * 25.4 / 96.0; fill = leftColor;   rot = 270; }
+        else return false;
+
+        if (fill is null || (wMm <= 0 && hMm <= 0)) return false;
+
+        shape = new ShapeObject
+        {
+            Kind              = ShapeKind.Triangle,
+            WidthMm           = wMm  > 0 ? wMm  : 10,
+            HeightMm          = hMm  > 0 ? hMm  : 10,
+            FillColor         = fill,
+            RotationAngleDeg  = rot,
+            StrokeThicknessPt = 0,
+        };
+        return true;
+    }
+
+    /// <summary>CSS border 단축 속성 값에서 크기(px)와 색상 hex 를 추출. transparent → color = null.</summary>
+    private static void ExtractBorderSizeColor(string? borderValue, out double sizePx, out string? color)
+    {
+        sizePx = 0; color = null;
+        if (borderValue is null) return;
+        foreach (var part in borderValue.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part is "solid" or "dashed" or "dotted" or "none"
+                     or "double" or "groove" or "ridge" or "inset" or "outset") continue;
+            if (part.Equals("transparent", StringComparison.OrdinalIgnoreCase)) continue;
+            if (part.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(part[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var px))
+                sizePx = px;
+            else if (TryParseCssColor(part, out var c))
+                color = ColorToHex(c);
+        }
+    }
 
     /// <summary>
     /// 문서 &lt;head&gt; 의 <c>pd-page-*</c> 메타 태그와 <c>@page</c> CSS 규칙을 읽어

@@ -525,14 +525,32 @@ public sealed class XmlWriter : IDocumentWriter
 
     private static void WriteImage(StringBuilder sb, ImageBlock img, string indent)
     {
+        var styleAttr = BuildImageStyle(img);
+        var styleStr  = string.IsNullOrEmpty(styleAttr) ? "" : $" style=\"{styleAttr}\"";
+
+        // SVG ImageBlock → inline <svg> (XHTML 구조 유지, 재임포트 가능).
+        if (img.MediaType == "image/svg+xml" && img.Data.Length > 0)
+        {
+            var svgContent = Encoding.UTF8.GetString(img.Data);
+            if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
+            {
+                sb.Append(indent).Append("<figure>\n");
+                sb.Append(indent).Append("  ").Append(svgContent).Append('\n');
+                sb.Append(indent).Append("  <figcaption>").Append(EscapeText(img.Title!)).Append("</figcaption>\n");
+                sb.Append(indent).Append("</figure>\n");
+            }
+            else
+            {
+                sb.Append(indent).Append(svgContent).Append('\n');
+            }
+            return;
+        }
+
         var src = img.ResourcePath ?? BuildDataUri(img);
         var alt = EscapeAttr(img.Description ?? "");
         var size = new StringBuilder();
         if (img.WidthMm  > 0) size.Append(" width=\"") .Append(MmToPx(img.WidthMm) .ToString("0", CultureInfo.InvariantCulture)).Append('"');
         if (img.HeightMm > 0) size.Append(" height=\"").Append(MmToPx(img.HeightMm).ToString("0", CultureInfo.InvariantCulture)).Append('"');
-
-        var styleAttr = BuildImageStyle(img);
-        var styleStr  = string.IsNullOrEmpty(styleAttr) ? "" : $" style=\"{styleAttr}\"";
 
         if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
         {

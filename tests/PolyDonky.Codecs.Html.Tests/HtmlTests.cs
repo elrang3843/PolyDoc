@@ -1087,4 +1087,158 @@ public class HtmlTests
         var rt = HtmlReader.FromHtml(html);
         Assert.Contains(rt.Sections[0].Blocks, b => b is ShapeObject { Kind: ShapeKind.Rectangle });
     }
+
+    // ── 복합 SVG → ImageBlock ──────────────────────────────────────────
+
+    [Fact]
+    public void Reader_MultiShapeSvg_BecomesImageBlock()
+    {
+        // 다중 도형 SVG 는 ShapeObject 가 아닌 ImageBlock (image/svg+xml) 으로 보존돼야 한다.
+        const string html = @"<svg width=""600"" height=""160"">
+            <rect x=""20"" y=""30"" width=""100"" height=""80"" fill=""#4A90E2""></rect>
+            <circle cx=""310"" cy=""70"" r=""40"" fill=""#F5A623""></circle>
+        </svg>";
+        var rt = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        var img = Assert.IsType<ImageBlock>(block);
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.True(img.Data.Length > 0);
+        Assert.InRange(img.WidthMm,  155, 160);
+        Assert.InRange(img.HeightMm,  41,  43);
+    }
+
+    [Fact]
+    public void Reader_SvgWithTextLabel_BecomesImageBlock()
+    {
+        // <text> 레이블이 있는 SVG 는 ImageBlock 으로 보존돼야 한다.
+        const string html = @"<svg width=""200"" height=""100"">
+            <rect x=""10"" y=""10"" width=""80"" height=""60"" fill=""blue""></rect>
+            <text x=""50"" y=""50"">레이블</text>
+        </svg>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        Assert.IsType<ImageBlock>(block);
+    }
+
+    [Fact]
+    public void Reader_FigureWithSvg_BecomesImageBlockWithCaption()
+    {
+        // <figure><svg>...</svg><figcaption>캡션</figcaption></figure> → ImageBlock(Title=캡션).
+        const string html = @"<figure>
+            <svg width=""600"" height=""320"">
+                <ellipse cx=""300"" cy=""35"" rx=""60"" ry=""20"" fill=""#A8E6CF""></ellipse>
+                <text x=""300"" y=""40"">시작</text>
+                <rect x=""230"" y=""150"" width=""140"" height=""40"" fill=""#FFAAA5""></rect>
+            </svg>
+            <figcaption>그림 5: 플로우차트</figcaption>
+        </figure>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        var img   = Assert.IsType<ImageBlock>(block);
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.Equal("그림 5: 플로우차트", img.Title);
+        Assert.True(img.ShowTitle);
+    }
+
+    [Fact]
+    public void RoundTrip_SvgImageBlock_PreservesSvgContent()
+    {
+        // ImageBlock(image/svg+xml) → HtmlWriter → HtmlReader → 동일한 ImageBlock.
+        var doc   = new PolyDonkyument();
+        var sec   = new Section();
+        doc.Sections.Add(sec);
+        var svgData = "<svg width=\"200\" height=\"100\"><rect x=\"10\" y=\"10\" width=\"80\" height=\"60\" fill=\"blue\"/><circle cx=\"150\" cy=\"50\" r=\"30\" fill=\"red\"/></svg>";
+        sec.Blocks.Add(new ImageBlock
+        {
+            MediaType = "image/svg+xml",
+            Data      = System.Text.Encoding.UTF8.GetBytes(svgData),
+            WidthMm   = 200 * 25.4 / 96.0,
+            HeightMm  = 100 * 25.4 / 96.0,
+        });
+
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("<svg", html);
+
+        var rt    = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        var img   = Assert.IsType<ImageBlock>(block);
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.True(img.Data.Length > 0);
+    }
+
+    // ── CSS 도형 → ShapeObject ─────────────────────────────────────────
+
+    [Fact]
+    public void Reader_CssRectangle_BecomesShapeObject()
+    {
+        // 텍스트 없는 색상 div → Rectangle ShapeObject.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #4A90E2\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Rectangle, block.Kind);
+        Assert.Equal("#4A90E2", block.FillColor);
+        Assert.InRange(block.WidthMm,  20, 22);
+        Assert.InRange(block.HeightMm, 20, 22);
+    }
+
+    [Fact]
+    public void Reader_CssEllipse_BecomesShapeObject()
+    {
+        // border-radius:50% → Ellipse ShapeObject.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #7ED321; border-radius: 50%\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Ellipse, block.Kind);
+        Assert.Equal("#7ED321", block.FillColor);
+    }
+
+    [Fact]
+    public void Reader_CssRoundedRect_BecomesShapeObject()
+    {
+        // border-radius:10px → RoundedRect ShapeObject.
+        const string html = "<div style=\"width: 100px; height: 50px; background: #D0021B; border-radius: 10px\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.RoundedRect, block.Kind);
+        Assert.InRange(block.CornerRadiusMm, 2.5, 2.8);
+    }
+
+    [Fact]
+    public void Reader_CssBorderTrickTriangle_BecomesShapeObject()
+    {
+        // CSS border-trick 삼각형 → Triangle ShapeObject.
+        const string html = "<div style=\"width: 0; height: 0; border-left: 40px solid transparent; border-right: 40px solid transparent; border-bottom: 70px solid #F5A623\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Triangle, block.Kind);
+        Assert.Equal("#F5A623", block.FillColor);
+        Assert.InRange(block.WidthMm,  20, 22);   // 80px = 21.2mm
+        Assert.InRange(block.HeightMm, 18, 20);   // 70px = 18.5mm
+    }
+
+    [Fact]
+    public void Reader_CssRotatedRect_BecomesShapeObject()
+    {
+        // transform:rotate(45deg) → Rectangle with RotationAngleDeg=45.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #BD10E0; transform: rotate(45deg)\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Rectangle, block.Kind);
+        Assert.Equal(45, block.RotationAngleDeg);
+        Assert.Equal("#BD10E0", block.FillColor);
+    }
+
+    [Fact]
+    public void Reader_DivWithChildrenNotTreatedAsCssShape()
+    {
+        // 자식이 있는 div 는 CSS 도형으로 감지하지 않아야 함.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #ccc\"><span>텍스트</span></div>";
+        var rt = HtmlReader.FromHtml(html);
+        Assert.DoesNotContain(rt.Sections[0].Blocks, b => b is ShapeObject);
+    }
 }

@@ -46,6 +46,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **HtmlReader/XmlReader 복합 SVG → ImageBlock 변환**: 다중 도형·텍스트 레이블이 포함된 외부 SVG(`<figure>` 포함)를 단일 ShapeObject 대신 `ImageBlock(MediaType="image/svg+xml")`으로 정확히 보존 — 이전에는 첫 번째 도형만 전체 SVG 캔버스 크기로 파싱해 레이아웃 공간이 과도하게 커지는 문제 해결. `HtmlWriter`/`XmlWriter`도 SVG ImageBlock을 base64 `<img>` 대신 인라인 `<svg>`로 출력해 재임포트 시 라운드트립 유지.
+- **Added** — **HtmlReader CSS 도형 → ShapeObject 변환**: `width`+`height`+`background` CSS 를 가진 텍스트·자식 없는 `<div>` 를 ShapeObject 로 변환 — Rectangle, Ellipse(`border-radius:50%`), RoundedRect(`border-radius`), border-trick Triangle(상/하/좌/우 방향), 회전 사각형(`transform:rotate(45deg)`) 지원. xUnit 테스트 10건 추가.
+
 - **Added** — **HTML/XML 코덱 편집용지 설정 직렬화·복원**: `HtmlWriter`/`XmlWriter` 가 `<head>` 에 `<meta name="pd-page-size">` / `<meta name="pd-page-orientation">` (Custom 이면 width/height 도 추가) + `<style>` 의 `@page { size: WIDTHmm HEIGHTmm; margin: … }` 규칙으로 용지 크기·방향·여백을 직렬화. `HtmlReader` 가 이 메타/CSS 를 파싱해 `Section.Page` 로 복원 (외부 HTML 의 `@page` CSS 도 지원, ±1mm 허용 오차로 표준 용지 자동 매핑). 용지 정보가 없으면 모든 코덱이 `PageSettings` 기본값(A4, 세로, 여백 20/20/25/25mm)을 그대로 사용. xUnit 테스트 8건(HTML) + 3건(XML) 추가.
 
 - **Added** — **HtmlReader SVG → ShapeObject 파서**: `<svg>` 를 단순 OpaqueBlock 보존에서 실제 도형 파싱으로 격상. `<rect>`→Rectangle/RoundedRect, `<ellipse>/<circle>`→Ellipse, `<line>`→Line, `<polyline>`→Polyline, `<polygon>`→Polygon/Triangle(3점 시), `<path d="M...C...">`→Spline/ClosedSpline(Z 여부). 제어점(C 커맨드 cp0/cp1) → `ShapePoint.OutCtrlX/Y`, `InCtrlX/Y` 복원. stroke/fill/stroke-width 속성 매핑. `<figure class="pd-shape">` 안 figcaption → `LabelText`. 스탠드얼론 `<svg>`도 동일 경로 처리. 파싱 실패 시 OpaqueBlock fallback 유지. xUnit 라운드트립 테스트 11건(Rectangle/RoundedRect/Ellipse/Line/Polyline/Polygon/Triangle/Spline/ClosedSpline/Label/StandaloneSvg) 추가 — 62건 전수 통과.
