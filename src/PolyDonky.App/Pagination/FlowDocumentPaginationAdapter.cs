@@ -200,6 +200,10 @@ public static class FlowDocumentPaginationAdapter
         // bodyH 를 넘기는 경우를 감지해 다음 슬롯으로 밀어낸다.
         var slotFill = new System.Collections.Generic.Dictionary<int, double>();
 
+        // 직전 블록이 최종 배정된 슬롯 인덱스. ForcePageBreakBefore 단락을 다음 페이지로
+        // 강제 이동시킬 때 기준 페이지를 결정하는 데 사용. -1 = 첫 블록.
+        int prevSlot = -1;
+
         foreach (var wpfBlock in FlattenBlocks(fd.Blocks))
         {
             if (wpfBlock.Tag is not Block coreBlock) continue;
@@ -212,6 +216,7 @@ public static class FlowDocumentPaginationAdapter
             if (double.IsNaN(topY))
             {
                 result.Add((0, 0, coreBlock, Rect.Empty));
+                prevSlot = 0;
                 continue;
             }
 
@@ -220,10 +225,25 @@ public static class FlowDocumentPaginationAdapter
             // 상한 클램프 없음 — 호출자(Paginate) 가 max pageIdx 로 pageCount 를 보정한다.
             int slotTop = Math.Max(0, (int)(topY / bodyH));
 
+            // ── 강제 페이지 나누기 처리 ─────────────────────────────────────────────
+            // FlowDocumentBuilder 가 ForcePageBreakBefore=true 를 WPF 의 BreakPageBefore 로
+            // 변환하지만, 본문 블록 Y 측정은 무한 높이(rtb.Measure(Size(_, +∞))) 에서 이루어져
+            // paginator 의 페이지 나눔이 Y 좌표에 반영되지 않는다. 따라서 Y 기반 슬롯 매핑만으로는
+            // 같은 슬롯(=같은 페이지) 에 묶일 수 있다 — 이를 직전 블록 페이지의 다음 페이지 첫 단으로
+            // 끌어올려 보정한다. 첫 블록(prevSlot=-1) 에서는 적용하지 않는다(0 페이지 유지).
+            bool isPageBreak = coreBlock is Paragraph fpara && fpara.Style.ForcePageBreakBefore;
+            if (isPageBreak && prevSlot >= 0)
+            {
+                int forcedSlot = ((prevSlot / colCount) + 1) * colCount;
+                if (slotTop < forcedSlot) slotTop = forcedSlot;
+            }
+
             // ── 줄 단위 분할 ──────────────────────────────────────────────────────────
             // 목록 마커가 없는 일반 단락이고, 한 슬롯에 들어갈 수 있는 높이일 때만 시도.
             // blockH >= bodyH 인 초장문 단락은 분할을 생략(구조 복잡도 대비 효용 낮음).
-            if (coreBlock is Paragraph corePara
+            // 강제 페이지 나누기 단락은 새 페이지 시작에 통째로 배치 — 줄 분할 생략.
+            if (!isPageBreak
+                && coreBlock is Paragraph corePara
                 && corePara.Style.ListMarker == null
                 && blockH > 0 && blockH < bodyH
                 && wpfBlock is WpfDocs.Paragraph wpfPara)
@@ -267,6 +287,7 @@ public static class FlowDocumentPaginationAdapter
                                 slotFill.GetValueOrDefault(nextSlot, 0.0) + Math.Min(frag2H, bodyH));
                         result.Add((nextSlot / colCount, nextSlot % colCount, frag2, Rect.Empty));
 
+                        prevSlot = nextSlot;
                         continue; // 아래 단일 블록 처리 생략
                     }
                 }
@@ -275,7 +296,10 @@ public static class FlowDocumentPaginationAdapter
             // ── 단일 블록 배정 (기존 로직) ────────────────────────────────────────────
             // 블록이 단 슬롯 경계를 넘고 한 슬롯에 들어갈 만큼 작으면 다음 슬롯으로 이동.
             // BoundaryTol 이하의 초과는 mm→DIP 변환 오차로 보고 현재 슬롯에 유지한다.
-            if (!double.IsNaN(bottomY)
+            // 강제 페이지 나누기 단락은 위에서 이미 슬롯을 끌어올렸으므로 이 보정을 건너뛴다
+            // (자연 Y 기준 boundary 검사가 강제 슬롯과 어긋나면 잘못된 +1 이 일어날 수 있다).
+            if (!isPageBreak
+                && !double.IsNaN(bottomY)
                 && bottomY > (slotTop + 1) * bodyH + BoundaryTol
                 && blockH < bodyH)
             {
@@ -298,6 +322,7 @@ public static class FlowDocumentPaginationAdapter
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
+            prevSlot = slotTop;
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)

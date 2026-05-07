@@ -417,6 +417,103 @@ public class FlowDocumentPaginationAdapterTests
         });
     }
 
+    // ── 강제 페이지 나누기 (ForcePageBreakBefore) ─────────────────────────────
+
+    [Fact]
+    public void Paginate_ForcePageBreakBefore_PutsParagraphOnNextPage()
+    {
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            var p1 = new Paragraph(); p1.AddText("첫 단락");
+            section.Blocks.Add(p1);
+
+            var p2 = new Paragraph();
+            p2.Style.ForcePageBreakBefore = true;
+            p2.AddText("강제 페이지 나누기 후 단락");
+            section.Blocks.Add(p2);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            // p1 은 페이지 0, p2 는 페이지 1 이상에 있어야 한다.
+            int p1Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p1)).PageIndex;
+            int p2Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p2)).PageIndex;
+
+            Assert.Equal(0, p1Page);
+            Assert.True(p2Page > p1Page,
+                $"강제 페이지 나누기 단락은 직전 단락보다 뒤 페이지에 있어야 함: p1={p1Page}, p2={p2Page}");
+            Assert.True(result.PageCount >= 2);
+        });
+    }
+
+    [Fact]
+    public void Paginate_ForcePageBreakBefore_OnFirstParagraph_StaysOnFirstPage()
+    {
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            // 첫 블록에 ForcePageBreakBefore — 직전 블록이 없으므로 페이지 0 유지.
+            var p = new Paragraph();
+            p.Style.ForcePageBreakBefore = true;
+            p.AddText("페이지 0 유지");
+            section.Blocks.Add(p);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            int pPage = result.Pages.SelectMany(b => b.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p)).PageIndex;
+            Assert.Equal(0, pPage);
+        });
+    }
+
+    [Fact]
+    public void Paginate_MultipleForcePageBreaks_EachStartsNewPage()
+    {
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            var p1 = new Paragraph(); p1.AddText("페이지 1 단락");
+            section.Blocks.Add(p1);
+
+            var p2 = new Paragraph();
+            p2.Style.ForcePageBreakBefore = true;
+            p2.AddText("페이지 2 단락");
+            section.Blocks.Add(p2);
+
+            var p3 = new Paragraph();
+            p3.Style.ForcePageBreakBefore = true;
+            p3.AddText("페이지 3 단락");
+            section.Blocks.Add(p3);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            int p1Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p1)).PageIndex;
+            int p2Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p2)).PageIndex;
+            int p3Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p3)).PageIndex;
+
+            Assert.True(p2Page > p1Page);
+            Assert.True(p3Page > p2Page);
+            Assert.True(result.PageCount >= 3);
+        });
+    }
+
     // ── 헬퍼 ─────────────────────────────────────────────────────────────
 
     private static PolyDonkyument WrapInDocument(params Block[] blocks)
