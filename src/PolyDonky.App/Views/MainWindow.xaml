@@ -117,6 +117,8 @@
                           Click="OnInsertFootnote" />
                 <MenuItem Header="{Binding MenuInsertEndnote, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertEndnote" />
+                <MenuItem Header="{Binding MenuInsertPageBreak, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertPageBreak" InputGestureText="Ctrl+Enter" />
                 <Separator />
                 <MenuItem Header="{Binding MenuInsertToc, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertToc" />

@@ -51,6 +51,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Changed** — **HWPX 스플라인 시각 품질 향상**: Spline/ClosedSpline 을 HWPX 로 출력할 때 앵커 포인트만 연결하던 단순 다각형 대신, cubic Bezier 를 세그먼트당 12회 샘플링한 고밀도 다각형으로 출력. 한컴 오피스에서 훨씬 매끄러운 곡선처럼 보인다.
 
+- **Added** — **페이지 나누기 UI 진입점 추가**: 입력 메뉴 `페이지 나누기` 항목 및 우클릭 컨텍스트 메뉴에 동일 항목 추가(표 셀 안에서는 비활성). 단축키 Ctrl+Enter. 기존 `ParagraphStyle.ForcePageBreakBefore` 모델·WPF `BreakPageBefore` 렌더링은 이미 구현되어 있었으며, 이 커밋은 UI 진입점만 추가.
+
 - **Added** — **자동 목차(TOC) 삽입·새로고침**: 입력 메뉴 `목차 삽입` 으로 현재 캐럿 위치에 TocBlock 삽입(H1~H6 개요 단락 자동 수집·표시). `목차 새로고침` 으로 문서 내 모든 TocBlock 의 항목을 재스캔해 갱신. `TocBlock`/`TocEntry` Core 모델 + BlockJsonConverter `"toc"` 디스크리미네이터 + FlowDocumentBuilder 시각 렌더링(테두리 박스·레벨 들여쓰기·페이지 번호) + FlowDocumentParser 라운드트립 복원.
 
 - **Added** — **인라인 필드 삽입**: 입력 메뉴 `필드 삽입` 서브메뉴 — 날짜, 시간, 페이지 번호, 총 페이지, 작성자, 문서 제목. `Run.Field` (`FieldType?`) 프로퍼티 추가, FlowDocumentBuilder 가 필드 런을 하이라이트 배경 Run 으로 렌더링, FlowDocumentParser 가 Tag 에서 역복원.

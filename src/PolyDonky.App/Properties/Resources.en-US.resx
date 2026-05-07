@@ -67,6 +67,8 @@
   <data name="MenuInsertHyperlink"    xml:space="preserve"><value>Hyper_link...</value></data>
   <data name="MenuInsertFootnote"    xml:space="preserve"><value>_Footnote</value></data>
   <data name="MenuInsertEndnote"     xml:space="preserve"><value>E_ndnote</value></data>
+  <data name="MenuInsertPageBreak"   xml:space="preserve"><value>Pa_ge Break</value></data>
+  <data name="MsgPageBreakInTableCell" xml:space="preserve"><value>Page breaks cannot be inserted inside a table cell.</value></data>
   <data name="MenuInsertToc"         xml:space="preserve"><value>Table of Contents (_O)</value></data>
   <data name="MenuInsertTocRefresh"  xml:space="preserve"><value>Refresh TOC (_R)</value></data>
   <data name="MenuInsertField"       xml:space="preserve"><value>Insert Field (_D)</value></data>
