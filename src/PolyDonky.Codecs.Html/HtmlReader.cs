@@ -65,6 +65,10 @@ public sealed class HtmlReader : IDocumentReader
         // 편집용지 설정 복원 — <meta name="pd-page-*"> + @page CSS 파싱.
         ApplyPageSettings(doc, section);
 
+        // CSS 규칙 (<style> 블록의 .class / #id / tag 셀렉터) 을 인라인 style 속성으로 머지.
+        // 이후 단계의 모든 style 파싱이 자동으로 반영함.
+        InlineCssClassRules(doc);
+
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
 
@@ -1687,6 +1691,147 @@ public sealed class HtmlReader : IDocumentReader
 
     // ── 편집용지 설정 파싱 ──────────────────────────────────────────────
 
+    // ── CSS 규칙 → 인라인 style 머지 ─────────────────────────────────────────
+
+    /// <summary>
+    /// 문서의 모든 &lt;style&gt; 블록을 파싱해 단순 셀렉터(.class / #id / tag) 만 추출하고,
+    /// 매칭되는 모든 요소의 style 속성에 머지한다 (인라인 style 우선).
+    /// 후속 단계(ApplyBlockStyle, ParseInlineStyle 등) 에서 자동으로 반영된다.
+    ///
+    /// 지원 셀렉터: .class, #id, tag, tag.class — 콤마 분리, 후행 단순 셀렉터 추출.
+    /// 미지원: 자손/자식/형제 결합, [attr] 속성, 가상 클래스(:hover 등).
+    /// </summary>
+    private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)
+    {
+        // selector → property → value
+        var rules = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var styleEl in doc.QuerySelectorAll("style"))
+            ParseCssText(styleEl.TextContent, rules);
+
+        if (rules.Count == 0) return;
+
+        var docElement = doc.DocumentElement;
+        if (docElement is null) return;
+
+        foreach (var el in docElement.QuerySelectorAll("*"))
+        {
+            var matched = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // 명세 우선순위: tag < .class < #id < inline (마지막 wins).
+            if (rules.TryGetValue(el.LocalName, out var tagDict))
+                foreach (var kv in tagDict) matched[kv.Key] = kv.Value;
+
+            var classAttr = el.GetAttribute("class");
+            if (!string.IsNullOrEmpty(classAttr))
+            {
+                foreach (var cls in classAttr.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (rules.TryGetValue("." + cls, out var classDict))
+                        foreach (var kv in classDict) matched[kv.Key] = kv.Value;
+                    // tag.class 결합
+                    if (rules.TryGetValue(el.LocalName + "." + cls, out var tagClassDict))
+                        foreach (var kv in tagClassDict) matched[kv.Key] = kv.Value;
+                }
+            }
+
+            var idAttr = el.GetAttribute("id");
+            if (!string.IsNullOrEmpty(idAttr) && rules.TryGetValue("#" + idAttr, out var idDict))
+                foreach (var kv in idDict) matched[kv.Key] = kv.Value;
+
+            if (matched.Count == 0) continue;
+
+            // StyleProp 은 첫 매칭을 반환하므로 인라인 style 을 먼저 두고 클래스 규칙을 뒤에 붙인다
+            // → 같은 속성이 양쪽에 있으면 인라인이 먼저 매칭돼 우선 적용된다.
+            var inlineStyle = el.GetAttribute("style") ?? "";
+            var sb = new StringBuilder();
+            sb.Append(inlineStyle);
+            if (sb.Length > 0 && sb[^1] != ';') sb.Append(';');
+            foreach (var kv in matched)
+                sb.Append(kv.Key).Append(':').Append(kv.Value).Append(';');
+            el.SetAttribute("style", sb.ToString());
+        }
+    }
+
+    /// <summary>CSS 텍스트를 단순 파싱해 셀렉터 → 속성 → 값 사전에 채워 넣는다.</summary>
+    private static void ParseCssText(string css, Dictionary<string, Dictionary<string, string>> rules)
+    {
+        if (string.IsNullOrWhiteSpace(css)) return;
+        int pos = 0;
+        while (pos < css.Length)
+        {
+            // 주석 스킵
+            if (pos < css.Length - 1 && css[pos] == '/' && css[pos + 1] == '*')
+            {
+                int end = css.IndexOf("*/", pos + 2, StringComparison.Ordinal);
+                if (end < 0) return;
+                pos = end + 2;
+                continue;
+            }
+            // 블록 시작 찾기
+            int braceOpen = css.IndexOf('{', pos);
+            if (braceOpen < 0) return;
+            int braceClose = css.IndexOf('}', braceOpen);
+            if (braceClose < 0) return;
+
+            var selectorPart = css[pos..braceOpen].Trim();
+            var bodyPart     = css[(braceOpen + 1)..braceClose];
+
+            pos = braceClose + 1;
+
+            // @rule (e.g., @page, @media, @keyframes) 무시 — @page 는 ApplyPageSettings 가 별도 처리.
+            if (selectorPart.StartsWith("@", StringComparison.Ordinal)) continue;
+            if (selectorPart.Length == 0) continue;
+
+            foreach (var rawSelector in selectorPart.Split(','))
+            {
+                var simpleSelector = ExtractSimpleSelector(rawSelector.Trim());
+                if (simpleSelector is null) continue;
+
+                if (!rules.TryGetValue(simpleSelector, out var dict))
+                {
+                    dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    rules[simpleSelector] = dict;
+                }
+                foreach (var decl in bodyPart.Split(';'))
+                {
+                    var c = decl.IndexOf(':');
+                    if (c <= 0) continue;
+                    var prop = decl[..c].Trim();
+                    var val  = decl[(c + 1)..].Trim();
+                    if (prop.Length == 0 || val.Length == 0) continue;
+                    dict[prop] = val;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 복합 셀렉터에서 우측 단순 셀렉터(.class / #id / tag / tag.class) 를 추출한다.
+    /// 예: ".toc ul" → "ul", ".toc > a" → "a", "div.alert" → "div.alert".
+    /// 가상 클래스(:hover) 와 속성 셀렉터([type=...]) 는 제거.
+    /// </summary>
+    private static string? ExtractSimpleSelector(string selector)
+    {
+        if (string.IsNullOrEmpty(selector)) return null;
+        // 자손·자식·형제 결합자 제거 — 가장 우측 단순 셀렉터만 사용.
+        int lastBreak = -1;
+        for (int i = selector.Length - 1; i >= 0; i--)
+        {
+            var ch = selector[i];
+            if (ch is ' ' or '\t' or '>' or '+' or '~') { lastBreak = i; break; }
+        }
+        if (lastBreak >= 0) selector = selector[(lastBreak + 1)..];
+        // 가상 클래스/요소 제거
+        int colon = selector.IndexOf(':');
+        if (colon >= 0) selector = selector[..colon];
+        // 속성 셀렉터 제거
+        int bracket = selector.IndexOf('[');
+        if (bracket >= 0) selector = selector[..bracket];
+        selector = selector.Trim();
+        return selector.Length > 0 ? selector : null;
+    }
+
     // ── 복합 SVG → ImageBlock 변환 ───────────────────────────────────────────
 
     /// <summary>
@@ -1773,7 +1918,13 @@ public sealed class HtmlReader : IDocumentReader
         if (bgStr is null) return false;
         if (!TryParseCssColor(bgStr.Trim().Split(' ')[0], out var bgColor)) return false;
 
-        var s = new ShapeObject { WidthMm = wMm, HeightMm = hMm, FillColor = ColorToHex(bgColor) };
+        var s = new ShapeObject
+        {
+            WidthMm           = wMm,
+            HeightMm          = hMm,
+            FillColor         = ColorToHex(bgColor),
+            StrokeThicknessPt = 0,   // CSS pure-color div 는 기본 테두리 없음.
+        };
 
         var brStr = StyleProp(style, "border-radius");
         var trStr = StyleProp(style, "transform");

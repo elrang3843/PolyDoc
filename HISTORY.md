@@ -46,6 +46,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **HtmlReader CSS `<style>` 블록 클래스 규칙 머지**: 문서 내 `<style>` 블록에서 단순 셀렉터 (`.class`, `#id`, `tag`, `tag.class`) 규칙을 추출해 매칭되는 모든 요소의 `style` 속성에 머지 — 인라인 style 이 클래스 규칙보다 우선. CSS 자손/자식/형제 결합자(` `, `>`, `+`, `~`)는 우측 단순 셀렉터만 사용. 가상 클래스(`:hover`)·속성 셀렉터(`[type=...]`)·@규칙(`@page`/`@media` 등)은 무시. 클래스 기반 text-align/background/padding/border/color 등이 단락·헤딩·표 등에 정상 반영. xUnit 테스트 5건 추가.
+
+- **Changed** — **FlowDocumentBuilder 중첩 리스트 마커 레벨별 스타일링**: 모든 `<ul>` 이 ● 단일 마커로 그려지던 문제를 브라우저 기본값과 동일한 disc → circle → square 진행으로 변경. `<ol>` 의 OrderedAlpha/OrderedRoman ListKind 도 레벨 0 = 대문자, 레벨 ≥1 = 소문자 진행 적용 (`MarkerStyleForLevel` 헬퍼).
+
+- **Fixed** — **CSS 도형 ShapeObject 검은 테두리 제거**: HtmlReader `TryParseCssShapeFromDiv` 가 만드는 ShapeObject 가 ShapeObject 기본값 `StrokeThicknessPt=1` 을 따라 검은 1pt 테두리를 그리던 문제 수정 — CSS 순수 색상 div 는 기본 테두리 없으므로 `StrokeThicknessPt=0` 으로 명시.
+
 - **Fixed** — **FlowDocumentBuilder SVG 이미지 로드 예외 수정**: `ImageBlock(MediaType="image/svg+xml")` 을 WPF `BitmapImage` 로 디코딩 시도 시 발생하던 `System.NotSupportedException` 수정 — SVG ImageBlock 은 올바른 크기(WidthMm×HeightMm)의 시각적 placeholder(`[SVG 다이어그램]` 테두리 박스)로 대체 표시.
 
 - **Added** — **HtmlReader/XmlReader 복합 SVG → ImageBlock 변환**: 다중 도형·텍스트 레이블이 포함된 외부 SVG(`<figure>` 포함)를 단일 ShapeObject 대신 `ImageBlock(MediaType="image/svg+xml")`으로 정확히 보존 — 이전에는 첫 번째 도형만 전체 SVG 캔버스 크기로 파싱해 레이아웃 공간이 과도하게 커지는 문제 해결. `HtmlWriter`/`XmlWriter`도 SVG ImageBlock을 base64 `<img>` 대신 인라인 `<svg>`로 출력해 재임포트 시 라운드트립 유지.

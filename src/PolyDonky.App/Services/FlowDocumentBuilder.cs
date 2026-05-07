@@ -112,6 +112,21 @@ public static class FlowDocumentBuilder
     }
 
     /// <summary>
+    /// 리스트 종류·중첩 깊이에 따라 브라우저 기본 마커 스타일을 선택한다.
+    /// - Bullet: disc → circle → square (≥2단계 동일).
+    /// - OrderedDecimal: 모든 깊이 decimal.
+    /// - OrderedAlpha:  L0=UpperLatin, L≥1=LowerLatin.
+    /// - OrderedRoman:  L0=UpperRoman, L≥1=LowerRoman.
+    /// </summary>
+    private static TextMarkerStyle MarkerStyleForLevel(ListKind kind, int level) => kind switch
+    {
+        ListKind.Bullet         => level switch { 0 => TextMarkerStyle.Disc, 1 => TextMarkerStyle.Circle, _ => TextMarkerStyle.Square },
+        ListKind.OrderedAlpha   => level == 0 ? TextMarkerStyle.UpperLatin : TextMarkerStyle.LowerLatin,
+        ListKind.OrderedRoman   => level == 0 ? TextMarkerStyle.UpperRoman : TextMarkerStyle.LowerRoman,
+        _                       => TextMarkerStyle.Decimal,
+    };
+
+    /// <summary>
     /// 지정한 Core.Block 목록만 포함하는 FlowDocument 를 빌드한다.
     /// per-page 편집기·per-page RTB 측정에 사용. STA 스레드 필수.
     /// </summary>
@@ -185,14 +200,14 @@ public static class FlowDocumentBuilder
             // 레벨이 스택보다 깊으면 중간 레벨을 채운다 (정상 HTML 에선 발생하지 않음)
             while (listStack.Count < level)
             {
-                var mid = new Wpf.List { MarkerStyle = TextMarkerStyle.Disc };
+                var mid = new Wpf.List { MarkerStyle = MarkerStyleForLevel(ListKind.Bullet, listStack.Count) };
                 AppendListToParent(mid);
                 listStack.Push((mid, ListKind.Bullet));
             }
 
             var newList = new Wpf.List
             {
-                MarkerStyle = kind == ListKind.Bullet ? TextMarkerStyle.Disc : TextMarkerStyle.Decimal,
+                MarkerStyle = MarkerStyleForLevel(kind, level),
             };
             if (kind != ListKind.Bullet && startIndex >= 1)
                 newList.StartIndex = startIndex;

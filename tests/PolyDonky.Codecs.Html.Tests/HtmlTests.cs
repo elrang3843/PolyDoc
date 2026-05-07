@@ -1241,4 +1241,85 @@ public class HtmlTests
         var rt = HtmlReader.FromHtml(html);
         Assert.DoesNotContain(rt.Sections[0].Blocks, b => b is ShapeObject);
     }
+
+    // ── <style> 블록 CSS 클래스 규칙 머지 ──────────────────────────────
+
+    [Fact]
+    public void Reader_CssClassRule_AppliedToParagraph()
+    {
+        // <style> 의 .center 클래스 → text-align:center 가 매칭 단락에 적용돼야 한다.
+        const string html = """
+            <html><head><style>
+              .center { text-align: center; }
+            </style></head><body>
+              <p class="center">중앙</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single(x => x.Runs.Any(r => r.Text == "중앙"));
+        Assert.Equal(Alignment.Center, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_CssTagRule_AppliedToHeading()
+    {
+        // h1 { text-align: center; } → 모든 h1 이 중앙 정렬.
+        const string html = """
+            <html><head><style>
+              h1 { text-align: center; }
+            </style></head><body>
+              <h1>제목</h1>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Center, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_CssIdRule_Applied()
+    {
+        const string html = """
+            <html><head><style>
+              #title { text-align: right; }
+            </style></head><body>
+              <p id="title">우측</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_InlineStyle_OverridesClassRule()
+    {
+        // 인라인 style 이 클래스 규칙보다 우선해야 한다.
+        const string html = """
+            <html><head><style>
+              .x { text-align: left; }
+            </style></head><body>
+              <p class="x" style="text-align: right;">우측</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_CssDescendantSelector_RightmostUsed()
+    {
+        // ".container p" 같은 자손 셀렉터는 우측 단순 셀렉터(p) 만 사용 — 모든 p 에 적용됨.
+        const string html = """
+            <html><head><style>
+              .container p { text-align: right; }
+            </style></head><body>
+              <p>x</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+    }
 }
