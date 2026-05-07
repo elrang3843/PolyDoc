@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **FlowDocumentBuilder SVG 이미지 로드 예외 수정**: `ImageBlock(MediaType="image/svg+xml")` 을 WPF `BitmapImage` 로 디코딩 시도 시 발생하던 `System.NotSupportedException` 수정 — SVG ImageBlock 은 올바른 크기(WidthMm×HeightMm)의 시각적 placeholder(`[SVG 다이어그램]` 테두리 박스)로 대체 표시.
+
 - **Added** — **HtmlReader/XmlReader 복합 SVG → ImageBlock 변환**: 다중 도형·텍스트 레이블이 포함된 외부 SVG(`<figure>` 포함)를 단일 ShapeObject 대신 `ImageBlock(MediaType="image/svg+xml")`으로 정확히 보존 — 이전에는 첫 번째 도형만 전체 SVG 캔버스 크기로 파싱해 레이아웃 공간이 과도하게 커지는 문제 해결. `HtmlWriter`/`XmlWriter`도 SVG ImageBlock을 base64 `<img>` 대신 인라인 `<svg>`로 출력해 재임포트 시 라운드트립 유지.
 - **Added** — **HtmlReader CSS 도형 → ShapeObject 변환**: `width`+`height`+`background` CSS 를 가진 텍스트·자식 없는 `<div>` 를 ShapeObject 로 변환 — Rectangle, Ellipse(`border-radius:50%`), RoundedRect(`border-radius`), border-trick Triangle(상/하/좌/우 방향), 회전 사각형(`transform:rotate(45deg)`) 지원. xUnit 테스트 10건 추가.
 
