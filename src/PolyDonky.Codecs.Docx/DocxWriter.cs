@@ -48,9 +48,11 @@ public sealed class DocxWriter : IDocumentWriter
             }
         }
 
-        // 섹션 속성 (페이지 설정).
+        // 섹션 속성 (페이지 설정) + 머리말/꼬리말 파트.
         var firstSection = document.Sections.FirstOrDefault();
-        body.AppendChild(BuildSectionProperties(firstSection?.Page ?? new PageSettings()));
+        var sectPr = BuildSectionProperties(firstSection?.Page ?? new PageSettings());
+        WriteHeaderFooterParts(mainPart, firstSection?.Page ?? new PageSettings(), sectPr, ctx);
+        body.AppendChild(sectPr);
 
         WriteFootnotesAndEndnotes(mainPart, document, ctx);
         WriteCoreProperties(package, document.Metadata);
@@ -72,8 +74,8 @@ public sealed class DocxWriter : IDocumentWriter
                     continue;
                 var fn = new W.Footnote { Id = fnId };
                 foreach (var block in entry.Blocks)
-                    fn.AppendChild(block is Paragraph p ? BuildParagraph(p) : BuildParagraph(Paragraph.Of(string.Empty)));
-                if (fn.ChildElements.Count == 0) fn.AppendChild(BuildParagraph(Paragraph.Of(string.Empty)));
+                    fn.AppendChild(block is Paragraph p ? BuildParagraph(p, ctx) : BuildParagraph(Paragraph.Of(string.Empty), ctx));
+                if (fn.ChildElements.Count == 0) fn.AppendChild(BuildParagraph(Paragraph.Of(string.Empty), ctx));
                 footnotes.AppendChild(fn);
             }
             fnPart.Footnotes = footnotes;
@@ -92,8 +94,8 @@ public sealed class DocxWriter : IDocumentWriter
                     continue;
                 var en = new W.Endnote { Id = enId };
                 foreach (var block in entry.Blocks)
-                    en.AppendChild(block is Paragraph p ? BuildParagraph(p) : BuildParagraph(Paragraph.Of(string.Empty)));
-                if (en.ChildElements.Count == 0) en.AppendChild(BuildParagraph(Paragraph.Of(string.Empty)));
+                    en.AppendChild(block is Paragraph p ? BuildParagraph(p, ctx) : BuildParagraph(Paragraph.Of(string.Empty), ctx));
+                if (en.ChildElements.Count == 0) en.AppendChild(BuildParagraph(Paragraph.Of(string.Empty), ctx));
                 endnotes.AppendChild(en);
             }
             enPart.Endnotes = endnotes;
@@ -119,7 +121,7 @@ public sealed class DocxWriter : IDocumentWriter
         switch (block)
         {
             case Paragraph p:
-                target.AppendChild(BuildParagraph(p));
+                target.AppendChild(BuildParagraph(p, ctx));
                 break;
             case Table t:
                 target.AppendChild(BuildTable(t, ctx));
@@ -130,16 +132,42 @@ public sealed class DocxWriter : IDocumentWriter
             case ShapeObject shape:
                 target.AppendChild(BuildShapeParagraph(shape, ctx));
                 break;
+            case TocBlock toc:
+                AppendTocBlock(target, toc, ctx);
+                break;
             case OpaqueBlock opaque when !string.IsNullOrEmpty(opaque.Xml):
-                AppendOpaqueXml(target, opaque);
+                AppendOpaqueXml(target, opaque, ctx);
                 break;
             case OpaqueBlock opaque:
-                target.AppendChild(BuildParagraph(Paragraph.Of(opaque.DisplayLabel)));
+                target.AppendChild(BuildParagraph(Paragraph.Of(opaque.DisplayLabel), ctx));
                 break;
         }
     }
 
-    private static W.Paragraph BuildParagraph(Paragraph p)
+    private static void AppendTocBlock(OpenXmlCompositeElement target, TocBlock toc, WriteContext ctx)
+    {
+        // 목차 제목 단락.
+        var headingPara = new W.Paragraph();
+        headingPara.AppendChild(new W.ParagraphProperties(
+            new W.ParagraphStyleId { Val = "TOCHeading" }));
+        headingPara.AppendChild(new W.Run(
+            new W.Text("목차") { Space = SpaceProcessingModeValues.Preserve }));
+        target.AppendChild(headingPara);
+
+        // 항목 단락 — 현재 Entries 가 비어 있으면 실행 시 App 이 채운다.
+        foreach (var entry in toc.Entries)
+        {
+            var ep = new W.Paragraph();
+            ep.AppendChild(new W.ParagraphProperties(
+                new W.ParagraphStyleId { Val = $"TOC{entry.Level}" }));
+            var lineText = entry.Text + (entry.PageNumber.HasValue ? $"\t{entry.PageNumber.Value}" : string.Empty);
+            ep.AppendChild(new W.Run(
+                new W.Text(lineText) { Space = SpaceProcessingModeValues.Preserve }));
+            target.AppendChild(ep);
+        }
+    }
+
+    private static W.Paragraph BuildParagraph(Paragraph p, WriteContext ctx)
     {
         var wpara = new W.Paragraph();
         var pPr = new W.ParagraphProperties();
@@ -199,9 +227,57 @@ public sealed class DocxWriter : IDocumentWriter
                 wpara.AppendChild(enRun);
                 continue;
             }
+            // 인라인 필드 (PAGE, NUMPAGES, DATE, TIME, AUTHOR, TITLE)
+            if (run.Field is { } ft)
+            {
+                AppendFieldRun(wpara, ft);
+                continue;
+            }
+
+            // 하이퍼링크
+            if (!string.IsNullOrEmpty(run.Url))
+            {
+                W.Hyperlink hl;
+                if (run.Url.StartsWith("#", StringComparison.Ordinal))
+                {
+                    hl = new W.Hyperlink { Anchor = run.Url.TrimStart('#') };
+                }
+                else
+                {
+                    var rel = ctx.MainPart.AddHyperlinkRelationship(
+                        new Uri(run.Url, UriKind.RelativeOrAbsolute), isExternal: true);
+                    hl = new W.Hyperlink { Id = rel.Id };
+                }
+                hl.AppendChild(BuildRun(run));
+                wpara.AppendChild(hl);
+                continue;
+            }
+
             wpara.AppendChild(BuildRun(run));
         }
         return wpara;
+    }
+
+    private static void AppendFieldRun(W.Paragraph wpara, FieldType ft)
+    {
+        var instr = ft switch
+        {
+            FieldType.Page     => " PAGE ",
+            FieldType.NumPages => " NUMPAGES ",
+            FieldType.Date     => " DATE ",
+            FieldType.Time     => " TIME ",
+            FieldType.Author   => " AUTHOR ",
+            FieldType.Title    => " TITLE ",
+            _                  => null,
+        };
+        if (instr is null) return;
+
+        wpara.AppendChild(new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.Begin }));
+        wpara.AppendChild(new W.Run(new W.FieldCode(instr)));
+        wpara.AppendChild(new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.Separate }));
+        wpara.AppendChild(new W.Run(
+            new W.Text($"«{ft}»") { Space = SpaceProcessingModeValues.Preserve }));
+        wpara.AppendChild(new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.End }));
     }
 
     private static W.Run BuildRun(Run run)
@@ -347,7 +423,7 @@ public sealed class DocxWriter : IDocumentWriter
 
                 if (cell.Blocks.Count == 0)
                 {
-                    wcell.AppendChild(BuildParagraph(Paragraph.Of(string.Empty)));
+                    wcell.AppendChild(BuildParagraph(Paragraph.Of(string.Empty), ctx));
                 }
                 else
                 {
@@ -358,7 +434,7 @@ public sealed class DocxWriter : IDocumentWriter
                     // DOCX 는 셀의 마지막 자식이 항상 paragraph 여야 한다.
                     if (wcell.LastChild is not W.Paragraph)
                     {
-                        wcell.AppendChild(BuildParagraph(Paragraph.Of(string.Empty)));
+                        wcell.AppendChild(BuildParagraph(Paragraph.Of(string.Empty), ctx));
                     }
                 }
 
@@ -780,7 +856,7 @@ public sealed class DocxWriter : IDocumentWriter
     /// OpaqueBlock 의 OuterXml 을 임시 Body 컨테이너로 파싱한 뒤 그 자식 요소들을 target 에 옮긴다.
     /// (OpenXmlUnknownElement 의 OuterXml 직접 주입은 namespace 컨텍스트 부재로 직렬화 단계에서 실패.)
     /// </summary>
-    private static void AppendOpaqueXml(OpenXmlCompositeElement target, OpaqueBlock opaque)
+    private static void AppendOpaqueXml(OpenXmlCompositeElement target, OpaqueBlock opaque, WriteContext ctx)
     {
         try
         {
@@ -795,7 +871,7 @@ public sealed class DocxWriter : IDocumentWriter
         catch
         {
             // 잘못된 XML 은 빈 단락으로 격하 (사용자 데이터 손실 방지).
-            target.AppendChild(BuildParagraph(Paragraph.Of(opaque.DisplayLabel)));
+            target.AppendChild(BuildParagraph(Paragraph.Of(opaque.DisplayLabel), ctx));
         }
     }
 
@@ -834,15 +910,72 @@ public sealed class DocxWriter : IDocumentWriter
         });
         props.AppendChild(new W.PageMargin
         {
-            Top = UnitConverter.MmToTwipsInt(page.MarginTopMm),
-            Right = UnitConverter.MmToTwipsUInt(page.MarginRightMm),
+            Top    = UnitConverter.MmToTwipsInt(page.MarginTopMm),
+            Right  = UnitConverter.MmToTwipsUInt(page.MarginRightMm),
             Bottom = UnitConverter.MmToTwipsInt(page.MarginBottomMm),
-            Left = UnitConverter.MmToTwipsUInt(page.MarginLeftMm),
-            Header = 720,
-            Footer = 720,
+            Left   = UnitConverter.MmToTwipsUInt(page.MarginLeftMm),
+            Header = UnitConverter.MmToTwipsUInt(page.MarginHeaderMm),
+            Footer = UnitConverter.MmToTwipsUInt(page.MarginFooterMm),
             Gutter = 0,
         });
         return props;
+    }
+
+    // ── 머리말 / 꼬리말 파트 생성 + sectPr 참조 주입 ───────────────────────────
+
+    private static void WriteHeaderFooterParts(
+        MainDocumentPart mainPart, PageSettings page,
+        W.SectionProperties sectPr, WriteContext ctx)
+    {
+        if (!page.Header.IsEmpty)
+        {
+            var hdrPart = mainPart.AddNewPart<HeaderPart>();
+            var hdr = new W.Header();
+            AppendHeaderFooterSlots(hdr, page.Header, ctx);
+            if (!hdr.HasChildren) hdr.AppendChild(new W.Paragraph());
+            hdrPart.Header = hdr;
+            sectPr.AppendChild(new W.HeaderReference
+            {
+                Type = W.HeaderFooterValues.Default,
+                Id   = mainPart.GetIdOfPart(hdrPart),
+            });
+        }
+        if (!page.Footer.IsEmpty)
+        {
+            var ftrPart = mainPart.AddNewPart<FooterPart>();
+            var ftr = new W.Footer();
+            AppendHeaderFooterSlots(ftr, page.Footer, ctx);
+            if (!ftr.HasChildren) ftr.AppendChild(new W.Paragraph());
+            ftrPart.Footer = ftr;
+            sectPr.AppendChild(new W.FooterReference
+            {
+                Type = W.HeaderFooterValues.Default,
+                Id   = mainPart.GetIdOfPart(ftrPart),
+            });
+        }
+    }
+
+    private static void AppendHeaderFooterSlots(
+        OpenXmlElement root, HeaderFooterContent content, WriteContext ctx)
+    {
+        foreach (var (slot, align) in new (HeaderFooterSlot Slot, Alignment Align)[]
+        {
+            (content.Left,   Alignment.Left),
+            (content.Center, Alignment.Center),
+            (content.Right,  Alignment.Right),
+        })
+        {
+            if (slot.IsEmpty) continue;
+            foreach (var para in slot.Paragraphs)
+            {
+                // 슬롯 위치에 맞게 정렬을 덮어 씌워 출력.
+                var overrideStyle = para.Style.Clone();
+                overrideStyle.Alignment = align;
+                var wrapper = new Paragraph { Style = overrideStyle };
+                foreach (var run in para.Runs) wrapper.Runs.Add(run);
+                root.AppendChild(BuildParagraph(wrapper, ctx));
+            }
+        }
     }
 
     private static W.Styles BuildStyles()

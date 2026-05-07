@@ -1010,6 +1010,12 @@ public sealed class HwpxWriter : IDocumentWriter
 
     private void AppendBlock(XElement target, Block block, WriteContext ctx, Section section, ref bool injectSecPr)
     {
+        if (block is TocBlock toc)
+        {
+            AppendTocBlock(target, toc, ctx, section, ref injectSecPr);
+            return;
+        }
+
         XElement para = block switch
         {
             Paragraph p     => BuildParagraph(p, ctx),
@@ -1188,6 +1194,36 @@ public sealed class HwpxWriter : IDocumentWriter
         para.AddFirst(secPrRun);
     }
 
+    private void AppendTocBlock(XElement target, TocBlock toc, WriteContext ctx, Section section, ref bool injectSecPr)
+    {
+        // 목차 제목 단락.
+        var headingP = new Paragraph { Style = new ParagraphStyle { Outline = OutlineLevel.H1 } };
+        headingP.AddText("목차");
+        var headingPara = BuildParagraph(headingP, ctx);
+        if (injectSecPr) { PrependSecPrRun(headingPara, section); injectSecPr = false; }
+        target.Add(headingPara);
+
+        foreach (var entry in toc.Entries)
+        {
+            var line = entry.Text + (entry.PageNumber.HasValue ? $"\t{entry.PageNumber.Value}" : string.Empty);
+            var outline = entry.Level switch
+            {
+                1 => OutlineLevel.H1,
+                2 => OutlineLevel.H2,
+                3 => OutlineLevel.H3,
+                4 => OutlineLevel.H4,
+                5 => OutlineLevel.H5,
+                _ => OutlineLevel.H6,
+            };
+            var entryP = new Paragraph { Style = new ParagraphStyle { Outline = outline } };
+            entryP.AddText(line);
+            target.Add(BuildParagraph(entryP, ctx));
+        }
+
+        if (toc.Entries.Count == 0)
+            target.Add(BuildEmptyParagraph(ctx));
+    }
+
     private XElement BuildParagraph(Paragraph p, WriteContext ctx)
     {
         int paraPrID = ctx.ParaStyleId(p.Style);
@@ -1232,12 +1268,118 @@ public sealed class HwpxWriter : IDocumentWriter
         if (run.EndnoteId is { Length: > 0 } enId)
             return BuildNoteCtrlRun("END_NOTE", enId, ctx);
 
+        // 인라인 필드 (페이지 번호, 날짜 등).
+        if (run.Field is { } ft)
+            return BuildFieldCtrlRun(ft, ctx);
+
+        // 하이퍼링크 — 텍스트를 subList 에 담아 HYPERLINK ctrl 로 출력.
+        if (!string.IsNullOrEmpty(run.Url))
+            return BuildHyperlinkCtrlRun(run, ctx);
+
         int charPrID = ctx.RunStyleId(run.Style);
         var elem = new XElement(Hp + "run",
             new XAttribute("charPrIDRef", charPrID.ToString()));
         if (run.Text.Length > 0)
             elem.Add(new XElement(Hp + "t", run.Text));
         return elem;
+    }
+
+    private XElement BuildFieldCtrlRun(FieldType ft, WriteContext ctx)
+    {
+        var ctrlId = ft switch
+        {
+            FieldType.Page     => "PGNUM",
+            FieldType.NumPages => "NPAGNUM",
+            FieldType.Date     => "DATE_TIME",
+            FieldType.Time     => "DATE_TIME",
+            _                  => null,
+        };
+
+        int charPrID = ctx.RunStyleId(new RunStyle());
+
+        if (ctrlId is null)
+        {
+            // 지원하지 않는 필드(Author/Title 등)는 플레이스홀더 텍스트로 폴백.
+            var fallback = new XElement(Hp + "run",
+                new XAttribute("charPrIDRef", charPrID.ToString()),
+                new XElement(Hp + "t", $"[{ft}]"));
+            return fallback;
+        }
+
+        XElement ctrl;
+        if (ctrlId == "PGNUM")
+        {
+            ctrl = new XElement(Hp + "ctrl",
+                new XAttribute("ctrlID", "PGNUM"),
+                new XElement(Hp + "numOffset", new XAttribute("value", "0")),
+                new XElement(Hp + "autoNum",
+                    new XAttribute("type", "PAGE_NUM_ARABIC"),
+                    new XAttribute("forceNumber", "0")));
+        }
+        else if (ctrlId == "NPAGNUM")
+        {
+            ctrl = new XElement(Hp + "ctrl",
+                new XAttribute("ctrlID", "NPAGNUM"),
+                new XElement(Hp + "autoNum",
+                    new XAttribute("type", "PAGE_NUM_ARABIC"),
+                    new XAttribute("forceNumber", "0")));
+        }
+        else // DATE_TIME
+        {
+            ctrl = new XElement(Hp + "ctrl",
+                new XAttribute("ctrlID", "DATE_TIME"),
+                new XAttribute("type", ft == FieldType.Time ? "TIME" : "DATE"),
+                new XElement(Hp + "dateTimeForm",
+                    new XAttribute("value", ft == FieldType.Time
+                        ? "HH'시' mm'분' ss'초'"
+                        : "YYYY'년' MM'월' DD'일'")));
+        }
+
+        return new XElement(Hp + "run",
+            new XAttribute("charPrIDRef", charPrID.ToString()),
+            ctrl);
+    }
+
+    private XElement BuildHyperlinkCtrlRun(Run run, WriteContext ctx)
+    {
+        int charPrID  = ctx.RunStyleId(run.Style);
+        var subListId = ctx.NextSubListId();
+
+        var textRun = new XElement(Hp + "run",
+            new XAttribute("charPrIDRef", charPrID.ToString()),
+            new XElement(Hp + "t", run.Text));
+
+        var para = new XElement(Hp + "p",
+            new XAttribute("id",          ctx.NextParaId().ToString()),
+            new XAttribute("paraPrIDRef", "0"),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
+            textRun,
+            BuildLineseg(10.0, 1.4));
+
+        var subList = new XElement(Hp + "subList",
+            new XAttribute("id",                subListId.ToString()),
+            new XAttribute("textDirection",     "HORIZONTAL"),
+            new XAttribute("lineWrap",          "BREAK"),
+            new XAttribute("vertAlign",         "NORMAL"),
+            new XAttribute("linkListIDRef",     "0"),
+            new XAttribute("linkListNextIDRef", "0"),
+            new XAttribute("textWidth",         "0"),
+            new XAttribute("textHeight",        "0"),
+            new XAttribute("hasTextRef",        "0"),
+            new XAttribute("hasNumRef",         "0"),
+            para);
+
+        var ctrl = new XElement(Hp + "ctrl",
+            new XAttribute("ctrlID", "HYPERLINK"),
+            new XAttribute("url", run.Url!),
+            subList);
+
+        return new XElement(Hp + "run",
+            new XAttribute("charPrIDRef", charPrID.ToString()),
+            ctrl);
     }
 
     private XElement BuildNoteCtrlRun(string ctrlID, string noteId, WriteContext ctx)
