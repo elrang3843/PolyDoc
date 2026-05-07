@@ -25,13 +25,33 @@ public static class HwpxFileChecker
         {
             using var fs = File.OpenRead(path);
             using var zip = new ZipArchive(fs, ZipArchiveMode.Read, leaveOpen: false);
+
             var entry = zip.GetEntry("mimetype");
-            if (entry is null) return false;
+            if (entry is null)
+            {
+                // mimetype 엔트리 없어도 본문(header.xml + section*.xml)이 있으면 HWPX 로 간주.
+                return HasCoreContentInternal(zip);
+            }
+
             using var es = entry.Open();
-            using var sr = new StreamReader(es, Encoding.ASCII);
-            return sr.ReadToEnd().Trim() == ExpectedMimetype;
+            // UTF-8 BOM 자동 감지 — 일부 한컴 HWPX 가 BOM(EF BB BF)을 붙여 ASCII reader 가 비교 실패하는 문제 회피.
+            using var sr = new StreamReader(es, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var content = sr.ReadToEnd().Trim().Trim('﻿');
+            if (content == ExpectedMimetype) return true;
+            // 변종 mimetype 이라도 본문 구조가 올바르면 통과.
+            return HasCoreContentInternal(zip);
         }
         catch { return false; }
+    }
+
+    private static bool HasCoreContentInternal(ZipArchive zip)
+    {
+        bool hasHeader  = zip.Entries.Any(e =>
+            e.FullName.Equals("Contents/header.xml", StringComparison.OrdinalIgnoreCase));
+        bool hasSection = zip.Entries.Any(e =>
+            e.FullName.StartsWith("Contents/section", StringComparison.OrdinalIgnoreCase) &&
+            e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
+        return hasHeader && hasSection;
     }
 
     /// <summary>HWPX 가 암호화·DRM 으로 잠겨 있으면 true.</summary>

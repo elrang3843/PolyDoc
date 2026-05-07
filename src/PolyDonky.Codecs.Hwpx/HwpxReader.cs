@@ -173,16 +173,34 @@ public sealed class HwpxReader : IDocumentReader
 
     private static void ValidateMimetype(ZipArchive archive)
     {
-        var entry = archive.GetEntry(HwpxPaths.Mimetype)
-            ?? throw new InvalidDataException("HWPX package is missing 'mimetype' entry.");
-        using var stream = entry.Open();
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        var content = reader.ReadToEnd().Trim();
-        if (content != HwpxPaths.MimetypeContent)
+        var entry = archive.GetEntry(HwpxPaths.Mimetype);
+        if (entry is null)
         {
-            throw new InvalidDataException(
-                $"Unexpected HWPX mimetype: '{content}'. Expected '{HwpxPaths.MimetypeContent}'.");
+            // 일부 한컴 변종/자가 변환 도구가 mimetype 엔트리를 누락하기도 한다.
+            // 본문(Contents/header.xml + section*.xml) 존재 여부로 graceful 통과.
+            if (HasCoreHwpxContent(archive)) return;
+            throw new InvalidDataException("HWPX package is missing 'mimetype' entry.");
         }
+        using var stream = entry.Open();
+        // BOM 자동 감지 — 일부 한컴 HWPX 가 mimetype 에 UTF-8 BOM(EF BB BF) 을 붙여 와
+        // ASCII reader 가 이를 데이터로 읽어 비교 실패하던 문제 회피.
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var content = reader.ReadToEnd().Trim().Trim('﻿');
+        if (content == HwpxPaths.MimetypeContent) return;
+        // 한컴 변종이 표기를 약간 달리 쓰는 경우(예: x-hwp+zip) 라도 본문이 정상이면 통과.
+        if (HasCoreHwpxContent(archive)) return;
+        throw new InvalidDataException(
+            $"Unexpected HWPX mimetype: '{content}'. Expected '{HwpxPaths.MimetypeContent}'.");
+    }
+
+    private static bool HasCoreHwpxContent(ZipArchive archive)
+    {
+        bool hasHeader  = archive.Entries.Any(e =>
+            e.FullName.Equals("Contents/header.xml", StringComparison.OrdinalIgnoreCase));
+        bool hasSection = archive.Entries.Any(e =>
+            e.FullName.StartsWith("Contents/section", StringComparison.OrdinalIgnoreCase) &&
+            e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
+        return hasHeader && hasSection;
     }
 
     private static string ResolveContentHpf(ZipArchive archive, List<string>? errors = null)
