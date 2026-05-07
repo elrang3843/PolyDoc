@@ -189,9 +189,9 @@ PolyDonky/
 | PolyDonky.Codecs.Markdown.Tests | 40 | ✅ |
 | PolyDonky.Codecs.Docx.Tests | 24 | ✅ |
 | PolyDonky.Codecs.Hwpx.Tests | 52 | ✅ |
-| PolyDonky.Codecs.Html.Tests | 70 | ✅ |
+| PolyDonky.Codecs.Html.Tests | 95 | ✅ |
 | PolyDonky.Codecs.Xml.Tests | 30 | ✅ |
-| **Linux 합계** | **274** | **All green** |
+| **Linux 합계** | **299** | **All green** |
 | PolyDonky.App.Tests | (WPF — Windows 전용) | 별도 검증 |
 
 ---
