@@ -101,6 +101,13 @@ internal static class HwpxHeaderReader
                         rs.Strikethrough = true;
                     }
                     break;
+                case "overline":
+                    var ol = child.Attribute("type")?.Value;
+                    if (string.IsNullOrEmpty(ol) || !string.Equals(ol, "NONE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        rs.Overline = true;
+                    }
+                    break;
                 case "supscript":     // HWPX 사양 표기 (super 가 아닌 sup)
                 case "supScript":
                 case "superscript":

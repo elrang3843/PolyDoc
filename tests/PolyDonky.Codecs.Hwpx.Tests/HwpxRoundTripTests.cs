@@ -302,35 +302,31 @@ public class HwpxRoundTripTests
     }
 
     [Fact]
-    public void RoundTrip_PreservesHwpxOpaqueShape()
+    public void RoundTrip_HwpxShapeRoundTripsAsShapeObject()
     {
-        // hp:rect 모양의 최소 XML — 실제 한컴 hwpx 도형 구조 시뮬레이션.
-        const string rectXml = "<hp:rect xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" " +
-                                "width=\"5000\" height=\"3000\" />";
-
+        // ShapeObject → HWPX → 다시 읽으면 ShapeObject 로 복원되는지 확인.
         var doc = new PolyDonkyument();
         var section = new Section();
         doc.Sections.Add(section);
         section.Blocks.Add(Paragraph.Of("앞"));
-        section.Blocks.Add(new OpaqueBlock
+        section.Blocks.Add(new ShapeObject
         {
-            Format = "hwpx",
-            Kind = "rect",
-            Xml = rectXml,
-            DisplayLabel = "[사각형]",
+            Kind = ShapeKind.Rectangle,
+            WidthMm = 50,
+            HeightMm = 30,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            StrokeColor = "#000000",
         });
         section.Blocks.Add(Paragraph.Of("뒤"));
 
         var roundTripped = WriteThenRead(doc);
         var blocks = roundTripped.Sections[0].Blocks;
 
-        // OpaqueBlock 이 보존되어 중간에 살아남아야 한다.
-        var opaque = blocks.OfType<OpaqueBlock>().SingleOrDefault();
-        Assert.NotNull(opaque);
-        Assert.Equal("hwpx", opaque.Format);
-        Assert.Equal("rect", opaque.Kind);
-        Assert.NotNull(opaque.Xml);
-        Assert.Contains("rect", opaque.Xml, StringComparison.Ordinal);
+        var shape = blocks.OfType<ShapeObject>().SingleOrDefault();
+        Assert.NotNull(shape);
+        Assert.Equal(ShapeKind.Rectangle, shape.Kind);
+        Assert.Equal(50, shape.WidthMm, 0.5);
+        Assert.Equal(30, shape.HeightMm, 0.5);
     }
 
     [Fact]

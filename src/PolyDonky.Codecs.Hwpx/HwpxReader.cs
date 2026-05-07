@@ -28,18 +28,6 @@ public sealed class HwpxReader : IDocumentReader
         "rect", "line", "ellipse", "arc", "polygon", "textBox", "connector",
     };
 
-    private static string ShapeDisplayLabel(string localName) => localName switch
-    {
-        "rect"      => "[사각형]",
-        "line"      => "[선]",
-        "ellipse"   => "[타원]",
-        "arc"       => "[호]",
-        "polygon"   => "[다각형]",
-        "textBox"   => "[글상자]",
-        "connector" => "[연결선]",
-        _           => $"[도형:{localName}]",
-    };
-
     public PolyDonkyument Read(Stream input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -339,6 +327,13 @@ public sealed class HwpxReader : IDocumentReader
             return section;
         }
 
+        // secPr 에서 페이지 크기·여백 회수 (첫 번째 secPr 만 처리).
+        var secPrElem = doc.Root.Descendants().FirstOrDefault(e => e.Name.LocalName == "secPr");
+        if (secPrElem is not null)
+        {
+            ApplySecPr(secPrElem, section);
+        }
+
         // 한컴 hwpx 는 root 안에 wrapper 를 둘 수도 있고 표 안에 셀 paragraph 가 중첩되므로
         // 1) 모든 hp:tbl 안의 paragraph/pic 을 마킹해 평탄 순회에서 제외하고
         // 2) descendants 평탄 순회로 hp:p / hp:tbl / hp:pic 을 본문 block 으로 추출.
@@ -352,7 +347,8 @@ public sealed class HwpxReader : IDocumentReader
             }
         }
 
-        var seenPics = new HashSet<XElement>();
+        var seenPics    = new HashSet<XElement>();
+        var seenShapes  = new HashSet<XElement>();
         foreach (var elem in doc.Root.Descendants())
         {
             if (insideTable.Contains(elem))
@@ -373,13 +369,10 @@ public sealed class HwpxReader : IDocumentReader
                     }
                     foreach (var shape in elem.Descendants().Where(d => s_shapeLocalNames.Contains(d.Name.LocalName)))
                     {
-                        section.Blocks.Add(new OpaqueBlock
+                        if (seenShapes.Add(shape))
                         {
-                            Format = "hwpx",
-                            Kind = shape.Name.LocalName,
-                            Xml = shape.ToString(SaveOptions.DisableFormatting),
-                            DisplayLabel = ShapeDisplayLabel(shape.Name.LocalName),
-                        });
+                            section.Blocks.Add(ReadShape(shape));
+                        }
                     }
                     break;
                 case "tbl":
@@ -394,6 +387,36 @@ public sealed class HwpxReader : IDocumentReader
             }
         }
         return section;
+    }
+
+    private static void ApplySecPr(XElement secPr, Section section)
+    {
+        var pagePr = secPr.Descendants().FirstOrDefault(e => e.Name.LocalName == "pagePr");
+        if (pagePr is null) return;
+
+        if (TryParseDouble(pagePr.Attribute("width")?.Value, out var w) && w > 0)
+            section.Page.WidthMm = UnitConverter.HwpUnitToMm(w);
+        if (TryParseDouble(pagePr.Attribute("height")?.Value, out var h) && h > 0)
+            section.Page.HeightMm = UnitConverter.HwpUnitToMm(h);
+
+        // 가로/세로 방향: 너비 > 높이 면 Landscape, 또는 landscape 속성이 "LANDSCAPE" 인 경우.
+        var landscapeAttr = pagePr.Attribute("landscape")?.Value?.ToUpperInvariant();
+        if (landscapeAttr == "LANDSCAPE"
+            || (section.Page.WidthMm > 0 && section.Page.HeightMm > 0
+                && section.Page.WidthMm > section.Page.HeightMm))
+        {
+            section.Page.Orientation = PageOrientation.Landscape;
+        }
+
+        var margin = pagePr.Descendants().FirstOrDefault(e => e.Name.LocalName == "margin");
+        if (margin is null) return;
+
+        if (TryParseDouble(margin.Attribute("left")?.Value,   out var ml)) section.Page.MarginLeftMm   = UnitConverter.HwpUnitToMm(ml);
+        if (TryParseDouble(margin.Attribute("right")?.Value,  out var mr)) section.Page.MarginRightMm  = UnitConverter.HwpUnitToMm(mr);
+        if (TryParseDouble(margin.Attribute("top")?.Value,    out var mt)) section.Page.MarginTopMm    = UnitConverter.HwpUnitToMm(mt);
+        if (TryParseDouble(margin.Attribute("bottom")?.Value, out var mb)) section.Page.MarginBottomMm = UnitConverter.HwpUnitToMm(mb);
+        if (TryParseDouble(margin.Attribute("header")?.Value, out var mh)) section.Page.MarginHeaderMm = UnitConverter.HwpUnitToMm(mh);
+        if (TryParseDouble(margin.Attribute("footer")?.Value, out var mf)) section.Page.MarginFooterMm = UnitConverter.HwpUnitToMm(mf);
     }
 
     private static Table ReadTable(XElement wtbl, ReadContext ctx)
@@ -450,7 +473,7 @@ public sealed class HwpxReader : IDocumentReader
                     tableCell.WidthMm = UnitConverter.HwpUnitToMm(widthHwp);
                 }
 
-                // 셀 본문 — subList 안의 hp:p 들을 셀에 모은다 (인라인 그림은 같은 셀에 ImageBlock 으로).
+                // 셀 본문 — subList 안의 hp:p 들을 셀에 모은다 (인라인 그림·도형 포함).
                 var seenInCell = new HashSet<XElement>();
                 foreach (var d in cell.Descendants())
                 {
@@ -463,6 +486,13 @@ public sealed class HwpxReader : IDocumentReader
                                 if (seenInCell.Add(pic) && TryReadPicture(pic, ctx, out var img))
                                 {
                                     tableCell.Blocks.Add(img);
+                                }
+                            }
+                            foreach (var shape in d.Descendants().Where(x => s_shapeLocalNames.Contains(x.Name.LocalName)))
+                            {
+                                if (seenInCell.Add(shape))
+                                {
+                                    tableCell.Blocks.Add(ReadShape(shape));
                                 }
                             }
                             break;
@@ -586,12 +616,36 @@ public sealed class HwpxReader : IDocumentReader
                 heightMm = UnitConverter.HwpUnitToMm(h);
         }
 
+        // WrapMode 로 textWrap 속성 매핑.
+        var wrapMode = ImageWrapMode.Inline;
+        var textWrap = pic.Attribute("textWrap")?.Value?.ToUpperInvariant();
+        if (textWrap is "IN_FRONT_OF_TEXT")
+            wrapMode = ImageWrapMode.InFrontOfText;
+        else if (textWrap is "BEHIND_TEXT")
+            wrapMode = ImageWrapMode.BehindText;
+        else if (textWrap is "FLOAT_LEFT")
+            wrapMode = ImageWrapMode.WrapLeft;
+        else if (textWrap is "FLOAT_RIGHT")
+            wrapMode = ImageWrapMode.WrapRight;
+
+        // 오버레이 위치 (IN_FRONT_OF_TEXT / BEHIND_TEXT 일 때 의미 있음).
+        double overlayX = 0, overlayY = 0;
+        var posElem = pic.Descendants().FirstOrDefault(e => e.Name.LocalName == "pos");
+        if (posElem is not null)
+        {
+            if (TryParseDouble(posElem.Attribute("horzOffset")?.Value, out var ox)) overlayX = UnitConverter.HwpUnitToMm(ox);
+            if (TryParseDouble(posElem.Attribute("vertOffset")?.Value, out var oy)) overlayY = UnitConverter.HwpUnitToMm(oy);
+        }
+
         image = new ImageBlock
         {
             MediaType = GuessMediaType(entry.FullName),
             Data = bytes,
             WidthMm = widthMm,
             HeightMm = heightMm,
+            WrapMode = wrapMode,
+            OverlayXMm = overlayX,
+            OverlayYMm = overlayY,
         };
         return true;
     }
@@ -753,6 +807,192 @@ public sealed class HwpxReader : IDocumentReader
 
     private static int? TryParseInt(string? raw)
         => int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    private static bool TryParseDouble(string? raw, out double value)
+        => double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
+
+    // ── 도형(ShapeObject) 파싱 ──────────────────────────────────────────────
+
+    private static ShapeObject ReadShape(XElement shapeElem)
+    {
+        var localName = shapeElem.Name.LocalName;
+        var shape = new ShapeObject();
+
+        // WrapMode (textWrap 속성)
+        shape.WrapMode = shapeElem.Attribute("textWrap")?.Value?.ToUpperInvariant() switch
+        {
+            "BEHIND_TEXT"       => ImageWrapMode.BehindText,
+            "TOP_AND_BOTTOM"    => ImageWrapMode.Inline,
+            "FLOAT_LEFT"        => ImageWrapMode.WrapLeft,
+            "FLOAT_RIGHT"       => ImageWrapMode.WrapRight,
+            _                   => ImageWrapMode.InFrontOfText,
+        };
+
+        // 크기: curSz → orgSz → sz 순서
+        foreach (var sizeName in new[] { "curSz", "orgSz", "sz" })
+        {
+            var sz = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == sizeName);
+            if (sz is null) continue;
+            if (TryParseDouble(sz.Attribute("width")?.Value, out var sw) && sw > 0)
+                shape.WidthMm = UnitConverter.HwpUnitToMm(sw);
+            if (TryParseDouble(sz.Attribute("height")?.Value, out var sh) && sh > 0)
+                shape.HeightMm = UnitConverter.HwpUnitToMm(sh);
+            if (shape.WidthMm > 0 && shape.HeightMm > 0) break;
+        }
+
+        // 오버레이 위치 (hp:pos/@horzOffset, @vertOffset)
+        var pos = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "pos");
+        if (pos is not null)
+        {
+            if (TryParseDouble(pos.Attribute("horzOffset")?.Value, out var ox)) shape.OverlayXMm = UnitConverter.HwpUnitToMm(ox);
+            if (TryParseDouble(pos.Attribute("vertOffset")?.Value, out var oy)) shape.OverlayYMm = UnitConverter.HwpUnitToMm(oy);
+        }
+
+        // 회전 (hp:rotationInfo/@angle, HWPX 단위 = 1/10도)
+        var rot = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "rotationInfo");
+        if (rot is not null && TryParseDouble(rot.Attribute("angle")?.Value, out var ang) && ang != 0)
+        {
+            shape.RotationAngleDeg = ang / 10.0;
+        }
+
+        // 선 속성 (hp:lineShape)
+        var lineShape = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "lineShape");
+        if (lineShape is not null)
+        {
+            var sc = lineShape.Attribute("color")?.Value;
+            if (!string.IsNullOrEmpty(sc))
+                shape.StrokeColor = sc.StartsWith('#') ? sc : "#" + sc;
+            if (TryParseDouble(lineShape.Attribute("width")?.Value, out var sw))
+                shape.StrokeThicknessPt = sw / 100.0;
+            shape.StrokeDash = lineShape.Attribute("style")?.Value?.ToUpperInvariant() switch
+            {
+                "DASHED" or "DASH"         => StrokeDash.Dashed,
+                "DOTTED" or "DOT"          => StrokeDash.Dotted,
+                "DASH_DOT" or "DASHDOT"    => StrokeDash.DashDot,
+                _                          => StrokeDash.Solid,
+            };
+            shape.StartArrow = ParseShapeArrow(lineShape.Attribute("headStyle")?.Value);
+            shape.EndArrow   = ParseShapeArrow(lineShape.Attribute("tailStyle")?.Value);
+        }
+
+        // 채우기 (hc:winBrush)
+        var winBrush = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "winBrush");
+        if (winBrush is not null)
+        {
+            var fc = winBrush.Attribute("faceColor")?.Value;
+            if (!string.IsNullOrEmpty(fc) && !fc.Equals("none", StringComparison.OrdinalIgnoreCase))
+                shape.FillColor = fc.StartsWith('#') ? fc : "#" + fc;
+            if (TryParseDouble(winBrush.Attribute("alpha")?.Value, out var alpha))
+                shape.FillOpacity = 1.0 - Math.Clamp(alpha / 255.0, 0.0, 1.0);
+        }
+
+        // 도형 종류별 파싱
+        switch (localName)
+        {
+            case "line":
+            case "connector":
+                shape.Kind = ShapeKind.Line;
+                ReadLinePoints(shapeElem, shape);
+                break;
+
+            case "rect":
+                if (TryParseInt(shapeElem.Attribute("ratio")?.Value) is { } ratio && ratio > 0)
+                {
+                    shape.Kind = ShapeKind.RoundedRect;
+                    var minSide = Math.Min(
+                        shape.WidthMm  > 0 ? shape.WidthMm  : 40,
+                        shape.HeightMm > 0 ? shape.HeightMm : 30);
+                    shape.CornerRadiusMm = ratio / 50.0 * (minSide / 2.0);
+                }
+                else
+                {
+                    shape.Kind = ShapeKind.Rectangle;
+                }
+                break;
+
+            case "ellipse":
+            case "arc":
+                shape.Kind = ShapeKind.Ellipse;
+                break;
+
+            case "polygon":
+                ReadPolygonPoints(shapeElem, shape);
+                break;
+
+            case "textBox":
+                shape.Kind = ShapeKind.Rectangle;
+                break;
+
+            default:
+                shape.Kind = ShapeKind.Rectangle;
+                break;
+        }
+
+        return shape;
+    }
+
+    private static void ReadLinePoints(XElement shapeElem, ShapeObject shape)
+    {
+        var startPt = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "startPt");
+        var endPt   = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "endPt");
+        if (startPt is null || endPt is null) return;
+
+        TryParseDouble(startPt.Attribute("x")?.Value, out var sxRaw);
+        TryParseDouble(startPt.Attribute("y")?.Value, out var syRaw);
+        TryParseDouble(endPt.Attribute("x")?.Value,   out var exRaw);
+        TryParseDouble(endPt.Attribute("y")?.Value,   out var eyRaw);
+
+        shape.Points = new List<ShapePoint>
+        {
+            new() { X = UnitConverter.HwpUnitToMm(sxRaw), Y = UnitConverter.HwpUnitToMm(syRaw) },
+            new() { X = UnitConverter.HwpUnitToMm(exRaw), Y = UnitConverter.HwpUnitToMm(eyRaw) },
+        };
+    }
+
+    private static void ReadPolygonPoints(XElement shapeElem, ShapeObject shape)
+    {
+        var rawPts = shapeElem.Descendants()
+            .Where(e => e.Name.LocalName == "pt")
+            .Select(pt =>
+            {
+                TryParseDouble(pt.Attribute("x")?.Value, out var px);
+                TryParseDouble(pt.Attribute("y")?.Value, out var py);
+                return new ShapePoint { X = UnitConverter.HwpUnitToMm(px), Y = UnitConverter.HwpUnitToMm(py) };
+            })
+            .ToList();
+
+        if (rawPts.Count == 0)
+        {
+            shape.Kind = ShapeKind.Polygon;
+            return;
+        }
+
+        // 마지막 점이 첫 점과 같으면 닫힌 다각형, 아니면 폴리선.
+        bool closed = rawPts.Count >= 3
+            && Math.Abs(rawPts[0].X - rawPts[^1].X) < 0.01
+            && Math.Abs(rawPts[0].Y - rawPts[^1].Y) < 0.01;
+
+        if (closed)
+        {
+            rawPts.RemoveAt(rawPts.Count - 1);
+            shape.Kind = ShapeKind.Polygon;
+        }
+        else
+        {
+            shape.Kind = ShapeKind.Polyline;
+        }
+        shape.Points = rawPts;
+    }
+
+    private static ShapeArrow ParseShapeArrow(string? style)
+        => style?.ToUpperInvariant() switch
+        {
+            "OPEN" or "ARROW"      => ShapeArrow.Open,
+            "FILLED" or "SOLID"    => ShapeArrow.Filled,
+            "DIAMOND"              => ShapeArrow.Diamond,
+            "CIRCLE"               => ShapeArrow.Circle,
+            _                      => ShapeArrow.None,
+        };
 
     private static void CopyParagraphStyle(ParagraphStyle src, ParagraphStyle dst)
     {
