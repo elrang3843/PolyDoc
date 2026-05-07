@@ -607,6 +607,13 @@ public sealed class HwpxWriter : IDocumentWriter
     // A4 page in hwpunit (1 hwpunit = 1/7200 inch).  210mm×297mm.
     private const long A4W = 59528;
     private const long A4H = 84188;
+
+    /// <summary>mm 값을 HWPUNIT 으로 변환. 0 이하면 fallback 기본값 사용.</summary>
+    private static long ResolvePageDim(double mm, double defaultMm, double minMm = 1.0)
+    {
+        if (mm < minMm) mm = defaultMm;
+        return UnitConverter.MmToHwpUnit(mm);
+    }
     // Standard Korean default margins (mm → hwpunit: mm / 25.4 × 7200).
     private const long MarginLeft   = 8503;   // ~30 mm
     private const long MarginRight  = 8503;   // ~30 mm
@@ -988,20 +995,20 @@ public sealed class HwpxWriter : IDocumentWriter
         if (blocks.Count == 0)
         {
             var para = BuildEmptyParagraph(ctx);
-            if (injectSecPr) PrependSecPrRun(para);
+            if (injectSecPr) PrependSecPrRun(para, section);
             sec.Add(para);
         }
         else
         {
             foreach (var block in blocks)
-                AppendBlock(sec, block, ctx, ref injectSecPr);
+                AppendBlock(sec, block, ctx, section, ref injectSecPr);
         }
 
         WriteXml(archive, HwpxPaths.SectionXml(sectionIndex),
             new XDocument(new XDeclaration("1.0", "utf-8", null), sec));
     }
 
-    private void AppendBlock(XElement target, Block block, WriteContext ctx, ref bool injectSecPr)
+    private void AppendBlock(XElement target, Block block, WriteContext ctx, Section section, ref bool injectSecPr)
     {
         XElement para = block switch
         {
@@ -1012,7 +1019,7 @@ public sealed class HwpxWriter : IDocumentWriter
             OpaqueBlock op  => BuildOpaqueHostingParagraph(op, ctx),
             _               => BuildEmptyParagraph(ctx),
         };
-        if (injectSecPr) { PrependSecPrRun(para); injectSecPr = false; }
+        if (injectSecPr) { PrependSecPrRun(para, section); injectSecPr = false; }
         target.Add(para);
     }
 
@@ -1020,13 +1027,25 @@ public sealed class HwpxWriter : IDocumentWriter
     private void AppendBlock(XElement target, Block block, WriteContext ctx)
     {
         bool dummy = false;
-        AppendBlock(target, block, ctx, ref dummy);
+        AppendBlock(target, block, ctx, new Section(), ref dummy);
     }
 
     // Injects the full hp:secPr control run as the very first child of the paragraph.
     // Structure per real Hancom format: secPr + ctrl in same run.
-    private void PrependSecPrRun(XElement para)
+    // 페이지 크기·여백은 section.Page 에서 동적으로 계산 (이전엔 A4 상수 하드코딩).
+    private void PrependSecPrRun(XElement para, Section section)
     {
+        long pageW = ResolvePageDim(section.Page.EffectiveWidthMm,  defaultMm: 210);
+        long pageH = ResolvePageDim(section.Page.EffectiveHeightMm, defaultMm: 297);
+        long mLeft = ResolvePageDim(section.Page.MarginLeftMm,   defaultMm: 30, minMm: 0);
+        long mRight = ResolvePageDim(section.Page.MarginRightMm, defaultMm: 30, minMm: 0);
+        long mTop = ResolvePageDim(section.Page.MarginTopMm,     defaultMm: 20, minMm: 0);
+        long mBottom = ResolvePageDim(section.Page.MarginBottomMm, defaultMm: 17.5, minMm: 0);
+        long mHead = ResolvePageDim(section.Page.MarginHeaderMm, defaultMm: 15, minMm: 0);
+        long mFoot = ResolvePageDim(section.Page.MarginFooterMm, defaultMm: 15, minMm: 0);
+        bool landscape = section.Page.Orientation == PageOrientation.Landscape
+                         || section.Page.EffectiveWidthMm > section.Page.EffectiveHeightMm;
+
         var secPr = new XElement(Hp + "secPr",
             new XAttribute("id", ""),
             new XAttribute("textDirection", "HORIZONTAL"),
@@ -1065,18 +1084,18 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("distance", "0"),
                 new XAttribute("startNumber", "0")),
             new XElement(Hp + "pagePr",
-                new XAttribute("landscape", "WIDELY"),
-                new XAttribute("width",  A4W.ToString()),
-                new XAttribute("height", A4H.ToString()),
+                new XAttribute("landscape", landscape ? "WIDELY" : "NARROWLY"),
+                new XAttribute("width",  pageW.ToString()),
+                new XAttribute("height", pageH.ToString()),
                 new XAttribute("gutterType", "LEFT_ONLY"),
                 new XElement(Hp + "margin",
-                    new XAttribute("header", MarginHead.ToString()),
-                    new XAttribute("footer", MarginFoot.ToString()),
+                    new XAttribute("header", mHead.ToString()),
+                    new XAttribute("footer", mFoot.ToString()),
                     new XAttribute("gutter", "0"),
-                    new XAttribute("left",   MarginLeft.ToString()),
-                    new XAttribute("right",  MarginRight.ToString()),
-                    new XAttribute("top",    MarginTop.ToString()),
-                    new XAttribute("bottom", MarginBottom.ToString()))),
+                    new XAttribute("left",   mLeft.ToString()),
+                    new XAttribute("right",  mRight.ToString()),
+                    new XAttribute("top",    mTop.ToString()),
+                    new XAttribute("bottom", mBottom.ToString()))),
             new XElement(Hp + "footNotePr",
                 new XElement(Hp + "autoNumFormat",
                     new XAttribute("type", "DIGIT"),
@@ -1732,8 +1751,45 @@ public sealed class HwpxWriter : IDocumentWriter
         // 한컴 ground truth: 닫힌 도형은 numberingType="PICTURE", 선은 "NONE".
         string numType = elemName == "line" ? "NONE" : "PICTURE";
 
-        long w = UnitConverter.MmToHwpUnit((shape.WidthMm  > 0 ? shape.WidthMm  : 40));
-        long h = UnitConverter.MmToHwpUnit((shape.HeightMm > 0 ? shape.HeightMm : 30));
+        double bboxWMm = shape.WidthMm  > 0 ? shape.WidthMm  : 40;
+        double bboxHMm = shape.HeightMm > 0 ? shape.HeightMm : 30;
+        // bbox 보정 시 도형 점들을 평행이동한 양 (mm). OverlayXMm/Y 에서 빼서 시각 위치 유지.
+        double translateXMm = 0, translateYMm = 0;
+        // polygon/line 의 mm-space 점들 — bbox 결정 후 HWPUNIT 으로 변환.
+        List<(double X, double Y)>? polygonPtsMm = null;
+        (double X, double Y)? lineStartMm = null, lineEndMm = null;
+
+        if (elemName == "polygon")
+        {
+            polygonPtsMm = ResolvePolygonVerticesMm(shape);
+            if (polygonPtsMm.Count > 0)
+            {
+                double minX = polygonPtsMm.Min(p => p.X);
+                double minY = polygonPtsMm.Min(p => p.Y);
+                double maxX = polygonPtsMm.Max(p => p.X);
+                double maxY = polygonPtsMm.Max(p => p.Y);
+                if (minX < 0) translateXMm = -minX;
+                if (minY < 0) translateYMm = -minY;
+                bboxWMm = Math.Max(bboxWMm, maxX + translateXMm);
+                bboxHMm = Math.Max(bboxHMm, maxY + translateYMm);
+            }
+        }
+        else if (shape.Kind == ShapeKind.Line && shape.Points.Count >= 2)
+        {
+            double sx = shape.Points[0].X, sy = shape.Points[0].Y;
+            double ex = shape.Points[1].X, ey = shape.Points[1].Y;
+            double minX = Math.Min(sx, ex), minY = Math.Min(sy, ey);
+            double maxX = Math.Max(sx, ex), maxY = Math.Max(sy, ey);
+            if (minX < 0) translateXMm = -minX;
+            if (minY < 0) translateYMm = -minY;
+            bboxWMm = Math.Max(bboxWMm, maxX + translateXMm);
+            bboxHMm = Math.Max(bboxHMm, maxY + translateYMm);
+            lineStartMm = (sx + translateXMm, sy + translateYMm);
+            lineEndMm   = (ex + translateXMm, ey + translateYMm);
+        }
+
+        long w = UnitConverter.MmToHwpUnit(bboxWMm);
+        long h = UnitConverter.MmToHwpUnit(bboxHMm);
         if (w <= 0) w = 1000;
         if (h <= 0) h = 1;
 
@@ -1752,7 +1808,10 @@ public sealed class HwpxWriter : IDocumentWriter
             // 이전 TOP_AND_BOTTOM 은 본문이 도형 위·아래로 밀려나 페이지 흐름 망가짐.
             new XAttribute("textWrap",
                 shape.WrapMode == ImageWrapMode.BehindText ? "BEHIND_TEXT" : "IN_FRONT_OF_TEXT"),
-            new XAttribute("textFlow",      "BOTH_SIDES"),
+            // textFlow=NONE — 본문이 도형을 피해 흐르지 않고 도형 아래/위로 통과.
+            // (이전 BOTH_SIDES 는 한컴이 본문을 도형 좌우로 분할해 흐름시켜 원본
+            //  IWPF 의 단순 오버레이 동작과 달랐다.)
+            new XAttribute("textFlow",      "NONE"),
             new XAttribute("lock",          "0"),
             new XAttribute("dropcapstyle",  "None"),
             new XAttribute("href",          ""),
@@ -1844,28 +1903,35 @@ public sealed class HwpxWriter : IDocumentWriter
         // Line 만 startPt/endPt 좌표 추가.
         if (shape.Kind == ShapeKind.Line)
         {
-            // Points[0] = 시작, Points[1] = 끝 (mm). 없으면 좌상단→우하단 기본.
-            double sx = 0, sy = 0, ex = shape.WidthMm, ey = shape.HeightMm;
-            if (shape.Points.Count >= 2)
+            // 위에서 계산한 lineStartMm/lineEndMm 사용 (bbox 평행이동 반영).
+            // 점이 없으면 좌상단→우하단 기본.
+            double sxMm, syMm, exMm, eyMm;
+            if (lineStartMm is { } s && lineEndMm is { } e)
             {
-                sx = shape.Points[0].X; sy = shape.Points[0].Y;
-                ex = shape.Points[1].X; ey = shape.Points[1].Y;
+                sxMm = s.X; syMm = s.Y; exMm = e.X; eyMm = e.Y;
             }
-            long sxU = UnitConverter.MmToHwpUnit(sx);
-            long syU = UnitConverter.MmToHwpUnit(sy);
-            long exU = UnitConverter.MmToHwpUnit(ex);
-            long eyU = UnitConverter.MmToHwpUnit(ey);
+            else
+            {
+                sxMm = 0; syMm = 0; exMm = bboxWMm; eyMm = bboxHMm;
+            }
             elem.Add(new XElement(Hc + "startPt",
-                new XAttribute("x", sxU.ToString()), new XAttribute("y", syU.ToString())));
+                new XAttribute("x", UnitConverter.MmToHwpUnit(sxMm).ToString()),
+                new XAttribute("y", UnitConverter.MmToHwpUnit(syMm).ToString())));
             elem.Add(new XElement(Hc + "endPt",
-                new XAttribute("x", exU.ToString()), new XAttribute("y", eyU.ToString())));
+                new XAttribute("x", UnitConverter.MmToHwpUnit(exMm).ToString()),
+                new XAttribute("y", UnitConverter.MmToHwpUnit(eyMm).ToString())));
         }
         else if (elemName == "polygon")
         {
             // hp:polygon: 꼭짓점 hc:pt 시리즈.
             // 닫힌 도형 (Polygon/Triangle/RegularPolygon/Star/ClosedSpline) → 첫 점 반복으로 닫음.
             // 열린 도형 (Polyline/Spline) → 닫힘점 추가하지 않음.
-            var verts = ResolvePolygonVertices(shape, w, h);
+            var ptsMm = polygonPtsMm ?? new List<(double, double)>();
+            var verts = ptsMm
+                .Select(p => (
+                    X: UnitConverter.MmToHwpUnit(p.X + translateXMm),
+                    Y: UnitConverter.MmToHwpUnit(p.Y + translateYMm)))
+                .ToList();
             foreach (var (vx, vy) in verts)
                 elem.Add(new XElement(Hc + "pt",
                     new XAttribute("x", vx.ToString()),
@@ -1915,8 +1981,10 @@ public sealed class HwpxWriter : IDocumentWriter
         // 직선만 InFrontOfText 라서 정상이고, 사각형/타원/폴리곤 등 Inline 기본값
         // 도형은 모두 다음 페이지로 넘어감. 한컴 ground truth 도 도형은 anchored.
         // OverlayXMm/Y 가 설정되어 있으면 그 값, 아니면 (0,0) 기본 위치.
-        long xOff = UnitConverter.MmToHwpUnit(shape.OverlayXMm);
-        long yOff = UnitConverter.MmToHwpUnit(shape.OverlayYMm);
+        // bbox 가 음수 좌표를 포함해 평행이동했으면 같은 양만큼 OverlayXMm/Y 에서
+        // 빼서 시각적 위치를 동일하게 유지한다 (도형 점이 원래 좌상단보다 더 위/왼쪽).
+        long xOff = UnitConverter.MmToHwpUnit(shape.OverlayXMm - translateXMm);
+        long yOff = UnitConverter.MmToHwpUnit(shape.OverlayYMm - translateYMm);
         elem.Add(new XElement(Hp + "pos",
             new XAttribute("treatAsChar",     "0"),
             new XAttribute("affectLSpacing",  "0"),
@@ -1936,44 +2004,35 @@ public sealed class HwpxWriter : IDocumentWriter
         return elem;
     }
 
-    // Polygon/Curve 의 꼭짓점 좌표 (HWPUNIT, 바운딩 박스 좌상단 0,0 기준).
+    // Polygon/Curve 의 꼭짓점 좌표 (mm, 바운딩 박스 좌상단 0,0 기준).
+    // 클램핑하지 않음 — 호출측에서 실제 bbox 를 계산해 orgSz/curSz 를 확장한다.
+    // 이전 클램핑은 스플라인 샘플 점이 바운딩 박스를 벗어나는 경우 곡선 일부를
+    // 직선으로 만들어 한컴이 시각적으로 잘리게 보이는 원인이었다.
+    //
     // ShapeKind 별 보강:
     //   - Polyline/Polygon: shape.Points 가 정의되어 있으면 그대로 사용
     //   - Spline/ClosedSpline: cubic Bezier 고밀도 샘플링(12 samples/segment)으로 매끄러운 다각형 근사
     //   - Triangle: Points 가 비어있으면 등변 삼각형 (위 꼭짓점→오른쪽 아래→왼쪽 아래)
     //   - RegularPolygon: Points 가 비어있으면 SideCount 개 정다각형 자동 계산
     //   - Star: 외/내부 반지름 교차로 별 모양 자동 계산
-    private static List<(long X, long Y)> ResolvePolygonVertices(ShapeObject shape, long w, long h)
+    private static List<(double X, double Y)> ResolvePolygonVerticesMm(ShapeObject shape)
     {
-        var result = new List<(long, long)>();
+        var result = new List<(double, double)>();
+        double wMm = shape.WidthMm  > 0 ? shape.WidthMm  : 40;
+        double hMm = shape.HeightMm > 0 ? shape.HeightMm : 30;
 
-        // Spline/ClosedSpline — 고밀도 샘플링으로 곡선을 매끄럽게 근사.
+        // Spline/ClosedSpline — 고밀도 샘플링으로 곡선을 매끄럽게 근사 (mm, 클램핑 없음).
         if ((shape.Kind == ShapeKind.Spline || shape.Kind == ShapeKind.ClosedSpline)
             && shape.Points.Count >= 2)
         {
-            double wMm = shape.WidthMm  > 0 ? shape.WidthMm  : 40;
-            double hMm = shape.HeightMm > 0 ? shape.HeightMm : 30;
-            var sampled = SampleSplineDense(shape, samplesPerSegment: 12);
-            foreach (var (sx, sy) in sampled)
-            {
-                long px = UnitConverter.MmToHwpUnit(sx);
-                long py = UnitConverter.MmToHwpUnit(sy);
-                px = Math.Clamp(px, 0, w);
-                py = Math.Clamp(py, 0, h);
-                result.Add((px, py));
-            }
-            return result;
+            return SampleSplineDense(shape, samplesPerSegment: 12);
         }
 
         if (shape.Points.Count >= 2)
         {
             foreach (var p in shape.Points)
             {
-                long px = UnitConverter.MmToHwpUnit(p.X);
-                long py = UnitConverter.MmToHwpUnit(p.Y);
-                if (px < 0) px = 0; if (py < 0) py = 0;
-                if (px > w) px = w; if (py > h) py = h;
-                result.Add((px, py));
+                result.Add((p.X, p.Y));
             }
             return result;
         }
@@ -1981,17 +2040,17 @@ public sealed class HwpxWriter : IDocumentWriter
         switch (shape.Kind)
         {
             case ShapeKind.Triangle:
-                result.Add((w / 2, 0));   // top
-                result.Add((w, h));       // bottom-right
-                result.Add((0, h));       // bottom-left
+                result.Add((wMm / 2, 0));      // top
+                result.Add((wMm, hMm));        // bottom-right
+                result.Add((0, hMm));          // bottom-left
                 break;
 
             case ShapeKind.RegularPolygon:
             case ShapeKind.Star:
             {
                 int n = Math.Max(3, shape.SideCount);
-                long cx = w / 2, cy = h / 2;
-                long rx = w / 2, ry = h / 2;
+                double cx = wMm / 2, cy = hMm / 2;
+                double rx = wMm / 2, ry = hMm / 2;
                 bool isStar = shape.Kind == ShapeKind.Star;
                 int total = isStar ? n * 2 : n;
                 double inner = Math.Clamp(shape.InnerRadiusRatio, 0.1, 0.95);
@@ -1999,10 +2058,8 @@ public sealed class HwpxWriter : IDocumentWriter
                 {
                     double t = (Math.PI * 2 * i) / total - Math.PI / 2; // start at top
                     double radiusFactor = isStar && (i % 2 == 1) ? inner : 1.0;
-                    long vx = cx + (long)Math.Round(Math.Cos(t) * rx * radiusFactor);
-                    long vy = cy + (long)Math.Round(Math.Sin(t) * ry * radiusFactor);
-                    if (vx < 0) vx = 0; if (vy < 0) vy = 0;
-                    if (vx > w) vx = w; if (vy > h) vy = h;
+                    double vx = cx + Math.Cos(t) * rx * radiusFactor;
+                    double vy = cy + Math.Sin(t) * ry * radiusFactor;
                     result.Add((vx, vy));
                 }
                 break;
@@ -2011,9 +2068,9 @@ public sealed class HwpxWriter : IDocumentWriter
             default:
                 // Polyline/Polygon with no Points: rectangle outline as fallback.
                 result.Add((0, 0));
-                result.Add((w, 0));
-                result.Add((w, h));
-                result.Add((0, h));
+                result.Add((wMm, 0));
+                result.Add((wMm, hMm));
+                result.Add((0, hMm));
                 break;
         }
         return result;
