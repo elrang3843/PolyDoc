@@ -773,8 +773,57 @@ public sealed class HwpxReader : IDocumentReader
     private static void ReadCtrl(Paragraph paragraph, XElement ctrl, ReadContext ctx)
     {
         var ctrlId = ctrl.Attribute("ctrlID")?.Value;
-        if (ctrlId is not ("FOOT_NOTE" or "END_NOTE")) return;
+        switch (ctrlId)
+        {
+            case "FOOT_NOTE":
+            case "END_NOTE":
+                ReadNoteCtrl(paragraph, ctrl, ctx, ctrlId);
+                break;
 
+            // 페이지 번호 필드.
+            case "PGNUM":
+                paragraph.Runs.Add(new Run { Field = FieldType.Page });
+                break;
+
+            // 전체 페이지 수 필드.
+            case "NPAGNUM":
+            case "TOTAL_PGNUM":
+                paragraph.Runs.Add(new Run { Field = FieldType.NumPages });
+                break;
+
+            // 날짜/시간 필드 — KS X 6101 의 DATE_TIME ctrl.
+            case "DATE_TIME":
+            case "DATE":
+                paragraph.Runs.Add(new Run { Field = FieldType.Date });
+                break;
+
+            // 하이퍼링크 — url 속성(또는 href)으로 URL 전달.
+            case "HYPERLINK":
+            {
+                var url = ctrl.Attribute("url")?.Value
+                       ?? ctrl.Attribute("href")?.Value
+                       ?? ctrl.Attribute("uri")?.Value;
+                if (url is null) break;
+
+                var subList = ctrl.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+                if (subList is null) break;
+
+                foreach (var p in subList.Elements().Where(e => e.Name.LocalName == "p"))
+                {
+                    var linkPara = ReadParagraph(p, ctx);
+                    foreach (var r in linkPara.Runs)
+                    {
+                        r.Url = url;
+                        paragraph.Runs.Add(r);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    private static void ReadNoteCtrl(Paragraph paragraph, XElement ctrl, ReadContext ctx, string ctrlId)
+    {
         var subList = ctrl.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
         if (subList is null) return;
 

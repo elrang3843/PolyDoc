@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml.Linq;
 using DocumentFormat.OpenXml.Packaging;
 using PolyDonky.Core;
@@ -51,8 +52,8 @@ public sealed class DocxReader : IDocumentReader
                 case W.Table wtable:
                     section.Blocks.Add(ReadTable(wtable, ctx));
                     break;
-                case W.SectionProperties:
-                    // 섹션 속성은 페이지 설정으로 — 다음 사이클에서 처리.
+                case W.SectionProperties sectPr:
+                    ReadSectionProperties(section.Page, sectPr, ctx);
                     break;
                 default:
                     // 미인식 블록은 보존 섬으로 들어온다.
@@ -133,65 +134,129 @@ public sealed class DocxReader : IDocumentReader
     {
         var paragraph = new Paragraph();
         ApplyParagraphProperties(paragraph, wp.ParagraphProperties);
-
-        // 그림·도형은 단락 뒤에 별도 블록으로 추가 (1차 정책).
         var drawingBlocks = new List<Block>();
 
-        foreach (var run in wp.Elements<W.Run>())
+        // 복합 필드(fldChar begin/separate/end) 상태 머신.
+        bool inField        = false;   // begin ~ separate 사이에서 instrText 수집 중
+        bool inFieldDisplay = false;   // separate ~ end 사이 (표시용 텍스트 → 건너뜀)
+        var  fieldInstr     = new System.Text.StringBuilder();
+
+        void FlushPendingField()
         {
-            // 각주·미주 참조 run 은 별도 처리 (텍스트·그림보다 우선 확인).
+            if (!inField && !inFieldDisplay) return;
+            var ft = ParseFieldInstr(fieldInstr.ToString());
+            if (ft is not null)
+                paragraph.Runs.Add(new Run { Field = ft.Value });
+            inField = inFieldDisplay = false;
+            fieldInstr.Clear();
+        }
+
+        void ProcessRun(W.Run run, string? hyperlinkUrl = null)
+        {
+            // 각주·미주 참조 — 최우선 처리.
             if (run.Descendants<W.FootnoteReference>().FirstOrDefault() is { } fnRef
                 && fnRef.Id?.Value is { } fnId)
             {
-                paragraph.Runs.Add(new Run { FootnoteId = fnId.ToString(System.Globalization.CultureInfo.InvariantCulture) });
-                continue;
+                FlushPendingField();
+                paragraph.Runs.Add(new Run { FootnoteId = fnId.ToString(CultureInfo.InvariantCulture) });
+                return;
             }
             if (run.Descendants<W.EndnoteReference>().FirstOrDefault() is { } enRef
                 && enRef.Id?.Value is { } enId)
             {
-                paragraph.Runs.Add(new Run { EndnoteId = enId.ToString(System.Globalization.CultureInfo.InvariantCulture) });
-                continue;
+                FlushPendingField();
+                paragraph.Runs.Add(new Run { EndnoteId = enId.ToString(CultureInfo.InvariantCulture) });
+                return;
             }
 
+            // fldChar — 상태 전이.
+            if (run.Descendants<W.FieldChar>().FirstOrDefault() is { } fc)
+            {
+                var fct = fc.FieldCharType?.Value;
+                if (fct == W.FieldCharValues.Begin)
+                {
+                    inField = true;
+                    inFieldDisplay = false;
+                    fieldInstr.Clear();
+                }
+                else if (fct == W.FieldCharValues.Separate)
+                {
+                    inFieldDisplay = true;
+                    // 필드 타입을 미리 판별해 두고, End 에서 최종 emit.
+                }
+                else if (fct == W.FieldCharValues.End)
+                {
+                    FlushPendingField();
+                }
+                return;
+            }
+
+            // instrText — 필드 명령어 수집.
+            if (run.Descendants<W.FieldCode>().FirstOrDefault() is { } instrText)
+            {
+                fieldInstr.Append(instrText.Text);
+                return;
+            }
+
+            // Separate ~ End 사이 표시용 텍스트는 건너뜀.
+            if (inFieldDisplay) return;
+
+            // 그림·도형.
             foreach (var drawing in run.Elements<W.Drawing>())
             {
                 if (TryExtractImage(drawing, ctx, out var imageBlock))
-                {
                     drawingBlocks.Add(imageBlock);
-                }
                 else if (TryExtractShape(drawing, out var shapeBlock))
-                {
                     drawingBlocks.Add(shapeBlock);
-                }
                 else
-                {
                     target.Add(new OpaqueBlock
                     {
-                        Format = "docx",
-                        Kind = "drawing",
-                        Xml = drawing.OuterXml,
-                        DisplayLabel = "[보존된 도형]",
+                        Format = "docx", Kind = "drawing",
+                        Xml = drawing.OuterXml, DisplayLabel = "[보존된 도형]",
                     });
-                }
             }
 
+            // 텍스트.
             var text = string.Concat(run.Elements<W.Text>().Select(t => t.Text));
-            if (text.Length == 0)
-            {
-                continue;
-            }
-            paragraph.AddText(text, ReadRunStyle(run.RunProperties));
+            if (text.Length == 0) return;
+
+            var style = ReadRunStyle(run.RunProperties);
+            if (hyperlinkUrl is not null)
+                paragraph.Runs.Add(new Run { Text = text, Style = style, Url = hyperlinkUrl });
+            else
+                paragraph.AddText(text, style);
         }
+
+        foreach (var element in wp.ChildElements)
+        {
+            switch (element)
+            {
+                case W.Hyperlink hyperlink:
+                {
+                    var url = ResolveHyperlinkUrl(hyperlink, ctx.MainPart);
+                    foreach (var hRun in hyperlink.Elements<W.Run>())
+                        ProcessRun(hRun, url);
+                    break;
+                }
+                case W.SimpleField fldSimple:
+                {
+                    var ft = ParseFieldInstr(fldSimple.Instruction?.Value);
+                    if (ft is not null)
+                        paragraph.Runs.Add(new Run { Field = ft.Value });
+                    break;
+                }
+                case W.Run run:
+                    ProcessRun(run);
+                    break;
+            }
+        }
+        FlushPendingField();
 
         if (paragraph.Runs.Count == 0)
-        {
             paragraph.AddText(string.Empty);
-        }
         target.Add(paragraph);
         foreach (var block in drawingBlocks)
-        {
             target.Add(block);
-        }
     }
 
     private static bool TryExtractImage(W.Drawing drawing, ReadContext ctx, out ImageBlock imageBlock)
@@ -866,6 +931,126 @@ public sealed class DocxReader : IDocumentReader
         "oval"               => ShapeArrow.Circle,
         _                    => ShapeArrow.None,
     };
+
+    // ── 섹션 속성 (페이지 설정 + 머리말/꼬리말) ──────────────────────────────────
+
+    private static void ReadSectionProperties(PageSettings page, W.SectionProperties sectPr, ReadContext ctx)
+    {
+        if (sectPr.GetFirstChild<W.PageSize>() is { } pgSz)
+        {
+            if (pgSz.Width?.Value  is uint w) page.WidthMm  = UnitConverter.TwipsToMm(w);
+            if (pgSz.Height?.Value is uint h) page.HeightMm = UnitConverter.TwipsToMm(h);
+            page.Orientation = pgSz.Orient?.Value == W.PageOrientationValues.Landscape
+                ? PageOrientation.Landscape : PageOrientation.Portrait;
+        }
+        if (sectPr.GetFirstChild<W.PageMargin>() is { } pgMar)
+        {
+            if (pgMar.Top?.Value    is int  top)   page.MarginTopMm    = UnitConverter.TwipsToMm(top);
+            if (pgMar.Bottom?.Value is int  bot)   page.MarginBottomMm = UnitConverter.TwipsToMm(bot);
+            if (pgMar.Left?.Value   is uint left)  page.MarginLeftMm   = UnitConverter.TwipsToMm(left);
+            if (pgMar.Right?.Value  is uint right) page.MarginRightMm  = UnitConverter.TwipsToMm(right);
+            if (pgMar.Header?.Value is uint hdr)   page.MarginHeaderMm = UnitConverter.TwipsToMm(hdr);
+            if (pgMar.Footer?.Value is uint ftr)   page.MarginFooterMm = UnitConverter.TwipsToMm(ftr);
+        }
+        ReadHeaderFooterFromSectPr(page, sectPr, ctx);
+    }
+
+    private static void ReadHeaderFooterFromSectPr(PageSettings page, W.SectionProperties sectPr, ReadContext ctx)
+    {
+        // 기본(default) 헤더/푸터만 읽는다. Even/Odd 는 후속 사이클에서 추가.
+        foreach (var hRef in sectPr.Elements<W.HeaderReference>())
+        {
+            if (hRef.Type?.Value == W.HeaderFooterValues.Even) continue;
+            if (hRef.Id?.Value is not { Length: > 0 } relId) continue;
+            try
+            {
+                if (ctx.MainPart.GetPartById(relId) is not HeaderPart hp) continue;
+                page.Header = ReadHeaderFooterContent(hp.Header?.Elements<W.Paragraph>(), ctx);
+            }
+            catch { /* 깨진 관계 무시 */ }
+            break;
+        }
+        foreach (var fRef in sectPr.Elements<W.FooterReference>())
+        {
+            if (fRef.Type?.Value == W.HeaderFooterValues.Even) continue;
+            if (fRef.Id?.Value is not { Length: > 0 } relId) continue;
+            try
+            {
+                if (ctx.MainPart.GetPartById(relId) is not FooterPart fp) continue;
+                page.Footer = ReadHeaderFooterContent(fp.Footer?.Elements<W.Paragraph>(), ctx);
+            }
+            catch { /* 깨진 관계 무시 */ }
+            break;
+        }
+    }
+
+    private static HeaderFooterContent ReadHeaderFooterContent(
+        IEnumerable<W.Paragraph>? paragraphs, ReadContext ctx)
+    {
+        var content = new HeaderFooterContent();
+        if (paragraphs is null) return content;
+
+        foreach (var wp in paragraphs)
+        {
+            var slot = ParagraphAlignmentToSlot(wp.ParagraphProperties?.Justification?.Val?.Value, content);
+            var blocks = new List<Block>();
+            AppendParagraphAndExtractedDrawings(blocks, wp, ctx);
+            foreach (var block in blocks)
+            {
+                if (block is Paragraph p)
+                    slot.Paragraphs.Add(p);
+            }
+        }
+        return content;
+    }
+
+    private static HeaderFooterSlot ParagraphAlignmentToSlot(
+        W.JustificationValues? jc, HeaderFooterContent content)
+    {
+        if (jc == W.JustificationValues.Center) return content.Center;
+        if (jc == W.JustificationValues.Right)  return content.Right;
+        return content.Left;
+    }
+
+    // ── 하이퍼링크 ─────────────────────────────────────────────────────────────
+
+    private static string? ResolveHyperlinkUrl(W.Hyperlink hyperlink, MainDocumentPart mainPart)
+    {
+        if (hyperlink.Id?.Value is { Length: > 0 } relId)
+        {
+            try
+            {
+                var rel = mainPart.HyperlinkRelationships.FirstOrDefault(r => r.Id == relId);
+                if (rel is not null)
+                    return rel.Uri.IsAbsoluteUri ? rel.Uri.AbsoluteUri : rel.Uri.ToString();
+            }
+            catch { /* 잘못된 URI 무시 */ }
+        }
+        if (hyperlink.Anchor?.Value is { Length: > 0 } anchor)
+            return "#" + anchor;
+        return null;
+    }
+
+    // ── 필드 코드 파싱 ─────────────────────────────────────────────────────────
+
+    private static FieldType? ParseFieldInstr(string? instr)
+    {
+        if (string.IsNullOrWhiteSpace(instr)) return null;
+        var upper = instr.Trim().ToUpperInvariant();
+        if (MatchField(upper, "PAGE"))     return FieldType.Page;
+        if (MatchField(upper, "NUMPAGES")) return FieldType.NumPages;
+        if (MatchField(upper, "DATE"))     return FieldType.Date;
+        if (MatchField(upper, "TIME"))     return FieldType.Time;
+        if (MatchField(upper, "AUTHOR"))   return FieldType.Author;
+        if (MatchField(upper, "TITLE"))    return FieldType.Title;
+        return null;
+    }
+
+    private static bool MatchField(string upper, string name)
+        => upper.StartsWith(name, StringComparison.Ordinal)
+        && (upper.Length == name.Length || !char.IsLetterOrDigit(upper[name.Length]));
+
+    // ── 코어 속성 ──────────────────────────────────────────────────────────────
 
     private static void ReadCoreProperties(WordprocessingDocument package, DocumentMetadata metadata)
     {

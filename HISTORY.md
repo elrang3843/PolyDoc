@@ -46,6 +46,22 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **DOCX 코덱 `w:sectPr` 페이지 설정 읽기**: `DocxReader` 가 `w:sectPr` 의 `w:pgSz`(용지 크기·방향), `w:pgMar`(여백 6면) 를 `PageSettings` 로 변환 — 이전엔 섹션 속성을 읽지 않아 A4/기본 여백으로 고정되던 문제 해결. 단위 변환: twips → mm (`UnitConverter.TwipsToMm`).
+
+- **Added** — **DOCX 코덱 머리말/꼬리말 읽기·쓰기**: `DocxReader` 가 `w:sectPr` 의 `w:headerReference`/`w:footerReference` 를 따라 `HeaderPart`/`FooterPart` 를 파싱해 `HeaderFooterContent`(좌·중·우 3분할 슬롯) 로 복원 — 단락 정렬(left/center/right) 로 슬롯 매핑. `DocxWriter` 가 `HeaderFooterContent` 를 `HeaderPart`/`FooterPart` 로 직렬화하고 `w:sectPr` 에 `w:headerReference`/`w:footerReference` 링크, `w:pgMar headerW`/`footerW` 에 실제 여백값 사용(이전 하드코딩 720 twips 대체).
+
+- **Added** — **DOCX 코덱 하이퍼링크 읽기·쓰기 (`Run.Url`)**: `DocxReader` 가 `w:hyperlink` 요소를 파싱해 외부 URL(relationship 조회)·내부 북마크(`w:anchor`) 모두 `Run.Url` 로 복원. `DocxWriter` 가 `run.Url` 이 있으면 외부 URL 은 `AddHyperlinkRelationship` + `w:hyperlink id`, 내부 링크는 `w:hyperlink anchor` 로 출력.
+
+- **Added** — **DOCX 코덱 인라인 필드 읽기·쓰기 (`Run.Field`)**: `DocxReader` 가 복잡 필드(`w:fldChar begin/separate/end` + `w:instrText` 상태 기계)와 단순 필드(`w:fldSimple`) 를 파싱해 `FieldType`(`Page`/`NumPages`/`Date`/`Time`/`Author`/`Title`) 으로 변환. `DocxWriter` 가 `run.Field` 를 `fldChar begin/instrText/fldChar separate/placeholder/fldChar end` 패턴으로 출력.
+
+- **Added** — **DOCX 코덱 목차 블록 출력 (`TocBlock`)**: `DocxWriter` 가 `TocBlock` 을 목차 제목 단락(`TOCHeading` 스타일) + 항목 단락(`TOC1`~`TOC6` 스타일, 탭 + 페이지 번호 포함) 으로 직렬화.
+
+- **Added** — **HWPX 코덱 필드 컨트롤 읽기·쓰기 (`Run.Field`)**: `HwpxReader` 가 `hp:ctrl ctrlID="PGNUM"/"NPAGNUM"/"TOTAL_PGNUM"/"DATE_TIME"/"DATE"` 를 `FieldType.Page`/`NumPages`/`Date` 로 변환. `HwpxWriter` 가 `run.Field` 를 각 ctrlID 의 HWPX 컨트롤 요소(`hp:numOffset`·`hp:autoNum`·`hp:dateTimeForm` 포함)로 직렬화.
+
+- **Added** — **HWPX 코덱 하이퍼링크 컨트롤 읽기·쓰기 (`Run.Url`)**: `HwpxReader` 가 `hp:ctrl ctrlID="HYPERLINK"` 의 `url` 속성을 읽고 `hp:subList` 안의 텍스트 런을 `Run.Url` 로 복원. `HwpxWriter` 가 `run.Url` 이 있으면 `hp:ctrl ctrlID="HYPERLINK" url="..."` + subList 구조로 출력.
+
+- **Added** — **HWPX 코덱 목차 블록 출력 (`TocBlock`)**: `HwpxWriter` 가 `TocBlock` 을 목차 제목 단락(H1 개요 수준) + 항목 단락(레벨별 H1~H6 개요 수준, 탭 + 페이지 번호 포함) 으로 직렬화.
+
 - **Fixed** — **코덱 내부 진단 마커가 IWPF로 유출되던 문제 (아키텍처 경계 위반 정리)**: CLI 분리 이전에 코덱들이 앱에 힌트를 전달하던 방식(`Metadata.Custom`)을 정리. `HwpxReader`가 개발 진단용으로 기록하던 `hwpx.paragraphCount` / `hwpx.sectionFilesFound` / `hwpx.firstSection*` / `hwpx.xmlEntries` / `hwpx.parseErrors` 등 9개 마커 전면 제거 — HWPX는 CLI가 처리하므로 앱이 이 정보를 알 필요가 없음. `MainViewModel.BuildOpenStatusMessage`에서 이 마커들을 읽어 상태 표시줄에 HWPX 내부 구조를 노출하던 코드도 함께 제거.
 
 - **Fixed** — **HTML/XML → IWPF 변환 후 앱에서 1페이지만 표시되던 버그**: `HtmlReader`가 WPF 렌더링 힌트용 `pagination.degraded` 마커를 문서 메타데이터에 설정하던 코드 제거. 앱이 HTML을 직접 읽던 시절의 잔재로, CLI 분리 이후에는 앱이 `HtmlReader`를 직접 호출하지 않으므로 이 마커가 존재할 이유가 없었음. 마커가 IWPF로 직렬화되어 앱이 열 때 1-페이지 fast-path를 타던 문제 근본 해결. `FlowDocumentPaginationAdapter`의 `BuildDegradedPaginatedDocument` 메서드 및 호출부 함께 제거.
