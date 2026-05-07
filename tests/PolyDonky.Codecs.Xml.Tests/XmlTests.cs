@@ -553,4 +553,52 @@ public class XmlTests
         Assert.Contains("각주 내용", xml);
         Assert.Contains("section class=\"footnotes\"", xml);
     }
+
+    // ── 편집용지 설정 ──────────────────���───────────────────────────────
+
+    [Fact]
+    public void Writer_EmitsPageMetaAndAtPage()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        doc.Sections.Add(sec);
+        var xml2 = PdXmlWriter.ToXml(doc);
+        Assert.Contains("pd-page-size\" content=\"A4\"", xml2);
+        Assert.Contains("pd-page-orientation\" content=\"portrait\"", xml2);
+        Assert.Contains("@page", xml2);
+        Assert.Contains("margin:", xml2);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_ViaXml()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A5);
+        sec.Page.Orientation    = PageOrientation.Landscape;
+        sec.Page.MarginTopMm    = 15;
+        sec.Page.MarginBottomMm = 15;
+        sec.Page.MarginLeftMm   = 20;
+        sec.Page.MarginRightMm  = 20;
+        doc.Sections.Add(sec);
+        var rt  = PdXmlReader.FromXml(PdXmlWriter.ToXml(doc));
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.A5,         page.SizeKind);
+        Assert.Equal(PageOrientation.Landscape, page.Orientation);
+        Assert.InRange(page.MarginTopMm,   14.5, 15.5);
+        Assert.InRange(page.MarginLeftMm,  19.5, 20.5);
+    }
+
+    [Fact]
+    public void Reader_NoPageInfo_DefaultsToA4Portrait()
+    {
+        // 페이지 정보 없는 일반 XML → A4 세로 기본값.
+        const string xmlDoc = "<doc><p>테스트</p></doc>";
+        var rt   = PdXmlReader.FromXml(xmlDoc);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.A4,        page.SizeKind);
+        Assert.Equal(PageOrientation.Portrait, page.Orientation);
+    }
+
 }

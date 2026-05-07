@@ -943,6 +943,142 @@ public class HtmlTests
         Assert.Equal("타원 레이블", shape.LabelText);
     }
 
+    // ── 편집용지 설정 ──────────────────────────────────────────────────
+
+    [Fact]
+    public void Writer_EmitsPageMetaAndAtPage_DefaultA4()
+    {
+        var doc = new PolyDonkyument();
+        doc.Sections.Add(new Section()); // 기본값: A4 세로
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("pd-page-size\" content=\"A4\"", html);
+        Assert.Contains("pd-page-orientation\" content=\"portrait\"", html);
+        Assert.Contains("@page", html);
+        Assert.Contains("210", html);  // A4 너비 210mm
+        Assert.Contains("margin:", html);
+    }
+
+    [Fact]
+    public void Writer_EmitsLandscapeOrientation()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        sec.Page.Orientation = PageOrientation.Landscape;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("pd-page-orientation\" content=\"landscape\"", html);
+        // 가로 방향이면 SVG 크기 297mm × 210mm 순서로 출력.
+        Assert.Contains("297", html);
+    }
+
+    [Fact]
+    public void Writer_EmitsCustomPageSize()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.SizeKind = PaperSizeKind.Custom;
+        sec.Page.WidthMm  = 180;
+        sec.Page.HeightMm = 240;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("pd-page-size\" content=\"Custom\"", html);
+        Assert.Contains("pd-page-width\" content=\"180mm\"", html);
+        Assert.Contains("pd-page-height\" content=\"240mm\"", html);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_A4Portrait()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        sec.Page.Orientation    = PageOrientation.Portrait;
+        sec.Page.MarginTopMm    = 30;
+        sec.Page.MarginBottomMm = 25;
+        sec.Page.MarginLeftMm   = 35;
+        sec.Page.MarginRightMm  = 20;
+        doc.Sections.Add(sec);
+
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.A4,            page.SizeKind);
+        Assert.Equal(PageOrientation.Portrait,     page.Orientation);
+        Assert.InRange(page.MarginTopMm,    29.5, 30.5);
+        Assert.InRange(page.MarginBottomMm, 24.5, 25.5);
+        Assert.InRange(page.MarginLeftMm,   34.5, 35.5);
+        Assert.InRange(page.MarginRightMm,  19.5, 20.5);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_A4Landscape()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        sec.Page.Orientation = PageOrientation.Landscape;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        Assert.Equal(PaperSizeKind.A4,          rt.Sections[0].Page.SizeKind);
+        Assert.Equal(PageOrientation.Landscape,  rt.Sections[0].Page.Orientation);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_CustomSize()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.SizeKind = PaperSizeKind.Custom;
+        sec.Page.WidthMm  = 170;
+        sec.Page.HeightMm = 235;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.Custom, page.SizeKind);
+        Assert.InRange(page.WidthMm,  169, 171);
+        Assert.InRange(page.HeightMm, 234, 236);
+    }
+
+    [Fact]
+    public void Reader_NoPageMeta_DefaultsToA4Portrait()
+    {
+        // 페이지 정보가 없는 단순 HTML → A4 세로 기본 여백이어야 한다.
+        const string html = "<p>테스트</p>";
+        var rt   = HtmlReader.FromHtml(html);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.A4,        page.SizeKind);
+        Assert.Equal(PageOrientation.Portrait, page.Orientation);
+        Assert.InRange(page.WidthMm,  209, 211);
+        Assert.InRange(page.HeightMm, 296, 298);
+    }
+
+    [Fact]
+    public void Reader_ExternalAtPage_ParsedCorrectly()
+    {
+        // 외부 HTML 의 @page CSS 를 읽어 페이지 설정을 복원해야 한다.
+        const string html = """
+            <!DOCTYPE html>
+            <html><head>
+              <style>
+                @page {
+                  size: 215.9mm 279.4mm;
+                  margin: 25mm 20mm 25mm 30mm;
+                }
+              </style>
+            </head><body><p>내용</p></body></html>
+            """;
+        var rt   = HtmlReader.FromHtml(html);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.Letter, page.SizeKind);
+        Assert.InRange(page.MarginTopMm,   24.5, 25.5);
+        Assert.InRange(page.MarginRightMm, 19.5, 20.5);
+        Assert.InRange(page.MarginLeftMm,  29.5, 30.5);
+    }
+
     [Fact]
     public void Reader_StandaloneSvgParsedAsShapeObject()
     {

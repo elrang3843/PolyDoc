@@ -54,6 +54,8 @@ public sealed class XmlWriter : IDocumentWriter
                 .FirstOrDefault(p => p.Style.Outline == OutlineLevel.H1)?.GetPlainText()
                 ?? "PolyDonky 문서";
 
+            var page = document.Sections.Count > 0 ? document.Sections[0].Page : new PageSettings();
+
             sb.Append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
             sb.Append("<!DOCTYPE html>\n");
             sb.Append("<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"ko\">\n");
@@ -62,7 +64,19 @@ public sealed class XmlWriter : IDocumentWriter
             sb.Append("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n");
             sb.Append("  <meta name=\"generator\" content=\"PolyDonky\"/>\n");
             sb.Append("  <title>").Append(EscapeText(docTitle)).Append("</title>\n");
-            WriteStyleBlock(sb, document.Styles);
+            // 편집용지 메타 태그.
+            sb.Append("  <meta name=\"pd-page-size\" content=\"").Append(page.SizeKind).Append("\"/>\n");
+            sb.Append("  <meta name=\"pd-page-orientation\" content=\"")
+              .Append(page.Orientation == PageOrientation.Landscape ? "landscape" : "portrait")
+              .Append("\"/>\n");
+            if (page.SizeKind == PaperSizeKind.Custom)
+            {
+                sb.Append("  <meta name=\"pd-page-width\" content=\"")
+                  .Append(page.WidthMm.ToString("0.##", CultureInfo.InvariantCulture)).Append("mm\"/>\n");
+                sb.Append("  <meta name=\"pd-page-height\" content=\"")
+                  .Append(page.HeightMm.ToString("0.##", CultureInfo.InvariantCulture)).Append("mm\"/>\n");
+            }
+            WriteStyleBlock(sb, document.Styles, page);
             sb.Append("</head>\n");
             sb.Append("<body>\n");
         }
@@ -281,10 +295,27 @@ public sealed class XmlWriter : IDocumentWriter
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
     }
 
-    private static void WriteStyleBlock(StringBuilder sb, StyleSheet styles)
+    private static void WriteStyleBlock(StringBuilder sb, StyleSheet styles, PageSettings? page = null)
     {
-        if (styles.ParagraphStyles.Count == 0) return;
+        bool hasStyles = styles.ParagraphStyles.Count > 0;
+        if (!hasStyles && page is null) return;
+
         sb.Append("  <style>\n");
+
+        if (page is not null)
+        {
+            var w  = page.EffectiveWidthMm.ToString("0.##",  CultureInfo.InvariantCulture);
+            var h  = page.EffectiveHeightMm.ToString("0.##", CultureInfo.InvariantCulture);
+            var mt = FmtMm(page.MarginTopMm);
+            var mr = FmtMm(page.MarginRightMm);
+            var mb = FmtMm(page.MarginBottomMm);
+            var ml = FmtMm(page.MarginLeftMm);
+            sb.Append("    @page {\n");
+            sb.Append("      size: ").Append(w).Append("mm ").Append(h).Append("mm;\n");
+            sb.Append("      margin: ").Append(mt).Append(' ').Append(mr).Append(' ').Append(mb).Append(' ').Append(ml).Append(";\n");
+            sb.Append("    }\n");
+        }
+
         foreach (var (id, ps) in styles.ParagraphStyles)
         {
             var parts = BuildParagraphCssParts(ps);

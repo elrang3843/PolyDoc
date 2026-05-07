@@ -62,6 +62,9 @@ public sealed class HtmlReader : IDocumentReader
         var section  = new Section();
         pd.Sections.Add(section);
 
+        // 편집용지 설정 복원 — <meta name="pd-page-*"> + @page CSS 파싱.
+        ApplyPageSettings(doc, section);
+
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
 
@@ -1658,6 +1661,146 @@ public sealed class HtmlReader : IDocumentReader
             }
         }
         return closed;
+    }
+
+    // ── 편집용지 설정 파싱 ──────────────────────────────────────────────
+
+    /// <summary>
+    /// 문서 &lt;head&gt; 의 <c>pd-page-*</c> 메타 태그와 <c>@page</c> CSS 규칙을 읽어
+    /// <paramref name="section"/>.Page 에 반영한다.
+    /// 아무 설정도 없으면 기본값(A4 세로, 기본 여백)이 그대로 유지된다.
+    /// </summary>
+    private static void ApplyPageSettings(AngleSharp.Html.Dom.IHtmlDocument doc, Section section)
+    {
+        var head = doc.Head;
+        if (head is null) return;
+
+        var page = section.Page;
+
+        // 1. pd-page-size — PaperSizeKind 열거형 이름 직접 복원.
+        var sizeMeta = head.QuerySelector("meta[name='pd-page-size']")?.GetAttribute("content");
+        if (sizeMeta is not null && Enum.TryParse<PaperSizeKind>(sizeMeta, ignoreCase: true, out var parsedKind))
+            page.ApplySizeKind(parsedKind);
+
+        // 2. Custom 용지일 때 실제 치수.
+        if (page.SizeKind == PaperSizeKind.Custom)
+        {
+            var wMeta = head.QuerySelector("meta[name='pd-page-width']")?.GetAttribute("content");
+            var hMeta = head.QuerySelector("meta[name='pd-page-height']")?.GetAttribute("content");
+            if (TryParseCssMm(wMeta, out var wMm) && wMm > 0) page.WidthMm  = wMm;
+            if (TryParseCssMm(hMeta, out var hMm) && hMm > 0) page.HeightMm = hMm;
+        }
+
+        // 3. 방향.
+        var orientMeta = head.QuerySelector("meta[name='pd-page-orientation']")?.GetAttribute("content");
+        if (orientMeta is not null)
+        {
+            if (orientMeta.Equals("landscape", StringComparison.OrdinalIgnoreCase))
+                page.Orientation = PageOrientation.Landscape;
+            else if (orientMeta.Equals("portrait", StringComparison.OrdinalIgnoreCase))
+                page.Orientation = PageOrientation.Portrait;
+        }
+
+        // 4. @page CSS 규칙 — EffectiveWidth/Height + 여백. meta 보다 낮은 우선순위이므로
+        //    메타로 이미 설정된 크기가 없을 때만 치수를 덮어쓴다.
+        bool hasSizeMeta = sizeMeta is not null;
+        foreach (var styleEl in head.QuerySelectorAll("style"))
+            ParseAtPageRule(styleEl.TextContent, page, applySize: !hasSizeMeta);
+    }
+
+    private static void ParseAtPageRule(string cssText, PageSettings page, bool applySize)
+    {
+        int at = cssText.IndexOf("@page", StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return;
+        int open  = cssText.IndexOf('{', at);
+        if (open < 0) return;
+        int close = cssText.IndexOf('}', open);
+        if (close < 0) return;
+
+        var body = cssText[(open + 1)..close];
+
+        foreach (var declRaw in body.Split(';'))
+        {
+            var decl  = declRaw.Trim();
+            int colon = decl.IndexOf(':');
+            if (colon <= 0) continue;
+            var prop = decl[..colon].Trim().ToLowerInvariant();
+            var val  = decl[(colon + 1)..].Trim().ToLowerInvariant();
+
+            switch (prop)
+            {
+                case "size":
+                {
+                    if (!applySize) break;
+                    // "210mm 297mm" 또는 "297mm 210mm" 또는 "210mm 297mm landscape"
+                    var parts = val.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    double? w = null, h = null;
+                    bool landscape = false;
+                    foreach (var part in parts)
+                    {
+                        if (part == "landscape") { landscape = true; continue; }
+                        if (part == "portrait")  { continue; }
+                        if (TryParseCssMm(part, out var mm) && mm > 0)
+                        {
+                            if (w is null) w = mm;
+                            else           h = mm;
+                        }
+                    }
+                    if (w.HasValue && h.HasValue)
+                    {
+                        // 항상 portrait 순서(작은 쪽=너비)로 보관.
+                        bool isLandscape = landscape || w.Value > h.Value;
+                        page.WidthMm  = isLandscape ? Math.Min(w.Value, h.Value) : w.Value;
+                        page.HeightMm = isLandscape ? Math.Max(w.Value, h.Value) : h.Value;
+                        if (isLandscape) page.Orientation = PageOrientation.Landscape;
+                        // 표준 용지 크기 매칭.
+                        TryMatchStandardPaperSize(page);
+                    }
+                    break;
+                }
+                case "margin":
+                {
+                    var mp = val.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    switch (mp.Length)
+                    {
+                        case 1:
+                            if (TryParseCssMm(mp[0], out var a1))
+                                page.MarginTopMm = page.MarginRightMm = page.MarginBottomMm = page.MarginLeftMm = a1;
+                            break;
+                        case 2:
+                            if (TryParseCssMm(mp[0], out var tb) && TryParseCssMm(mp[1], out var lr))
+                            { page.MarginTopMm = page.MarginBottomMm = tb; page.MarginLeftMm = page.MarginRightMm = lr; }
+                            break;
+                        case 3:
+                            if (TryParseCssMm(mp[0], out var mt3) && TryParseCssMm(mp[1], out var lr3) && TryParseCssMm(mp[2], out var mb3))
+                            { page.MarginTopMm = mt3; page.MarginLeftMm = page.MarginRightMm = lr3; page.MarginBottomMm = mb3; }
+                            break;
+                        case 4:
+                            if (TryParseCssMm(mp[0], out var mt4) && TryParseCssMm(mp[1], out var mr4)
+                             && TryParseCssMm(mp[2], out var mb4) && TryParseCssMm(mp[3], out var ml4))
+                            { page.MarginTopMm = mt4; page.MarginRightMm = mr4; page.MarginBottomMm = mb4; page.MarginLeftMm = ml4; }
+                            break;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void TryMatchStandardPaperSize(PageSettings page)
+    {
+        foreach (PaperSizeKind kind in Enum.GetValues<PaperSizeKind>())
+        {
+            var dim = PageSettings.GetStandardDimensions(kind);
+            if (dim is null) continue;
+            if (Math.Abs(dim.Value.W - page.WidthMm)  < 1.0 &&
+                Math.Abs(dim.Value.H - page.HeightMm) < 1.0)
+            {
+                page.SizeKind = kind;
+                return;
+            }
+        }
+        page.SizeKind = PaperSizeKind.Custom;
     }
 
     private static bool TryParseTwo(string[] tokens, int i, out double a, out double b)
