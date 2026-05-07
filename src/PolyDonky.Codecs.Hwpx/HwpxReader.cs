@@ -358,16 +358,36 @@ public sealed class HwpxReader : IDocumentReader
             switch (elem.Name.LocalName)
             {
                 case "p":
-                    section.Blocks.Add(ReadParagraph(elem, ctx));
-                    // paragraph 안에 인라인 그림·도형이 있을 수 있어 별도 블록으로 추출.
-                    foreach (var pic in elem.Descendants().Where(d => d.Name.LocalName == "pic"))
+                {
+                    // floating 도형·이미지의 앵커 단락(hosting paragraph) 판별:
+                    // hp:t 에 실제 텍스트가 없고 hp:tab/hp:lineBreak 도 없는 상태에서
+                    // 도형·그림만 들어 있으면 HwpxWriter 의 BuildShapeHostingParagraph /
+                    // BuildImageHostingParagraph 가 만든 빈 단락이거나 한컴이 생성한
+                    // 앵커 단락이다. 이런 빈 단락을 그대로 추가하면 실제 본문이 아래로 밀린다.
+                    var embeddedShapes = elem.Descendants()
+                        .Where(d => s_shapeLocalNames.Contains(d.Name.LocalName))
+                        .ToList();
+                    var embeddedPics = elem.Descendants()
+                        .Where(d => d.Name.LocalName == "pic")
+                        .ToList();
+                    bool hasRealText = elem.Descendants().Any(d =>
+                        (d.Name.LocalName == "t"        && !string.IsNullOrWhiteSpace(d.Value))
+                     || d.Name.LocalName == "tab"
+                     || d.Name.LocalName == "lineBreak");
+                    bool isHostingParagraph = (embeddedShapes.Count > 0 || embeddedPics.Count > 0)
+                                             && !hasRealText;
+                    if (!isHostingParagraph)
+                    {
+                        section.Blocks.Add(ReadParagraph(elem, ctx));
+                    }
+                    foreach (var pic in embeddedPics)
                     {
                         if (seenPics.Add(pic) && TryReadPicture(pic, ctx, out var img))
                         {
                             section.Blocks.Add(img);
                         }
                     }
-                    foreach (var shape in elem.Descendants().Where(d => s_shapeLocalNames.Contains(d.Name.LocalName)))
+                    foreach (var shape in embeddedShapes)
                     {
                         if (seenShapes.Add(shape))
                         {
@@ -375,6 +395,7 @@ public sealed class HwpxReader : IDocumentReader
                         }
                     }
                     break;
+                }
                 case "tbl":
                     section.Blocks.Add(ReadTable(elem, ctx));
                     break;
