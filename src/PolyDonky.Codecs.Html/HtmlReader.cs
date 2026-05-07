@@ -666,11 +666,63 @@ public sealed class HtmlReader : IDocumentReader
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, supStyle, parentUrl);
                 return;
             }
+
+            case "span":
+            {
+                var cls = el.GetAttribute("class") ?? "";
+
+                // pd-field-* → Run.Field
+                var field = ExtractFieldType(cls);
+                if (field.HasValue)
+                {
+                    p.Runs.Add(new Run { Field = field.Value, Style = Clone(parentStyle) });
+                    return;
+                }
+
+                // pd-emoji → Run.EmojiKey
+                var emojiKey = el.GetAttribute("data-pd-emoji");
+                if (emojiKey is { Length: > 0 })
+                {
+                    p.Runs.Add(new Run { EmojiKey = emojiKey, Style = Clone(parentStyle) });
+                    return;
+                }
+
+                // pd-math → Run.LatexSource
+                if (cls.Contains("pd-math", StringComparison.Ordinal))
+                {
+                    var latex   = el.TextContent;
+                    bool display = false;
+                    if (latex.StartsWith("\\[", StringComparison.Ordinal) && latex.EndsWith("\\]", StringComparison.Ordinal))
+                        { display = true; latex = latex[2..^2].Trim(); }
+                    else if (latex.StartsWith("\\(", StringComparison.Ordinal) && latex.EndsWith("\\)", StringComparison.Ordinal))
+                        latex = latex[2..^2].Trim();
+                    if (latex.Length > 0)
+                    {
+                        p.Runs.Add(new Run { LatexSource = latex, IsDisplayEquation = display, Style = Clone(parentStyle) });
+                        return;
+                    }
+                }
+
+                // 일반 span — 스타일 합산 후 자식 처리.
+                break;
+            }
         }
 
         var s = MergeStyle(parentStyle, el);
         ApplyTagStyle(el, ref s);
         foreach (var n in el.ChildNodes) AppendInlineNode(p, n, s, parentUrl);
+    }
+
+    private static FieldType? ExtractFieldType(string cls)
+    {
+        if (!cls.Contains("pd-field", StringComparison.Ordinal)) return null;
+        if (cls.Contains("pd-field-page",     StringComparison.Ordinal)) return FieldType.Page;
+        if (cls.Contains("pd-field-numpages", StringComparison.Ordinal)) return FieldType.NumPages;
+        if (cls.Contains("pd-field-date",     StringComparison.Ordinal)) return FieldType.Date;
+        if (cls.Contains("pd-field-time",     StringComparison.Ordinal)) return FieldType.Time;
+        if (cls.Contains("pd-field-author",   StringComparison.Ordinal)) return FieldType.Author;
+        if (cls.Contains("pd-field-title",    StringComparison.Ordinal)) return FieldType.Title;
+        return null;
     }
 
     private static void ApplyTagStyle(IElement el, ref RunStyle s)
@@ -757,6 +809,26 @@ public sealed class HtmlReader : IDocumentReader
                 case "background-color":
                 case "background":
                     if (TryParseCssColor(val, out var bg)) s.Background = bg;
+                    break;
+                case "letter-spacing":
+                    if (val.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                        && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var lspx))
+                        s.LetterSpacingPx = lspx;
+                    break;
+                case "transform":
+                    // scaleX(v) → WidthPercent. 값이 복합 transform 이어도 scaleX 만 추출.
+                    var txVal = val;
+                    int scIdx = txVal.IndexOf("scaleX(", StringComparison.OrdinalIgnoreCase);
+                    if (scIdx >= 0)
+                    {
+                        int close = txVal.IndexOf(')', scIdx);
+                        if (close > scIdx + 7)
+                        {
+                            var inner = txVal[(scIdx + 7)..close];
+                            if (double.TryParse(inner, NumberStyles.Any, CultureInfo.InvariantCulture, out var scale))
+                                s.WidthPercent = scale * 100;
+                        }
+                    }
                     break;
             }
         }

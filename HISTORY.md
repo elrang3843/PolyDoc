@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **HTML/XML 코덱 나머지 블록·런 타입 전면 구현**: (1) `TocBlock` → `<nav class="pd-toc">` + 레벨별 들여쓰기 단락; (2) `ShapeObject` → SVG 인라인 (Rectangle/RoundedRect/Ellipse/Line/Polyline/Polygon/Triangle/Spline/ClosedSpline/RegularPolygon/Star 전부 — Spline 은 Catmull-Rom → cubic bezier 변환 또는 명시적 제어점 사용); (3) `TextBoxObject` → `<div class="pd-textbox">` (크기·패딩·테두리·회전 CSS 반영, 내부 블록 재귀 렌더); (4) `OpaqueBlock` → `<div class="pd-opaque" data-pd-format="...">` placeholder; (5) `Run.LatexSource` → `<span class="pd-math">\(...\)</span>` / `\[...\]` (MathJax 호환); (6) `Run.EmojiKey` → `<span class="pd-emoji" data-pd-emoji="...">` (키 보존); (7) `Run.Field` → `<span class="pd-field pd-field-{type}">` (Page/NumPages/Date/Time/Author/Title 현재값 placeholder). `HtmlReader` 역방향 파싱: `pd-field-*` → `Run.Field`, `data-pd-emoji` → `Run.EmojiKey`, `pd-math` → `Run.LatexSource`. `RunStyle.WidthPercent` → CSS `transform:scaleX()`, `LetterSpacingPx` → CSS `letter-spacing` 양방향 구현.
+
 - **Added** — **HTML/XML 코덱 CSS 클래스 지원**: `HtmlWriter`/`XmlWriter` 가 (1) `StyleSheet.ParagraphStyles` 를 `<head>` 의 `<style>` 블록에 `.pd-{StyleId}` CSS 클래스 규칙으로 직렬화하고, (2) `Paragraph.StyleId` 가 있는 단락·헤딩 요소에 `class="pd-{StyleId}"` 속성을 추가. `HtmlReader` 가 `pd-` 접두어 클래스 토큰을 읽어 `Paragraph.StyleId` 로 복원 — HTML/XML 라운드트립 시 단락 스타일 이름 보존. `EscapeCssIdent` 로 임의 문자열 ID 를 CSS 식별자 안전 형태로 변환.
 
 - **Added** — **DOCX 코덱 `w:sectPr` 페이지 설정 읽기**: `DocxReader` 가 `w:sectPr` 의 `w:pgSz`(용지 크기·방향), `w:pgMar`(여백 6면) 를 `PageSettings` 로 변환 — 이전엔 섹션 속성을 읽지 않아 A4/기본 여백으로 고정되던 문제 해결. 단위 변환: twips → mm (`UnitConverter.TwipsToMm`).

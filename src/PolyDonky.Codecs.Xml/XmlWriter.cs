@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using PolyDonky.Core;
+using System.Linq;
 
 namespace PolyDonky.Codecs.Xml;
 
@@ -189,9 +190,13 @@ public sealed class XmlWriter : IDocumentWriter
 
             switch (b)
             {
-                case Paragraph para: WriteParagraph(sb, para, indent, notes); break;
-                case Table table:    WriteTable(sb, table, indent, notes);     break;
-                case ImageBlock img: WriteImage(sb, img, indent);              break;
+                case Paragraph para:     WriteParagraph(sb, para, indent, notes); break;
+                case Table table:        WriteTable(sb, table, indent, notes);    break;
+                case ImageBlock img:     WriteImage(sb, img, indent);             break;
+                case TocBlock toc:       WriteToc(sb, toc, indent);               break;
+                case ShapeObject shape:  WriteShape(sb, shape, indent);           break;
+                case TextBoxObject tbox: WriteTextBox(sb, tbox, indent, notes);   break;
+                case OpaqueBlock opq:    WriteOpaque(sb, opq, indent);            break;
             }
             i++;
         }
@@ -513,6 +518,182 @@ public sealed class XmlWriter : IDocumentWriter
         }
     }
 
+    private static void WriteToc(StringBuilder sb, TocBlock toc, string indent)
+    {
+        sb.Append(indent).Append("<nav class=\"pd-toc\">\n");
+        sb.Append(indent).Append("  <p class=\"pd-toc-title\"><strong>목차</strong></p>\n");
+        foreach (var entry in toc.Entries)
+        {
+            var lvl = Math.Clamp(entry.Level, 1, 6);
+            var pad = ((lvl - 1) * 4).ToString(CultureInfo.InvariantCulture);
+            sb.Append(indent).Append("  <p class=\"pd-toc-l").Append(lvl)
+              .Append("\" style=\"padding-left:").Append(pad).Append("mm\">");
+            sb.Append(EscapeText(entry.Text));
+            if (entry.PageNumber.HasValue)
+                sb.Append("\t<span class=\"pd-toc-page\">").Append(entry.PageNumber.Value).Append("</span>");
+            sb.Append("</p>\n");
+        }
+        sb.Append(indent).Append("</nav>\n");
+    }
+
+    private static void WriteShape(StringBuilder sb, ShapeObject shape, string indent)
+    {
+        var wPx = MmToPx(shape.WidthMm  > 0 ? shape.WidthMm  : 40);
+        var hPx = MmToPx(shape.HeightMm > 0 ? shape.HeightMm : 30);
+
+        var alignStyle = shape.HAlign switch
+        {
+            ImageHAlign.Center => " style=\"display:block;margin-left:auto;margin-right:auto\"",
+            ImageHAlign.Right  => " style=\"display:block;margin-left:auto\"",
+            _                  => "",
+        };
+
+        var svgBody = BuildShapeSvgBody(shape, wPx, hPx);
+        sb.Append(indent).Append("<figure class=\"pd-shape\"").Append(alignStyle).Append(">\n");
+        sb.Append(indent).Append("  <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"")
+          .Append(wPx.ToString("0.#", CultureInfo.InvariantCulture))
+          .Append("\" height=\"").Append(hPx.ToString("0.#", CultureInfo.InvariantCulture)).Append("\">");
+        sb.Append(svgBody).Append("</svg>\n");
+        if (!string.IsNullOrEmpty(shape.LabelText))
+            sb.Append(indent).Append("  <figcaption>").Append(EscapeText(shape.LabelText)).Append("</figcaption>\n");
+        sb.Append(indent).Append("</figure>\n");
+    }
+
+    // XHTML5 polyglot — void SVG elements use self-closing />.
+    private static string BuildShapeSvgBody(ShapeObject shape, double wPx, double hPx)
+    {
+        var stroke = EscapeAttr(shape.StrokeColor);
+        var fill   = shape.FillColor is { Length: > 0 } fc ? EscapeAttr(fc) : "none";
+        var sw     = shape.StrokeThicknessPt.ToString("0.##", CultureInfo.InvariantCulture);
+
+        return shape.Kind switch
+        {
+            ShapeKind.Rectangle =>
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>",
+
+            ShapeKind.RoundedRect =>
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" rx=\"{MmToPx(shape.CornerRadiusMm):0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>",
+
+            ShapeKind.Ellipse =>
+                $"<ellipse cx=\"{wPx / 2:0.#}\" cy=\"{hPx / 2:0.#}\" rx=\"{(wPx - 1) / 2:0.#}\" ry=\"{(hPx - 1) / 2:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>",
+
+            ShapeKind.Line when shape.Points.Count >= 2 =>
+                $"<line x1=\"{MmToPx(shape.Points[0].X):0.#}\" y1=\"{MmToPx(shape.Points[0].Y):0.#}\" x2=\"{MmToPx(shape.Points[^1].X):0.#}\" y2=\"{MmToPx(shape.Points[^1].Y):0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"none\"/>",
+
+            ShapeKind.Polyline when shape.Points.Count >= 2 =>
+                $"<polyline points=\"{PointsToSvg(shape.Points)}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"none\"/>",
+
+            ShapeKind.Polygon or ShapeKind.Triangle when shape.Points.Count >= 3 =>
+                $"<polygon points=\"{PointsToSvg(shape.Points)}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>",
+
+            ShapeKind.Spline or ShapeKind.ClosedSpline when shape.Points.Count >= 2 =>
+                BuildSplinePath(shape, stroke, fill, sw),
+
+            ShapeKind.RegularPolygon =>
+                BuildRegularPolygonSvg(shape, wPx, hPx, stroke, fill, sw),
+
+            ShapeKind.Star =>
+                BuildStarSvg(shape, wPx, hPx, stroke, fill, sw),
+
+            _ =>
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>",
+        };
+    }
+
+    private static string PointsToSvg(IList<ShapePoint> pts)
+        => string.Join(" ", pts.Select(p => $"{MmToPx(p.X):0.#},{MmToPx(p.Y):0.#}"));
+
+    private static string BuildSplinePath(ShapeObject shape, string stroke, string fill, string sw)
+    {
+        var pts = shape.Points;
+        bool closed = shape.Kind == ShapeKind.ClosedSpline;
+        var sb = new StringBuilder();
+        sb.Append($"<path d=\"M{MmToPx(pts[0].X):0.#},{MmToPx(pts[0].Y):0.#}");
+        int count = closed ? pts.Count : pts.Count - 1;
+        for (int i = 0; i < count; i++)
+        {
+            int j    = (i + 1) % pts.Count;
+            int prev = (i - 1 + pts.Count) % pts.Count;
+            int next = (j + 1) % pts.Count;
+            var p0 = pts[i]; var p1 = pts[j];
+            if (p0.OutCtrlX.HasValue && p1.InCtrlX.HasValue)
+            {
+                sb.Append($" C{MmToPx(p0.OutCtrlX.Value):0.#},{MmToPx(p0.OutCtrlY!.Value):0.#} " +
+                          $"{MmToPx(p1.InCtrlX.Value):0.#},{MmToPx(p1.InCtrlY!.Value):0.#} " +
+                          $"{MmToPx(p1.X):0.#},{MmToPx(p1.Y):0.#}");
+            }
+            else
+            {
+                var cp0x = pts[i].X + (pts[j].X - pts[prev].X) / 6.0;
+                var cp0y = pts[i].Y + (pts[j].Y - pts[prev].Y) / 6.0;
+                var cp1x = pts[j].X - (pts[next].X - pts[i].X) / 6.0;
+                var cp1y = pts[j].Y - (pts[next].Y - pts[i].Y) / 6.0;
+                sb.Append($" C{MmToPx(cp0x):0.#},{MmToPx(cp0y):0.#} " +
+                          $"{MmToPx(cp1x):0.#},{MmToPx(cp1y):0.#} " +
+                          $"{MmToPx(p1.X):0.#},{MmToPx(p1.Y):0.#}");
+            }
+        }
+        if (closed) sb.Append(" Z");
+        sb.Append($"\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>");
+        return sb.ToString();
+    }
+
+    private static string BuildRegularPolygonSvg(ShapeObject shape, double wPx, double hPx, string stroke, string fill, string sw)
+    {
+        int sides = Math.Max(3, shape.SideCount);
+        double cx = wPx / 2, cy = hPx / 2, rx = (wPx - 1) / 2, ry = (hPx - 1) / 2;
+        var pts = string.Join(" ", Enumerable.Range(0, sides).Select(i =>
+        {
+            double a = 2 * Math.PI * i / sides - Math.PI / 2;
+            return $"{(cx + rx * Math.Cos(a)):0.#},{(cy + ry * Math.Sin(a)):0.#}";
+        }));
+        return $"<polygon points=\"{pts}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>";
+    }
+
+    private static string BuildStarSvg(ShapeObject shape, double wPx, double hPx, string stroke, string fill, string sw)
+    {
+        int spikes = Math.Max(3, shape.SideCount);
+        double cx = wPx / 2, cy = hPx / 2;
+        double orx = (wPx - 1) / 2, ory = (hPx - 1) / 2;
+        double irx = orx * shape.InnerRadiusRatio, iry = ory * shape.InnerRadiusRatio;
+        var pts = string.Join(" ", Enumerable.Range(0, spikes * 2).Select(i =>
+        {
+            double a  = Math.PI * i / spikes - Math.PI / 2;
+            double rx = i % 2 == 0 ? orx : irx;
+            double ry = i % 2 == 0 ? ory : iry;
+            return $"{(cx + rx * Math.Cos(a)):0.#},{(cy + ry * Math.Sin(a)):0.#}";
+        }));
+        return $"<polygon points=\"{pts}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"/>";
+    }
+
+    private static void WriteTextBox(StringBuilder sb, TextBoxObject tbox, string indent, NoteNums? notes = null)
+    {
+        var parts = new List<string>(8);
+        if (tbox.WidthMm  > 0) parts.Add($"width:{FmtMm(tbox.WidthMm)}");
+        if (tbox.HeightMm > 0) parts.Add($"min-height:{FmtMm(tbox.HeightMm)}");
+        if (!string.IsNullOrEmpty(tbox.BackgroundColor)) parts.Add($"background-color:{tbox.BackgroundColor}");
+        if (tbox.BorderThicknessPt > 0)
+            parts.Add($"border:{tbox.BorderThicknessPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {(tbox.BorderColor ?? "#888888")}");
+        double pt = tbox.PaddingTopMm, pb = tbox.PaddingBottomMm, pl = tbox.PaddingLeftMm, pr = tbox.PaddingRightMm;
+        if (pt > 0 || pb > 0 || pl > 0 || pr > 0)
+            parts.Add($"padding:{FmtMm(pt)} {FmtMm(pr)} {FmtMm(pb)} {FmtMm(pl)}");
+        if (tbox.RotationAngleDeg != 0)
+            parts.Add($"transform:rotate({tbox.RotationAngleDeg.ToString("0.##", CultureInfo.InvariantCulture)}deg)");
+
+        var styleAttr = parts.Count > 0 ? $" style=\"{string.Join(";", parts)}\"" : "";
+        sb.Append(indent).Append("<div class=\"pd-textbox\"").Append(styleAttr).Append(">\n");
+        WriteBlocks(sb, tbox.Content, indent + "  ", notes);
+        sb.Append(indent).Append("</div>\n");
+    }
+
+    private static void WriteOpaque(StringBuilder sb, OpaqueBlock opq, string indent)
+    {
+        sb.Append(indent)
+          .Append("<div class=\"pd-opaque\" data-pd-format=\"").Append(EscapeAttr(opq.Format)).Append("\">")
+          .Append(EscapeText(opq.DisplayLabel))
+          .Append("</div>\n");
+    }
+
     private static string BuildImageStyle(ImageBlock img)
     {
         var parts = new List<string>(4);
@@ -576,6 +757,39 @@ public sealed class XmlWriter : IDocumentWriter
         if (run.FootnoteId is { Length: > 0 } || run.EndnoteId is { Length: > 0 })
             return string.Empty;
 
+        // LaTeX 수식
+        if (run.LatexSource is { Length: > 0 } latex)
+        {
+            var escaped = EscapeText(latex);
+            return run.IsDisplayEquation
+                ? $"<span class=\"pd-math pd-math-display\">\\[{escaped}\\]</span>"
+                : $"<span class=\"pd-math\">\\({escaped}\\)</span>";
+        }
+
+        // 이모지
+        if (run.EmojiKey is { Length: > 0 } emojiKey)
+        {
+            var parts = emojiKey.Split('_', 2);
+            var name  = parts.Length == 2 ? parts[1] : emojiKey;
+            return $"<span class=\"pd-emoji\" data-pd-emoji=\"{EscapeAttr(emojiKey)}\" title=\"{EscapeAttr(name)}\">{EscapeText(name)}</span>";
+        }
+
+        // 인라인 필드
+        if (run.Field.HasValue)
+        {
+            var (cls, placeholder) = run.Field.Value switch
+            {
+                FieldType.Page     => ("page",     "1"),
+                FieldType.NumPages => ("numpages", "1"),
+                FieldType.Date     => ("date",     DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                FieldType.Time     => ("time",     DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture)),
+                FieldType.Author   => ("author",   ""),
+                FieldType.Title    => ("title",    ""),
+                _                  => ("field",    ""),
+            };
+            return $"<span class=\"pd-field pd-field-{cls}\">{EscapeText(placeholder)}</span>";
+        }
+
         var s    = run.Style;
         var text = EscapeText(run.Text).Replace("\n", "<br/>");
 
@@ -614,6 +828,10 @@ public sealed class XmlWriter : IDocumentWriter
         if (s.Background is { } bg) parts.Add($"background-color:{ColorHex(bg)}");
         // Overline 은 semantic HTML 태그 없음 → CSS로만 표현.
         if (s.Overline) parts.Add("text-decoration:overline");
+        if (Math.Abs(s.WidthPercent - 100) > 0.5)
+            parts.Add($"transform:scaleX({(s.WidthPercent / 100.0).ToString("0.###", CultureInfo.InvariantCulture)});display:inline-block");
+        if (Math.Abs(s.LetterSpacingPx) > 0.01)
+            parts.Add($"letter-spacing:{s.LetterSpacingPx.ToString("0.##", CultureInfo.InvariantCulture)}px");
         return string.Join(';', parts);
     }
 
