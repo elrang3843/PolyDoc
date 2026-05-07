@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 Claude Code가 이 저장소에서 작업할 때 참고하는 가이드. 자세한 내용은 `README.md`(사용자 안내), `IWPF.md`(파일 포맷 사양), `HISTORY.md`(변경 이력), `WORK_PLAN.md`(다단계 작업 계획)를 본다.
 
 ## 프로젝트 개요
@@ -183,9 +185,73 @@ dotnet run --project src/PolyDonky.App
 dotnet run --project tools/PolyDonky.SmokeTest
 ```
 
+**Linux / CI 환경에서 WPF 프로젝트 빌드 시** `EnableWindowsTargeting=true` 플래그가 필요하다.
+라이브러리·코덱·테스트는 해당 플래그 없이도 빌드된다.
+
+```bash
+# Linux 에서 전체 솔루션 빌드 (WPF 포함)
+dotnet build PolyDonky.sln -c Debug -p:EnableWindowsTargeting=true
+# 라이브러리·테스트만 (플래그 불필요)
+dotnet build src/PolyDonky.Core/PolyDonky.Core.csproj -c Debug
+dotnet test  PolyDonky.sln -c Debug  # App.Tests 제외하면 Linux 에서도 통과
+```
+
 CI 워크플로: `.github/workflows/dotnet.yml`(라이브러리/테스트),
 `.github/workflows/dotnet-desktop.yml`(WPF 앱). 분석기 경고는 빌드 오류로 승격되므로
 무시하지 말고 수정한다.
+
+## WPF 앱 내부 구조
+
+### PaperHost 캔버스 레이어 스택 (z-순서, 아래→위)
+
+PaperHost(`Grid`) 는 아래 Canvas 들을 겹쳐 단일 좌표 공간을 구성한다. 히트 테스트는 위에서 아래로 전달.
+
+```
+PageBackgroundCanvas   (IsHitTestVisible=false) — 페이지 테두리·그림자·여백 가이드
+HeaderFooterCanvas     (IsHitTestVisible=false) — 머리말/꼬리말 레이블
+UnderlayImageCanvas    — BehindText 이미지
+UnderlayShapeCanvas    — BehindText 도형
+UnderlayTableCanvas    — BehindText 표
+WatermarkCanvas        (IsHitTestVisible=false) — 워터마크
+PerPageEditorHost      — 페이지별 RichTextBox (FloatingCanvas 포함)
+FloatingCanvas         — 본문 내 Float 개체
+OverlayImageCanvas     — InFrontOfText 이미지
+OverlayShapeCanvas     — InFrontOfText 도형
+OverlayTableCanvas     — InFrontOfText 표 / 고정 표
+DrawPreviewCanvas      (IsHitTestVisible=false) — 도형 그리기 미리보기
+TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
+```
+
+모든 오버레이 컨트롤의 `.Tag`는 해당 Core 모델(`ImageBlock`, `ShapeObject`, `Table` 등)을 담는다.
+오버레이 좌표계는 PaperHost 기준 DIP 단위(`FlowDocumentBuilder.MmToDip`/`DipToMm`).
+
+### 마우스 우클릭 통합 핸들러
+
+`OnPaperPreviewMouseRightButtonDown` (MainWindow.xaml.cs) 이 PaperHost 의 **PreviewMouseRightButtonDown**(터널링) 을 잡아 **모든** 우클릭을 처리한다. 우선순위 체인:
+
+```
+① 폴리선/스플라인 입력 모드 → OpenPolylineInputMenu()
+①-b 도형 편집 핸들(Rectangle, _shapeEditHandles 소속) → OnShapeEditHandleRightClicked()
+② 오버레이 도형 (Overlay→Underlay ShapeCanvas) → BuildShapeMenu()
+③ 오버레이 이미지 (Overlay→Underlay ImageCanvas) → BuildOverlayImageMenu()
+④ 오버레이 표   (Overlay→Underlay TableCanvas)  → BuildOverlayTableMenu()
+⑤ BodyEditor 본문 → ContextMenuOpening 에 위임 (e.Handled = false)
+```
+
+새 우클릭 동작을 추가할 때는 이 체인에 else-if/priority 블록을 추가하고
+**개별 ContextMenu 를 오버레이 컨트롤에 직접 붙이지 않는다** (주석 참조).
+
+### MainWindow 부분 클래스 분리
+
+- `Views/MainWindow.xaml.cs` — 문서 로드/저장, 오버레이 배치, 마우스 핸들러, 메뉴 빌더 전체
+- `Views/MainWindow.ShapeEdit.cs` — 도형 편집 핸들(`_shapeEditHandles`, 정점/세그먼트) + `OnShapeEditHandleRightClicked`
+
+도형 편집 코드 수정 시 두 파일을 함께 본다.
+
+### 핵심 이름 주의사항
+
+- 공통 문서 모델 클래스명은 **`PolyDonkyument`** (`PolyDonky.Core` 네임스페이스). `Document`가 아님.
+- 모델 ↔ FlowDocument 변환 단위 함수: `FlowDocumentBuilder.MmToDip`, `DipToMm`, `PtToDip`, `DipToPt`.
 
 ## 작업 시 유의사항
 
