@@ -278,12 +278,83 @@ public sealed class HtmlReader : IDocumentReader
                 break;
             }
 
+            case "div":
+            {
+                var divCls = el.GetAttribute("class") ?? "";
+                if (divCls.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          .Any(c => c.Equals("page-break",  StringComparison.OrdinalIgnoreCase)
+                                 || c.Equals("pagebreak",   StringComparison.OrdinalIgnoreCase)
+                                 || c.Equals("break-page",  StringComparison.OrdinalIgnoreCase)))
+                {
+                    var pb = new Paragraph();
+                    pb.Style.ForcePageBreakBefore = true;
+                    target.Add(pb);
+                    break;
+                }
+                ProcessChildren(el, target, ctx);
+                break;
+            }
+
+            case "nav":
+            {
+                var navCls = el.GetAttribute("class") ?? "";
+                if (navCls.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          .Any(c => c.Equals("pd-toc", StringComparison.OrdinalIgnoreCase)))
+                {
+                    target.Add(BuildTocBlock(el));
+                    break;
+                }
+                ProcessChildren(el, target, ctx);
+                break;
+            }
+
+            case "details":
+                ProcessDetails(el, target, ctx);
+                break;
+
+            case "dl":
+                ProcessDefinitionList(el, target, ctx);
+                break;
+
+            case "svg":
+                target.Add(new OpaqueBlock
+                {
+                    Format       = "html",
+                    Xml          = el.OuterHtml,
+                    DisplayLabel = "[SVG 도형]",
+                });
+                break;
+
+            case "math":
+            {
+                // <annotation encoding="application/x-tex"> 에서 LaTeX 추출 시도.
+                var mathAnnot = el.QuerySelector("annotation[encoding='application/x-tex']")
+                             ?? el.QuerySelector("annotation[encoding='text/latex']");
+                if (mathAnnot is not null)
+                {
+                    var latex = mathAnnot.TextContent.Trim();
+                    if (latex.Length > 0)
+                    {
+                        var mp = new Paragraph();
+                        mp.Runs.Add(new Run { LatexSource = latex, IsDisplayEquation = true });
+                        target.Add(mp);
+                        break;
+                    }
+                }
+                target.Add(new OpaqueBlock
+                {
+                    Format       = "html",
+                    Xml          = el.OuterHtml,
+                    DisplayLabel = "[수식]",
+                });
+                break;
+            }
+
             // 시멘틱 sectioning + 일반 컨테이너 — 자식을 그대로 펼친다.
-            case "div":  case "section": case "article":
-            case "main": case "aside":   case "header":  case "footer":
-            case "nav":  case "details": case "summary":
-            case "dl":   case "dt":      case "dd":
-            case "form": case "fieldset":
+            case "section": case "article":
+            case "main":    case "aside":   case "header":  case "footer":
+            case "summary": case "dt":      case "dd":
+            case "form":    case "fieldset":
             {
                 ProcessChildren(el, target, ctx);
                 break;
@@ -291,8 +362,8 @@ public sealed class HtmlReader : IDocumentReader
 
             // 무시할 요소 — script/style/template/noscript/...
             case "script": case "style":  case "template":
-            case "noscript": case "svg":   case "math":
-            case "head":    case "meta":   case "link": case "title":
+            case "noscript":
+            case "head":   case "meta":   case "link": case "title":
             {
                 break;
             }
@@ -705,6 +776,75 @@ public sealed class HtmlReader : IDocumentReader
 
                 // 일반 span — 스타일 합산 후 자식 처리.
                 break;
+            }
+
+            case "input":
+            {
+                var iType  = el.GetAttribute("type")?.ToLowerInvariant() ?? "text";
+                var iValue = el.GetAttribute("value") ?? "";
+                var iPh    = el.GetAttribute("placeholder") ?? "";
+                var iLabel = iType switch
+                {
+                    "checkbox" => el.HasAttribute("checked") ? "[☑]" : "[☐]",
+                    "radio"    => el.HasAttribute("checked") ? "[●]" : "[○]",
+                    "submit"   => $"[{(iValue.Length > 0 ? iValue : "제출")}]",
+                    "reset"    => $"[{(iValue.Length > 0 ? iValue : "초기화")}]",
+                    "button"   => $"[{(iValue.Length > 0 ? iValue : "버튼")}]",
+                    _          => iPh.Length > 0 ? $"[{iPh}]" : iValue.Length > 0 ? iValue : "[입력란]",
+                };
+                p.AddText(iLabel, Clone(parentStyle));
+                return;
+            }
+
+            case "button":
+            {
+                var btnTxt = el.TextContent.Trim();
+                p.AddText($"[{(btnTxt.Length > 0 ? btnTxt : "버튼")}]", Clone(parentStyle));
+                return;
+            }
+
+            case "select":
+            {
+                var selOpt = el.QuerySelector("option[selected]")?.TextContent.Trim()
+                          ?? el.QuerySelector("option")?.TextContent.Trim()
+                          ?? "";
+                p.AddText($"[{(selOpt.Length > 0 ? selOpt : "선택...")}]", Clone(parentStyle));
+                return;
+            }
+
+            case "textarea":
+            {
+                var taTxt = el.TextContent.Trim();
+                p.AddText(taTxt.Length > 0 ? taTxt : "[텍스트 영역]", Clone(parentStyle));
+                return;
+            }
+
+            case "math":
+            {
+                // 인라인 MathML — annotation 에서 LaTeX 추출.
+                var inlineAnnot = el.QuerySelector("annotation[encoding='application/x-tex']")
+                               ?? el.QuerySelector("annotation[encoding='text/latex']");
+                if (inlineAnnot is not null)
+                {
+                    var latex = inlineAnnot.TextContent.Trim();
+                    if (latex.Length > 0)
+                    {
+                        p.Runs.Add(new Run { LatexSource = latex, IsDisplayEquation = false, Style = Clone(parentStyle) });
+                        return;
+                    }
+                }
+                var inlineMathTxt = el.TextContent.Trim();
+                if (inlineMathTxt.Length > 0)
+                    p.AddText(inlineMathTxt, Clone(parentStyle));
+                return;
+            }
+
+            case "label":
+            {
+                // form label — 내용을 인라인으로 처리.
+                var ls = MergeStyle(parentStyle, el);
+                foreach (var n in el.ChildNodes) AppendInlineNode(p, n, ls, parentUrl);
+                return;
             }
         }
 
@@ -1193,5 +1333,86 @@ public sealed class HtmlReader : IDocumentReader
             ".svg"  => "image/svg+xml",
             _       => "application/octet-stream",
         };
+    }
+
+    private static void ProcessDefinitionList(IElement dlEl, IList<PdBlock> target, InlineCtx ctx)
+    {
+        foreach (var child in dlEl.ChildNodes)
+        {
+            if (child is not IElement el) continue;
+            switch (el.LocalName)
+            {
+                case "dt":
+                {
+                    var p = new Paragraph();
+                    p.Style.QuoteLevel = ctx.QuoteLevel;
+                    var boldStyle = new RunStyle { Bold = true };
+                    foreach (var n in el.ChildNodes) AppendInlineNode(p, n, boldStyle, null);
+                    if (p.Runs.Count == 0) p.AddText(string.Empty);
+                    target.Add(p);
+                    break;
+                }
+                case "dd":
+                {
+                    var p = new Paragraph();
+                    p.Style.QuoteLevel   = ctx.QuoteLevel;
+                    p.Style.IndentLeftMm = 10.0;
+                    AppendInline(p, el);
+                    if (p.Runs.Count > 0) target.Add(p);
+                    break;
+                }
+                default:
+                    ProcessNode(child, target, ctx);
+                    break;
+            }
+        }
+    }
+
+    private static void ProcessDetails(IElement detailsEl, IList<PdBlock> target, InlineCtx ctx)
+    {
+        var summary = detailsEl.Children.FirstOrDefault(c => c.LocalName == "summary");
+        if (summary is not null)
+        {
+            var p = new Paragraph();
+            p.Style.QuoteLevel = ctx.QuoteLevel;
+            var boldStyle = new RunStyle { Bold = true };
+            foreach (var n in summary.ChildNodes) AppendInlineNode(p, n, boldStyle, null);
+            if (p.Runs.Count == 0) p.AddText(string.Empty);
+            target.Add(p);
+        }
+
+        var inner = new List<PdBlock>();
+        foreach (var child in detailsEl.ChildNodes)
+        {
+            if (child is IElement el && el.LocalName == "summary") continue;
+            ProcessNode(child, inner, ctx);
+        }
+
+        foreach (var block in inner)
+        {
+            if (block is Paragraph bp) bp.Style.IndentLeftMm += 10.0;
+            target.Add(block);
+        }
+    }
+
+    private static TocBlock BuildTocBlock(IElement navEl)
+    {
+        var toc = new TocBlock();
+        foreach (var pEl in navEl.QuerySelectorAll("p"))
+        {
+            var cls   = pEl.GetAttribute("class") ?? "";
+            int level = 1;
+            foreach (var token in cls.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (token.StartsWith("pd-toc-l", StringComparison.Ordinal)
+                    && int.TryParse(token[8..], out var l))
+                { level = l; break; }
+            }
+            var aEl  = pEl.QuerySelector("a[href]");
+            var text = aEl?.TextContent.Trim() ?? pEl.TextContent.Trim();
+            if (text.Length > 0)
+                toc.Entries.Add(new TocEntry { Level = level, Text = text });
+        }
+        return toc;
     }
 }
