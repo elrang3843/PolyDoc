@@ -774,4 +774,181 @@ public class HtmlTests
         Assert.Contains(runs, r => r.FootnoteId is not null);
         Assert.Contains(runs, r => r.EndnoteId is not null);
     }
+
+    // ── SVG → ShapeObject 파서 ─────────────────────────────────────
+
+    [Fact]
+    public void RoundTrip_ShapeRectangle()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 40, HeightMm = 30,
+            StrokeColor = "#FF0000", StrokeThicknessPt = 2, FillColor = "#AABBCC",
+        });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Rectangle, shape.Kind);
+        Assert.InRange(shape.WidthMm,  39.5, 40.5);
+        Assert.InRange(shape.HeightMm, 29.5, 30.5);
+        Assert.Equal("#FF0000", shape.StrokeColor);
+        Assert.Equal("#AABBCC", shape.FillColor);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeRoundedRect()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject { Kind = ShapeKind.RoundedRect, WidthMm = 50, HeightMm = 20, CornerRadiusMm = 5 });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.RoundedRect, shape.Kind);
+        Assert.InRange(shape.CornerRadiusMm, 4.5, 5.5);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeEllipse()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject { Kind = ShapeKind.Ellipse, WidthMm = 60, HeightMm = 40 });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Ellipse, shape.Kind);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeLine()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var ln = new ShapeObject { Kind = ShapeKind.Line, WidthMm = 50, HeightMm = 30 };
+        ln.Points.Add(new ShapePoint { X = 0, Y = 0 });
+        ln.Points.Add(new ShapePoint { X = 50, Y = 30 });
+        sec.Blocks.Add(ln);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Line, shape.Kind);
+        Assert.Equal(2, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapePolyline()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var poly = new ShapeObject { Kind = ShapeKind.Polyline, WidthMm = 60, HeightMm = 40 };
+        poly.Points.Add(new ShapePoint { X = 0,  Y = 40 });
+        poly.Points.Add(new ShapePoint { X = 30, Y = 0  });
+        poly.Points.Add(new ShapePoint { X = 60, Y = 40 });
+        sec.Blocks.Add(poly);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Polyline, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapePolygon()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var poly = new ShapeObject { Kind = ShapeKind.Polygon, WidthMm = 50, HeightMm = 50 };
+        for (int i = 0; i < 5; i++)
+        {
+            double a = 2 * Math.PI * i / 5 - Math.PI / 2;
+            poly.Points.Add(new ShapePoint { X = 25 + 25 * Math.Cos(a), Y = 25 + 25 * Math.Sin(a) });
+        }
+        sec.Blocks.Add(poly);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Polygon, shape.Kind);
+        Assert.Equal(5, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeTriangle()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var tri = new ShapeObject { Kind = ShapeKind.Triangle, WidthMm = 40, HeightMm = 35 };
+        tri.Points.Add(new ShapePoint { X = 20, Y = 0  });
+        tri.Points.Add(new ShapePoint { X = 40, Y = 35 });
+        tri.Points.Add(new ShapePoint { X = 0,  Y = 35 });
+        sec.Blocks.Add(tri);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Triangle, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeSpline()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var sp = new ShapeObject { Kind = ShapeKind.Spline, WidthMm = 60, HeightMm = 40 };
+        sp.Points.Add(new ShapePoint { X = 0,  Y = 20 });
+        sp.Points.Add(new ShapePoint { X = 30, Y = 0  });
+        sp.Points.Add(new ShapePoint { X = 60, Y = 20 });
+        sec.Blocks.Add(sp);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Spline, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+        // 제어점이 복원돼야 함.
+        Assert.True(shape.Points[0].OutCtrlX.HasValue || shape.Points[1].InCtrlX.HasValue);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeClosedSpline()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var sp = new ShapeObject { Kind = ShapeKind.ClosedSpline, WidthMm = 50, HeightMm = 50 };
+        sp.Points.Add(new ShapePoint { X = 25, Y = 0  });
+        sp.Points.Add(new ShapePoint { X = 50, Y = 50 });
+        sp.Points.Add(new ShapePoint { X = 0,  Y = 50 });
+        sec.Blocks.Add(sp);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.ClosedSpline, shape.Kind);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeWithLabel()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 40, HeightMm = 30,
+            LabelText = "타원 레이블",
+        });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Ellipse, shape.Kind);
+        Assert.Equal("타원 레이블", shape.LabelText);
+    }
+
+    [Fact]
+    public void Reader_StandaloneSvgParsedAsShapeObject()
+    {
+        // <svg> 가 <figure> 없이 직접 나타나도 ShapeObject 로 파싱돼야 함.
+        const string html = "<svg width=\"100\" height=\"75\"><rect x=\"0.5\" y=\"0.5\" width=\"99\" height=\"74\" stroke=\"#000\" stroke-width=\"1\" fill=\"none\"></rect></svg>";
+        var rt = HtmlReader.FromHtml(html);
+        Assert.Contains(rt.Sections[0].Blocks, b => b is ShapeObject { Kind: ShapeKind.Rectangle });
+    }
 }

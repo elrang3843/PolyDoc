@@ -317,12 +317,10 @@ public sealed class HtmlReader : IDocumentReader
                 break;
 
             case "svg":
-                target.Add(new OpaqueBlock
-                {
-                    Format       = "html",
-                    Xml          = el.OuterHtml,
-                    DisplayLabel = "[SVG 도형]",
-                });
+                if (TryParseShapeFromSvgElement(el, out var shapeFromSvg))
+                    target.Add(shapeFromSvg!);
+                else
+                    target.Add(new OpaqueBlock { Format = "html", Xml = el.OuterHtml, DisplayLabel = "[SVG 도형]" });
                 break;
 
             case "math":
@@ -640,6 +638,25 @@ public sealed class HtmlReader : IDocumentReader
 
     private static void BuildFigure(IElement figEl, IList<PdBlock> target, InlineCtx ctx)
     {
+        // pd-shape: PolyDonky ShapeObject 복원
+        var figCls = figEl.GetAttribute("class") ?? "";
+        if (figCls.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                  .Any(c => c.Equals("pd-shape", StringComparison.OrdinalIgnoreCase)))
+        {
+            var svgEl = figEl.QuerySelector("svg");
+            if (svgEl is not null && TryParseShapeFromSvgElement(svgEl, out var shapeObj))
+            {
+                var captionEl2 = figEl.QuerySelector("figcaption");
+                if (captionEl2 is not null)
+                {
+                    var lbl = captionEl2.TextContent.Trim();
+                    if (lbl.Length > 0) shapeObj!.LabelText = lbl;
+                }
+                target.Add(shapeObj!);
+                return;
+            }
+        }
+
         // figcaption → 가까운 img 의 Description 로 흡수, 또는 별도 단락.
         var caption = figEl.QuerySelector("figcaption");
         var imgEl   = figEl.QuerySelector("img");
@@ -1414,5 +1431,253 @@ public sealed class HtmlReader : IDocumentReader
                 toc.Entries.Add(new TocEntry { Level = level, Text = text });
         }
         return toc;
+    }
+
+    // ── SVG → ShapeObject 파서 ───────────────────────────────────────────
+
+    /// <summary>
+    /// &lt;svg&gt; 요소를 파싱해 <see cref="ShapeObject"/> 로 변환한다.
+    /// 성공하면 true, 인식 불가 구조면 false (호출자가 OpaqueBlock fallback).
+    /// </summary>
+    private static bool TryParseShapeFromSvgElement(IElement svgEl, out ShapeObject? shape)
+    {
+        shape = null;
+        if (!double.TryParse(svgEl.GetAttribute("width"),  NumberStyles.Any, CultureInfo.InvariantCulture, out var wPx) || wPx <= 0) return false;
+        if (!double.TryParse(svgEl.GetAttribute("height"), NumberStyles.Any, CultureInfo.InvariantCulture, out var hPx) || hPx <= 0) return false;
+
+        // 첫 번째 도형 요소를 찾는다 (<defs>, <title>, <desc> 제외).
+        IElement? shapeEl = null;
+        foreach (var child in svgEl.Children)
+        {
+            switch (child.LocalName)
+            {
+                case "rect": case "ellipse": case "circle":
+                case "line": case "polyline": case "polygon": case "path":
+                    shapeEl = child;
+                    break;
+                case "g":
+                    // <g> 래퍼 안까지 1단계 탐색.
+                    foreach (var gc in child.Children)
+                    {
+                        switch (gc.LocalName)
+                        {
+                            case "rect": case "ellipse": case "circle":
+                            case "line": case "polyline": case "polygon": case "path":
+                                shapeEl = gc;
+                                break;
+                        }
+                        if (shapeEl is not null) break;
+                    }
+                    break;
+            }
+            if (shapeEl is not null) break;
+        }
+        if (shapeEl is null) return false;
+
+        var s = new ShapeObject
+        {
+            WidthMm  = wPx * 25.4 / 96.0,
+            HeightMm = hPx * 25.4 / 96.0,
+        };
+        ParseSvgPaintAttrs(shapeEl, s);
+
+        switch (shapeEl.LocalName)
+        {
+            case "rect":
+            {
+                var rxAttr = shapeEl.GetAttribute("rx");
+                if (rxAttr is not null
+                    && double.TryParse(rxAttr, NumberStyles.Any, CultureInfo.InvariantCulture, out var rxPx)
+                    && rxPx > 0)
+                {
+                    s.Kind           = ShapeKind.RoundedRect;
+                    s.CornerRadiusMm = rxPx * 25.4 / 96.0;
+                }
+                else
+                {
+                    s.Kind = ShapeKind.Rectangle;
+                }
+                break;
+            }
+            case "ellipse":
+            case "circle":
+                s.Kind = ShapeKind.Ellipse;
+                break;
+
+            case "line":
+            {
+                s.Kind = ShapeKind.Line;
+                if (double.TryParse(shapeEl.GetAttribute("x1"), NumberStyles.Any, CultureInfo.InvariantCulture, out var x1) &&
+                    double.TryParse(shapeEl.GetAttribute("y1"), NumberStyles.Any, CultureInfo.InvariantCulture, out var y1) &&
+                    double.TryParse(shapeEl.GetAttribute("x2"), NumberStyles.Any, CultureInfo.InvariantCulture, out var x2) &&
+                    double.TryParse(shapeEl.GetAttribute("y2"), NumberStyles.Any, CultureInfo.InvariantCulture, out var y2))
+                {
+                    s.Points.Add(new ShapePoint { X = x1 * 25.4 / 96.0, Y = y1 * 25.4 / 96.0 });
+                    s.Points.Add(new ShapePoint { X = x2 * 25.4 / 96.0, Y = y2 * 25.4 / 96.0 });
+                }
+                break;
+            }
+
+            case "polyline":
+            {
+                s.Kind = ShapeKind.Polyline;
+                ParseSvgPointsList(shapeEl.GetAttribute("points") ?? "", s.Points);
+                if (s.Points.Count < 2) return false;
+                break;
+            }
+
+            case "polygon":
+            {
+                ParseSvgPointsList(shapeEl.GetAttribute("points") ?? "", s.Points);
+                if (s.Points.Count < 3) return false;
+                s.Kind = s.Points.Count == 3 ? ShapeKind.Triangle : ShapeKind.Polygon;
+                break;
+            }
+
+            case "path":
+            {
+                var d      = shapeEl.GetAttribute("d") ?? "";
+                bool closed = ParseSvgPath(d, s.Points);
+                s.Kind = closed ? ShapeKind.ClosedSpline : ShapeKind.Spline;
+                if (s.Points.Count < 2) return false;
+                break;
+            }
+
+            default:
+                return false;
+        }
+
+        shape = s;
+        return true;
+    }
+
+    private static void ParseSvgPaintAttrs(IElement el, ShapeObject s)
+    {
+        var stroke = el.GetAttribute("stroke");
+        if (stroke is { Length: > 0 } && stroke != "none")
+            s.StrokeColor = stroke;
+
+        if (double.TryParse(el.GetAttribute("stroke-width"), NumberStyles.Any, CultureInfo.InvariantCulture, out var sw) && sw >= 0)
+            s.StrokeThicknessPt = sw;
+
+        var fill = el.GetAttribute("fill");
+        s.FillColor = (fill is { Length: > 0 } && fill != "none") ? fill : null;
+
+        var sda = el.GetAttribute("stroke-dasharray");
+        if (sda is { Length: > 0 } && sda != "none")
+            s.StrokeDash = sda.Contains(',') ? StrokeDash.DashDot : StrokeDash.Dashed;
+    }
+
+    private static void ParseSvgPointsList(string pointsStr, IList<ShapePoint> points)
+    {
+        if (string.IsNullOrWhiteSpace(pointsStr)) return;
+        // "x,y x,y ..." または "x y x y ..." 形式 両方対応
+        var tokens = pointsStr.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var token in tokens)
+        {
+            var parts = token.Split(',');
+            if (parts.Length >= 2
+                && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out var x)
+                && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var y))
+            {
+                points.Add(new ShapePoint { X = x * 25.4 / 96.0, Y = y * 25.4 / 96.0 });
+            }
+        }
+    }
+
+    /// <summary>
+    /// SVG path data "M x,y C cp0x,cp0y cp1x,cp1y x,y ... [Z]" 를 파싱해
+    /// <see cref="ShapePoint"/> 목록(제어점 포함)으로 변환한다.
+    /// </summary>
+    /// <returns>Z 로 닫혔으면 true (ClosedSpline), 아니면 false (Spline).</returns>
+    private static bool ParseSvgPath(string d, IList<ShapePoint> points)
+    {
+        if (string.IsNullOrWhiteSpace(d)) return false;
+
+        // 커맨드 문자 앞뒤에 공백 삽입 후 쉼표·공백으로 토큰 분리.
+        var sb = new StringBuilder(d.Length * 2);
+        foreach (char ch in d)
+        {
+            if (ch is 'M' or 'm' or 'C' or 'c' or 'Z' or 'z')
+                sb.Append(' ').Append(ch).Append(' ');
+            else if (ch == ',')
+                sb.Append(' ');
+            else
+                sb.Append(ch);
+        }
+        var tokens = sb.ToString().Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+        bool closed     = false;
+        ShapePoint? cur = null;
+        int i           = 0;
+
+        while (i < tokens.Length)
+        {
+            var cmd = tokens[i++];
+            switch (cmd)
+            {
+                case "M": case "m":
+                {
+                    if (i + 1 >= tokens.Length) break;
+                    if (!TryParseTwo(tokens, i, out var x, out var y)) break;
+                    i += 2;
+                    cur = new ShapePoint { X = x * 25.4 / 96.0, Y = y * 25.4 / 96.0 };
+                    points.Add(cur);
+                    break;
+                }
+                case "C": case "c":
+                {
+                    // 연속된 C 좌표 소비 (6개씩).
+                    while (i + 5 < tokens.Length
+                        && TryParseSix(tokens, i,
+                            out var cp0x, out var cp0y,
+                            out var cp1x, out var cp1y,
+                            out var ex,   out var ey))
+                    {
+                        if (cur is not null)
+                        {
+                            cur.OutCtrlX = cp0x * 25.4 / 96.0;
+                            cur.OutCtrlY = cp0y * 25.4 / 96.0;
+                        }
+                        var end = new ShapePoint
+                        {
+                            X       = ex   * 25.4 / 96.0,
+                            Y       = ey   * 25.4 / 96.0,
+                            InCtrlX = cp1x * 25.4 / 96.0,
+                            InCtrlY = cp1y * 25.4 / 96.0,
+                        };
+                        points.Add(end);
+                        cur  = end;
+                        i   += 6;
+                    }
+                    break;
+                }
+                case "Z": case "z":
+                    closed = true;
+                    break;
+            }
+        }
+        return closed;
+    }
+
+    private static bool TryParseTwo(string[] tokens, int i, out double a, out double b)
+    {
+        a = b = 0;
+        return i + 1 < tokens.Length
+            && double.TryParse(tokens[i],     NumberStyles.Any, CultureInfo.InvariantCulture, out a)
+            && double.TryParse(tokens[i + 1], NumberStyles.Any, CultureInfo.InvariantCulture, out b);
+    }
+
+    private static bool TryParseSix(string[] tokens, int i,
+        out double a, out double b, out double c, out double dd, out double e, out double f)
+    {
+        a = b = c = dd = e = f = 0;
+        return i + 5 < tokens.Length
+            && double.TryParse(tokens[i],     NumberStyles.Any, CultureInfo.InvariantCulture, out a)
+            && double.TryParse(tokens[i + 1], NumberStyles.Any, CultureInfo.InvariantCulture, out b)
+            && double.TryParse(tokens[i + 2], NumberStyles.Any, CultureInfo.InvariantCulture, out c)
+            && double.TryParse(tokens[i + 3], NumberStyles.Any, CultureInfo.InvariantCulture, out dd)
+            && double.TryParse(tokens[i + 4], NumberStyles.Any, CultureInfo.InvariantCulture, out e)
+            && double.TryParse(tokens[i + 5], NumberStyles.Any, CultureInfo.InvariantCulture, out f);
     }
 }
