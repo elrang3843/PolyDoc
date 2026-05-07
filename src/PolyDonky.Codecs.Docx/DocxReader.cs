@@ -752,12 +752,43 @@ public sealed class DocxReader : IDocumentReader
         foreach (var cmd in path.Elements())
         {
             // moveTo/lnTo 는 단일 <a:pt>, cubicBezTo 는 3개(c1, c2, end), quadBezTo 는 2개(c, end).
-            // 곡선의 endpoint 만 ShapePoint 로 채택해 점 시퀀스를 복원.
             string ln = cmd.Name.LocalName;
+
+            if (ln == "cubicBezTo")
+            {
+                // 세 점: c1(나가는 제어점), c2(들어오는 제어점), end.
+                // c1 은 이전 앵커(현재 shape.Points 마지막)의 OutCtrl,
+                // c2 는 새 앵커(end)의 InCtrl 에 저장해 라운드트립 시 곡선 형태를 보존한다.
+                var ptElems = cmd.Elements(XnsA + "pt").ToList();
+                if (ptElems.Count < 3) continue;
+
+                static double ToMm(XElement pt, long pathDim, double bboxMm)
+                    => long.TryParse(pt.Attribute("x")?.Value, out var v)
+                       ? (double)v / pathDim * bboxMm : 0;
+                static double ToMmY(XElement pt, long pathDim, double bboxMm)
+                    => long.TryParse(pt.Attribute("y")?.Value, out var v)
+                       ? (double)v / pathDim * bboxMm : 0;
+
+                double c1x = ToMm (ptElems[0], pathW, bboxWMm), c1y = ToMmY(ptElems[0], pathH, bboxHMm);
+                double c2x = ToMm (ptElems[1], pathW, bboxWMm), c2y = ToMmY(ptElems[1], pathH, bboxHMm);
+                double ex  = ToMm (ptElems[2], pathW, bboxWMm), ey  = ToMmY(ptElems[2], pathH, bboxHMm);
+
+                // c1 → 직전 앵커의 OutCtrl
+                if (shape.Points.Count > 0)
+                {
+                    var prev = shape.Points[^1];
+                    prev.OutCtrlX = c1x;
+                    prev.OutCtrlY = c1y;
+                }
+
+                // end 앵커 + InCtrl(c2)
+                shape.Points.Add(new ShapePoint { X = ex, Y = ey, InCtrlX = c2x, InCtrlY = c2y });
+                continue;
+            }
+
             XElement? endPt = ln switch
             {
                 "moveTo" or "lnTo" => cmd.Element(XnsA + "pt"),
-                "cubicBezTo"       => cmd.Elements(XnsA + "pt").ElementAtOrDefault(2),
                 "quadBezTo"        => cmd.Elements(XnsA + "pt").ElementAtOrDefault(1),
                 _                  => null,
             };

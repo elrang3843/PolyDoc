@@ -664,19 +664,36 @@ public sealed class DocxWriter : IDocumentWriter
 
         if (isSpline)
         {
-            // Catmull-Rom → cubic Bezier (tension=0.5) 변환.
-            // 닫힌 스플라인은 시작점으로 돌아오는 마지막 segment 도 그려 매끄러운 폐곡선.
+            // 명시적 제어점(DOCX 라운드트립 보존) 또는 Catmull-Rom 자동 계산.
+            // 닫힌 스플라인은 시작점으로 돌아오는 마지막 segment 도 포함.
             int segments = closed ? n : n - 1;
             for (int i = 0; i < segments; i++)
             {
-                int i1 = i;
                 int i2 = (i + 1) % n;
-                int i0 = closed ? (i - 1 + n) % n : Math.Max(0, i - 1);
-                int i3 = closed ? (i + 2) % n     : Math.Min(n - 1, i + 2);
-                long c1x = xs[i1] + (xs[i2] - xs[i0]) / 6;
-                long c1y = ys[i1] + (ys[i2] - ys[i0]) / 6;
-                long c2x = xs[i2] - (xs[i3] - xs[i1]) / 6;
-                long c2y = ys[i2] - (ys[i3] - ys[i1]) / 6;
+                long c1x, c1y, c2x, c2y;
+
+                var from = pts[i];
+                var to   = pts[i2];
+                if (from.OutCtrlX.HasValue && from.OutCtrlY.HasValue
+                    && to.InCtrlX.HasValue   && to.InCtrlY.HasValue)
+                {
+                    // 명시적 제어점: mm → EMU 경로 좌표로 변환.
+                    c1x = (long)Math.Round(from.OutCtrlX.Value / wMm * cx);
+                    c1y = (long)Math.Round(from.OutCtrlY.Value / hMm * cy);
+                    c2x = (long)Math.Round(to.InCtrlX.Value    / wMm * cx);
+                    c2y = (long)Math.Round(to.InCtrlY.Value    / hMm * cy);
+                }
+                else
+                {
+                    // Catmull-Rom 폴백 (tension = 0.5, 1/6 오프셋).
+                    int i0 = closed ? (i - 1 + n) % n : Math.Max(0, i - 1);
+                    int i3 = closed ? (i + 2) % n     : Math.Min(n - 1, i + 2);
+                    c1x = xs[i]  + (xs[i2] - xs[i0]) / 6;
+                    c1y = ys[i]  + (ys[i2] - ys[i0]) / 6;
+                    c2x = xs[i2] - (xs[i3] - xs[i])  / 6;
+                    c2y = ys[i2] - (ys[i3] - ys[i])  / 6;
+                }
+
                 sb.Append("<a:cubicBezTo>");
                 sb.Append($"<a:pt x=\"{c1x}\" y=\"{c1y}\"/>");
                 sb.Append($"<a:pt x=\"{c2x}\" y=\"{c2y}\"/>");

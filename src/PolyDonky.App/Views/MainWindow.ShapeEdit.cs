@@ -22,7 +22,8 @@ public partial class MainWindow
     private const double ShapeHandleSize       = 9.0;
     private const double ShapeHandleHitPad     = 0.0;   // 추가 hit 영역 (현재 미사용)
     private const double ShapeMinSizeMm        = 2.0;
-    private const string VertexHandleTagPrefix = "V";
+    private const string VertexHandleTagPrefix  = "V";
+    private const string SegmentHandleTagPrefix = "S";  // 세그먼트 중간 핸들 (포인트 삽입)
 
     // ── 핸들 상태 ─────────────────────────────────────────────────────────
     private readonly List<Rectangle> _shapeEditHandles = new();
@@ -61,8 +62,20 @@ public partial class MainWindow
             {
                 var h = CreateHandle($"{VertexHandleTagPrefix}{i}", isVertex: true);
                 PositionVertexHandle(h, shapeCtrl, shape, pts[i]);
+                h.MouseRightButtonDown += OnVertexHandleRightClick;
                 parent.Children.Add(h);
                 _shapeEditHandles.Add(h);
+            }
+
+            // 세그먼트 중간 핸들 — 클릭하면 해당 위치에 새 포인트 삽입.
+            bool closedShape = shape.Kind == ShapeKind.ClosedSpline || shape.Kind == ShapeKind.Polygon;
+            int segCount = closedShape ? pts.Count : pts.Count - 1;
+            for (int i = 0; i < segCount; i++)
+            {
+                var s = CreateSegmentHandle($"{SegmentHandleTagPrefix}{i}");
+                PositionSegmentHandle(s, shapeCtrl, shape, i, closedShape);
+                parent.Children.Add(s);
+                _shapeEditHandles.Add(s);
             }
         }
         else
@@ -82,7 +95,9 @@ public partial class MainWindow
         foreach (var h in _shapeEditHandles)
         {
             if (h.Parent is Canvas c) c.Children.Remove(h);
-            h.MouseLeftButtonDown -= OnShapeHandleMouseDown;
+            h.MouseLeftButtonDown  -= OnShapeHandleMouseDown;
+            h.MouseRightButtonDown -= OnVertexHandleRightClick;
+            h.MouseLeftButtonDown  -= OnSegmentHandleClick;
         }
         _shapeEditHandles.Clear();
     }
@@ -90,6 +105,7 @@ public partial class MainWindow
     private void RefreshShapeEditHandlePositions()
     {
         if (_selectedShape is null || _selectedShapeCtrl is null) return;
+        bool closedShape = _selectedShape.Kind == ShapeKind.ClosedSpline || _selectedShape.Kind == ShapeKind.Polygon;
         foreach (var h in _shapeEditHandles)
         {
             if (h.Tag is not string tag) continue;
@@ -98,6 +114,11 @@ public partial class MainWindow
                 if (!int.TryParse(tag.AsSpan(1), out int idx)) continue;
                 if (idx < 0 || idx >= _selectedShape.Points.Count) continue;
                 PositionVertexHandle(h, _selectedShapeCtrl, _selectedShape, _selectedShape.Points[idx]);
+            }
+            else if (tag.StartsWith(SegmentHandleTagPrefix, StringComparison.Ordinal))
+            {
+                if (!int.TryParse(tag.AsSpan(1), out int segIdx)) continue;
+                PositionSegmentHandle(h, _selectedShapeCtrl, _selectedShape, segIdx, closedShape);
             }
             else
             {
@@ -129,6 +150,48 @@ public partial class MainWindow
         h.MouseLeftButtonDown += OnShapeHandleMouseDown;
         Panel.SetZIndex(h, 1000);
         return h;
+    }
+
+    private Rectangle CreateSegmentHandle(string tag)
+    {
+        var h = new Rectangle
+        {
+            Width            = 7.0,
+            Height           = 7.0,
+            Fill             = new SolidColorBrush(System.Windows.Media.Color.FromArgb(180, 0x44, 0xAA, 0xFF)),
+            Stroke           = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x29, 0x6B, 0xC9)),
+            StrokeThickness  = 1.0,
+            Tag              = tag,
+            Cursor           = Cursors.Cross,
+            IsHitTestVisible = true,
+            RenderTransform  = new RotateTransform(45, 3.5, 3.5), // 다이아몬드 모양
+        };
+        h.MouseLeftButtonDown += OnSegmentHandleClick;
+        Panel.SetZIndex(h, 999);
+        return h;
+    }
+
+    private static void PositionSegmentHandle(
+        Rectangle h, FrameworkElement ctrl, ShapeObject shape, int segIdx, bool closed)
+    {
+        var pts = shape.Points;
+        int n   = pts.Count;
+        if (n == 0) return;
+        int nextIdx = closed ? (segIdx + 1) % n : Math.Min(segIdx + 1, n - 1);
+
+        // 세그먼트 앵커 중간점 (선형 보간).
+        double midX = (pts[segIdx].X + pts[nextIdx].X) / 2.0;
+        double midY = (pts[segIdx].Y + pts[nextIdx].Y) / 2.0;
+
+        double left = Canvas.GetLeft(ctrl); if (double.IsNaN(left)) left = 0;
+        double top  = Canvas.GetTop(ctrl);  if (double.IsNaN(top))  top  = 0;
+        double cx   = left + FlowDocumentBuilder.MmToDip(midX);
+        double cy   = top  + FlowDocumentBuilder.MmToDip(midY);
+
+        ApplyShapeRotation(ref cx, ref cy, ctrl, shape);
+
+        Canvas.SetLeft(h, cx - 3.5);
+        Canvas.SetTop (h, cy - 3.5);
     }
 
     private static Cursor GetHandleCursor(string tag, bool isVertex)
@@ -282,6 +345,131 @@ public partial class MainWindow
         e.Handled = true;
     }
 
+    // ── 세그먼트 핸들 / 정점 삭제 ─────────────────────────────────────────
+
+    /// <summary>세그먼트 중간 핸들 클릭 — 해당 세그먼트에 새 앵커 포인트를 삽입한다.</summary>
+    private void OnSegmentHandleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Rectangle h) return;
+        if (h.Tag is not string tag) return;
+        if (!tag.StartsWith(SegmentHandleTagPrefix, StringComparison.Ordinal)) return;
+        if (!int.TryParse(tag.AsSpan(1), out int segIdx)) return;
+        if (_selectedShape is null || _selectedShapeCtrl is null) return;
+
+        var pts     = _selectedShape.Points;
+        int n       = pts.Count;
+        bool closed = _selectedShape.Kind == ShapeKind.ClosedSpline || _selectedShape.Kind == ShapeKind.Polygon;
+        int nextIdx = closed ? (segIdx + 1) % n : Math.Min(segIdx + 1, n - 1);
+
+        // 스플라인은 실제 곡선 위의 t=0.5 지점, 그 외는 선형 중간점.
+        double newX, newY;
+        if (_selectedShape.Kind == ShapeKind.Spline || _selectedShape.Kind == ShapeKind.ClosedSpline)
+        {
+            (newX, newY) = ComputeSplineMidpoint(_selectedShape, segIdx, closed);
+        }
+        else
+        {
+            newX = (pts[segIdx].X + pts[nextIdx].X) / 2.0;
+            newY = (pts[segIdx].Y + pts[nextIdx].Y) / 2.0;
+        }
+
+        // 새 점을 삽입하고 명시적 제어점은 지워 Catmull-Rom 자동 계산으로 되돌린다.
+        int insertAt = closed && segIdx == n - 1 ? n : nextIdx;
+        pts.Insert(insertAt, new ShapePoint { X = newX, Y = newY });
+
+        // 기존 앵커 제어점도 초기화 (인접 점들의 명시적 제어점 → Catmull-Rom 재계산).
+        ClearExplicitControls(pts, segIdx);
+        ClearExplicitControls(pts, insertAt);
+        ClearExplicitControls(pts, insertAt < pts.Count - 1 ? insertAt + 1 : 0);
+
+        _selectedShape.Status = NodeStatus.Modified;
+        _viewModel?.MarkDirty();
+
+        // 핸들 재구성 (인덱스가 바뀌어 기존 핸들은 무효).
+        HideShapeEditHandles();
+        ShowShapeEditHandles(_selectedShapeCtrl, _selectedShape);
+        RefreshSelectedShapeVisual();
+        e.Handled = true;
+    }
+
+    /// <summary>정점 핸들 우클릭 — 해당 포인트를 삭제한다 (최소 2개/3개 유지).</summary>
+    private void OnVertexHandleRightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Rectangle h) return;
+        if (h.Tag is not string tag) return;
+        if (!tag.StartsWith(VertexHandleTagPrefix, StringComparison.Ordinal)) return;
+        if (!int.TryParse(tag.AsSpan(1), out int idx)) return;
+        if (_selectedShape is null || _selectedShapeCtrl is null) return;
+
+        var pts = _selectedShape.Points;
+        // 최소 포인트 수: Line/Polyline/Spline = 2, 닫힌 도형 = 3.
+        bool closed  = _selectedShape.Kind == ShapeKind.ClosedSpline || _selectedShape.Kind == ShapeKind.Polygon;
+        int  minPts  = closed ? 3 : 2;
+        if (pts.Count <= minPts || idx < 0 || idx >= pts.Count)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        pts.RemoveAt(idx);
+        _selectedShape.Status = NodeStatus.Modified;
+        _viewModel?.MarkDirty();
+
+        HideShapeEditHandles();
+        ShowShapeEditHandles(_selectedShapeCtrl, _selectedShape);
+        RefreshSelectedShapeVisual();
+        e.Handled = true;
+    }
+
+    /// <summary>Catmull-Rom 스플라인의 세그먼트 중간점 (t=0.5)을 mm 단위로 계산.</summary>
+    private static (double X, double Y) ComputeSplineMidpoint(ShapeObject shape, int segIdx, bool closed)
+    {
+        var pts = shape.Points;
+        int n   = pts.Count;
+        int i1  = segIdx;
+        int i2  = closed ? (segIdx + 1) % n : Math.Min(segIdx + 1, n - 1);
+        int i0  = closed ? (segIdx - 1 + n) % n : Math.Max(segIdx - 1, 0);
+        int i3  = closed ? (segIdx + 2) % n     : Math.Min(segIdx + 2, n - 1);
+
+        double p0x = pts[i0].X, p0y = pts[i0].Y;
+        double p1x = pts[i1].X, p1y = pts[i1].Y;
+        double p2x = pts[i2].X, p2y = pts[i2].Y;
+        double p3x = pts[i3].X, p3y = pts[i3].Y;
+
+        // 명시적 제어점이 있으면 그것을 사용, 없으면 Catmull-Rom.
+        double c1x, c1y, c2x, c2y;
+        var from = pts[i1];
+        var to   = pts[i2];
+        if (from.OutCtrlX.HasValue && from.OutCtrlY.HasValue
+            && to.InCtrlX.HasValue && to.InCtrlY.HasValue)
+        {
+            c1x = from.OutCtrlX.Value; c1y = from.OutCtrlY.Value;
+            c2x = to.InCtrlX.Value;    c2y = to.InCtrlY.Value;
+        }
+        else
+        {
+            c1x = p1x + (p2x - p0x) / 6.0; c1y = p1y + (p2y - p0y) / 6.0;
+            c2x = p2x - (p3x - p1x) / 6.0; c2y = p2y - (p3y - p1y) / 6.0;
+        }
+
+        // De Casteljau t=0.5
+        const double t = 0.5;
+        double oneT = 1.0 - t;
+        double x = oneT*oneT*oneT*p1x + 3*oneT*oneT*t*c1x + 3*oneT*t*t*c2x + t*t*t*p2x;
+        double y = oneT*oneT*oneT*p1y + 3*oneT*oneT*t*c1y + 3*oneT*t*t*c2y + t*t*t*p2y;
+        return (x, y);
+    }
+
+    private static void ClearExplicitControls(IList<ShapePoint> pts, int idx)
+    {
+        if (idx < 0 || idx >= pts.Count) return;
+        var pt = pts[idx];
+        if (pt.OutCtrlX.HasValue || pt.InCtrlX.HasValue)
+        {
+            pts[idx] = new ShapePoint { X = pt.X, Y = pt.Y };
+        }
+    }
+
     // ── 변환 로직 ───────────────────────────────────────────────────────
 
     private void ApplyVertexDrag(double dxMm, double dyMm)
@@ -388,10 +576,15 @@ public partial class MainWindow
         {
             for (int i = 0; i < shape.Points.Count; i++)
             {
+                var pt = shape.Points[i];
                 shape.Points[i] = new ShapePoint
                 {
-                    X = shape.Points[i].X - shiftX,
-                    Y = shape.Points[i].Y - shiftY,
+                    X        = pt.X - shiftX,
+                    Y        = pt.Y - shiftY,
+                    OutCtrlX = pt.OutCtrlX.HasValue ? pt.OutCtrlX.Value - shiftX : null,
+                    OutCtrlY = pt.OutCtrlY.HasValue ? pt.OutCtrlY.Value - shiftY : null,
+                    InCtrlX  = pt.InCtrlX.HasValue  ? pt.InCtrlX.Value  - shiftX : null,
+                    InCtrlY  = pt.InCtrlY.HasValue  ? pt.InCtrlY.Value  - shiftY : null,
                 };
             }
             shape.OverlayXMm += shiftX;

@@ -45,6 +45,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
 ### Added
+- **Added** — **스플라인 제어점 삽입·삭제 UI**: 점-기반 도형(Spline/ClosedSpline/Polyline/Polygon) 선택 시 세그먼트 중간에 다이아몬드 모양 핸들 표시 — 클릭하면 곡선 위(스플라인은 t=0.5 De Casteljau 지점) 에 새 앵커 포인트 삽입. 기존 정점 핸들 우클릭으로 포인트 삭제 (최소 2개/3개 유지). `ShapePoint` 에 `OutCtrlX/Y`·`InCtrlX/Y` (nullable) 베지어 제어점 속성 추가. `NormalizeShapeBoundingBox` 가 이동 시 제어점 좌표도 함께 보정.
+
+- **Added** — **DOCX 스플라인 라운드트립 정밀도 개선**: DOCX `cubicBezTo` 읽기 시 c1·c2 제어점을 `ShapePoint.OutCtrl`/`InCtrl` 에 보존, 쓰기 시 명시적 제어점이 있으면 그것을 그대로 사용 (기존엔 항상 Catmull-Rom 재계산). DOCX → PolyDonky → DOCX 라운드트립 시 곡선 형태 유지.
+
+- **Changed** — **HWPX 스플라인 시각 품질 향상**: Spline/ClosedSpline 을 HWPX 로 출력할 때 앵커 포인트만 연결하던 단순 다각형 대신, cubic Bezier 를 세그먼트당 12회 샘플링한 고밀도 다각형으로 출력. 한컴 오피스에서 훨씬 매끄러운 곡선처럼 보인다.
+
 - **Added** — **자동 목차(TOC) 삽입·새로고침**: 입력 메뉴 `목차 삽입` 으로 현재 캐럿 위치에 TocBlock 삽입(H1~H6 개요 단락 자동 수집·표시). `목차 새로고침` 으로 문서 내 모든 TocBlock 의 항목을 재스캔해 갱신. `TocBlock`/`TocEntry` Core 모델 + BlockJsonConverter `"toc"` 디스크리미네이터 + FlowDocumentBuilder 시각 렌더링(테두리 박스·레벨 들여쓰기·페이지 번호) + FlowDocumentParser 라운드트립 복원.
 
 - **Added** — **인라인 필드 삽입**: 입력 메뉴 `필드 삽입` 서브메뉴 — 날짜, 시간, 페이지 번호, 총 페이지, 작성자, 문서 제목. `Run.Field` (`FieldType?`) 프로퍼티 추가, FlowDocumentBuilder 가 필드 런을 하이라이트 배경 Run 으로 렌더링, FlowDocumentParser 가 Tag 에서 역복원.

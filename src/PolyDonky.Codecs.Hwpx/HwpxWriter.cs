@@ -1713,8 +1713,8 @@ public sealed class HwpxWriter : IDocumentWriter
     private XElement BuildShape(ShapeObject shape, WriteContext ctx)
     {
         // 종류별 hp: 요소 매핑 (공식 OWPML 클래스명 참고).
-        // Spline/ClosedSpline 은 hp:curve(<hp:seg> Bezier 구조) 가 필요한데 PolyDonky
-        // 모델엔 control point 가 없어 정확히 재현 불가 — 폴리곤으로 폴백 (직선 연결).
+        // Spline/ClosedSpline 은 hp:polygon 으로 출력하되, 곡선을 고밀도 샘플링해
+        // 시각적으로 매끄럽게 근사한다 (ResolvePolygonVertices 내부에서 처리).
         string elemName = shape.Kind switch
         {
             ShapeKind.Line       => "line",
@@ -1938,13 +1938,32 @@ public sealed class HwpxWriter : IDocumentWriter
 
     // Polygon/Curve 의 꼭짓점 좌표 (HWPUNIT, 바운딩 박스 좌상단 0,0 기준).
     // ShapeKind 별 보강:
-    //   - Polyline/Polygon/Spline: shape.Points 가 정의되어 있으면 그대로 사용
+    //   - Polyline/Polygon: shape.Points 가 정의되어 있으면 그대로 사용
+    //   - Spline/ClosedSpline: cubic Bezier 고밀도 샘플링(12 samples/segment)으로 매끄러운 다각형 근사
     //   - Triangle: Points 가 비어있으면 등변 삼각형 (위 꼭짓점→오른쪽 아래→왼쪽 아래)
     //   - RegularPolygon: Points 가 비어있으면 SideCount 개 정다각형 자동 계산
     //   - Star: 외/내부 반지름 교차로 별 모양 자동 계산
     private static List<(long X, long Y)> ResolvePolygonVertices(ShapeObject shape, long w, long h)
     {
         var result = new List<(long, long)>();
+
+        // Spline/ClosedSpline — 고밀도 샘플링으로 곡선을 매끄럽게 근사.
+        if ((shape.Kind == ShapeKind.Spline || shape.Kind == ShapeKind.ClosedSpline)
+            && shape.Points.Count >= 2)
+        {
+            double wMm = shape.WidthMm  > 0 ? shape.WidthMm  : 40;
+            double hMm = shape.HeightMm > 0 ? shape.HeightMm : 30;
+            var sampled = SampleSplineDense(shape, samplesPerSegment: 12);
+            foreach (var (sx, sy) in sampled)
+            {
+                long px = UnitConverter.MmToHwpUnit(sx);
+                long py = UnitConverter.MmToHwpUnit(sy);
+                px = Math.Clamp(px, 0, w);
+                py = Math.Clamp(py, 0, h);
+                result.Add((px, py));
+            }
+            return result;
+        }
 
         if (shape.Points.Count >= 2)
         {
@@ -1997,6 +2016,60 @@ public sealed class HwpxWriter : IDocumentWriter
                 result.Add((0, h));
                 break;
         }
+        return result;
+    }
+
+    /// <summary>
+    /// Spline/ClosedSpline 을 cubic Bezier 로 평가해 고밀도 포인트 시퀀스를 반환 (mm 단위).
+    /// 명시적 OutCtrl/InCtrl 이 있으면 그것을 사용하고, 없으면 Catmull-Rom 자동 계산.
+    /// </summary>
+    private static List<(double X, double Y)> SampleSplineDense(ShapeObject shape, int samplesPerSegment)
+    {
+        var pts    = shape.Points;
+        int n      = pts.Count;
+        bool closed = shape.Kind == ShapeKind.ClosedSpline;
+        int segments = closed ? n : n - 1;
+        var result = new List<(double, double)>(segments * samplesPerSegment + 1);
+
+        for (int seg = 0; seg < segments; seg++)
+        {
+            int i1 = seg;
+            int i2 = closed ? (seg + 1) % n : seg + 1;
+            int i0 = closed ? (seg - 1 + n) % n : Math.Max(0, seg - 1);
+            int i3 = closed ? (seg + 2) % n     : Math.Min(n - 1, seg + 2);
+
+            double p1x = pts[i1].X, p1y = pts[i1].Y;
+            double p2x = pts[i2].X, p2y = pts[i2].Y;
+
+            double c1x, c1y, c2x, c2y;
+            var from = pts[i1];
+            var to   = pts[i2];
+            if (from.OutCtrlX.HasValue && from.OutCtrlY.HasValue
+                && to.InCtrlX.HasValue   && to.InCtrlY.HasValue)
+            {
+                c1x = from.OutCtrlX.Value; c1y = from.OutCtrlY.Value;
+                c2x = to.InCtrlX.Value;    c2y = to.InCtrlY.Value;
+            }
+            else
+            {
+                double p0x = pts[i0].X, p0y = pts[i0].Y;
+                double p3x = pts[i3].X, p3y = pts[i3].Y;
+                c1x = p1x + (p2x - p0x) / 6.0; c1y = p1y + (p2y - p0y) / 6.0;
+                c2x = p2x - (p3x - p1x) / 6.0; c2y = p2y - (p3y - p1y) / 6.0;
+            }
+
+            // 세그먼트 시작점은 첫 세그먼트에서만 추가 (중복 방지).
+            int startSample = seg == 0 ? 0 : 1;
+            for (int s = startSample; s <= samplesPerSegment; s++)
+            {
+                double t    = (double)s / samplesPerSegment;
+                double oneT = 1.0 - t;
+                double x = oneT*oneT*oneT*p1x + 3*oneT*oneT*t*c1x + 3*oneT*t*t*c2x + t*t*t*p2x;
+                double y = oneT*oneT*oneT*p1y + 3*oneT*oneT*t*c1y + 3*oneT*t*t*c2y + t*t*t*p2y;
+                result.Add((x, y));
+            }
+        }
+
         return result;
     }
 }

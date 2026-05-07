@@ -43,11 +43,25 @@ public enum ShapeLabelHAlign { Left, Center, Right }
 /// <summary>도형 레이블 텍스트의 세로 정렬.</summary>
 public enum ShapeLabelVAlign { Top, Middle, Bottom }
 
-/// <summary>도형 꼭짓점 또는 제어점. 좌표는 도형 바운딩 박스 좌상단 기준, 단위 mm.</summary>
+/// <summary>도형 앵커 포인트. 좌표는 도형 바운딩 박스 좌상단 기준, 단위 mm.</summary>
 public sealed class ShapePoint
 {
     public double X { get; set; }
     public double Y { get; set; }
+
+    /// <summary>이 점에서 다음 점으로 향하는 세그먼트의 나가는 베지어 제어점 X (mm, bbox 기준).
+    /// null 이면 Catmull-Rom 자동 계산.</summary>
+    public double? OutCtrlX { get; set; }
+
+    /// <summary>이 점에서 다음 점으로 향하는 세그먼트의 나가는 베지어 제어점 Y (mm, bbox 기준).</summary>
+    public double? OutCtrlY { get; set; }
+
+    /// <summary>이전 점에서 이 점으로 들어오는 세그먼트의 베지어 제어점 X (mm, bbox 기준).
+    /// null 이면 Catmull-Rom 자동 계산.</summary>
+    public double? InCtrlX { get; set; }
+
+    /// <summary>이전 점에서 이 점으로 들어오는 세그먼트의 베지어 제어점 Y (mm, bbox 기준).</summary>
+    public double? InCtrlY { get; set; }
 }
 
 /// <summary>

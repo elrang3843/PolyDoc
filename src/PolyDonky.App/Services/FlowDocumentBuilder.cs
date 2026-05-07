@@ -1294,36 +1294,22 @@ public static class FlowDocumentBuilder
 
             case ShapeKind.Spline:
             {
-                var pts = GetPointsDip(shape.Points, wDip, hDip);
+                var corePts = shape.Points;
+                var pts     = GetPointsDip(corePts, wDip, hDip);
                 if (pts.Count < 2) goto default;
                 var pg  = new WpfMedia.PathGeometry();
                 var fig = new WpfMedia.PathFigure { StartPoint = pts[0] };
 
                 if (pts.Count == 2)
                 {
-                    // 점이 2개면 그냥 직선
                     fig.Segments.Add(new WpfMedia.LineSegment(pts[1], true));
                 }
                 else
                 {
-                    // Catmull-Rom 스플라인을 cubic Bezier 로 변환:
-                    // 각 구간 P[i] → P[i+1] 의 제어점은 좌우 이웃점에서 1/6 만큼 떨어진 위치.
-                    // 양 끝 구간은 이웃이 없으므로 자기 자신을 사용한다.
                     for (int i = 0; i < pts.Count - 1; i++)
                     {
-                        var p0 = i == 0 ? pts[i] : pts[i - 1];
-                        var p1 = pts[i];
-                        var p2 = pts[i + 1];
-                        var p3 = i + 2 < pts.Count ? pts[i + 2] : pts[i + 1];
-
-                        var c1 = new Point(
-                            p1.X + (p2.X - p0.X) / 6.0,
-                            p1.Y + (p2.Y - p0.Y) / 6.0);
-                        var c2 = new Point(
-                            p2.X - (p3.X - p1.X) / 6.0,
-                            p2.Y - (p3.Y - p1.Y) / 6.0);
-
-                        fig.Segments.Add(new WpfMedia.BezierSegment(c1, c2, p2, true));
+                        var (c1, c2) = GetBezierControlsDip(corePts, pts, i, closed: false);
+                        fig.Segments.Add(new WpfMedia.BezierSegment(c1, c2, pts[i + 1], true));
                     }
                 }
 
@@ -1345,21 +1331,17 @@ public static class FlowDocumentBuilder
 
             case ShapeKind.ClosedSpline:
             {
-                var pts = GetPointsDip(shape.Points, wDip, hDip);
+                var corePts = shape.Points;
+                var pts     = GetPointsDip(corePts, wDip, hDip);
                 if (pts.Count < 3) goto default;
                 int n   = pts.Count;
                 var pg  = new WpfMedia.PathGeometry();
-                // 닫힌 Catmull-Rom: 마지막 구간도 wrap-around 이웃을 사용해 매끄럽게 처음 점으로 연결.
+                // 닫힌 스플라인: 마지막 구간도 wrap-around 해 매끄럽게 처음 점으로 연결.
                 var fig = new WpfMedia.PathFigure { StartPoint = pts[0], IsFilled = true };
                 for (int i = 0; i < n; i++)
                 {
-                    var p0 = pts[(i - 1 + n) % n];
-                    var p1 = pts[i];
-                    var p2 = pts[(i + 1) % n];
-                    var p3 = pts[(i + 2) % n];
-                    var c1 = new Point(p1.X + (p2.X - p0.X) / 6.0, p1.Y + (p2.Y - p0.Y) / 6.0);
-                    var c2 = new Point(p2.X - (p3.X - p1.X) / 6.0, p2.Y - (p3.Y - p1.Y) / 6.0);
-                    fig.Segments.Add(new WpfMedia.BezierSegment(c1, c2, p2, true));
+                    var (c1, c2) = GetBezierControlsDip(corePts, pts, i, closed: true);
+                    fig.Segments.Add(new WpfMedia.BezierSegment(c1, c2, pts[(i + 1) % n], true));
                 }
                 pg.Figures.Add(fig);
                 return pg;
@@ -1429,6 +1411,38 @@ public static class FlowDocumentBuilder
             pts.Add(new Point(cx + rx * Math.Cos(angle), cy + ry * Math.Sin(angle)));
         }
         return pts;
+    }
+
+    /// <summary>
+    /// 세그먼트 [i → i+1] 의 cubic Bezier 제어점 (c1, c2) 를 DIP 단위로 반환.
+    /// ShapePoint 에 명시적 OutCtrl/InCtrl 이 모두 설정돼 있으면 그것을 사용하고,
+    /// 그렇지 않으면 Catmull-Rom 자동 계산으로 폴백한다.
+    /// </summary>
+    private static (Point c1, Point c2) GetBezierControlsDip(
+        IList<PolyDonky.Core.ShapePoint> corePts, IList<Point> dipPts, int i, bool closed)
+    {
+        int n    = corePts.Count;
+        int next = closed ? (i + 1) % n : i + 1;
+
+        var from = corePts[i];
+        var to   = corePts[next];
+
+        if (from.OutCtrlX.HasValue && from.OutCtrlY.HasValue
+            && to.InCtrlX.HasValue   && to.InCtrlY.HasValue)
+        {
+            return (new Point(MmToDip(from.OutCtrlX.Value), MmToDip(from.OutCtrlY.Value)),
+                    new Point(MmToDip(to.InCtrlX.Value),    MmToDip(to.InCtrlY.Value)));
+        }
+
+        // Catmull-Rom: 좌우 이웃점을 이용해 1/6 접선 오프셋 계산.
+        var p0 = closed ? dipPts[(i - 1 + n) % n] : (i == 0 ? dipPts[0]     : dipPts[i - 1]);
+        var p1 = dipPts[i];
+        var p2 = dipPts[next];
+        var p3 = closed ? dipPts[(i + 2) % n]     : (i + 2 < n ? dipPts[i + 2] : dipPts[Math.Min(i + 1, n - 1)]);
+
+        var c1 = new Point(p1.X + (p2.X - p0.X) / 6.0, p1.Y + (p2.Y - p0.Y) / 6.0);
+        var c2 = new Point(p2.X - (p3.X - p1.X) / 6.0, p2.Y - (p3.Y - p1.Y) / 6.0);
+        return (c1, c2);
     }
 
     private static List<Point> ComputeStarPoints(
