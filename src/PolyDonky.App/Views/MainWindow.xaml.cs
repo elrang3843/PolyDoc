@@ -2761,7 +2761,8 @@ public partial class MainWindow : Window
     private void InsertPageBreakAtCaret()
     {
         if (_viewModel is null) return;
-        var caret = BodyEditor.CaretPosition;
+        var editor = GetActiveTextEditor();
+        var caret  = editor.CaretPosition;
 
         if (IsCaretInTableCell(caret))
         {
@@ -2774,12 +2775,12 @@ public partial class MainWindow : Window
         }
 
         // 캐럿 위치에서 단락 분할 — 새 단락이 생기며 포인터는 그 안으로 이동
-        var newPtr = caret.InsertParagraphBreak();
+        var newPtr  = caret.InsertParagraphBreak();
         var newPara = newPtr?.Paragraph;
         if (newPara is not null)
         {
             newPara.BreakPageBefore = true;
-            try { BodyEditor.CaretPosition = newPara.ContentStart; } catch { }
+            try { editor.CaretPosition = newPara.ContentStart; } catch { }
         }
 
         _viewModel.MarkDirty();
