@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **HTML/XML 코덱 CSS 클래스 지원**: `HtmlWriter`/`XmlWriter` 가 (1) `StyleSheet.ParagraphStyles` 를 `<head>` 의 `<style>` 블록에 `.pd-{StyleId}` CSS 클래스 규칙으로 직렬화하고, (2) `Paragraph.StyleId` 가 있는 단락·헤딩 요소에 `class="pd-{StyleId}"` 속성을 추가. `HtmlReader` 가 `pd-` 접두어 클래스 토큰을 읽어 `Paragraph.StyleId` 로 복원 — HTML/XML 라운드트립 시 단락 스타일 이름 보존. `EscapeCssIdent` 로 임의 문자열 ID 를 CSS 식별자 안전 형태로 변환.
+
 - **Added** — **DOCX 코덱 `w:sectPr` 페이지 설정 읽기**: `DocxReader` 가 `w:sectPr` 의 `w:pgSz`(용지 크기·방향), `w:pgMar`(여백 6면) 를 `PageSettings` 로 변환 — 이전엔 섹션 속성을 읽지 않아 A4/기본 여백으로 고정되던 문제 해결. 단위 변환: twips → mm (`UnitConverter.TwipsToMm`).
 
 - **Added** — **DOCX 코덱 머리말/꼬리말 읽기·쓰기**: `DocxReader` 가 `w:sectPr` 의 `w:headerReference`/`w:footerReference` 를 따라 `HeaderPart`/`FooterPart` 를 파싱해 `HeaderFooterContent`(좌·중·우 3분할 슬롯) 로 복원 — 단락 정렬(left/center/right) 로 슬롯 매핑. `DocxWriter` 가 `HeaderFooterContent` 를 `HeaderPart`/`FooterPart` 로 직렬화하고 `w:sectPr` 에 `w:headerReference`/`w:footerReference` 링크, `w:pgMar headerW`/`footerW` 에 실제 여백값 사용(이전 하드코딩 720 twips 대체).

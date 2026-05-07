@@ -187,6 +187,7 @@ public sealed class HtmlReader : IDocumentReader
             case "h1": case "h2": case "h3": case "h4": case "h5": case "h6":
             {
                 var p = new Paragraph();
+                p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
                 p.Style.Outline    = (OutlineLevel)(el.LocalName[1] - '0');
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
@@ -199,6 +200,7 @@ public sealed class HtmlReader : IDocumentReader
             case "p":
             {
                 var p = new Paragraph();
+                p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
                 ApplyBlockAlignment(p, el);
@@ -1005,6 +1007,18 @@ public sealed class HtmlReader : IDocumentReader
             if (c <= 0) continue;
             if (decl[..c].Trim().Equals(prop, StringComparison.OrdinalIgnoreCase))
                 return decl[(c + 1)..].Trim();
+        }
+        return null;
+    }
+
+    /// <summary>class 속성에서 <c>pd-{StyleId}</c> 패턴 추출 → Paragraph.StyleId 복원.</summary>
+    private static string? ExtractPdStyleId(string? classAttr)
+    {
+        if (string.IsNullOrEmpty(classAttr)) return null;
+        foreach (var token in classAttr.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.StartsWith("pd-", StringComparison.Ordinal))
+                return token[3..];
         }
         return null;
     }

@@ -64,6 +64,7 @@ public sealed class HtmlWriter : IDocumentWriter
             sb.Append("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
             sb.Append("  <meta name=\"generator\" content=\"PolyDonky\">\n");
             sb.Append("  <title>").Append(EscapeHtml(docTitle)).Append("</title>\n");
+            WriteStyleBlock(sb, document.Styles);
             sb.Append("</head>\n");
             sb.Append("<body>\n");
         }
@@ -249,23 +250,25 @@ public sealed class HtmlWriter : IDocumentWriter
             return;
         }
 
+        var classAttr = BuildClassAttr(p.StyleId);
+
         if (p.Style.Outline > OutlineLevel.Body)
         {
             int lvl = (int)p.Style.Outline;
             var styleAttr = ParagraphStyleAttr(p.Style);
-            sb.Append(indent).Append('<').Append('h').Append(lvl).Append(styleAttr).Append('>');
+            sb.Append(indent).Append('<').Append('h').Append(lvl).Append(classAttr).Append(styleAttr).Append('>');
             sb.Append(RenderRuns(p.Runs, notes));
             sb.Append("</h").Append(lvl).Append(">\n");
             return;
         }
 
         var pStyleAttr = ParagraphStyleAttr(p.Style);
-        sb.Append(indent).Append("<p").Append(pStyleAttr).Append('>');
+        sb.Append(indent).Append("<p").Append(classAttr).Append(pStyleAttr).Append('>');
         sb.Append(RenderRuns(p.Runs, notes));
         sb.Append("</p>\n");
     }
 
-    private static string ParagraphStyleAttr(ParagraphStyle s)
+    private static List<string> BuildParagraphCssParts(ParagraphStyle s)
     {
         var parts = new List<string>(6);
 
@@ -296,7 +299,43 @@ public sealed class HtmlWriter : IDocumentWriter
         if (s.ForcePageBreakBefore)
             parts.Add("page-break-before:always");
 
+        return parts;
+    }
+
+    private static string ParagraphStyleAttr(ParagraphStyle s)
+    {
+        var parts = BuildParagraphCssParts(s);
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
+    }
+
+    private static void WriteStyleBlock(StringBuilder sb, StyleSheet styles)
+    {
+        if (styles.ParagraphStyles.Count == 0) return;
+        sb.Append("  <style>\n");
+        foreach (var (id, ps) in styles.ParagraphStyles)
+        {
+            var parts = BuildParagraphCssParts(ps);
+            if (parts.Count > 0)
+                sb.Append("    .pd-").Append(EscapeCssIdent(id))
+                  .Append(" { ").Append(string.Join("; ", parts)).Append("; }\n");
+        }
+        sb.Append("  </style>\n");
+    }
+
+    private static string BuildClassAttr(string? styleId)
+        => styleId is { Length: > 0 } sid ? $" class=\"pd-{EscapeCssIdent(sid)}\"" : "";
+
+    private static string EscapeCssIdent(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return "x";
+        var sb = new StringBuilder(id.Length + 1);
+        foreach (var ch in id)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '-') sb.Append(ch);
+            else sb.Append('_');
+        }
+        if (char.IsDigit(sb[0])) sb.Insert(0, '_');
+        return sb.ToString();
     }
 
     private static void WriteListGroup(StringBuilder sb, IList<Block> blocks, int from, int to, string indent, NoteNums? notes = null)
