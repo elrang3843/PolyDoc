@@ -533,14 +533,15 @@ public static class FlowDocumentBuilder
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>ThematicBreakBlock</c> 을 BlockUIContainer + Grid 로 렌더링한다.
+    /// <c>ThematicBreakBlock</c> 을 <c>Wpf.Paragraph.BorderBottom</c> 으로 렌더링한다.
     /// <para>
-    /// WPF RichTextBox 는 Block.BorderBrush/BorderThickness 를 텍스트 레이아웃 엔진에서 무시한다.
-    /// Grid 는 HorizontalAlignment.Stretch 가 기본값이며 FlowDocument 레이아웃에서
-    /// 항상 열 너비 전체를 사용하므로 안정적으로 표시된다.
+    /// h1 의 <c>border-bottom</c> 이 같은 방식으로 정상 표시되므로 (BuildParagraph 의
+    /// BorderBottomPt 처리), HR 도 동일 패턴을 사용한다. 빈 단락이 높이 0 으로 collapse
+    /// 되지 않도록 <c>LineHeight</c> + <c>LineStackingStrategy.BlockLineHeight</c> 로
+    /// 최소 라인 높이를 강제한다 — Run 없이도 단락이 measurable 한 높이를 갖는다.
     /// </para>
     /// </summary>
-    private static Wpf.BlockUIContainer BuildThematicBreak(ThematicBreakBlock thb)
+    private static Wpf.Paragraph BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
         if (!string.IsNullOrEmpty(thb.LineColor))
@@ -549,15 +550,16 @@ public static class FlowDocumentBuilder
             catch { /* 파싱 실패 시 기본 회색 유지 */ }
         }
         double marginV = thb.MarginPt > 0 ? PtToDip(thb.MarginPt) : 6;
-        var grid = new System.Windows.Controls.Grid
+        return new Wpf.Paragraph(new Wpf.Run(" "))
         {
-            Height     = 1,
-            Background = new WpfMedia.SolidColorBrush(lineColor),
-        };
-        return new Wpf.BlockUIContainer(grid)
-        {
-            Margin = new Thickness(0, marginV, 0, marginV),
-            Tag    = ThematicBreakTag,
+            FontSize             = 1,
+            LineHeight           = 1,
+            LineStackingStrategy = System.Windows.LineStackingStrategy.BlockLineHeight,
+            Padding              = new Thickness(0),
+            BorderBrush          = new WpfMedia.SolidColorBrush(lineColor),
+            BorderThickness      = new Thickness(0, 0, 0, 1),
+            Margin               = new Thickness(0, marginV, 0, marginV),
+            Tag                  = ThematicBreakTag,
         };
     }
 
