@@ -613,43 +613,42 @@ public static class FlowDocumentBuilder
         }
         double marginV     = thb.MarginPt    > 0 ? PtToDip(thb.MarginPt)    : 6;
         double thicknessV  = thb.ThicknessPt > 0 ? PtToDip(thb.ThicknessPt) : 1;
+        var brush = new WpfMedia.SolidColorBrush(lineColor);
 
         FrameworkElement line;
         if (thb.LineStyle == ThematicLineStyle.Solid)
         {
-            // 실선 — Border 가 가장 단순하고 안정적.
-            line = new System.Windows.Controls.Border
+            // 실선 — Rectangle + Fill 이 Border + BorderThickness 보다 안정적이다.
+            // (Border.BorderThickness 만 있는 경우 작은 margin/InnerSize 일 때 WPF 가
+            //  컨테이너 collapse 로 0px 렌더링하는 경우가 보고됨.)
+            line = new System.Windows.Shapes.Rectangle
             {
-                BorderBrush         = new WpfMedia.SolidColorBrush(lineColor),
-                BorderThickness     = new Thickness(0, thicknessV, 0, 0),
+                Fill                = brush,
+                Height              = thicknessV,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment   = VerticalAlignment.Center,
-                MinHeight           = thicknessV,
                 SnapsToDevicePixels = true,
             };
         }
         else if (thb.LineStyle == ThematicLineStyle.Double)
         {
-            // 이중선 — 위·아래 Border 두 개 + 사이 간격.
+            // 이중선 — Rectangle 두 개 + 사이 간격.
             var stack = new System.Windows.Controls.StackPanel
             {
                 Orientation         = System.Windows.Controls.Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment   = VerticalAlignment.Center,
             };
-            var brush = new WpfMedia.SolidColorBrush(lineColor);
-            stack.Children.Add(new System.Windows.Controls.Border
+            stack.Children.Add(new System.Windows.Shapes.Rectangle
             {
-                BorderBrush     = brush,
-                BorderThickness = new Thickness(0, thicknessV, 0, 0),
+                Fill                = brush,
+                Height              = thicknessV,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 SnapsToDevicePixels = true,
             });
-            stack.Children.Add(new System.Windows.Controls.Border
+            stack.Children.Add(new System.Windows.Shapes.Rectangle
             {
-                BorderBrush     = brush,
-                BorderThickness = new Thickness(0, thicknessV, 0, 0),
-                Margin          = new Thickness(0, thicknessV, 0, 0),
+                Fill                = brush,
+                Height              = thicknessV,
+                Margin              = new Thickness(0, thicknessV, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 SnapsToDevicePixels = true,
             });
@@ -667,12 +666,12 @@ public static class FlowDocumentBuilder
             };
             var path = new System.Windows.Shapes.Path
             {
-                Stroke              = new WpfMedia.SolidColorBrush(lineColor),
+                Stroke              = brush,
                 StrokeThickness     = thicknessV,
                 Stretch             = WpfMedia.Stretch.Fill,
                 Data                = new WpfMedia.LineGeometry(new System.Windows.Point(0, 0),
                                                                 new System.Windows.Point(1, 0)),
-                Height              = thicknessV,
+                Height              = Math.Max(thicknessV, 1),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment   = VerticalAlignment.Center,
                 SnapsToDevicePixels = true,
