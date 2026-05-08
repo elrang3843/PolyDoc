@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **코드 블록·수식 단락 페이지네이션 높이 누락**: `FlowDocumentPaginationAdapter.TryGetBottomY` 가 `InlineUIContainer` 를 포함하는 `Wpf.Paragraph`(코드 블록 줄 번호, 수식 `FormulaControl`)에서 `ContentEnd.GetCharacterRect` = `Rect.Empty` 를 반환할 때 `blockH=0` 으로 처리해 슬롯 채움이 갱신되지 않던 문제 수정. 폴백 `TryEstimateParaBottomViaInlines` 를 추가해 `InlineUIContainer.Child.ActualHeight` × 줄 수 + `Padding` + `Margin` 으로 높이를 추정한다. 코드 블록이 있는 페이지에 이후 섹션들이 모두 몰려 단일 페이지가 스크롤되던 증상 해소.
+
 - **Fixed** — **블록쿼트(인용) 좌측 바가 단락마다 끊겨 보이던 문제**: `FlowDocumentBuilder.AppendBlocks` 가 단락을 `target` 에 추가한 직후 `MergeAdjacentBlockquoteMargins` 후크를 호출 — 직전 블록과 현재 블록이 같은 `QuoteLevel(>0)` 이면 둘 사이의 위/아래 마진을 0 으로 만들어 좌측 회색 바가 끊김 없이 이어지게 한다.
 
 - **Fixed** — **`<span class="cite">` 처럼 CSS `display: block` 적용 인라인 요소가 정렬을 잃던 문제**: `HtmlReader` 의 default 케이스가 단순히 자식을 평탄화해 `text-align:right` 같은 블록 정렬이 사라지던 문제 — 자식이 모두 인라인이고 자체 스타일에 `display: block` / `inline-block` 이 있으면 자체 단락으로 처리해 `ApplyBlockAlignment` 가 정상 적용되도록 수정. 블록쿼트 안 출처 표기(`- 저자명`) 우측 정렬 등이 보존된다.

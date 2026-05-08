@@ -578,13 +578,61 @@ public static class FlowDocumentPaginationAdapter
 
             var r = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
             if (r == Rect.Empty || double.IsNaN(r.Bottom) || double.IsInfinity(r.Bottom))
+            {
+                // Paragraph 에 InlineUIContainer 가 있으면(코드 블록 줄 번호, 수식 FormulaControl 등)
+                // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환하는 경우가 있다.
+                // InlineUIContainer.Child.ActualHeight 와 LineBreak 수를 이용해 높이를 추정한다.
+                if (block is WpfDocs.Paragraph para)
+                    return TryEstimateParaBottomViaInlines(para);
                 return double.NaN;
+            }
             return r.Bottom;
         }
         catch
         {
             return double.NaN;
         }
+    }
+
+    /// <summary>
+    /// <c>ContentEnd.GetCharacterRect</c> 가 실패한 <c>Paragraph</c> 의 bottomY 를
+    /// <c>InlineUIContainer.Child.ActualHeight</c> 와 <c>LineBreak</c> 수에서 추정한다.
+    /// <para>
+    /// 코드 블록 줄 번호(<c>BuildCodeBlockWithLineNumbers</c>) 나 수식(<c>FormulaControl</c>) 처럼
+    /// 오프스크린 RTB 에서 UIElement 를 포함한 단락이 <c>Rect.Empty</c> 를 반환할 때 사용한다.
+    /// </para>
+    /// </summary>
+    private static double TryEstimateParaBottomViaInlines(WpfDocs.Paragraph para)
+    {
+        double topY = TryGetTopY(para);
+        if (double.IsNaN(topY)) return double.NaN;
+
+        int    lineCount  = 1;
+        double lineHeight = 0;
+
+        foreach (var inline in para.Inlines)
+        {
+            if (inline is WpfDocs.LineBreak)
+            {
+                lineCount++;
+            }
+            else if (inline is WpfDocs.InlineUIContainer { Child: FrameworkElement fe })
+            {
+                double h = fe.ActualHeight;
+                if (h > 0 && !double.IsNaN(h) && h > lineHeight) lineHeight = h;
+            }
+        }
+
+        if (lineHeight <= 0)
+        {
+            // InlineUIContainer 없음(일반 단락) — FontSize × 기본 행간으로 추정
+            lineHeight = (para.FontSize > 0 ? para.FontSize : FlowDocumentBuilder.PtToDip(11)) * 1.2;
+        }
+
+        return topY
+               + lineCount * lineHeight
+               + para.Padding.Top + para.Padding.Bottom
+               + para.Margin.Top  + para.Margin.Bottom;
     }
 
     /// <summary>
