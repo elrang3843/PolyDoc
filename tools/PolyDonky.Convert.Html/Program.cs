@@ -525,6 +525,10 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
         }
 
         // 기존 인라인 style="" 이 author 규칙보다 우선.
+        // 인라인 단축속성(margin / padding / border 등) 은 같은 영역의 longhand(margin-top 등) 를
+        // 함께 무효화해야 한다. 그렇지 않으면 author 규칙이 longhand 로 펼쳐 적용된 값이 남아
+        // 결과적으로 인라인 단축속성이 무시되는 버그가 생긴다 (예: hr style="margin:2px 0" 이
+        // class hr {margin:20px 0} 의 margin-top:20px 에 의해 가려지던 문제).
         var existing = element.GetAttribute("style");
         if (!string.IsNullOrWhiteSpace(existing))
         {
@@ -533,7 +537,11 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
             {
                 var colon = part.IndexOf(':');
                 if (colon <= 0) continue;
-                applied[part[..colon].Trim()] = part[(colon + 1)..].Trim();
+                var prop = part[..colon].Trim();
+                var val  = part[(colon + 1)..].Trim();
+                foreach (var sibling in ExpandShorthand(prop))
+                    applied.Remove(sibling);
+                applied[prop] = val;
             }
         }
 
@@ -543,6 +551,42 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
     }
 
     return document.DocumentElement?.OuterHtml ?? html;
+}
+
+/// <summary>
+/// CSS 단축 속성 이름이 주어지면 그것이 가리는 longhand 속성 이름들을 반환.
+/// 캐스케이드 우선순위 처리에서 단축속성을 인라인에 둘 때 이전에 적용된 longhand 값을 청소하기 위해 사용.
+/// 알려지지 않은 속성은 빈 배열.
+/// </summary>
+static IReadOnlyList<string> ExpandShorthand(string prop)
+{
+    string p = prop.ToLowerInvariant();
+    return p switch
+    {
+        "margin"     => new[] { "margin-top", "margin-right", "margin-bottom", "margin-left" },
+        "padding"    => new[] { "padding-top", "padding-right", "padding-bottom", "padding-left" },
+        "border-top"    => new[] { "border-top-width",    "border-top-style",    "border-top-color" },
+        "border-right"  => new[] { "border-right-width",  "border-right-style",  "border-right-color" },
+        "border-bottom" => new[] { "border-bottom-width", "border-bottom-style", "border-bottom-color" },
+        "border-left"   => new[] { "border-left-width",   "border-left-style",   "border-left-color" },
+        "border" => new[]
+        {
+            "border-top",         "border-right",         "border-bottom",         "border-left",
+            "border-top-width",   "border-right-width",   "border-bottom-width",   "border-left-width",
+            "border-top-style",   "border-right-style",   "border-bottom-style",   "border-left-style",
+            "border-top-color",   "border-right-color",   "border-bottom-color",   "border-left-color",
+            "border-width", "border-style", "border-color",
+        },
+        "border-width" => new[] { "border-top-width", "border-right-width", "border-bottom-width", "border-left-width" },
+        "border-style" => new[] { "border-top-style", "border-right-style", "border-bottom-style", "border-left-style" },
+        "border-color" => new[] { "border-top-color", "border-right-color", "border-bottom-color", "border-left-color" },
+        "background"   => new[] { "background-color", "background-image", "background-repeat",
+                                  "background-position", "background-size", "background-attachment", "background-origin", "background-clip" },
+        "font"         => new[] { "font-style", "font-variant", "font-weight", "font-stretch",
+                                  "font-size", "line-height", "font-family" },
+        "list-style"   => new[] { "list-style-type", "list-style-position", "list-style-image" },
+        _ => Array.Empty<string>(),
+    };
 }
 
 static void CollectStyleRules(ICssRuleList ruleList, List<(string, ICssStyleDeclaration)> result)

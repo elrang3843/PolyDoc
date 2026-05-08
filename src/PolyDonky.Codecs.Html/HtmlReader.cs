@@ -322,11 +322,16 @@ public sealed class HtmlReader : IDocumentReader
                     };
                 }
 
+                // margin-top 우선; 없으면 margin shorthand 의 첫 값(상단 여백) 추출.
                 double marginPt = 0;
                 if (TryParseCssPt(StyleProp(hrStyle, "margin-top"), out var hrMt))
                     marginPt = hrMt;
-                else if (TryParseCssPt(StyleProp(hrStyle, "margin"), out var hrM))
-                    marginPt = hrM;
+                else if (StyleProp(hrStyle, "margin") is { } mAll)
+                {
+                    var firstToken = mAll.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                    if (firstToken is not null && TryParseCssPt(firstToken, out var hrM))
+                        marginPt = hrM;
+                }
                 if (marginPt > 0)
                     thb.MarginPt = marginPt;
 

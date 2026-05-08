@@ -2345,6 +2345,24 @@ public class HtmlTests
     }
 
     [Fact]
+    public void RoundTrip_Hr_InlineShorthandMarginOverridesClassLonghand()
+    {
+        // <hr style="margin: 2px 0"> 는 그 자체로 작은 분수 막대 의도. CSS 클래스에서 expand 된
+        // longhand(margin-top:20px 등) 가 inline shorthand 를 가리지 않아야 한다.
+        const string html = """
+            <html><head><style>
+              hr { margin: 20px 0; border-top: 1px solid #000; }
+            </style></head><body>
+              <hr style="margin: 2px 0; border-top: 1px solid #000">
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var thb = doc.Sections[0].Blocks.OfType<ThematicBreakBlock>().Single();
+        // 1.5pt 부근(2px) — 15pt(20px) 가 아니어야 한다.
+        Assert.InRange(thb.MarginPt, 1.0, 2.0);
+    }
+
+    [Fact]
     public void HtmlWriter_DefaultHr_OmitsBorderStyle()
     {
         // 기본 ThematicBreakBlock(두께·스타일·색상 모두 기본) 은 border-top 없이 단순 <hr> 출력.
