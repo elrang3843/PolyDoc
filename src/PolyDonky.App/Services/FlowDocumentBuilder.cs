@@ -112,17 +112,17 @@ public static class FlowDocumentBuilder
     }
 
     /// <summary>
-    /// 리스트 종류·중첩 깊이에 따라 브라우저 기본 마커 스타일을 선택한다.
+    /// 리스트 종류·중첩 깊이·대소문자 지정에 따라 브라우저 기본 마커 스타일을 선택한다.
     /// - Bullet: disc → circle → square (≥2단계 동일).
     /// - OrderedDecimal: 모든 깊이 decimal.
-    /// - OrderedAlpha:  L0=UpperLatin, L≥1=LowerLatin.
-    /// - OrderedRoman:  L0=UpperRoman, L≥1=LowerRoman.
+    /// - OrderedAlpha:  upperCase 가 명시되면 그 값, null 이면 L0=Upper, L≥1=Lower 휴리스틱.
+    /// - OrderedRoman:  같은 규칙.
     /// </summary>
-    private static TextMarkerStyle MarkerStyleForLevel(ListKind kind, int level) => kind switch
+    private static TextMarkerStyle MarkerStyleForLevel(ListKind kind, int level, bool? upperCase = null) => kind switch
     {
         ListKind.Bullet         => level switch { 0 => TextMarkerStyle.Disc, 1 => TextMarkerStyle.Circle, _ => TextMarkerStyle.Square },
-        ListKind.OrderedAlpha   => level == 0 ? TextMarkerStyle.UpperLatin : TextMarkerStyle.LowerLatin,
-        ListKind.OrderedRoman   => level == 0 ? TextMarkerStyle.UpperRoman : TextMarkerStyle.LowerRoman,
+        ListKind.OrderedAlpha   => (upperCase ?? level == 0) ? TextMarkerStyle.UpperLatin : TextMarkerStyle.LowerLatin,
+        ListKind.OrderedRoman   => (upperCase ?? level == 0) ? TextMarkerStyle.UpperRoman : TextMarkerStyle.LowerRoman,
         _                       => TextMarkerStyle.Decimal,
     };
 
@@ -183,7 +183,9 @@ public static class FlowDocumentBuilder
 
         // 지정 level·kind 의 WPF List 를 반환한다.
         // 스택이 부족하면 새 List 를 생성해 부모 ListItem 에 붙이고 push 한다.
-        Wpf.List EnsureList(int level, ListKind kind, int startIndex)
+        // 작업 목록(checked != null)은 마커가 ☐/☑ 텍스트로 단락 본문에 prepend 되므로
+        // WPF MarkerStyle 은 None — 중복 마커 방지.
+        Wpf.List EnsureList(int level, ListKind kind, int startIndex, bool? upperCase, bool isTaskList)
         {
             // 초과 레벨 팝
             while (listStack.Count > level + 1)
@@ -207,7 +209,9 @@ public static class FlowDocumentBuilder
 
             var newList = new Wpf.List
             {
-                MarkerStyle = MarkerStyleForLevel(kind, level),
+                MarkerStyle = isTaskList
+                    ? TextMarkerStyle.None
+                    : MarkerStyleForLevel(kind, level, upperCase),
             };
             if (kind != ListKind.Bullet && startIndex >= 1)
                 newList.StartIndex = startIndex;
@@ -247,8 +251,20 @@ public static class FlowDocumentBuilder
                 {
                     int level = Math.Max(0, marker.Level);
                     int start = marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } s && s >= 1 ? s : 1;
-                    var list  = EnsureList(level, marker.Kind, start);
-                    list.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles, fnNums, enNums)));
+                    bool isTaskList = marker.Checked is not null;
+                    var list  = EnsureList(level, marker.Kind, start, marker.UpperCase, isTaskList);
+                    var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums);
+                    if (isTaskList)
+                    {
+                        // CSS 의 :before 가상 요소처럼 ☐/☑ 를 단락 첫머리에 직접 삽입.
+                        // (WPF List MarkerStyle 만으로는 체크 상태를 표현할 수 없으므로 텍스트로 그린다.)
+                        var checkRun = new Wpf.Run(marker.Checked == true ? "☑ " : "☐ ");
+                        if (wpfPara.Inlines.FirstInline is { } firstInline)
+                            wpfPara.Inlines.InsertBefore(firstInline, checkRun);
+                        else
+                            wpfPara.Inlines.Add(checkRun);
+                    }
+                    list.ListItems.Add(new Wpf.ListItem(wpfPara));
                     break;
                 }
 

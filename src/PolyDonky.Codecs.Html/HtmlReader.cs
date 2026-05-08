@@ -448,9 +448,18 @@ public sealed class HtmlReader : IDocumentReader
         // list-style-type 속성 또는 CSS inline style에서 ListKind 결정.
         var listStyle = el.GetAttribute("type")
             ?? StyleProp(el.GetAttribute("style") ?? "", "list-style-type");
-        var listKind = ResolveListKind(isOrdered, listStyle);
+        var (listKind, listUpper) = ResolveListKindAndCase(isOrdered, listStyle);
         bool hideMarker = listStyle is not null
             && listStyle.Trim().Equals("none", StringComparison.OrdinalIgnoreCase);
+
+        // CSS class="checklist" 패턴 — `:before` 가상 요소로 ☐/☑ 를 그리는 사용자 정의 작업 목록.
+        // <li class="checked"> = 체크됨, 그 외 = 미체크.
+        var ulClasses = (el.GetAttribute("class") ?? "")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool isChecklist = ulClasses.Any(c =>
+            c.Equals("checklist",     StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("task-list",     StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("contains-task-list", StringComparison.OrdinalIgnoreCase));
 
         int counter = 0;
         foreach (var child in el.ChildNodes)
@@ -466,11 +475,26 @@ public sealed class HtmlReader : IDocumentReader
                 checkedState = firstInput.HasAttribute("checked");
                 firstInput.Remove();
             }
+            else if (isChecklist)
+            {
+                // CSS-only 체크리스트 — `<li class="checked">` 으로 체크 상태 판단.
+                var liClasses = (li.GetAttribute("class") ?? "")
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                checkedState = liClasses.Any(c =>
+                    c.Equals("checked",   StringComparison.OrdinalIgnoreCase) ||
+                    c.Equals("done",      StringComparison.OrdinalIgnoreCase) ||
+                    c.Equals("complete",  StringComparison.OrdinalIgnoreCase));
+            }
 
             // <li> 자체의 list-style-type 이 있으면 개별 마커에 적용.
             var liStyle = li.GetAttribute("type")
                 ?? StyleProp(li.GetAttribute("style") ?? "", "list-style-type");
-            var lmKind = liStyle is not null ? ResolveListKind(isOrdered, liStyle) : listKind;
+            ListKind lmKind;
+            bool? lmUpper;
+            if (liStyle is not null)
+                (lmKind, lmUpper) = ResolveListKindAndCase(isOrdered, liStyle);
+            else
+                (lmKind, lmUpper) = (listKind, listUpper);
             bool liHide = liStyle is not null
                 ? liStyle.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)
                 : hideMarker;
@@ -491,15 +515,17 @@ public sealed class HtmlReader : IDocumentReader
                     OrderedNumber = order,
                     Level         = ctx.ListLevel,
                     Checked       = checkedState,
+                    UpperCase     = lmUpper,
                 };
             }
             else
             {
                 lm = new ListMarker
                 {
-                    Kind    = lmKind,
-                    Level   = ctx.ListLevel,
-                    Checked = checkedState,
+                    Kind      = lmKind,
+                    Level     = ctx.ListLevel,
+                    Checked   = checkedState,
+                    UpperCase = lmUpper,
                 };
             }
 
@@ -1399,16 +1425,32 @@ public sealed class HtmlReader : IDocumentReader
     /// <summary>CSS 길이값 → mm 변환. 지원 단위: mm/cm/px/pt/in.</summary>
     /// <summary>HTML list-style-type 값을 ListKind 로 변환한다.</summary>
     private static ListKind ResolveListKind(bool isOrdered, string? styleType)
+        => ResolveListKindAndCase(isOrdered, styleType).Kind;
+
+    /// <summary>HTML list-style-type 값을 ListKind + UpperCase 정보로 변환한다.
+    /// `<ol type="A"/"a">` 같은 대소문자 정보를 보존한다. UpperCase=null 은 정보 없음(=기본 동작).</summary>
+    private static (ListKind Kind, bool? UpperCase) ResolveListKindAndCase(bool isOrdered, string? styleType)
     {
-        if (styleType is null) return isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet;
-        return styleType.Trim().ToLowerInvariant() switch
+        if (styleType is null)
+            return (isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet, null);
+
+        var raw     = styleType.Trim();
+        var lc      = raw.ToLowerInvariant();
+        return lc switch
         {
-            "1" or "decimal" or "decimal-leading-zero"      => ListKind.OrderedDecimal,
-            "a" or "lower-alpha" or "lower-latin"
-              or "upper-alpha" or "upper-latin"              => ListKind.OrderedAlpha,
-            "i" or "lower-roman" or "upper-roman"           => ListKind.OrderedRoman,
-            "disc" or "circle" or "square" or "none"        => ListKind.Bullet,
-            _ => isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet,
+            "1" or "decimal" or "decimal-leading-zero"
+                => (ListKind.OrderedDecimal, null),
+            "a"                       => (ListKind.OrderedAlpha, raw == "A"),
+            "lower-alpha" or "lower-latin"
+                => (ListKind.OrderedAlpha, false),
+            "upper-alpha" or "upper-latin"
+                => (ListKind.OrderedAlpha, true),
+            "i"                       => (ListKind.OrderedRoman, raw == "I"),
+            "lower-roman"             => (ListKind.OrderedRoman, false),
+            "upper-roman"             => (ListKind.OrderedRoman, true),
+            "disc" or "circle" or "square" or "none"
+                => (ListKind.Bullet, null),
+            _ => (isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet, null),
         };
     }
 

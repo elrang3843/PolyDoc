@@ -1382,6 +1382,139 @@ public class HtmlTests
         Assert.Equal(ListKind.OrderedAlpha,   markers[1]!.Kind);
     }
 
+    // ── ListMarker.UpperCase — type 속성으로 대소문자 보존 ────────────
+
+    [Fact]
+    public void Reader_OlTypeUpperA_PreservesUpperCase()
+    {
+        // <ol type="A"> 가 중첩 레벨에 와도 대문자 알파벳 유지.
+        const string html = "<ol><li>top<ol type=\"A\"><li>nested</li></ol></li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var nested = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker)
+            .FirstOrDefault(m => m?.Kind == ListKind.OrderedAlpha);
+        Assert.NotNull(nested);
+        Assert.True(nested.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlTypeLowerA_PreservesLowerCase()
+    {
+        const string html = "<ol type=\"a\"><li>x</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Equal(ListKind.OrderedAlpha, marker.Kind);
+        Assert.False(marker.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlTypeLowerI_PreservesLowerCase()
+    {
+        // <ol type="i"> 가 중첩 레벨에 와도 소문자 로마자로 명시 보존.
+        const string html = "<ol><li>top<ol type=\"i\"><li>nested</li></ol></li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var nested = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker)
+            .FirstOrDefault(m => m?.Kind == ListKind.OrderedRoman);
+        Assert.NotNull(nested);
+        Assert.False(nested.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlStyleUpperLatin_PreservesUpperCase()
+    {
+        const string html = "<ol style=\"list-style-type: upper-latin\"><li>x</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.True(marker.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlDefault_UpperCaseIsNull()
+    {
+        // 일반 <ol> (decimal) 은 대소문자 정보가 없음.
+        const string html = "<ol><li>x</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Null(marker.UpperCase);
+    }
+
+    // ── CSS-only 체크리스트 (class="checklist", li class="checked") ────
+
+    [Fact]
+    public void Reader_ChecklistClass_DetectsCheckedState()
+    {
+        // <ul class="checklist"><li class="checked">…</li><li>…</li></ul>
+        // 첫째 항목 = Checked=true, 둘째 = Checked=false.
+        const string html = """
+            <ul class="checklist">
+              <li class="checked">완료 항목</li>
+              <li>대기 항목</li>
+            </ul>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.True(markers[0]!.Checked);
+        Assert.False(markers[1]!.Checked);
+    }
+
+    [Fact]
+    public void Reader_ChecklistClass_AlsoDetectsTaskListClass()
+    {
+        // GitHub 의 task-list / contains-task-list 클래스도 동일하게 인식.
+        const string html = """
+            <ul class="task-list">
+              <li class="checked">a</li>
+              <li>b</li>
+            </ul>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.True(markers[0]!.Checked);
+        Assert.False(markers[1]!.Checked);
+    }
+
+    [Fact]
+    public void Reader_NormalUl_DoesNotSetCheckedState()
+    {
+        // 평범한 <ul> 항목은 Checked 가 null 이어야 한다.
+        const string html = "<ul><li>x</li><li>y</li></ul>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.Null(markers[0]!.Checked);
+        Assert.Null(markers[1]!.Checked);
+    }
+
+    [Fact]
+    public void ListMarker_Clone_PreservesUpperCaseAndChecked()
+    {
+        // ListMarker.Clone() 이 새 필드를 모두 복사하는지.
+        var lm = new ListMarker
+        {
+            Kind          = ListKind.OrderedAlpha,
+            Level         = 2,
+            OrderedNumber = 5,
+            Checked       = true,
+            UpperCase     = true,
+        };
+        var clone = lm.Clone();
+        Assert.NotSame(lm, clone);
+        Assert.Equal(lm.Kind,          clone.Kind);
+        Assert.Equal(lm.Level,         clone.Level);
+        Assert.Equal(lm.OrderedNumber, clone.OrderedNumber);
+        Assert.Equal(lm.Checked,       clone.Checked);
+        Assert.Equal(lm.UpperCase,     clone.UpperCase);
+    }
+
     // ── CSS Grid/Flex → Table 변환 ──────────────────────────────────
 
     [Fact]

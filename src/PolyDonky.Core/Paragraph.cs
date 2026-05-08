@@ -115,6 +115,11 @@ public sealed class ListMarker
     /// <summary>GFM 작업 목록(task list) 체크 상태. null = 작업 목록 아님, true = `[x]`, false = `[ ]`.</summary>
     public bool? Checked { get; set; }
 
+    /// <summary>알파벳/로마자 대소문자. null = 자동(L0=대문자, L≥1=소문자),
+    /// true = 항상 대문자, false = 항상 소문자. Decimal/Bullet 에서는 무시.
+    /// HTML <c>&lt;ol type="A"/"a"/"I"/"i"&gt;</c> 의 type 속성을 보존한다.</summary>
+    public bool? UpperCase { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본.</summary>
     public ListMarker Clone() => new()
     {
@@ -122,6 +127,7 @@ public sealed class ListMarker
         Level         = Level,
         OrderedNumber = OrderedNumber,
         Checked       = Checked,
+        UpperCase     = UpperCase,
     };
 }
 
