@@ -201,13 +201,30 @@ public static class FlowDocumentPaginationAdapter
         // (모든 콘텐츠가 한 페이지에 들어갈 만큼 짧아도 페이지 나누기가 정확히 작동하게 함.)
         int minSlot = 0;
 
-        foreach (var wpfBlock in FlattenBlocks(fd.Blocks))
+        for (int i = 0; i < flat.Count; i++)
         {
+            var wpfBlock = flat[i];
             if (wpfBlock.Tag is not Block coreBlock) continue;
             if (IsOverlayMode(coreBlock)) continue;
 
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock);
+
+            // Wpf.Table 의 GetCharacterRect 는 표 안 셀을 포함해 오프스크린 RTB 에서 신뢰할 수 없다.
+            // 바로 다음에 오는 블록(주로 캡션 단락 또는 다음 표)의 topY 가 현재 표의 실제 하단과
+            // 동일하므로 이를 대리값으로 사용한다.
+            if (double.IsNaN(bottomY) && wpfBlock is WpfDocs.Table && !double.IsNaN(topY))
+            {
+                for (int j = i + 1; j < flat.Count; j++)
+                {
+                    double nextTop = TryGetTopY(flat[j]);
+                    if (!double.IsNaN(nextTop) && nextTop > topY)
+                    {
+                        bottomY = nextTop;
+                        break;
+                    }
+                }
+            }
 
             // Y 를 측정할 수 없으면 minSlot 슬롯에 배정하고 다음 블록으로.
             if (double.IsNaN(topY))
@@ -513,24 +530,12 @@ public static class FlowDocumentPaginationAdapter
                     return topY + fe.ActualHeight + block.Margin.Top + block.Margin.Bottom;
             }
 
-            // Wpf.Table 은 ContentEnd.GetCharacterRect 가 표 직후 캐럿 위치(≈ 표의 top)
-            // 만 반환하고, TableRow.ContentEnd 도 Empty/NaN 이 자주 나온다.
-            // 표 내부 모든 셀의 모든 블록을 재귀적으로 훑어 가장 큰 bottomY 를 구한다.
-            if (block is WpfDocs.Table table)
-            {
-                double maxBottom = double.NaN;
-                foreach (var rg in table.RowGroups)
-                    foreach (var row in rg.Rows)
-                        foreach (var cell in row.Cells)
-                            foreach (var inner in cell.Blocks)
-                            {
-                                double inB = TryGetBottomY(inner);
-                                if (!double.IsNaN(inB) && (double.IsNaN(maxBottom) || inB > maxBottom))
-                                    maxBottom = inB;
-                            }
-                if (!double.IsNaN(maxBottom))
-                    return maxBottom;
-            }
+            // Wpf.Table 은 ContentEnd.GetCharacterRect 가 표 직후 캐럿 위치(≈ 표의 top) 만
+            // 반환한다. 셀 내부 단락도 오프스크린 RTB 에서 NaN 을 반환하는 경우가 많아
+            // 여기서는 NaN 을 그대로 반환 — 호출측(MapBodyBlocksToPages) 에서 다음 블록
+            // topY 대리값으로 보정한다.
+            if (block is WpfDocs.Table)
+                return double.NaN;
 
             var r = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
             if (r == Rect.Empty || double.IsNaN(r.Bottom) || double.IsInfinity(r.Bottom))
