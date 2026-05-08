@@ -276,6 +276,7 @@ public static class FlowDocumentBuilder
                 case Paragraph p:
                     listStack.Clear();
                     target.Add(BuildParagraph(p, outlineStyles, fnNums, enNums));
+                    MergeAdjacentBlockquoteMargins(target);
                     break;
 
                 case Table t:
@@ -1809,6 +1810,25 @@ public static class FlowDocumentBuilder
             wpfPara.BorderBrush     = bBrush;
             wpfPara.BorderThickness = new Thickness(0, 0, 0, PtToDip(style.BorderBottomPt));
         }
+    }
+
+    /// <summary>
+    /// 직전 블록과 현재 블록이 같은 QuoteLevel(>0) 의 단락이면 두 단락 사이의
+    /// 위/아래 마진을 0 으로 만들어 좌측 인용 바가 끊기지 않게 이어 붙인다.
+    /// </summary>
+    private static void MergeAdjacentBlockquoteMargins(System.Collections.IList target)
+    {
+        if (target.Count < 2) return;
+        if (target[target.Count - 1] is not Wpf.Paragraph cur) return;
+        if (target[target.Count - 2] is not Wpf.Paragraph prev) return;
+        if (cur.Tag is not Paragraph curP || prev.Tag is not Paragraph prevP) return;
+        if (curP.Style.QuoteLevel <= 0) return;
+        if (curP.Style.QuoteLevel != prevP.Style.QuoteLevel) return;
+
+        var pm = prev.Margin;
+        prev.Margin = new Thickness(pm.Left, pm.Top, pm.Right, 0);
+        var cm = cur.Margin;
+        cur.Margin  = new Thickness(cm.Left, 0, cm.Right, cm.Bottom);
     }
 
     /// <summary>

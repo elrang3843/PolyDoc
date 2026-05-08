@@ -432,6 +432,25 @@ public sealed class HtmlReader : IDocumentReader
             // <html>, <body> 등 알 수 없는 컨테이너 — 자식 평탄화.
             default:
             {
+                // CSS 로 display:block / inline-block 이 적용된 인라인 요소(예: <span class="cite">)
+                // 는 자체 단락처럼 다뤄 정렬·인용 컨텍스트를 보존한다. 자식이 모두 인라인일 때만 적용.
+                var styleAttr = el.GetAttribute("style") ?? "";
+                var disp = StyleProp(styleAttr, "display");
+                bool blockLike = disp is not null
+                    && (disp.Equals("block", StringComparison.OrdinalIgnoreCase)
+                     || disp.Equals("inline-block", StringComparison.OrdinalIgnoreCase));
+                if (blockLike && !el.Children.Any(IsBlockElement))
+                {
+                    var p = new Paragraph();
+                    p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
+                    p.Style.QuoteLevel = ctx.QuoteLevel;
+                    p.Style.ListMarker = CloneMarker(ctx.Marker);
+                    ApplyBlockAlignment(p, el);
+                    AppendInline(p, el);
+                    if (p.Runs.Count > 0) target.Add(p);
+                    break;
+                }
+
                 if (el.ChildNodes.Length > 0)
                     ProcessChildren(el, target, ctx);
                 break;
