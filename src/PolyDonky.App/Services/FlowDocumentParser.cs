@@ -194,7 +194,13 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
-                // 수평선(ThematicBreakBlock) — BlockUIContainer 로 렌더되며 ThematicBreakTag 로 식별.
+                // 수평선(ThematicBreakBlock) — Solid 는 Wpf.Paragraph 로, 그 외(Dashed/Dotted/Double 등)는
+                // Wpf.BlockUIContainer 로 렌더된다. 두 경우 모두 ThematicBreakTag 로 식별.
+                case Wpf.Paragraph hrPara when ReferenceEquals(
+                    hrPara.Tag, FlowDocumentBuilder.ThematicBreakTag):
+                    target.Add(new ThematicBreakBlock());
+                    break;
+
                 case Wpf.BlockUIContainer hrContainer when ReferenceEquals(
                     hrContainer.Tag, FlowDocumentBuilder.ThematicBreakTag):
                     target.Add(new ThematicBreakBlock());

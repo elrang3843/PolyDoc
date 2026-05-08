@@ -603,7 +603,7 @@ public static class FlowDocumentBuilder
     /// 바인딩이 visual tree 부착 후 동작하므로, 초기 0 폭 측정 문제를 우회한다.
     /// </para>
     /// </summary>
-    private static Wpf.BlockUIContainer BuildThematicBreak(ThematicBreakBlock thb)
+    private static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
         if (!string.IsNullOrEmpty(thb.LineColor))
@@ -615,23 +615,30 @@ public static class FlowDocumentBuilder
         double thicknessV  = thb.ThicknessPt > 0 ? PtToDip(thb.ThicknessPt) : 1;
         var brush = new WpfMedia.SolidColorBrush(lineColor);
 
-        FrameworkElement line;
+        // 실선(Solid) — Wpf.Paragraph + BorderTop. Paragraph 는 자연스럽게 본문 폭을 채우므로
+        // BlockUIContainer + Stretch + Width 바인딩 패턴이 무한대 Measure / 비-RTB ancestor
+        // 컨텍스트에서 0 픽셀로 collapse 하던 문제를 회피한다. FontSize/LineHeight 를 매우 작게 잡아
+        // 단락 자체의 높이가 BorderTop 두께 이상으로 커지지 않게 한다.
         if (thb.LineStyle == ThematicLineStyle.Solid)
         {
-            // 실선 — Rectangle + Fill 이 Border + BorderThickness 보다 안정적이다.
-            // (Border.BorderThickness 만 있는 경우 작은 margin/InnerSize 일 때 WPF 가
-            //  컨테이너 collapse 로 0px 렌더링하는 경우가 보고됨.)
-            line = new System.Windows.Shapes.Rectangle
+            var hrPara = new Wpf.Paragraph(new Wpf.Run("​"))   // ZWSP — 빈 단락 collapse 방지
             {
-                Fill                = brush,
-                Height              = thicknessV,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                SnapsToDevicePixels = true,
+                Tag                  = ThematicBreakTag,
+                BorderBrush          = brush,
+                BorderThickness      = new Thickness(0, thicknessV, 0, 0),
+                FontSize             = 0.1,
+                LineHeight           = 0.1,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                Padding              = new Thickness(0),
+                Margin               = new Thickness(0, marginV, 0, marginV),
             };
+            return hrPara;
         }
-        else if (thb.LineStyle == ThematicLineStyle.Double)
+
+        FrameworkElement line;
+        if (thb.LineStyle == ThematicLineStyle.Double)
         {
-            // 이중선 — Rectangle 두 개 + 사이 간격.
+            // 이중선 — Rectangle 두 개 + 사이 간격. (단색 BorderTop 으로는 이중선 표현 불가하므로 BlockUIContainer 폴백.)
             var stack = new System.Windows.Controls.StackPanel
             {
                 Orientation         = System.Windows.Controls.Orientation.Vertical,
@@ -680,9 +687,8 @@ public static class FlowDocumentBuilder
             line = path;
         }
 
-        // ancestor RichTextBox.Document.PageWidth 에 폭을 바인딩 — Build() 에서 PageWidth =
-        // ComputeContentWidthDip(page) 로 컬럼 본문 폭을 직접 설정해 두므로, 이 값이 그대로
-        // HR 폭이 된다. visual tree 부착 후 동작해서 초기 무한대 Measure 문제를 우회한다.
+        // 비-Solid 경로(Path/StackPanel) — 본문 폭을 채우기 위해 ancestor RichTextBox.Document.PageWidth 에
+        // 폭을 바인딩. Build() 에서 PageWidth = ComputeContentWidthDip(page) 로 설정돼 있다.
         var binding = new System.Windows.Data.Binding("Document.PageWidth")
         {
             RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.FindAncestor)
