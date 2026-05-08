@@ -10,7 +10,7 @@ namespace PolyDonky.Codecs.Markdown;
 /// 매핑:
 ///   - OutlineLevel.H1~H6        → "# " ~ "###### "
 ///   - ParagraphStyle.QuoteLevel → "> " 접두어 (n 회 반복)
-///   - ParagraphStyle.IsThematicBreak → "---"
+///   - ThematicBreakBlock             → "---"
 ///   - ParagraphStyle.CodeLanguage non-null → ```lang … ```
 ///   - ListMarker.Bullet         → "- "
 ///   - ListMarker.OrderedDecimal → "1. " (자동 번호)
@@ -62,6 +62,13 @@ public sealed class MarkdownWriter : IDocumentWriter
 
             switch (block)
             {
+                case ThematicBreakBlock:
+                {
+                    var quotePrefix = string.Empty; // ThematicBreak는 QuoteLevel 없음
+                    sb.Append(indent).Append(quotePrefix).Append("---\n");
+                    break;
+                }
+
                 case Paragraph p:
                     WriteParagraph(sb, p, indent);
                     break;
@@ -82,12 +89,6 @@ public sealed class MarkdownWriter : IDocumentWriter
         var quotePrefix = p.Style.QuoteLevel > 0
             ? string.Concat(Enumerable.Repeat("> ", p.Style.QuoteLevel))
             : string.Empty;
-
-        if (p.Style.IsThematicBreak)
-        {
-            sb.Append(indent).Append(quotePrefix).Append("---\n");
-            return;
-        }
 
         if (p.Style.CodeLanguage is not null)
         {

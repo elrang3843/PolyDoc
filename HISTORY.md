@@ -56,9 +56,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Fixed** — **RowSpan 병합 셀이 페이지 경계에서 분리되던 문제**: `TableRowSplitter.AdjustGroupsForRowSpan` 후처리 추가 — 한 그룹 안 행의 셀이 `RowSpan > 1` 로 다음 그룹의 행까지 닿으면, 그 기준 행 이후 모든 행을 다음 그룹 앞쪽으로 이동시켜 병합 셀이 시각적으로 끊기지 않게 보장한다. 체인 형태 스팬도 안정화될 때까지 반복 처리.
 
-- **Fixed** — **수평선(`<hr>`)이 보이지 않던 문제**: `FlowDocumentBuilder.BuildThematicBreak` 가 `Paragraph.BorderBottom` 방식을 사용했으나 WPF `RichTextBox` 의 텍스트 레이아웃 엔진은 `Block.BorderBrush`/`BorderThickness` 를 렌더링하지 않는다 — `BlockUIContainer(Rectangle { Height=1, Fill=gray, Stretch })` 방식으로 교체해 UIElement 렌더 파이프라인에서 처리되도록 수정. `FlowDocumentParser` 의 복원 케이스도 `Wpf.Paragraph` → `Wpf.BlockUIContainer` 패턴 매칭으로 업데이트.
+- **Fixed** — **수평선(`<hr>`)이 보이지 않던 문제**: `FlowDocumentBuilder.BuildThematicBreak` 가 `Paragraph.BorderBottom` 방식을 사용했으나 WPF `RichTextBox` 의 텍스트 레이아웃 엔진은 `Block.BorderBrush`/`BorderThickness` 를 렌더링하지 않는다 — `BlockUIContainer(Grid { Height=1, Background=color })` 방식으로 교체해 UIElement 렌더 파이프라인에서 처리되도록 수정.
 
-- **Added** — **`<hr>` 인라인 스타일 보존 (`ThematicBreakColor`, 여백)**: `HtmlReader` 가 `<hr style="border-top: 1px solid #000; margin: 2px 0">` 와 같이 인라인 스타일이 있는 경우 선 색상을 `ParagraphStyle.ThematicBreakColor` 에, margin 을 `SpaceBeforePt`/`SpaceAfterPt` 에 저장. `FlowDocumentBuilder.BuildThematicBreak(Paragraph)` 가 이 값을 Rectangle 의 Fill 색상과 수직 Margin 에 반영 — 분수 표기에 쓰이는 검은색(`#000`) 가로선 등이 원본과 동일하게 표시.
+- **Internal** — **`ThematicBreakBlock` 전용 블록 타입 도입 (모델 정리)**: `ParagraphStyle.IsThematicBreak`/`ThematicBreakColor` 플래그를 `ThematicBreakBlock : Block { LineColor, MarginPt }` 전용 타입으로 대체. `Paragraph` 의미가 명확해지고 렌더·파서·코덱 코드가 단순화됨. `BlockJsonConverter` 에 `"thematicBreak"` discriminator 추가; HTML/XML/Markdown reader·writer, FlowDocumentBuilder/Parser, SmokeTest, xUnit 테스트 전부 업데이트.
 
 - **Added** — **HtmlReader CSS `<style>` 블록 클래스 규칙 머지**: 문서 내 `<style>` 블록에서 단순 셀렉터 (`.class`, `#id`, `tag`, `tag.class`) 규칙을 추출해 매칭되는 모든 요소의 `style` 속성에 머지 — 인라인 style 이 클래스 규칙보다 우선. CSS 자손/자식/형제 결합자(` `, `>`, `+`, `~`)는 우측 단순 셀렉터만 사용. 가상 클래스(`:hover`)·속성 셀렉터(`[type=...]`)·@규칙(`@page`/`@media` 등)은 무시. 클래스 기반 text-align/background/padding/border/color 등이 단락·헤딩·표 등에 정상 반영. xUnit 테스트 5건 추가.
 

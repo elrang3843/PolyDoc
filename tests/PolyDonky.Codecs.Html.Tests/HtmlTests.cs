@@ -66,8 +66,7 @@ public class HtmlTests
     public void Reader_HrIsThematicBreak()
     {
         var doc = HtmlReader.FromHtml("<p>before</p><hr><p>after</p>");
-        var ps  = doc.EnumerateParagraphs().ToList();
-        Assert.Contains(ps, p => p.Style.IsThematicBreak);
+        Assert.Contains(doc.Sections[0].Blocks, b => b is ThematicBreakBlock);
     }
 
     [Fact]
@@ -423,7 +422,7 @@ public class HtmlTests
 
         Assert.Equal(OutlineLevel.H1, reread.EnumerateParagraphs().First().Style.Outline);
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.QuoteLevel >= 1);
-        Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.IsThematicBreak);
+        Assert.Contains(reread.Sections[0].Blocks, b => b is ThematicBreakBlock);
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.CodeLanguage == "py");
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.ListMarker?.Kind == ListKind.Bullet);
         Assert.Single(reread.Sections[0].Blocks.OfType<PolyDonky.Core.Table>());

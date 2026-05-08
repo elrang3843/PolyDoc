@@ -187,11 +187,10 @@ public class MarkdownTests
     }
 
     [Fact]
-    public void Reader_ThematicBreak_CreatesFlaggedParagraph()
+    public void Reader_ThematicBreak_CreatesThematicBreakBlock()
     {
         var doc = MarkdownReader.FromMarkdown("앞\n\n---\n\n뒤\n");
-        var ps  = doc.EnumerateParagraphs().ToList();
-        Assert.Contains(ps, p => p.Style.IsThematicBreak);
+        Assert.Contains(doc.Sections[0].Blocks, b => b is ThematicBreakBlock);
     }
 
     [Fact]
@@ -338,7 +337,7 @@ public class MarkdownTests
     {
         var doc = new PolyDonkyument();
         var sec = new Section(); doc.Sections.Add(sec);
-        sec.Blocks.Add(new Paragraph { Style = { IsThematicBreak = true } });
+        sec.Blocks.Add(new ThematicBreakBlock());
 
         Assert.Contains("---", MarkdownWriter.ToMarkdown(doc));
     }
@@ -569,7 +568,7 @@ public class MarkdownTests
 
         // 핵심 구조가 라운드트립에서 보존되는지 확인.
         Assert.Equal(OutlineLevel.H1, roundTripped.EnumerateParagraphs().First().Style.Outline);
-        Assert.Contains(roundTripped.EnumerateParagraphs(), p => p.Style.IsThematicBreak);
+        Assert.Contains(roundTripped.Sections[0].Blocks, b => b is ThematicBreakBlock);
         Assert.Contains(roundTripped.EnumerateParagraphs(), p => p.Style.CodeLanguage == "python");
         Assert.Contains(roundTripped.EnumerateParagraphs(), p => p.Style.ListMarker?.Checked == true);
         Assert.Contains(roundTripped.EnumerateParagraphs(), p => p.Style.ListMarker?.Checked == false);

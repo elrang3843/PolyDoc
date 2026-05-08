@@ -93,7 +93,7 @@ public class XmlTests
     {
         var doc = new PolyDonkyument();
         var sec = new Section(); doc.Sections.Add(sec);
-        sec.Blocks.Add(new Paragraph { Style = { IsThematicBreak = true } });
+        sec.Blocks.Add(new ThematicBreakBlock());
         sec.Blocks.Add(new ImageBlock { ResourcePath = "x.png", Description = "대체" });
 
         var xml = PdXmlWriter.ToXml(doc, fullDocument: false);
@@ -179,7 +179,7 @@ public class XmlTests
         var h = new Paragraph { Style = { Outline = OutlineLevel.H1 } }; h.AddText("<제목 & 부제목>");
         sec.Blocks.Add(h);
         sec.Blocks.Add(Paragraph.Of("본문"));
-        sec.Blocks.Add(new Paragraph { Style = { IsThematicBreak = true } });
+        sec.Blocks.Add(new ThematicBreakBlock());
         sec.Blocks.Add(new ImageBlock { ResourcePath = "x.png", Description = "대체" });
 
         var xml  = PdXmlWriter.ToXml(doc);
@@ -220,7 +220,7 @@ public class XmlTests
 
         Assert.Equal(OutlineLevel.H1, reread.EnumerateParagraphs().First().Style.Outline);
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.QuoteLevel >= 1);
-        Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.IsThematicBreak);
+        Assert.Contains(reread.Sections[0].Blocks, b => b is ThematicBreakBlock);
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.CodeLanguage == "py");
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.ListMarker?.Kind == ListKind.Bullet);
         Assert.Single(reread.Sections[0].Blocks.OfType<Table>());

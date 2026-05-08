@@ -194,15 +194,11 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
-                // 수평선(HR) — BlockUIContainer(Rectangle) 로 렌더되며 ThematicBreakTag 로 식별.
+                // 수평선(ThematicBreakBlock) — BlockUIContainer + Grid 로 렌더되며 ThematicBreakTag 로 식별.
                 case Wpf.BlockUIContainer hrUic when ReferenceEquals(
                     hrUic.Tag, FlowDocumentBuilder.ThematicBreakTag):
-                {
-                    var hrP = new Paragraph();
-                    hrP.Style.IsThematicBreak = true;
-                    target.Add(hrP);
+                    target.Add(new ThematicBreakBlock());
                     break;
-                }
 
                 // 표 캡션 단락 — Table.Caption 이 다음 렌더에서 재생성하므로 모델에 추가하지 않는다
                 // (추가하면 라이브 페이지네이션마다 캡션이 1개씩 누적됨).

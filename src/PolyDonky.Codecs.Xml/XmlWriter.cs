@@ -204,6 +204,20 @@ public sealed class XmlWriter : IDocumentWriter
 
             switch (b)
             {
+                case ThematicBreakBlock thb:
+                {
+                    var hrStyle = new List<string>();
+                    if (thb.LineColor is not null)
+                        hrStyle.Add($"border-top:1px solid {thb.LineColor}");
+                    if (thb.MarginPt > 0)
+                    {
+                        var marginPx = thb.MarginPt * 96.0 / 72.0;
+                        hrStyle.Add($"margin:{marginPx:F0}px 0");
+                    }
+                    var styleAttr = hrStyle.Count > 0 ? $" style=\"{string.Join(';', hrStyle)}\"" : "";
+                    sb.Append(indent).Append($"<hr{styleAttr}/>\n");
+                    break;
+                }
                 case Paragraph para:     WriteParagraph(sb, para, indent, notes); break;
                 case Table table:        WriteTable(sb, table, indent, notes);    break;
                 case ImageBlock img:     WriteImage(sb, img, indent);             break;
@@ -228,12 +242,6 @@ public sealed class XmlWriter : IDocumentWriter
 
     private static void WriteParagraph(StringBuilder sb, Paragraph p, string indent, NoteNums? notes = null)
     {
-        if (p.Style.IsThematicBreak)
-        {
-            sb.Append(indent).Append("<hr/>\n");
-            return;
-        }
-
         if (p.Style.CodeLanguage is not null)
         {
             var langAttr = p.Style.CodeLanguage.Length > 0

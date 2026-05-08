@@ -515,7 +515,7 @@ public static class FlowDocumentPaginationAdapter
         Status  = p.Status,
         StyleId = p.StyleId,
         // ParagraphStyle.Clone() 으로 모든 필드 복사 — 이전 자체 구현은 ListMarker / QuoteLevel /
-        // CodeLanguage / IsThematicBreak 누락. 호출측에서 second.Style.ListMarker = null 로 마커 제거.
+        // CodeLanguage 누락. 호출측에서 second.Style.ListMarker = null 로 마커 제거.
         Style   = p.Style.Clone(),
     };
 

@@ -51,12 +51,6 @@ public sealed class ParagraphStyle
     /// <summary>코드 블록 줄 번호 표시. <see cref="CodeLanguage"/> 가 non-null 인 경우에만 유의미.</summary>
     public bool ShowLineNumbers { get; set; }
 
-    /// <summary>구분선(thematic break / horizontal rule) 단락. true 이면 본문이 무시되고 가로선만 그려진다.</summary>
-    public bool IsThematicBreak { get; set; }
-
-    /// <summary>구분선 색상(hex, 예: "#000000"). null 이면 기본 회색.</summary>
-    public string? ThematicBreakColor { get; set; }
-
     /// <summary>강제 페이지 나누기. true 이면 이 단락 앞에 페이지 브레이크를 삽입한다.
     /// DOCX: w:pageBreakBefore, HWPX: hp:p pageBreak="1"</summary>
     public bool ForcePageBreakBefore { get; set; }
@@ -82,8 +76,6 @@ public sealed class ParagraphStyle
         QuoteLevel             = QuoteLevel,
         CodeLanguage           = CodeLanguage,
         ShowLineNumbers        = ShowLineNumbers,
-        IsThematicBreak        = IsThematicBreak,
-        ThematicBreakColor     = ThematicBreakColor,
         ForcePageBreakBefore   = ForcePageBreakBefore,
         BorderBottomPt         = BorderBottomPt,
         BorderBottomColor      = BorderBottomColor,

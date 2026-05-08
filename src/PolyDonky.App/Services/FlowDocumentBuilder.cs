@@ -268,9 +268,9 @@ public static class FlowDocumentBuilder
                     break;
                 }
 
-                case Paragraph p when p.Style.IsThematicBreak:
+                case ThematicBreakBlock thb:
                     listStack.Clear();
-                    target.Add(BuildThematicBreak(p));
+                    target.Add(BuildThematicBreak(thb));
                     break;
 
                 case Paragraph p:
@@ -533,23 +533,22 @@ public static class FlowDocumentBuilder
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>IsThematicBreak</c> 단락(hr)을 BlockUIContainer + Rectangle 로 렌더링한다.
+    /// <c>ThematicBreakBlock</c> 을 BlockUIContainer + Grid 로 렌더링한다.
     /// <para>
     /// WPF RichTextBox 는 Block.BorderBrush/BorderThickness 를 텍스트 레이아웃 엔진에서 무시한다.
-    /// Rectangle UIElement 는 UIElement 렌더 파이프라인에서 처리되므로 항상 표시된다.
+    /// Grid 는 HorizontalAlignment.Stretch 가 기본값이며 FlowDocument 레이아웃에서
+    /// 항상 열 너비 전체를 사용하므로 안정적으로 표시된다.
     /// </para>
     /// </summary>
-    private static Wpf.BlockUIContainer BuildThematicBreak(Paragraph p)
+    private static Wpf.BlockUIContainer BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
-        if (!string.IsNullOrEmpty(p.Style.ThematicBreakColor))
+        if (!string.IsNullOrEmpty(thb.LineColor))
         {
-            try { lineColor = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(p.Style.ThematicBreakColor); }
+            try { lineColor = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(thb.LineColor); }
             catch { /* 파싱 실패 시 기본 회색 유지 */ }
         }
-        double marginV = p.Style.SpaceBeforePt > 0 ? PtToDip(p.Style.SpaceBeforePt) : 6;
-        // Grid 는 HorizontalAlignment.Stretch 가 기본값이며, FlowDocument BlockUIContainer 안에서
-        // 항상 부모 열 너비 전체를 사용하므로 Rectangle 의 Width=0 측정 문제가 없다.
+        double marginV = thb.MarginPt > 0 ? PtToDip(thb.MarginPt) : 6;
         var grid = new System.Windows.Controls.Grid
         {
             Height     = 1,
@@ -570,7 +569,7 @@ public static class FlowDocumentBuilder
     /// <summary>줄 번호 InlineUIContainer 를 구분하는 센티넬 — 파서가 복사 대상에서 제외한다.</summary>
     internal static readonly object LineNumberTag = new();
 
-    /// <summary>수평선(HR/IsThematicBreak) Paragraph 를 구분하는 센티넬 — 파서가 IsThematicBreak 로 복원한다.</summary>
+    /// <summary>수평선(ThematicBreakBlock) BlockUIContainer 를 구분하는 센티넬 — 파서가 ThematicBreakBlock 으로 복원한다.</summary>
     internal static readonly object ThematicBreakTag = new();
 
     /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>

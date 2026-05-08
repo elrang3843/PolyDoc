@@ -12,7 +12,7 @@ namespace PolyDonky.Codecs.Html;
 ///   - OutlineLevel.H1~H6   → &lt;h1&gt;~&lt;h6&gt;
 ///   - 일반 단락             → &lt;p&gt;
 ///   - QuoteLevel ≥ 1       → 중첩 &lt;blockquote&gt;
-///   - IsThematicBreak      → &lt;hr&gt;
+///   - ThematicBreakBlock   → &lt;hr&gt;
 ///   - CodeLanguage non-null → &lt;pre&gt;&lt;code class="language-xxx"&gt;...&lt;/code&gt;&lt;/pre&gt;
 ///   - ListMarker (bullet/ordered, nested by Level) → &lt;ul&gt;/&lt;ol&gt; + &lt;li&gt;
 ///   - ListMarker.Checked    → &lt;input type="checkbox" disabled checked?&gt; 접두
@@ -210,6 +210,20 @@ public sealed class HtmlWriter : IDocumentWriter
 
             switch (b)
             {
+                case ThematicBreakBlock thb:
+                {
+                    var hrStyle = new List<string>();
+                    if (thb.LineColor is not null)
+                        hrStyle.Add($"border-top:1px solid {thb.LineColor}");
+                    if (thb.MarginPt > 0)
+                    {
+                        var marginPx = thb.MarginPt * 96.0 / 72.0;
+                        hrStyle.Add($"margin:{marginPx:F0}px 0");
+                    }
+                    var styleAttr = hrStyle.Count > 0 ? $" style=\"{string.Join(';', hrStyle)}\"" : "";
+                    sb.Append(indent).Append($"<hr{styleAttr}>\n");
+                    break;
+                }
                 case Paragraph para:     WriteParagraph(sb, para, indent, notes); break;
                 case Table table:        WriteTable(sb, table, indent, notes);    break;
                 case ImageBlock img:     WriteImage(sb, img, indent);             break;
@@ -243,7 +257,6 @@ public sealed class HtmlWriter : IDocumentWriter
                 ListMarker        = p.Style.ListMarker,
                 QuoteLevel        = Math.Max(0, p.Style.QuoteLevel - 1),
                 CodeLanguage      = p.Style.CodeLanguage,
-                IsThematicBreak   = p.Style.IsThematicBreak,
             },
             Runs    = p.Runs,
         };
@@ -252,12 +265,6 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteParagraph(StringBuilder sb, Paragraph p, string indent, NoteNums? notes = null)
     {
-        if (p.Style.IsThematicBreak)
-        {
-            sb.Append(indent).Append("<hr>\n");
-            return;
-        }
-
         if (p.Style.CodeLanguage is not null)
         {
             var code = EscapeHtml(p.GetPlainText());

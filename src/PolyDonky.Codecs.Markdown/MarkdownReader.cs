@@ -10,6 +10,7 @@ using MarkdigTable     = Markdig.Extensions.Tables.Table;
 using MarkdigTableRow  = Markdig.Extensions.Tables.TableRow;
 using MarkdigTableCell = Markdig.Extensions.Tables.TableCell;
 using PdBlock          = PolyDonky.Core.Block;
+using PdThematicBreak  = PolyDonky.Core.ThematicBreakBlock;
 using PdTable          = PolyDonky.Core.Table;
 using PdTableRow       = PolyDonky.Core.TableRow;
 using PdTableCell      = PolyDonky.Core.TableCell;
@@ -144,13 +145,9 @@ public sealed class MarkdownReader : IDocumentReader
                     break;
                 }
 
-                case ThematicBreakBlock:
+                case Markdig.Syntax.ThematicBreakBlock:
                 {
-                    var hr = new Paragraph();
-                    hr.Style.IsThematicBreak = true;
-                    hr.Style.QuoteLevel      = quoteLevel;
-                    hr.Style.ListMarker      = CloneMarker(marker);
-                    target.Add(hr);
+                    target.Add(new PdThematicBreak());
                     break;
                 }
 
