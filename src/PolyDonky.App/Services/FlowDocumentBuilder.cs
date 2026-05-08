@@ -270,7 +270,7 @@ public static class FlowDocumentBuilder
 
                 case Paragraph p when p.Style.IsThematicBreak:
                     listStack.Clear();
-                    target.Add(BuildThematicBreak());
+                    target.Add(BuildThematicBreak(p));
                     break;
 
                 case Paragraph p:
@@ -539,17 +539,24 @@ public static class FlowDocumentBuilder
     /// Rectangle UIElement 는 UIElement 렌더 파이프라인에서 처리되므로 항상 표시된다.
     /// </para>
     /// </summary>
-    private static Wpf.BlockUIContainer BuildThematicBreak()
+    private static Wpf.BlockUIContainer BuildThematicBreak(Paragraph p)
     {
+        WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
+        if (!string.IsNullOrEmpty(p.Style.ThematicBreakColor))
+        {
+            try { lineColor = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(p.Style.ThematicBreakColor); }
+            catch { /* 파싱 실패 시 기본 회색 유지 */ }
+        }
+        double marginV = p.Style.SpaceBeforePt > 0 ? PtToDip(p.Style.SpaceBeforePt) : 6;
         var rule = new System.Windows.Shapes.Rectangle
         {
             Height              = 1,
-            Fill                = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA)),
+            Fill                = new WpfMedia.SolidColorBrush(lineColor),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
         };
         return new Wpf.BlockUIContainer(rule)
         {
-            Margin = new Thickness(0, 6, 0, 6),
+            Margin = new Thickness(0, marginV, 0, marginV),
             Tag    = ThematicBreakTag,
         };
     }

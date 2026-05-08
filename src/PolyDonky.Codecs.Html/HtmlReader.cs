@@ -247,6 +247,25 @@ public sealed class HtmlReader : IDocumentReader
                 p.Style.IsThematicBreak = true;
                 p.Style.QuoteLevel      = ctx.QuoteLevel;
                 p.Style.ListMarker      = CloneMarker(ctx.Marker);
+
+                // 인라인 스타일에서 선 색상과 여백 파싱.
+                var hrStyle = el.GetAttribute("style") ?? "";
+                ExtractBorderSizeColor(StyleProp(hrStyle, "border-top"), out _, out string? hrColor);
+                hrColor ??= StyleProp(hrStyle, "border-color");
+                hrColor ??= StyleProp(hrStyle, "color");
+                if (hrColor is not null)
+                    p.Style.ThematicBreakColor = hrColor;
+
+                if (TryParseCssPt(StyleProp(hrStyle, "margin-top"), out var hrMt))
+                    p.Style.SpaceBeforePt = hrMt;
+                if (TryParseCssPt(StyleProp(hrStyle, "margin-bottom"), out var hrMb))
+                    p.Style.SpaceAfterPt = hrMb;
+                if (TryParseCssPt(StyleProp(hrStyle, "margin"), out var hrM))
+                {
+                    p.Style.SpaceBeforePt = hrM;
+                    p.Style.SpaceAfterPt  = hrM;
+                }
+
                 target.Add(p);
                 break;
             }

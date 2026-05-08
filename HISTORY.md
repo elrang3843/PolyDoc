@@ -58,6 +58,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Fixed** — **수평선(`<hr>`)이 보이지 않던 문제**: `FlowDocumentBuilder.BuildThematicBreak` 가 `Paragraph.BorderBottom` 방식을 사용했으나 WPF `RichTextBox` 의 텍스트 레이아웃 엔진은 `Block.BorderBrush`/`BorderThickness` 를 렌더링하지 않는다 — `BlockUIContainer(Rectangle { Height=1, Fill=gray, Stretch })` 방식으로 교체해 UIElement 렌더 파이프라인에서 처리되도록 수정. `FlowDocumentParser` 의 복원 케이스도 `Wpf.Paragraph` → `Wpf.BlockUIContainer` 패턴 매칭으로 업데이트.
 
+- **Added** — **`<hr>` 인라인 스타일 보존 (`ThematicBreakColor`, 여백)**: `HtmlReader` 가 `<hr style="border-top: 1px solid #000; margin: 2px 0">` 와 같이 인라인 스타일이 있는 경우 선 색상을 `ParagraphStyle.ThematicBreakColor` 에, margin 을 `SpaceBeforePt`/`SpaceAfterPt` 에 저장. `FlowDocumentBuilder.BuildThematicBreak(Paragraph)` 가 이 값을 Rectangle 의 Fill 색상과 수직 Margin 에 반영 — 분수 표기에 쓰이는 검은색(`#000`) 가로선 등이 원본과 동일하게 표시.
+
 - **Added** — **HtmlReader CSS `<style>` 블록 클래스 규칙 머지**: 문서 내 `<style>` 블록에서 단순 셀렉터 (`.class`, `#id`, `tag`, `tag.class`) 규칙을 추출해 매칭되는 모든 요소의 `style` 속성에 머지 — 인라인 style 이 클래스 규칙보다 우선. CSS 자손/자식/형제 결합자(` `, `>`, `+`, `~`)는 우측 단순 셀렉터만 사용. 가상 클래스(`:hover`)·속성 셀렉터(`[type=...]`)·@규칙(`@page`/`@media` 등)은 무시. 클래스 기반 text-align/background/padding/border/color 등이 단락·헤딩·표 등에 정상 반영. xUnit 테스트 5건 추가.
 
 - **Changed** — **FlowDocumentBuilder 중첩 리스트 마커 레벨별 스타일링**: 모든 `<ul>` 이 ● 단일 마커로 그려지던 문제를 브라우저 기본값과 동일한 disc → circle → square 진행으로 변경. `<ol>` 의 OrderedAlpha/OrderedRoman ListKind 도 레벨 0 = 대문자, 레벨 ≥1 = 소문자 진행 적용 (`MarkerStyleForLevel` 헬퍼).
