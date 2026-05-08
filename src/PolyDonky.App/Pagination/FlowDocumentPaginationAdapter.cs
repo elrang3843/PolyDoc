@@ -513,6 +513,29 @@ public static class FlowDocumentPaginationAdapter
                     return topY + fe.ActualHeight + block.Margin.Top + block.Margin.Bottom;
             }
 
+            // Wpf.Table 은 ContentEnd.GetCharacterRect 가 표 직후 캐럿 위치(=다음 블록의 top)
+            // 만 반환해 표의 실제 하단을 알 수 없다. 마지막 TableRow 의 ContentEnd 로
+            // 진짜 하단 Y 를 측정한다 — 이 값이 없으면 표가 페이지 경계를 넘는데도 단일
+            // 블록 배정 로직이 다음 페이지로 옮기지 못해 본문 행이 RTB 클립 영역 밖으로 나간다.
+            if (block is WpfDocs.Table table)
+            {
+                WpfDocs.TableRow? lastRow = null;
+                foreach (var rg in table.RowGroups)
+                {
+                    foreach (var row in rg.Rows)
+                        lastRow = row;
+                }
+                if (lastRow is not null)
+                {
+                    var rowRect = lastRow.ContentEnd
+                        .GetCharacterRect(WpfDocs.LogicalDirection.Backward);
+                    if (rowRect != Rect.Empty
+                        && !double.IsNaN(rowRect.Bottom)
+                        && !double.IsInfinity(rowRect.Bottom))
+                        return rowRect.Bottom;
+                }
+            }
+
             var r = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
             if (r == Rect.Empty || double.IsNaN(r.Bottom) || double.IsInfinity(r.Bottom))
                 return double.NaN;

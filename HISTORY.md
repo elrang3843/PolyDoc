@@ -50,6 +50,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Changed** — **FlowDocumentBuilder 중첩 리스트 마커 레벨별 스타일링**: 모든 `<ul>` 이 ● 단일 마커로 그려지던 문제를 브라우저 기본값과 동일한 disc → circle → square 진행으로 변경. `<ol>` 의 OrderedAlpha/OrderedRoman ListKind 도 레벨 0 = 대문자, 레벨 ≥1 = 소문자 진행 적용 (`MarkerStyleForLevel` 헬퍼).
 
+- **Fixed** — **표가 페이지 끝에 가까이 시작할 때 본문 행이 RTB 클립 영역 밖에 그려지던 버그**: `FlowDocumentPaginationAdapter.TryGetBottomY` 가 `Wpf.Table` 의 `ContentEnd.GetCharacterRect` 로 표 *직후* 캐럿 위치(≈ 표의 top) 만 반환해 표의 진짜 하단 Y 를 알지 못했음. 그 결과 페이지 하단에 가까이 시작한 작은 표가 단일 블록 배정 로직(`bottomY > slotBoundaryY → 다음 슬롯`) 에 의해 다음 페이지로 옮겨지지 않고 현재 페이지에 머물러, 본문 행이 RTB(높이=bodyH) 의 `ScrollBarVisibility.Hidden` 에 의해 클립되어 헤더 행만 보이는 증상. 수정: `TryGetBottomY` 가 `Wpf.Table` 일 때 마지막 `TableRow.ContentEnd.GetCharacterRect` 로 진짜 표 하단 Y 를 측정 — 이 값을 단일 블록 배정에 사용해 표 전체가 자연스럽게 다음 페이지로 이동.
+
 - **Fixed** — **CSS 도형 ShapeObject 검은 테두리 제거**: HtmlReader `TryParseCssShapeFromDiv` 가 만드는 ShapeObject 가 ShapeObject 기본값 `StrokeThicknessPt=1` 을 따라 검은 1pt 테두리를 그리던 문제 수정 — CSS 순수 색상 div 는 기본 테두리 없으므로 `StrokeThicknessPt=0` 으로 명시.
 
 - **Fixed** — **FlowDocumentBuilder SVG 이미지 로드 예외 수정**: `ImageBlock(MediaType="image/svg+xml")` 을 WPF `BitmapImage` 로 디코딩 시도 시 발생하던 `System.NotSupportedException` 수정 — SVG ImageBlock 은 올바른 크기(WidthMm×HeightMm)의 시각적 placeholder(`[SVG 다이어그램]` 테두리 박스)로 대체 표시.
