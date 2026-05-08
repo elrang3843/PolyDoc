@@ -534,16 +534,21 @@ public static class FlowDocumentBuilder
 
     /// <summary>
     /// <c>IsThematicBreak</c> 단락(hr)을 Paragraph 의 BorderBottom 으로 렌더링한다.
-    /// BlockUIContainer 는 FlowDocument 안에서 Stretch 가 동작하지 않아 Paragraph 방식으로 변경.
-    /// Tag = ThematicBreakTag 로 파서가 IsThematicBreak 단락으로 복원한다.
+    /// <para>
+    /// 빈 Paragraph 는 FlowDocument 레이아웃에서 높이 0 으로 처리되어 border 가 보이지 않으므로
+    ///  (non-breaking space) Run 을 추가해 최소한의 높이를 확보한다.
+    /// FontSize = 1 로 줄 높이를 최소화해 수평선처럼 보이게 한다.
+    /// </para>
     /// </summary>
     private static Wpf.Paragraph BuildThematicBreak()
     {
-        return new Wpf.Paragraph
+        return new Wpf.Paragraph(new Wpf.Run(" "))
         {
-            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xCC, 0xCC, 0xCC)),
+            FontSize        = 1,
+            Padding         = new Thickness(0),
+            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA)),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Margin          = new Thickness(0, 4, 0, 4),
+            Margin          = new Thickness(0, 6, 0, 6),
             Tag             = ThematicBreakTag,
         };
     }
