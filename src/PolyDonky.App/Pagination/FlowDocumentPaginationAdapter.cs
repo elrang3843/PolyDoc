@@ -36,12 +36,6 @@ public static class FlowDocumentPaginationAdapter
     public const int MaxBlocksForPreciseMapping = 2_500;
 
     /// <summary>
-    /// mm→DIP 변환과 WPF 서브픽셀 반올림으로 인한 경계 오차 흡수용 허용치 (DIP).
-    /// <see cref="PerPageEditorHost.ClipRenderingTolerance"/> 와 동일한 값을 유지한다.
-    /// </summary>
-    private const double BoundaryTol = 2.0;
-
-    /// <summary>
     /// 문서를 페이지 단위로 분할해 <see cref="PaginatedDocument"/> 로 반환한다.
     /// </summary>
     /// <param name="document">분할할 문서.</param>
@@ -188,6 +182,11 @@ public static class FlowDocumentPaginationAdapter
         // 확정되지 않아 GetCharacterRect 가 Y=0 을 반환할 수 있다.
         rtb.UpdateLayout();
 
+        // mm→DIP 변환과 WPF 서브픽셀 반올림으로 인한 경계 오차 흡수용 허용치 (DIP).
+        // 블록의 bottomY 가 슬롯 경계를 이 값 이하로 넘어서면 경계 위반으로 보지 않는다.
+        // PerPageEditorHost.ClipRenderingTolerance 와 동일한 값을 유지한다.
+        const double BoundaryTol = 2.0;
+
         // 단 슬롯별 누적 채움 높이. 슬롯 경계 이동 후 다른 블록과 합산 시
         // bodyH 를 넘기는 경우를 감지해 다음 슬롯으로 밀어낸다.
         var slotFill = new System.Collections.Generic.Dictionary<int, double>();
@@ -289,59 +288,6 @@ public static class FlowDocumentPaginationAdapter
                         result.Add((nextSlot / colCount, nextSlot % colCount, frag2, Rect.Empty));
 
                         prevSlot = nextSlot;
-                        continue; // 아래 단일 블록 처리 생략
-                    }
-                }
-            }
-
-            // ── 표 행 단위 분할 ────────────────────────────────────────────────────────
-            // 표가 슬롯 경계를 넘어서면 WPF 행 Y 좌표를 측정해 분할 행 인덱스를 찾아
-            // Core.Table 을 두 조각으로 나눈다 (단락 분할과 동일한 slot/fill 갱신 방식).
-            // blockH >= bodyH 인 초대형 표도 분할을 시도한다(표는 단락과 달리 높이 제한 없음).
-            if (!isPageBreak
-                && coreBlock is Table coreTableBlock
-                && blockH > 0
-                && wpfBlock is WpfDocs.Table wpfTableBlock)
-            {
-                double slotBoundaryY  = (slotTop + 1) * bodyH;
-                bool   crossesBoundary = !double.IsNaN(bottomY) && bottomY > slotBoundaryY + BoundaryTol;
-                bool   fillOverflow    = slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH + BoundaryTol;
-
-                if (crossesBoundary || fillOverflow)
-                {
-                    double splitY = crossesBoundary
-                        ? slotBoundaryY
-                        : topY + Math.Max(0.0, bodyH - slotFill.GetValueOrDefault(slotTop, 0.0));
-
-                    int splitRowIdx = FindTableSplitRowIndex(wpfTableBlock, splitY);
-                    int totalRows   = coreTableBlock.Rows.Count;
-
-                    if (splitRowIdx > 0 && splitRowIdx < totalRows)
-                    {
-                        var (tFrag1, tFrag2) = SplitCoreTable(coreTableBlock, splitRowIdx);
-
-                        // 첫 조각 → 현재 슬롯
-                        double tFrag1H = Math.Max(0.0, splitY - topY);
-                        slotFill[slotTop] = Math.Min(bodyH,
-                            slotFill.GetValueOrDefault(slotTop, 0.0) + tFrag1H);
-                        var tRect1 = TryGetColumnLocalRect(
-                            wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
-                        result.Add((slotTop / colCount, slotTop % colCount, tFrag1, tRect1));
-
-                        // 이어지는 조각 → 다음 슬롯 (누적 채움 검사)
-                        int    tNextSlot = slotTop + 1;
-                        double tFrag2H   = blockH - tFrag1H;
-                        if (tFrag2H > 0 && tFrag2H < bodyH)
-                        {
-                            while (slotFill.GetValueOrDefault(tNextSlot, 0.0) + tFrag2H > bodyH + BoundaryTol)
-                                tNextSlot++;
-                        }
-                        if (tFrag2H > 0)
-                            slotFill[tNextSlot] = Math.Min(bodyH,
-                                slotFill.GetValueOrDefault(tNextSlot, 0.0) + Math.Min(tFrag2H, bodyH));
-                        result.Add((tNextSlot / colCount, tNextSlot % colCount, tFrag2, Rect.Empty));
-
-                        prevSlot = tNextSlot;
                         continue; // 아래 단일 블록 처리 생략
                     }
                 }
@@ -519,87 +465,6 @@ public static class FlowDocumentPaginationAdapter
 
     // Run/RunStyle 복제는 Core 의 정식 Clone() 메서드 사용 — 이전에 이 파일에 있던 자체 구현은
     // Url 등 새로 추가된 필드를 빠뜨려 페이지네이션 분할 시 하이퍼링크가 사라지는 버그가 있었다.
-
-    // ── 표 행 분할 헬퍼 ──────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// WPF Table 에서 상단 Y 좌표가 <paramref name="splitY"/> 이상인 첫 번째 행의 인덱스를 반환한다.
-    /// 모든 행이 splitY 이내면 전체 행 수를 반환한다(분할 불필요).
-    /// </summary>
-    private static int FindTableSplitRowIndex(WpfDocs.Table wpfTable, double splitY)
-    {
-        var rows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
-        for (int i = 0; i < rows.Count; i++)
-        {
-            try
-            {
-                var rect = rows[i].ContentStart
-                    .GetCharacterRect(WpfDocs.LogicalDirection.Forward);
-                if (rect == Rect.Empty || double.IsNaN(rect.Y) || double.IsInfinity(rect.Y))
-                    continue;
-                if (rect.Y >= splitY - BoundaryTol)
-                    return i;
-            }
-            catch { /* 측정 실패 행은 건너뜀 */ }
-        }
-        return rows.Count;
-    }
-
-    /// <summary>
-    /// Core.Table 을 <paramref name="splitRowIdx"/> 행 인덱스 기준으로 두 조각으로 나눈다.
-    /// <list type="bullet">
-    ///   <item>frag1 — 인덱스 [0, splitRowIdx) 행</item>
-    ///   <item>frag2 — 헤더 행 반복 + 인덱스 [splitRowIdx, ∞) 행</item>
-    /// </list>
-    /// 표 메타데이터(열 정의, 테두리, 여백 등)는 두 조각 모두 복사.
-    /// 캡션은 첫 조각에만 표시 (두 번 렌더링 방지).
-    /// </summary>
-    private static (Table first, Table second) SplitCoreTable(Table src, int splitRowIdx)
-    {
-        Table CloneMeta(Table t) => new()
-        {
-            Id                         = t.Id,
-            Status                     = t.Status,
-            WrapMode                   = t.WrapMode,
-            HAlign                     = t.HAlign,
-            AnchorPageIndex            = t.AnchorPageIndex,
-            OverlayXMm                 = t.OverlayXMm,
-            OverlayYMm                 = t.OverlayYMm,
-            BackgroundColor            = t.BackgroundColor,
-            Caption                    = t.Caption,
-            DefaultCellPaddingTopMm    = t.DefaultCellPaddingTopMm,
-            DefaultCellPaddingBottomMm = t.DefaultCellPaddingBottomMm,
-            DefaultCellPaddingLeftMm   = t.DefaultCellPaddingLeftMm,
-            DefaultCellPaddingRightMm  = t.DefaultCellPaddingRightMm,
-            OuterMarginTopMm           = t.OuterMarginTopMm,
-            OuterMarginBottomMm        = t.OuterMarginBottomMm,
-            OuterMarginLeftMm          = t.OuterMarginLeftMm,
-            OuterMarginRightMm         = t.OuterMarginRightMm,
-            BorderThicknessPt          = t.BorderThicknessPt,
-            BorderColor                = t.BorderColor,
-            Columns = new System.Collections.Generic.List<TableColumn>(t.Columns),
-        };
-
-        var first  = CloneMeta(src);
-        var second = CloneMeta(src);
-        second.Caption = null; // 캡션은 첫 조각에서만 표시
-
-        for (int i = 0; i < src.Rows.Count; i++)
-        {
-            if (i < splitRowIdx) first.Rows.Add(src.Rows[i]);
-            else                 second.Rows.Add(src.Rows[i]);
-        }
-
-        // 분할 지점 이전에 있는 헤더 행을 frag2 앞에 반복 (thead 반복 효과)
-        int insertAt = 0;
-        for (int i = 0; i < splitRowIdx; i++)
-        {
-            if (src.Rows[i].IsHeader)
-                second.Rows.Insert(insertAt++, src.Rows[i]);
-        }
-
-        return (first, second);
-    }
 
     /// <summary>
     /// fd.Blocks 를 재귀적으로 열거한다.
