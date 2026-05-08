@@ -3337,60 +3337,71 @@ public partial class MainWindow : Window
     {
         wpfTable = null; coreTable = null; leftColIdx = -1; borderX = 0;
 
-        var tp = BodyEditor.GetPositionFromPoint(pt, true);
-        if (tp == null) return false;
-
-        // Walk up to TableCell
-        System.Windows.Documents.TableCell? cell = null;
-        DependencyObject? cur = tp.Parent;
-        while (cur is System.Windows.FrameworkContentElement fce)
+        // FlowDocument 레이아웃이 검증되지 않은 상태(예: 행 삽입 직후 재빌드 중)
+        // 에서는 GetPositionFromPoint / GetCharacterRect 가
+        // InvalidOperationException("TextView 의 레이아웃 정보가 잘못되었습니다") 을 던진다.
+        // hit-test 실패로 처리하면 다음 마우스 이벤트에서 정상 동작.
+        try
         {
-            if (cur is System.Windows.Documents.TableCell tc) { cell = tc; break; }
-            cur = fce.Parent;
-        }
-        if (cell == null) return false;
-        if (cell.ColumnSpan > 1) return false;
+            var tp = BodyEditor.GetPositionFromPoint(pt, true);
+            if (tp == null) return false;
 
-        var row      = cell.Parent as System.Windows.Documents.TableRow;
-        var rowGroup = row?.Parent as System.Windows.Documents.TableRowGroup;
-        var wTable   = rowGroup?.Parent as System.Windows.Documents.Table;
-        if (wTable is null) return false;
-        // 붙여넣기 표는 Tag 가 null 이므로 즉석 부착
-        var cTable = EnsureCoreTable(wTable);
-
-        int cellIdx  = row!.Cells.IndexOf(cell);
-        int colCount = wTable.Columns.Count;
-        if (cellIdx < 0) return false;
-
-        var firstRow = rowGroup!.Rows[0];
-
-        // 이 셀의 오른쪽 경계선 = 다음 셀 콘텐츠 시작 X
-        if (cellIdx < colCount - 1 && cellIdx + 1 < firstRow.Cells.Count)
-        {
-            var nextRect = firstRow.Cells[cellIdx + 1].ContentStart
-                                .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
-            if (!nextRect.IsEmpty && Math.Abs(pt.X - nextRect.Left) <= TableColResizeHitDip)
+            // Walk up to TableCell
+            System.Windows.Documents.TableCell? cell = null;
+            DependencyObject? cur = tp.Parent;
+            while (cur is System.Windows.FrameworkContentElement fce)
             {
-                wpfTable = wTable; coreTable = cTable;
-                leftColIdx = cellIdx; borderX = nextRect.Left;
-                return true;
+                if (cur is System.Windows.Documents.TableCell tc) { cell = tc; break; }
+                cur = fce.Parent;
             }
-        }
+            if (cell == null) return false;
+            if (cell.ColumnSpan > 1) return false;
 
-        // 이 셀의 왼쪽 경계선 = 이 셀 콘텐츠 시작 X (이전 셀의 오른쪽 경계)
-        if (cellIdx > 0 && cellIdx < firstRow.Cells.Count)
-        {
-            var thisRect = firstRow.Cells[cellIdx].ContentStart
-                                .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
-            if (!thisRect.IsEmpty && Math.Abs(pt.X - thisRect.Left) <= TableColResizeHitDip)
+            var row      = cell.Parent as System.Windows.Documents.TableRow;
+            var rowGroup = row?.Parent as System.Windows.Documents.TableRowGroup;
+            var wTable   = rowGroup?.Parent as System.Windows.Documents.Table;
+            if (wTable is null) return false;
+            // 붙여넣기 표는 Tag 가 null 이므로 즉석 부착
+            var cTable = EnsureCoreTable(wTable);
+
+            int cellIdx  = row!.Cells.IndexOf(cell);
+            int colCount = wTable.Columns.Count;
+            if (cellIdx < 0) return false;
+
+            var firstRow = rowGroup!.Rows[0];
+
+            // 이 셀의 오른쪽 경계선 = 다음 셀 콘텐츠 시작 X
+            if (cellIdx < colCount - 1 && cellIdx + 1 < firstRow.Cells.Count)
             {
-                wpfTable = wTable; coreTable = cTable;
-                leftColIdx = cellIdx - 1; borderX = thisRect.Left;
-                return true;
+                var nextRect = firstRow.Cells[cellIdx + 1].ContentStart
+                                    .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                if (!nextRect.IsEmpty && Math.Abs(pt.X - nextRect.Left) <= TableColResizeHitDip)
+                {
+                    wpfTable = wTable; coreTable = cTable;
+                    leftColIdx = cellIdx; borderX = nextRect.Left;
+                    return true;
+                }
             }
-        }
 
-        return false;
+            // 이 셀의 왼쪽 경계선 = 이 셀 콘텐츠 시작 X (이전 셀의 오른쪽 경계)
+            if (cellIdx > 0 && cellIdx < firstRow.Cells.Count)
+            {
+                var thisRect = firstRow.Cells[cellIdx].ContentStart
+                                    .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                if (!thisRect.IsEmpty && Math.Abs(pt.X - thisRect.Left) <= TableColResizeHitDip)
+                {
+                    wpfTable = wTable; coreTable = cTable;
+                    leftColIdx = cellIdx - 1; borderX = thisRect.Left;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (System.InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private void StartTableColumnResize(
