@@ -46,6 +46,13 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **WPF 오버레이 캔버스 + HTML CSS z-index 시각 출력 통합** (도형 z-order 정책 후속): 직전 커밋의 `ShapeOrdering` 정책을 두 추가 렌더링 경로에 통합.
+  - **Core**: `ShapeOrdering.ComputeZIndexMap(IEnumerable<ShapeObject>)` 신설 — 각 도형에 대한 효과적 z-index 정수값 dictionary 반환. 명시 `ZOrder != 0` 은 그 값 그대로, `ZOrder == 0` 자동 그룹은 컨테인먼트 깊이를 z-index 로 사용.
+  - **WPF (`MainWindow.RebuildOverlayShapes`)**: `UnderlayShapeCanvas`(BehindText) 와 `OverlayShapeCanvas`(InFrontOfText) 가 별개 stacking context 이므로 각자 모은 후 `ShapeOrdering.OrderForRendering` 으로 삽입 순서 결정 + `Canvas.SetZIndex(ctrl, zMap[shape])` 로 명시적 z-index 도 함께 설정 (다른 콘트롤 동적 추가/재배치에도 의도된 순서 유지). 헬퍼 `PlaceOverlayShapes(IList<ShapeObject>, Canvas)` 신설.
+  - **HTML (`HtmlWriter.WriteShape`)**: `<figure class="pd-shape">` 의 inline style 에 `position:relative;z-index:N` 출력 — N 은 같은 레벨(섹션 본문·블록쿼트 안·글상자 본문 등 stacking context 별) `ComputeZIndexMap` 결과. `WriteBlocks` 가 자기 레벨 z-index 맵을 계산해 `WriteShape` 로 전달. z-index 가 0 이면 출력 생략.
+  - **HtmlReader 라운드트립 안전장치**: 자동 컨테인먼트로 emit 된 CSS z-index 가 `ZOrder` 로 잘못 흡수되지 않도록 — reader 는 `data-pd-z-order` (명시 ZOrder 마커) 만 본다. CSS z-index 는 시각 렌더링 전용으로 취급.
+  - 회귀 테스트 9건 추가 (`ComputeZIndexMap` Core 5건 + HTML CSS 출력 4건). 전체 367 크로스플랫폼 테스트 + WPF 앱 빌드 성공.
+
 - **Added** — **도형 그리기 순서(z-order) 정책 + 자동 컨테인먼트 보정**: 한 도형이 다른 도형을 완전히 포함할 때 안쪽(작은) 도형이 외곽 도형에 가려지지 않도록 자동으로 뒤에 그려지게 한다. 새로운 모델 필드 `ShapeObject.ZOrder` (int, 기본 0) — `0` = 자동 보정 그룹, 음수 = 자동 그룹보다 항상 뒤(작을수록 더 뒤), 양수 = 자동 그룹보다 항상 앞(클수록 더 앞). Core 헬퍼 `ShapeOrdering.OrderForRendering(IEnumerable<ShapeObject>)` 가 정렬을 수행 — 자동 그룹 내에서는 절대 좌표(WrapMode = `InFrontOfText` / `BehindText`) 의 bbox 컨테인먼트를 검사해 깊이 오름차순 stable sort, 같은 깊이는 문서 순서 유지. `FlowDocumentBuilder.AppendBlocks` 가 연속된 `ShapeObject` 묶음을 이 정책으로 재배열(`ReorderShapeRuns`). HTML 라운드트립: `<figure class="pd-shape">` 에 `data-pd-z-order` 속성으로 보존. xUnit 회귀 12건 추가(빈 입력/단일 입력/포함 미존재/포함 1단/3단 중첩/명시 z-order 음수·양수·혼합/동일 z-order/인라인 제외/동일 bbox 비포함/겹치지만 비포함/기본값 0). 전체 358 크로스플랫폼 테스트 통과 + WPF 앱 빌드 성공.
 
 - **Added/Fixed** — **HTML ↔ IWPF 도형(SVG) 무손실 라운드트립 + 페이지네이션 보강** (`HtmlReader` / `HtmlWriter`):

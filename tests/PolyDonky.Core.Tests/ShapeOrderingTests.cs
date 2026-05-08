@@ -142,4 +142,65 @@ public class ShapeOrderingTests
     {
         Assert.Equal(0, new ShapeObject().ZOrder);
     }
+
+    // ── ComputeZIndexMap ────────────────────────────────────────────────
+
+    [Fact]
+    public void ZIndexMap_ExplicitOrderUsesShapeZOrderValue()
+    {
+        var a = Overlay(-3, 0, 0, 10, 10, "a");
+        var b = Overlay( 0, 0, 0, 10, 10, "b");
+        var c = Overlay( 5, 0, 0, 10, 10, "c");
+        var map = ShapeOrdering.ComputeZIndexMap(new[] { a, b, c });
+        Assert.Equal(-3, map[a]);
+        Assert.Equal( 0, map[b]);
+        Assert.Equal( 5, map[c]);
+    }
+
+    [Fact]
+    public void ZIndexMap_AutoGroupUsesContainmentDepth()
+    {
+        // big > mid > small (3단 중첩) → z-index = 0, 1, 2
+        var big   = Overlay(0,  0,  0, 100, 100, "big");
+        var mid   = Overlay(0, 10, 10,  60,  60, "mid");
+        var small = Overlay(0, 20, 20,  20,  20, "small");
+        var map = ShapeOrdering.ComputeZIndexMap(new[] { big, mid, small });
+        Assert.Equal(0, map[big]);
+        Assert.Equal(1, map[mid]);
+        Assert.Equal(2, map[small]);
+    }
+
+    [Fact]
+    public void ZIndexMap_NoContainmentReturnsZero()
+    {
+        var a = Overlay(0,  0,  0, 30, 30, "a");
+        var b = Overlay(0, 50, 50, 30, 30, "b");
+        var map = ShapeOrdering.ComputeZIndexMap(new[] { a, b });
+        Assert.Equal(0, map[a]);
+        Assert.Equal(0, map[b]);
+    }
+
+    [Fact]
+    public void ZIndexMap_InlineShapesAlwaysZero()
+    {
+        var a = Inline(0, "a"); a.WidthMm = 100; a.HeightMm = 100;
+        var b = Inline(0, "b"); b.WidthMm =  20; b.HeightMm =  20;
+        var map = ShapeOrdering.ComputeZIndexMap(new[] { a, b });
+        Assert.Equal(0, map[a]);
+        Assert.Equal(0, map[b]);  // 인라인은 컨테인먼트 비교 제외 → 항상 0
+    }
+
+    [Fact]
+    public void ZIndexMap_MixedExplicitAndAuto()
+    {
+        var bg    = Overlay(-2, 0, 0, 50, 50, "bg");        // 명시: -2
+        var outer = Overlay( 0, 5, 5, 40, 40, "outer");      // 자동, depth 0
+        var inner = Overlay( 0, 15, 15, 10, 10, "inner");    // 자동, depth 1 (outer 안)
+        var fg    = Overlay( 9, 0, 0, 30, 30, "fg");         // 명시: 9
+        var map = ShapeOrdering.ComputeZIndexMap(new[] { bg, outer, inner, fg });
+        Assert.Equal(-2, map[bg]);
+        Assert.Equal( 0, map[outer]);
+        Assert.Equal( 1, map[inner]);
+        Assert.Equal( 9, map[fg]);
+    }
 }

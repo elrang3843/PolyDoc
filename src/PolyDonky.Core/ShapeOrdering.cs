@@ -51,6 +51,32 @@ public static class ShapeOrdering
         return result;
     }
 
+    /// <summary>
+    /// CSS <c>z-index</c> 와 같은 정수 값을 각 도형에 대해 계산해 반환한다.
+    /// 같은 캔버스/스택 컨텍스트 안에서 이 값이 큰 도형이 위에 그려진다.
+    /// 의미:
+    /// <list type="bullet">
+    ///   <item>명시적 <c>ZOrder != 0</c> 도형 — 그 값을 그대로 사용.</item>
+    ///   <item><c>ZOrder == 0</c> 자동 그룹 — 컨테인먼트 깊이를 z-index 로 사용
+    ///   (다른 자동 그룹 도형이 자기를 포함할수록 깊이 ↑ → 위에 보임).
+    ///   포함 관계가 없으면 <c>0</c>.</item>
+    /// </list>
+    /// 결과 dictionary 에는 자동 그룹이고 깊이가 0 인 도형도 포함되며 값은 <c>0</c> 이다 — 호출 측에서
+    /// "<c>0</c> 이면 z-index 출력 생략" 같은 정책을 자유롭게 적용할 수 있다.
+    /// </summary>
+    public static IReadOnlyDictionary<ShapeObject, int> ComputeZIndexMap(IEnumerable<ShapeObject> shapes)
+    {
+        ArgumentNullException.ThrowIfNull(shapes);
+        var arr = shapes as ShapeObject[] ?? shapes.ToArray();
+        var map = new Dictionary<ShapeObject, int>(arr.Length);
+        foreach (var s in arr)
+        {
+            int z = (s.ZOrder != 0) ? s.ZOrder : ComputeContainmentDepth(s, arr);
+            map[s] = z;
+        }
+        return map;
+    }
+
     private static int ComputeContainmentDepth(ShapeObject s, ShapeObject[] all)
     {
         if (!TryGetAbsoluteBBox(s, out var sBox)) return 0;

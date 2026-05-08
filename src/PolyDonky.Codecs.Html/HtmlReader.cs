@@ -2129,6 +2129,8 @@ public sealed class HtmlReader : IDocumentReader
         if (double.TryParse(figEl.GetAttribute("data-pd-fill-opacity"), NumberStyles.Any, CultureInfo.InvariantCulture, out var fo) && fo >= 0 && fo <= 1)
             s.FillOpacity = fo;
 
+        // 명시적 ZOrder 는 data-pd-z-order 로만 보존. CSS z-index 는 시각 렌더링용
+        // (자동 컨테인먼트 보정 결과 포함) 이라 명시값과 자동값을 구분할 수 없어 ZOrder 로 흡수하지 않는다.
         if (int.TryParse(figEl.GetAttribute("data-pd-z-order"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var zo))
             s.ZOrder = zo;
 

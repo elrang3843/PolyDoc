@@ -182,6 +182,13 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteBlocks(StringBuilder sb, IList<Block> blocks, string indent, NoteNums? notes = null)
     {
+        // 같은 레벨(같은 stacking context) 도형들에 대해 z-index 맵을 계산.
+        // 컨테이너(블록쿼트·글상자 본문·표 셀)는 각자 별개 stacking context 이므로
+        // 재귀 WriteBlocks 호출은 자기 레벨의 맵을 새로 계산한다.
+        var shapeZ = blocks.OfType<ShapeObject>().Any()
+            ? ShapeOrdering.ComputeZIndexMap(blocks.OfType<ShapeObject>())
+            : null;
+
         // 인접 리스트·인용은 묶어서 처리한다.
         int i = 0;
         while (i < blocks.Count)
@@ -237,7 +244,9 @@ public sealed class HtmlWriter : IDocumentWriter
                 case Table table:        WriteTable(sb, table, indent, notes);    break;
                 case ImageBlock img:     WriteImage(sb, img, indent);             break;
                 case TocBlock toc:       WriteToc(sb, toc, indent);               break;
-                case ShapeObject shape:  WriteShape(sb, shape, indent);           break;
+                case ShapeObject shape:
+                    WriteShape(sb, shape, indent, shapeZ?.GetValueOrDefault(shape) ?? 0);
+                    break;
                 case TextBoxObject tbox: WriteTextBox(sb, tbox, indent, notes);   break;
                 case OpaqueBlock opq:    WriteOpaque(sb, opq, indent);            break;
             }
@@ -755,13 +764,13 @@ public sealed class HtmlWriter : IDocumentWriter
         sb.Append(indent).Append("</nav>\n");
     }
 
-    private static void WriteShape(StringBuilder sb, ShapeObject shape, string indent)
+    private static void WriteShape(StringBuilder sb, ShapeObject shape, string indent, int effectiveZ = 0)
     {
         var wPx = MmToPx(shape.WidthMm  > 0 ? shape.WidthMm  : 40);
         var hPx = MmToPx(shape.HeightMm > 0 ? shape.HeightMm : 30);
 
         // 정렬·여백·테두리 표시 — Inline 모드에서만 의미가 있음.
-        var figStyleParts = new List<string>(4);
+        var figStyleParts = new List<string>(6);
         if (shape.WrapMode == ImageWrapMode.Inline)
         {
             switch (shape.HAlign)
@@ -779,6 +788,13 @@ public sealed class HtmlWriter : IDocumentWriter
         }
         if (shape.MarginTopMm    > 0) figStyleParts.Add($"margin-top:{FmtMm(shape.MarginTopMm)}");
         if (shape.MarginBottomMm > 0) figStyleParts.Add($"margin-bottom:{FmtMm(shape.MarginBottomMm)}");
+        // z-index 가 0 이 아니면 CSS z-index 출력. position:static 에서는 z-index 가 동작하지 않으므로
+        // position:relative 를 함께 부여한다(레이아웃에는 영향 없음 — left/top 미지정).
+        if (effectiveZ != 0)
+        {
+            figStyleParts.Add("position:relative");
+            figStyleParts.Add($"z-index:{effectiveZ}");
+        }
         var alignStyle = figStyleParts.Count > 0 ? $" style=\"{string.Join(";", figStyleParts)}\"" : "";
 
         // 무손실 라운드트립을 위한 data-pd-* 속성 — geometry/SVG 만으로 복원 불가능한 필드를

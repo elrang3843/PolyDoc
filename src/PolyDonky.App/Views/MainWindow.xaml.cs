@@ -5644,12 +5644,32 @@ public partial class MainWindow : Window
         // 활성 페이지 RTB 가 바뀌면 다른 페이지에 있던 도형이 안 보이는 문제가 있었다.
         var section = _viewModel?.Document.Sections.FirstOrDefault();
         if (section is null) return;
+
+        // 캔버스별로 도형을 모은 후 ShapeOrdering 정책으로 정렬 — 같은 캔버스 안에서 안쪽(작은) 도형이
+        // 외곽 도형에 가려지지 않도록 자동 보정한다. ZOrder 명시값도 같은 흐름에서 처리.
+        // BehindText / InFrontOfText 는 별개 캔버스(별개 stacking context) 이므로 각자 정렬한다.
+        var behind = new List<PolyDonky.Core.ShapeObject>();
+        var front  = new List<PolyDonky.Core.ShapeObject>();
         foreach (var coreBlock in section.Blocks)
         {
             if (coreBlock is not PolyDonky.Core.ShapeObject shape) continue;
-            if (shape.WrapMode is not (PolyDonky.Core.ImageWrapMode.InFrontOfText
-                                    or PolyDonky.Core.ImageWrapMode.BehindText)) continue;
+            switch (shape.WrapMode)
+            {
+                case PolyDonky.Core.ImageWrapMode.BehindText:     behind.Add(shape); break;
+                case PolyDonky.Core.ImageWrapMode.InFrontOfText:  front.Add(shape);  break;
+            }
+        }
 
+        PlaceOverlayShapes(behind, UnderlayShapeCanvas);
+        PlaceOverlayShapes(front,  OverlayShapeCanvas);
+    }
+
+    private void PlaceOverlayShapes(IList<PolyDonky.Core.ShapeObject> shapes, System.Windows.Controls.Canvas canvas)
+    {
+        var ordered = PolyDonky.Core.ShapeOrdering.OrderForRendering(shapes);
+        var zMap    = PolyDonky.Core.ShapeOrdering.ComputeZIndexMap(shapes);
+        foreach (var shape in ordered)
+        {
             var ctrl = Services.FlowDocumentBuilder.BuildOverlayShapeControl(shape);
             ctrl.Tag = shape;
             PlaceOverlay(ctrl, shape);
@@ -5658,9 +5678,9 @@ public partial class MainWindow : Window
             // 우클릭은 PaperHost.PreviewMouseRightButtonDown 통합 핸들러가 처리 — 개별 ContextMenu 불필요.
             ctrl.MouseLeftButtonDown += OnOverlayShapeMouseDown;
 
-            var canvas = shape.WrapMode == PolyDonky.Core.ImageWrapMode.BehindText
-                ? UnderlayShapeCanvas
-                : OverlayShapeCanvas;
+            // 명시적 Canvas.ZIndex 설정 — 삽입 순서뿐 아니라 z-index 값으로도 같은 레이어링을 보장.
+            // 다른 콘트롤이 동적으로 끼어들거나 재배치되어도 의도한 순서 유지.
+            System.Windows.Controls.Canvas.SetZIndex(ctrl, zMap[shape]);
             canvas.Children.Add(ctrl);
         }
     }

@@ -2139,6 +2139,100 @@ public class HtmlTests
     }
 
     [Fact]
+    public void HtmlWriter_EmitsCssZIndexForExplicitZOrder()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 50, HeightMm = 30, ZOrder = -5,
+        });
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 40, HeightMm = 40, ZOrder = 12,
+        });
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        // position:relative 가 z-index 와 함께 출력되어야 함 (브라우저에서 z-index 가 동작하도록).
+        Assert.Contains("position:relative", html);
+        Assert.Contains("z-index:-5", html);
+        Assert.Contains("z-index:12", html);
+    }
+
+    [Fact]
+    public void HtmlWriter_EmitsAutoCssZIndexForContainedShapes()
+    {
+        // ZOrder=0 자동 그룹: 외곽 도형이 안쪽 도형을 포함 → 안쪽 도형에 z-index >= 1 부여.
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 100, HeightMm = 100,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            OverlayXMm = 0, OverlayYMm = 0,
+        });
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 30, HeightMm = 30,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            OverlayXMm = 20, OverlayYMm = 20,
+        });
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        // 안쪽 도형(타원)에 z-index:1 이 출력돼야 함. 외곽 도형(사각형)은 depth 0 → z-index 출력 안 됨.
+        Assert.Contains("z-index:1", html);
+    }
+
+    [Fact]
+    public void HtmlWriter_OmitsCssZIndexForAutoZeroDepth()
+    {
+        // 두 도형이 겹치지 않으면 컨테인먼트 깊이 0 → z-index 출력하지 않음.
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 30, HeightMm = 30,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            OverlayXMm = 0, OverlayYMm = 0,
+        });
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 30, HeightMm = 30,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            OverlayXMm = 100, OverlayYMm = 100,
+        });
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.DoesNotContain("z-index:", html);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_AutoCssZIndexDoesNotPolluteZOrder()
+    {
+        // 자동 컨테인먼트로 emit 된 CSS z-index 가 reader 에서 명시적 ZOrder 로 해석되면 안 됨.
+        // (reader 는 data-pd-z-order 만 보고 ZOrder 를 채운다.)
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 100, HeightMm = 100,
+            WrapMode = ImageWrapMode.InFrontOfText, OverlayXMm = 0, OverlayYMm = 0,
+        });
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 30, HeightMm = 30,
+            WrapMode = ImageWrapMode.InFrontOfText, OverlayXMm = 20, OverlayYMm = 20,
+        });
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("z-index:1", html);  // CSS 출력은 됐고
+
+        var rt = HtmlReader.FromHtml(html);
+        var shapes = rt.Sections[0].Blocks.OfType<ShapeObject>().ToList();
+        Assert.All(shapes, s => Assert.Equal(0, s.ZOrder));  // ZOrder 는 0 (자동) 유지
+    }
+
+    [Fact]
     public void RoundTrip_Shape_ZOrderPreserved()
     {
         var doc = new PolyDonkyument();
