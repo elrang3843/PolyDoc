@@ -315,10 +315,15 @@ public static class FlowDocumentPaginationAdapter
             // BoundaryTol 이하의 초과는 mm→DIP 변환 오차로 보고 현재 슬롯에 유지한다.
             // 강제 페이지 나누기 단락은 위에서 이미 슬롯을 끌어올렸으므로 이 보정을 건너뛴다
             // (자연 Y 기준 boundary 검사가 강제 슬롯과 어긋나면 잘못된 +1 이 일어날 수 있다).
+            //
+            // 표(Wpf.Table) 는 한 슬롯 높이를 넘어도 다음 슬롯으로 이동을 허용한다 —
+            // 표 분할이 구현되어 있지 않은 현재 상태에서는 "현재 페이지 끝에서 잘려 일부만 보이는"
+            // 것보다 "다음 페이지 시작에 통째로 놓이고 끝이 잘리는" 편이 본문 행이 더 많이 보여 낫다.
+            bool isTable = wpfBlock is WpfDocs.Table;
             if (!isPageBreak
                 && !double.IsNaN(bottomY)
                 && bottomY > (slotTop + 1) * bodyH + BoundaryTol
-                && blockH < bodyH)
+                && (blockH < bodyH || isTable))
             {
                 slotTop += 1;
             }

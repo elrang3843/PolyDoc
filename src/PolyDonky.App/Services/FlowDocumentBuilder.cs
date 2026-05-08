@@ -407,9 +407,12 @@ public static class FlowDocumentBuilder
 
         foreach (var col in table.Columns)
         {
+            // WidthMm > 0 이면 명시 폭, 아니면 Star(1*) — 가용 폭을 균등 분배.
+            // Auto 로 두면 셀 콘텐츠 기준으로 좁게 잡혀 텍스트 줄바꿈이 과도해지고
+            // 셀 높이가 비정상적으로 커져 표 전체가 페이지를 넘기는 증상이 발생한다.
             var width = col.WidthMm > 0
                 ? new GridLength(MmToDip(col.WidthMm))
-                : GridLength.Auto;
+                : new GridLength(1, GridUnitType.Star);
             wtable.Columns.Add(new Wpf.TableColumn { Width = width });
         }
 
