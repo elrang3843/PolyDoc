@@ -2285,6 +2285,78 @@ public class HtmlTests
         Assert.All(shapes, s => Assert.Equal(0, s.ZOrder));  // ZOrder 는 0 (자동) 유지
     }
 
+    // ── <hr> 두께·선스타일 라운드트립 ──────────────────────────────────
+
+    [Fact]
+    public void RoundTrip_Hr_ThickSolidPreservesThicknessAndColor()
+    {
+        const string html = """
+            <html><head><style>
+              hr.thick { border: 0; border-top: 3px solid #000000; margin: 20px 0; }
+            </style></head><body>
+              <hr class="thick">
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var thb = doc.Sections[0].Blocks.OfType<ThematicBreakBlock>().Single();
+        Assert.Equal(ThematicLineStyle.Solid, thb.LineStyle);
+        Assert.InRange(thb.ThicknessPt, 2.0, 2.5);   // 3px ≈ 2.25pt
+        Assert.Equal("#000000", thb.LineColor, ignoreCase: true);
+
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var thb2 = rt.Sections[0].Blocks.OfType<ThematicBreakBlock>().Single();
+        Assert.Equal(thb.LineStyle,                          thb2.LineStyle);
+        Assert.InRange(Math.Abs(thb2.ThicknessPt - thb.ThicknessPt), 0, 0.05);
+        Assert.Equal(thb.LineColor, thb2.LineColor, ignoreCase: true);
+    }
+
+    [Fact]
+    public void RoundTrip_Hr_DashedDottedDoublePreserveStyle()
+    {
+        const string html = """
+            <html><head><style>
+              hr.dashed { border: 0; border-top: 1px dashed #666666; }
+              hr.dotted { border: 0; border-top: 1px dotted #999999; }
+            </style></head><body>
+              <hr class="dashed">
+              <hr class="dotted">
+              <hr style="border:0;border-top:3px double #333333">
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var thbs = doc.Sections[0].Blocks.OfType<ThematicBreakBlock>().ToList();
+        Assert.Equal(3, thbs.Count);
+        Assert.Equal(ThematicLineStyle.Dashed, thbs[0].LineStyle);
+        Assert.Equal(ThematicLineStyle.Dotted, thbs[1].LineStyle);
+        Assert.Equal(ThematicLineStyle.Double, thbs[2].LineStyle);
+
+        var html2 = HtmlWriter.ToHtml(doc);
+        Assert.Contains("border-top:", html2);
+        Assert.Contains("dashed", html2);
+        Assert.Contains("dotted", html2);
+        Assert.Contains("double", html2);
+
+        var rt = HtmlReader.FromHtml(html2);
+        var thbs2 = rt.Sections[0].Blocks.OfType<ThematicBreakBlock>().ToList();
+        Assert.Equal(3, thbs2.Count);
+        Assert.Equal(ThematicLineStyle.Dashed, thbs2[0].LineStyle);
+        Assert.Equal(ThematicLineStyle.Dotted, thbs2[1].LineStyle);
+        Assert.Equal(ThematicLineStyle.Double, thbs2[2].LineStyle);
+    }
+
+    [Fact]
+    public void HtmlWriter_DefaultHr_OmitsBorderStyle()
+    {
+        // 기본 ThematicBreakBlock(두께·스타일·색상 모두 기본) 은 border-top 없이 단순 <hr> 출력.
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ThematicBreakBlock());
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("<hr>", html);
+        Assert.DoesNotContain("border-top", html);
+    }
+
     [Fact]
     public void RoundTrip_Shape_ZOrderPreserved()
     {

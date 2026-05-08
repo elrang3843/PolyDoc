@@ -611,17 +611,76 @@ public static class FlowDocumentBuilder
             try { lineColor = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(thb.LineColor); }
             catch { /* 파싱 실패 시 기본 회색 유지 */ }
         }
-        double marginV = thb.MarginPt > 0 ? PtToDip(thb.MarginPt) : 6;
+        double marginV     = thb.MarginPt    > 0 ? PtToDip(thb.MarginPt)    : 6;
+        double thicknessV  = thb.ThicknessPt > 0 ? PtToDip(thb.ThicknessPt) : 1;
 
-        var line = new System.Windows.Controls.Border
+        FrameworkElement line;
+        if (thb.LineStyle == ThematicLineStyle.Solid)
         {
-            BorderBrush         = new WpfMedia.SolidColorBrush(lineColor),
-            BorderThickness     = new Thickness(0, 1, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment   = VerticalAlignment.Center,
-            MinHeight           = 1,
-            SnapsToDevicePixels = true,
-        };
+            // 실선 — Border 가 가장 단순하고 안정적.
+            line = new System.Windows.Controls.Border
+            {
+                BorderBrush         = new WpfMedia.SolidColorBrush(lineColor),
+                BorderThickness     = new Thickness(0, thicknessV, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment   = VerticalAlignment.Center,
+                MinHeight           = thicknessV,
+                SnapsToDevicePixels = true,
+            };
+        }
+        else if (thb.LineStyle == ThematicLineStyle.Double)
+        {
+            // 이중선 — 위·아래 Border 두 개 + 사이 간격.
+            var stack = new System.Windows.Controls.StackPanel
+            {
+                Orientation         = System.Windows.Controls.Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment   = VerticalAlignment.Center,
+            };
+            var brush = new WpfMedia.SolidColorBrush(lineColor);
+            stack.Children.Add(new System.Windows.Controls.Border
+            {
+                BorderBrush     = brush,
+                BorderThickness = new Thickness(0, thicknessV, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                SnapsToDevicePixels = true,
+            });
+            stack.Children.Add(new System.Windows.Controls.Border
+            {
+                BorderBrush     = brush,
+                BorderThickness = new Thickness(0, thicknessV, 0, 0),
+                Margin          = new Thickness(0, thicknessV, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                SnapsToDevicePixels = true,
+            });
+            line = stack;
+        }
+        else
+        {
+            // 파선/점선/일점쇄선 — Path + LineGeometry + StrokeDashArray. Stretch=Fill 로 가로 폭 채움.
+            var dashArray = thb.LineStyle switch
+            {
+                ThematicLineStyle.Dashed  => new WpfMedia.DoubleCollection { 4, 2 },
+                ThematicLineStyle.Dotted  => new WpfMedia.DoubleCollection { 1, 2 },
+                ThematicLineStyle.DashDot => new WpfMedia.DoubleCollection { 4, 2, 1, 2 },
+                _                         => null,
+            };
+            var path = new System.Windows.Shapes.Path
+            {
+                Stroke              = new WpfMedia.SolidColorBrush(lineColor),
+                StrokeThickness     = thicknessV,
+                Stretch             = WpfMedia.Stretch.Fill,
+                Data                = new WpfMedia.LineGeometry(new System.Windows.Point(0, 0),
+                                                                new System.Windows.Point(1, 0)),
+                Height              = thicknessV,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment   = VerticalAlignment.Center,
+                SnapsToDevicePixels = true,
+            };
+            if (dashArray is not null) path.StrokeDashArray = dashArray;
+            line = path;
+        }
+
         // ancestor RichTextBox.Document.PageWidth 에 폭을 바인딩 — Build() 에서 PageWidth =
         // ComputeContentWidthDip(page) 로 컬럼 본문 폭을 직접 설정해 두므로, 이 값이 그대로
         // HR 폭이 된다. visual tree 부착 후 동작해서 초기 무한대 Measure 문제를 우회한다.

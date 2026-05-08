@@ -229,8 +229,27 @@ public sealed class HtmlWriter : IDocumentWriter
                 case ThematicBreakBlock thb:
                 {
                     var hrStyle = new List<string>();
-                    if (thb.LineColor is not null)
-                        hrStyle.Add($"border-top:1px solid {thb.LineColor}");
+                    // border-top: 두께·선종류·색상. 두께가 0 이면 1px 기본; 색상이 null 이면 #000000.
+                    double thickPx = thb.ThicknessPt > 0 ? thb.ThicknessPt * 96.0 / 72.0 : 1.0;
+                    string lineKw = thb.LineStyle switch
+                    {
+                        ThematicLineStyle.Dashed  => "dashed",
+                        ThematicLineStyle.Dotted  => "dotted",
+                        ThematicLineStyle.Double  => "double",
+                        ThematicLineStyle.DashDot => "dashed",   // CSS 표준엔 dash-dot 없음 → dashed 로 근사
+                        _                         => "solid",
+                    };
+                    string lineColor = thb.LineColor ?? "#000000";
+                    // 두께/스타일/색상이 모두 기본이면 border-top 출력 생략 — UA 기본 hr 사용.
+                    bool hasBorderInfo = thb.ThicknessPt > 0
+                                      || thb.LineStyle != ThematicLineStyle.Solid
+                                      || thb.LineColor is not null;
+                    if (hasBorderInfo)
+                    {
+                        // border:0 으로 기본 hr 의 양쪽/inset 효과 제거 후 border-top 만 명시.
+                        hrStyle.Add("border:0");
+                        hrStyle.Add($"border-top:{thickPx.ToString("0.##", CultureInfo.InvariantCulture)}px {lineKw} {lineColor}");
+                    }
                     if (thb.MarginPt > 0)
                     {
                         var marginPx = thb.MarginPt * 96.0 / 72.0;

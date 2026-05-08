@@ -291,11 +291,36 @@ public sealed class HtmlReader : IDocumentReader
                 var thb = new ThematicBreakBlock();
 
                 var hrStyle = el.GetAttribute("style") ?? "";
-                ExtractBorderSizeColor(StyleProp(hrStyle, "border-top"), out _, out string? hrColor);
+                // border-top shorthand → 두께·선종류·색상.
+                ExtractBorderSizeStyleColor(StyleProp(hrStyle, "border-top"),
+                    out double hrPx, out string? hrStyleKw, out string? hrColor);
+                // border / border-color / color 폴백 (border-top 미지정 시).
+                if (hrPx <= 0 || hrColor is null || hrStyleKw is null)
+                {
+                    ExtractBorderSizeStyleColor(StyleProp(hrStyle, "border"),
+                        out double bPx, out string? bKw, out string? bClr);
+                    if (hrPx <= 0)        hrPx      = bPx;
+                    if (hrStyleKw is null) hrStyleKw = bKw;
+                    if (hrColor is null)   hrColor   = bClr;
+                }
                 hrColor ??= StyleProp(hrStyle, "border-color");
                 hrColor ??= StyleProp(hrStyle, "color");
                 if (hrColor is not null)
                     thb.LineColor = hrColor;
+
+                if (hrPx > 0)
+                    thb.ThicknessPt = hrPx * 72.0 / 96.0;
+
+                if (hrStyleKw is not null)
+                {
+                    thb.LineStyle = hrStyleKw switch
+                    {
+                        "dashed" => ThematicLineStyle.Dashed,
+                        "dotted" => ThematicLineStyle.Dotted,
+                        "double" => ThematicLineStyle.Double,
+                        _        => ThematicLineStyle.Solid,
+                    };
+                }
 
                 double marginPt = 0;
                 if (TryParseCssPt(StyleProp(hrStyle, "margin-top"), out var hrMt))
@@ -2584,13 +2609,22 @@ public sealed class HtmlReader : IDocumentReader
 
     /// <summary>CSS border 단축 속성 값에서 크기(px)와 색상 hex 를 추출. transparent → color = null.</summary>
     private static void ExtractBorderSizeColor(string? borderValue, out double sizePx, out string? color)
+        => ExtractBorderSizeStyleColor(borderValue, out sizePx, out _, out color);
+
+    /// <summary>CSS <c>border</c> shorthand 에서 두께(px) · 선 종류 키워드 · 색상을 한 번에 추출.</summary>
+    private static void ExtractBorderSizeStyleColor(string? borderValue,
+        out double sizePx, out string? styleKeyword, out string? color)
     {
-        sizePx = 0; color = null;
+        sizePx = 0; color = null; styleKeyword = null;
         if (borderValue is null) return;
         foreach (var part in borderValue.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             if (part is "solid" or "dashed" or "dotted" or "none"
-                     or "double" or "groove" or "ridge" or "inset" or "outset") continue;
+                     or "double" or "groove" or "ridge" or "inset" or "outset")
+            {
+                styleKeyword = part.ToLowerInvariant();
+                continue;
+            }
             if (part.Equals("transparent", StringComparison.OrdinalIgnoreCase)) continue;
             if (part.EndsWith("px", StringComparison.OrdinalIgnoreCase)
                 && double.TryParse(part[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var px))
