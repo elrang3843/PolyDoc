@@ -46,7 +46,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
-- **Fixed** — **코드 블록·수식 단락 페이지네이션 높이 누락**: `FlowDocumentPaginationAdapter.TryGetBottomY` 가 `InlineUIContainer` 를 포함하는 `Wpf.Paragraph`(코드 블록 줄 번호, 수식 `FormulaControl`)에서 `ContentEnd.GetCharacterRect` = `Rect.Empty` 를 반환할 때 `blockH=0` 으로 처리해 슬롯 채움이 갱신되지 않던 문제 수정. 폴백 `TryEstimateParaBottomViaInlines` 를 추가해 `InlineUIContainer.Child.ActualHeight` × 줄 수 + `Padding` + `Margin` 으로 높이를 추정한다. 코드 블록이 있는 페이지에 이후 섹션들이 모두 몰려 단일 페이지가 스크롤되던 증상 해소.
+- **Fixed** — **코드 블록·수식 단락 높이 누락으로 발생하는 페이지/글상자 다단 레이아웃 오류**: `InlineUIContainer` 를 포함하는 `Wpf.Paragraph`(코드 블록 줄 번호, 수식 `FormulaControl`, 이모지)에서 `ContentEnd.GetCharacterRect` = `Rect.Empty` → `blockH=0` → 슬롯 채움 미갱신 → 이후 블록이 모두 같은 페이지에 몰려 단일 페이지 스크롤되는 증상. 동일 패턴이 세 곳에 존재했으며 모두 수정: (1) `FlowDocumentPaginationAdapter.TryGetBottomY` — 폴백 `TryEstimateParaBottomViaInlines` 추가, (2) `FlowDocumentPaginationAdapter.TryGetColumnLocalRect` — `botRect.Empty` 시 동일 추정 폴백 적용, (3) `TextBoxColumnLayout.TryGetBottomY` — 글상자 내 다단 레이아웃에서 코드 블록·수식 높이가 0 으로 측정되던 문제 동일 패턴 수정. 폴백 로직: `InlineUIContainer.Child.ActualHeight` × `LineBreak` 기준 줄 수 + `Padding` + `Margin`.
 
 - **Fixed** — **블록쿼트(인용) 좌측 바가 단락마다 끊겨 보이던 문제**: `FlowDocumentBuilder.AppendBlocks` 가 단락을 `target` 에 추가한 직후 `MergeAdjacentBlockquoteMargins` 후크를 호출 — 직전 블록과 현재 블록이 같은 `QuoteLevel(>0)` 이면 둘 사이의 위/아래 마진을 0 으로 만들어 좌측 회색 바가 끊김 없이 이어지게 한다.
 

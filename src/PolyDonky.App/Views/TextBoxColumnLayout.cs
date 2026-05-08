@@ -315,9 +315,47 @@ public static class TextBoxColumnLayout
         {
             var r = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
             if (r == Rect.Empty || double.IsNaN(r.Bottom) || double.IsInfinity(r.Bottom))
+            {
+                // Paragraph 에 InlineUIContainer 가 있으면(코드 블록 줄 번호, 수식 등)
+                // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환할 수 있다.
+                if (block is WpfDocs.Paragraph para)
+                    return TryEstimateParaBottomViaInlines(para);
                 return double.NaN;
+            }
             return r.Bottom;
         }
         catch { return double.NaN; }
+    }
+
+    /// <summary>
+    /// <c>ContentEnd.GetCharacterRect</c> 가 실패한 단락의 bottomY 를
+    /// <c>InlineUIContainer.Child.ActualHeight</c> 와 <c>LineBreak</c> 수에서 추정한다.
+    /// </summary>
+    private static double TryEstimateParaBottomViaInlines(WpfDocs.Paragraph para)
+    {
+        double topY = TryGetTopY(para);
+        if (double.IsNaN(topY)) return double.NaN;
+
+        int    lineCount  = 1;
+        double lineHeight = 0;
+
+        foreach (var inline in para.Inlines)
+        {
+            if (inline is WpfDocs.LineBreak)
+                lineCount++;
+            else if (inline is WpfDocs.InlineUIContainer { Child: FrameworkElement fe })
+            {
+                double h = fe.ActualHeight;
+                if (h > 0 && !double.IsNaN(h) && h > lineHeight) lineHeight = h;
+            }
+        }
+
+        if (lineHeight <= 0)
+            lineHeight = (para.FontSize > 0 ? para.FontSize : FlowDocumentBuilder.PtToDip(11)) * 1.2;
+
+        return topY
+               + lineCount * lineHeight
+               + para.Padding.Top + para.Padding.Bottom
+               + para.Margin.Top  + para.Margin.Bottom;
     }
 }

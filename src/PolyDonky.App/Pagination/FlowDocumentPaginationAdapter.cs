@@ -661,13 +661,21 @@ public static class FlowDocumentPaginationAdapter
             {
                 globalBottom = globalTop + fe2.ActualHeight + block.Margin.Top + block.Margin.Bottom;
             }
+            else if (botRect != Rect.Empty
+                     && !double.IsNaN(botRect.Bottom)
+                     && !double.IsInfinity(botRect.Bottom))
+            {
+                globalBottom = botRect.Bottom;
+            }
             else
             {
-                globalBottom = (botRect != Rect.Empty
-                                       && !double.IsNaN(botRect.Bottom)
-                                       && !double.IsInfinity(botRect.Bottom))
-                    ? botRect.Bottom
-                    : globalTop;
+                // Paragraph 에 InlineUIContainer(코드 블록 줄 번호, 수식 등)가 있으면
+                // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환할 수 있다.
+                // TryEstimateParaBottomViaInlines 로 추정값을 구하되, 실패 시 globalTop 사용.
+                double estimated = block is WpfDocs.Paragraph para2
+                    ? TryEstimateParaBottomViaInlines(para2)
+                    : double.NaN;
+                globalBottom = !double.IsNaN(estimated) ? estimated : globalTop;
             }
 
             // 단 슬롯 인덱스 (다단에서 페이지·단을 통합 순서로 열거)
