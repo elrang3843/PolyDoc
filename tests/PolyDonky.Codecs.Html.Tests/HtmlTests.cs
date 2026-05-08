@@ -665,6 +665,60 @@ public class HtmlTests
         Assert.Equal(5, cell.PaddingLeftMm,   precision: 1);
     }
 
+    // ── Table.Caption (<caption> 요소) ─────────────────────────────────
+
+    [Fact]
+    public void Reader_TableCaption_Extracted()
+    {
+        const string html = """
+            <table>
+              <caption>표 1: 테스트 표</caption>
+              <tr><td>A</td></tr>
+            </table>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var table = doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Single();
+        Assert.Equal("표 1: 테스트 표", table.Caption);
+    }
+
+    [Fact]
+    public void Reader_TableWithoutCaption_CaptionIsNull()
+    {
+        const string html = "<table><tr><td>A</td></tr></table>";
+        var doc = HtmlReader.FromHtml(html);
+        var table = doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Single();
+        Assert.Null(table.Caption);
+    }
+
+    [Fact]
+    public void Writer_TableCaption_EmitsElement()
+    {
+        var pdDoc = new PolyDonkyument();
+        var sec = new Section(); pdDoc.Sections.Add(sec);
+        var t = new PolyDonky.Core.Table
+        {
+            Caption = "표 2: 샘플",
+        };
+        t.Columns.Add(new TableColumn());
+        var row = new TableRow(); t.Rows.Add(row);
+        row.Cells.Add(new TableCell());
+        row.Cells[0].Blocks.Add(Paragraph.Of("X"));
+        sec.Blocks.Add(t);
+
+        var html = HtmlWriter.ToHtml(pdDoc, fullDocument: false);
+        Assert.Contains("<caption>표 2: 샘플</caption>", html);
+    }
+
+    [Fact]
+    public void Reader_TableCaption_RoundTrip()
+    {
+        // HTML → Model → HTML round-trip 시 caption 이 보존됨.
+        const string html = "<table><caption>제목</caption><tr><td>A</td></tr></table>";
+        var pdDoc = HtmlReader.FromHtml(html);
+        var html2  = HtmlWriter.ToHtml(pdDoc, fullDocument: false);
+        Assert.Contains("<caption>제목</caption>", html2);
+    }
+
     [Fact]
     public void Writer_ForcePageBreakBefore_EmitsCss()
     {

@@ -604,6 +604,15 @@ public sealed class HtmlReader : IDocumentReader
     {
         var t = new PdTable();
 
+        // 표 캡션 — <caption> 은 <table> 의 직접 자식으로만 허용됨.
+        var captionEl = tableEl.Children.FirstOrDefault(c => c.LocalName == "caption");
+        if (captionEl is not null)
+        {
+            var captionText = NormalizeWhitespace(captionEl.TextContent);
+            if (captionText.Length > 0)
+                t.Caption = captionText;
+        }
+
         // 표 배경색.
         var tblStyle = tableEl.GetAttribute("style");
         if (StyleProp(tblStyle, "background-color") is { } tblBg

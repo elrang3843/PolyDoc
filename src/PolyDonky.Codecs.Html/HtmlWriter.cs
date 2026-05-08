@@ -427,6 +427,11 @@ public sealed class HtmlWriter : IDocumentWriter
 
         sb.Append(indent).Append("<table").Append(tblStyleAttr).Append(">\n");
 
+        if (!string.IsNullOrEmpty(t.Caption))
+            sb.Append(indent).Append("  <caption>")
+              .Append(EscapeHtml(t.Caption))
+              .Append("</caption>\n");
+
         // <colgroup> — 열 너비가 하나라도 있을 때만 출력.
         if (t.Columns.Any(c => c.WidthMm > 0))
         {

@@ -62,6 +62,10 @@ public sealed class Table : Block, IOverlayAnchored
     /// <summary>표 전체 배경색 hex. null 이면 투명.</summary>
     public string? BackgroundColor { get; set; }
 
+    /// <summary>표 캡션 텍스트 (HTML <c>&lt;caption&gt;</c>, DOCX table title 에 대응).
+    /// null 이면 캡션 없음. 렌더러는 표 위에 가운데 정렬 작은 단락으로 표시한다.</summary>
+    public string? Caption { get; set; }
+
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }

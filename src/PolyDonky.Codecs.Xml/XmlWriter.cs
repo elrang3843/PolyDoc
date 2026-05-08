@@ -386,6 +386,11 @@ public sealed class XmlWriter : IDocumentWriter
             sb.Append(" style=\"").Append(tableStyle).Append('"');
         sb.Append(">\n");
 
+        if (!string.IsNullOrEmpty(t.Caption))
+            sb.Append(indent).Append("  <caption>")
+              .Append(EscapeText(t.Caption))
+              .Append("</caption>\n");
+
         // <colgroup> 출력 — 컬럼 너비 보존.
         if (t.Columns.Any(c => c.WidthMm > 0))
         {

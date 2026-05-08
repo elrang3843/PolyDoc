@@ -281,7 +281,12 @@ public static class FlowDocumentBuilder
                 case Table t:
                     listStack.Clear();
                     if (t.WrapMode == TableWrapMode.Block)
+                    {
+                        // <caption> 이 있으면 표 위에 가운데 정렬 단락으로 렌더링.
+                        if (!string.IsNullOrEmpty(t.Caption))
+                            target.Add(BuildTableCaption(t.Caption));
                         target.Add(BuildTable(t, outlineStyles));
+                    }
                     else
                         target.Add(BuildTableAnchor(t));   // 오버레이 모드 — 앵커만 추가
                     break;
@@ -535,6 +540,17 @@ public static class FlowDocumentBuilder
         };
         return new Wpf.BlockUIContainer(line);
     }
+
+    /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>
+    private static Wpf.Paragraph BuildTableCaption(string caption)
+        => new Wpf.Paragraph(new Wpf.Run(caption))
+        {
+            TextAlignment = TextAlignment.Center,
+            FontStyle     = FontStyles.Italic,
+            FontSize      = PtToDip(9.5),
+            Foreground    = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x55, 0x55, 0x55)),
+            Margin        = new Thickness(0, 0, 0, PtToDip(2)),
+        };
 
     /// <summary>오버레이(InFrontOfText/BehindText/Fixed) 모드 표를 위한 최소 앵커 단락을 반환한다.</summary>
     internal static Wpf.Paragraph BuildTableAnchor(Table table)
