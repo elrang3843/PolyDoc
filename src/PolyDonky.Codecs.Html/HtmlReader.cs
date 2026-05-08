@@ -72,7 +72,7 @@ public sealed class HtmlReader : IDocumentReader
         // 상속되는 CSS 속성(text-align 등)을 부모에서 자식 요소로 전파.
         // .document-header { text-align: center } 같은 컨테이너 정렬이 자식 h1/div 에 적용되도록.
         if (doc.Body is { } body)
-            PropagateInheritableStyles(body, parentTextAlign: null);
+            PropagateInheritableStyles(body, parentTextAlign: null, parentColor: null, parentLineHeight: null);
 
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
@@ -200,10 +200,17 @@ public sealed class HtmlReader : IDocumentReader
             {
                 var p = new Paragraph();
                 p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
-                p.Style.Outline    = (OutlineLevel)(el.LocalName[1] - '0');
+                var level          = (OutlineLevel)(el.LocalName[1] - '0');
+                p.Style.Outline    = level;
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
-                ApplyBlockStyle(p, el);
+                // em 단위 margin 환산을 위해 실제 폰트 크기를 미리 결정.
+                // CSS 에 명시적 font-size 가 있으면 그것을, 없으면 OutlineStyleSet 기본값을 사용.
+                var hInline        = ParseInlineStyle(el.GetAttribute("style"));
+                double hBasePt     = hInline.FontSizePt > 0
+                                     ? hInline.FontSizePt
+                                     : OutlineStyleSet.DefaultForLevel(level).Char.FontSizePt;
+                ApplyBlockStyle(p, el, hBasePt);
                 AppendInline(p, el);
                 target.Add(p);
                 break;
@@ -1273,8 +1280,9 @@ public sealed class HtmlReader : IDocumentReader
         ApplyBlockStyle(p, el);
     }
 
-    /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.</summary>
-    private static void ApplyBlockStyle(Paragraph p, IElement el)
+    /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.
+    /// <paramref name="baseFontSizePt"/>는 em 단위 margin 환산 기준 (기본 11pt = body 기본값).</summary>
+    private static void ApplyBlockStyle(Paragraph p, IElement el, double baseFontSizePt = 11.0)
     {
         var style = el.GetAttribute("style");
         var align = el.GetAttribute("align") ?? StyleProp(style, "text-align");
@@ -1289,9 +1297,9 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseLineHeight(StyleProp(style, "line-height"), out var lh))
             p.Style.LineHeightFactor = lh;
 
-        if (TryParseCssPt(StyleProp(style, "margin-top"), out var mt))
+        if (TryParseCssPt(StyleProp(style, "margin-top"), baseFontSizePt, out var mt))
             p.Style.SpaceBeforePt = mt;
-        if (TryParseCssPt(StyleProp(style, "margin-bottom"), out var mb))
+        if (TryParseCssPt(StyleProp(style, "margin-bottom"), baseFontSizePt, out var mb))
             p.Style.SpaceAfterPt = mb;
 
         if (TryParseCssMm(StyleProp(style, "text-indent"), out var ti))
@@ -1302,6 +1310,18 @@ public sealed class HtmlReader : IDocumentReader
             p.Style.IndentLeftMm = il;
         if (TryParseCssMm(StyleProp(style, "padding-right") ?? StyleProp(style, "margin-right"), out var ir))
             p.Style.IndentRightMm = ir;
+
+        // border-bottom → ParagraphStyle.BorderBottomPt / BorderBottomColor
+        var bbVal = StyleProp(style, "border-bottom");
+        if (bbVal is not null)
+        {
+            ExtractBorderSizeColor(bbVal, out double bSizePx, out string? bColor);
+            if (bSizePx > 0)
+            {
+                p.Style.BorderBottomPt    = bSizePx * 72.0 / 96.0;
+                p.Style.BorderBottomColor = bColor;
+            }
+        }
 
         // 강제 페이지 나누기: page-break-before:always (CSS2 legacy) 또는 break-before:page (CSS3).
         var pbv = StyleProp(style, "page-break-before") ?? StyleProp(style, "break-before");
@@ -1407,10 +1427,18 @@ public sealed class HtmlReader : IDocumentReader
 
     /// <summary>CSS 길이값 → pt 변환. 지원 단위: pt/px/mm/cm/in.</summary>
     private static bool TryParseCssPt(string? val, out double pt)
+        => TryParseCssPt(val, baseFontSizePt: 11.0, out pt);
+
+    /// <summary>CSS 길이값 → pt 변환. em 단위는 <paramref name="baseFontSizePt"/> 기준으로 환산.</summary>
+    private static bool TryParseCssPt(string? val, double baseFontSizePt, out double pt)
     {
         pt = 0;
         if (string.IsNullOrWhiteSpace(val)) return false;
         val = val.Trim().ToLowerInvariant();
+        if (val.EndsWith("em") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var em))
+            { pt = em * baseFontSizePt; return true; }
+        if (val.EndsWith("rem") && double.TryParse(val[..^3], NumberStyles.Any, CultureInfo.InvariantCulture, out var rem))
+            { pt = rem * 11.0; return true; }
         if (val.EndsWith("pt") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) { pt = v; return true; }
         if (val.EndsWith("px") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0 / 96.0; return true; }
         if (val.EndsWith("mm") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0 / 25.4; return true; }
@@ -1873,23 +1901,34 @@ public sealed class HtmlReader : IDocumentReader
     /// 호출 시점은 <see cref="InlineCssClassRules"/> 직후 — 클래스 규칙이 inline style 로 머지된 뒤.
     /// 상속되는 속성: text-align (목록은 향후 확장 가능 — color/font-family 등).
     /// </summary>
-    private static void PropagateInheritableStyles(IElement el, string? parentTextAlign)
+    private static void PropagateInheritableStyles(IElement el, string? parentTextAlign,
+        string? parentColor, string? parentLineHeight)
     {
-        var style  = el.GetAttribute("style") ?? "";
-        var ownTa  = StyleProp(style, "text-align");
-        var effTa  = ownTa ?? parentTextAlign;
+        var style         = el.GetAttribute("style") ?? "";
+        var ownTa         = StyleProp(style, "text-align");
+        var ownColor      = StyleProp(style, "color");
+        var ownLineHeight = StyleProp(style, "line-height");
+
+        var effTa         = ownTa         ?? parentTextAlign;
+        var effColor      = ownColor      ?? parentColor;
+        var effLineHeight = ownLineHeight ?? parentLineHeight;
 
         // 자체 값이 없고 부모로부터 상속받은 값이 있으면 inline style 에 추가.
-        if (ownTa is null && parentTextAlign is not null)
+        var toAdd = new StringBuilder();
+        if (ownTa         is null && parentTextAlign  is not null) toAdd.Append("text-align:").Append(parentTextAlign).Append(';');
+        if (ownColor      is null && parentColor      is not null) toAdd.Append("color:").Append(parentColor).Append(';');
+        if (ownLineHeight is null && parentLineHeight is not null) toAdd.Append("line-height:").Append(parentLineHeight).Append(';');
+
+        if (toAdd.Length > 0)
         {
             var sb = new StringBuilder(style);
             if (sb.Length > 0 && sb[^1] != ';') sb.Append(';');
-            sb.Append("text-align:").Append(parentTextAlign).Append(';');
+            sb.Append(toAdd);
             el.SetAttribute("style", sb.ToString());
         }
 
         foreach (var child in el.Children)
-            PropagateInheritableStyles(child, effTa);
+            PropagateInheritableStyles(child, effTa, effColor, effLineHeight);
     }
 
     private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)

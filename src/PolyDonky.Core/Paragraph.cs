@@ -55,6 +55,12 @@ public sealed class ParagraphStyle
     /// DOCX: w:pageBreakBefore, HWPX: hp:p pageBreak="1"</summary>
     public bool ForcePageBreakBefore { get; set; }
 
+    /// <summary>단락 아래 경계선 두께(pt). 0이면 없음. CSS border-bottom / OutlineStyle 경계선에 대응.</summary>
+    public double BorderBottomPt { get; set; }
+
+    /// <summary>단락 아래 경계선 색상(hex, 예: "#CCCCCC"). null이면 기본 색.</summary>
+    public string? BorderBottomColor { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본 — ListMarker 도 새 인스턴스로.</summary>
     public ParagraphStyle Clone() => new()
     {
@@ -71,6 +77,8 @@ public sealed class ParagraphStyle
         CodeLanguage           = CodeLanguage,
         IsThematicBreak        = IsThematicBreak,
         ForcePageBreakBefore   = ForcePageBreakBefore,
+        BorderBottomPt         = BorderBottomPt,
+        BorderBottomColor      = BorderBottomColor,
     };
 }
 

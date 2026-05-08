@@ -1588,4 +1588,167 @@ public class HtmlTests
         Assert.Equal(2, table.Rows.Count);
         Assert.Equal(2, table.Rows[1].Cells.Count);
     }
+
+    // ── border-bottom / em margins / CSS inheritance ──────────────────────
+
+    [Fact]
+    public void Reader_H1BorderBottom_AppliedFromCss()
+    {
+        // CSS h1 { border-bottom: 1px solid #cccccc } → ParagraphStyle.BorderBottomPt > 0
+        const string html = """
+            <html><head><style>
+              h1 { border-bottom: 1px solid #cccccc }
+            </style></head><body>
+              <h1>Title</h1>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H1, p.Style.Outline);
+        Assert.True(p.Style.BorderBottomPt > 0);
+        Assert.NotNull(p.Style.BorderBottomColor);
+    }
+
+    [Fact]
+    public void Reader_H1BorderBottom_TwoPixels()
+    {
+        // border-bottom: 2px solid #000000 → BorderBottomPt = 2 * 72/96 ≈ 1.5pt
+        const string html = """
+            <html><head><style>
+              h1 { border-bottom: 2px solid #000000 }
+            </style></head><body>
+              <h1>H</h1>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H1, p.Style.Outline);
+        Assert.True(p.Style.BorderBottomPt > 1.4 && p.Style.BorderBottomPt < 1.6);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginTopPt_Resolved()
+    {
+        // h2 { margin-top: 30pt } → SpaceBeforePt ≈ 30pt > 20
+        const string html = """
+            <html><head><style>
+              h2 { margin-top: 30pt }
+            </style></head><body>
+              <h2>Heading</h2>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H2, p.Style.Outline);
+        Assert.True(p.Style.SpaceBeforePt > 20.0);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginTopPx_InlineStyle()
+    {
+        // inline style margin-top:40px → SpaceBeforePt = 40*72/96 = 30pt > 20
+        const string html = """
+            <html><head></head><body>
+              <h2 style="margin-top:40px">Heading</h2>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H2, p.Style.Outline);
+        Assert.True(p.Style.SpaceBeforePt > 20.0);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginTopEm_Resolved()
+    {
+        // h2 inline style margin-top:1.5em — bypasses InlineCssClassRules to isolate em parsing.
+        // h2 기본 font-size = 20pt → 1.5em = 30pt; OR AngleSharp normalizes to px (1.5*16=24px=18pt)
+        // Either way, SpaceBeforePt should be > 0
+        const string html = """
+            <html><head></head><body>
+              <h2 style="margin-top:1.5em">Heading</h2>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H2, p.Style.Outline);
+        Assert.True(p.Style.SpaceBeforePt > 0);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginBottomEm_Resolved()
+    {
+        // h3 기본 font-size = 17pt. margin-bottom: 0.5em → 8.5pt > 5
+        const string html = """
+            <html><head><style>
+              h3 { margin-bottom: 0.5em }
+            </style></head><body>
+              <h3>H3</h3>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H3, p.Style.Outline);
+        Assert.True(p.Style.SpaceAfterPt > 5.0);
+    }
+
+    [Fact]
+    public void Reader_BodyLineHeight_PropagatedToParagraph()
+    {
+        // body { line-height: 1.8 } → p 단락의 LineHeightFactor ≈ 1.8
+        const string html = """
+            <html><head><style>
+              body { line-height: 1.8 }
+            </style></head><body>
+              <p>Text</p>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.True(Math.Abs(p.Style.LineHeightFactor - 1.8) < 0.01);
+    }
+
+    [Fact]
+    public void Reader_BodyColor_PropagatedToRuns()
+    {
+        // body { color: #336699 } → p 내 run 의 Foreground 가 해당 색으로 설정됨
+        const string html = """
+            <html><head><style>
+              body { color: #336699 }
+            </style></head><body>
+              <p>Text</p>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.NotEmpty(p.Runs);
+        var fg = p.Runs[0].Style.Foreground;
+        Assert.NotNull(fg);
+        Assert.Equal(0x33, fg!.Value.R);
+        Assert.Equal(0x66, fg!.Value.G);
+        Assert.Equal(0x99, fg!.Value.B);
+    }
+
+    [Fact]
+    public void Reader_ChildColorOverridesBodyColor()
+    {
+        // body { color: #333333 } but h1 { color: #000000 } → h1 text 는 black
+        const string html = """
+            <html><head><style>
+              body { color: #333333 }
+              h1   { color: #000000 }
+            </style></head><body>
+              <h1>H</h1>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.NotEmpty(p.Runs);
+        var fg = p.Runs[0].Style.Foreground;
+        Assert.NotNull(fg);
+        // h1 style 에 명시된 #000000 이 body #333333 보다 우선
+        Assert.Equal(0x00, fg!.Value.R);
+        Assert.Equal(0x00, fg!.Value.G);
+        Assert.Equal(0x00, fg!.Value.B);
+    }
 }

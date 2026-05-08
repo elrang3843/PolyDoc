@@ -1678,22 +1678,28 @@ public static class FlowDocumentBuilder
                 }
                 catch { }
             }
-            if (ls.Border.ShowTop || ls.Border.ShowBottom)
+            // OutlineStyle 경계선 + CSS border-bottom 통합.
+            bool showTop    = ls.Border.ShowTop;
+            bool showBottom = ls.Border.ShowBottom || style.BorderBottomPt > 0;
+            if (showTop || showBottom)
             {
                 WpfMedia.SolidColorBrush borderBrush;
-                if (!string.IsNullOrEmpty(ls.Border.Color))
+                // CSS border-bottom 색이 있으면 우선 사용.
+                string? borderColorStr = style.BorderBottomPt > 0 ? style.BorderBottomColor : null;
+                borderColorStr ??= ls.Border.Color;
+                if (!string.IsNullOrEmpty(borderColorStr))
                 {
-                    try { borderBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(ls.Border.Color)); }
+                    try { borderBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(borderColorStr)); }
                     catch { borderBrush = WpfMedia.Brushes.DimGray; }
                 }
                 else
                 {
                     borderBrush = WpfMedia.Brushes.DimGray;
                 }
+                double bottomThick = style.BorderBottomPt > 0 ? PtToDip(style.BorderBottomPt)
+                                   : showBottom ? 1.0 : 0.0;
                 wpfPara.BorderBrush     = borderBrush;
-                wpfPara.BorderThickness = new Thickness(0,
-                    ls.Border.ShowTop    ? 1 : 0, 0,
-                    ls.Border.ShowBottom ? 1 : 0);
+                wpfPara.BorderThickness = new Thickness(0, showTop ? 1 : 0, 0, bottomThick);
             }
             // Para 공간 설정은 OutlineStyle 의 Para 를 우선하되, ParagraphStyle 직접 값이 0이 아니면 덮어씀
             var paraStyle = ls.Para;
@@ -1745,6 +1751,23 @@ public static class FlowDocumentBuilder
 
         ApplyCodeBlockStyle(wpfPara, style.CodeLanguage);
         ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
+
+        // CSS border-bottom (예: 단락 구분선).
+        if (style.BorderBottomPt > 0)
+        {
+            WpfMedia.SolidColorBrush bBrush;
+            if (!string.IsNullOrEmpty(style.BorderBottomColor))
+            {
+                try { bBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(style.BorderBottomColor)); }
+                catch { bBrush = WpfMedia.Brushes.DimGray; }
+            }
+            else
+            {
+                bBrush = WpfMedia.Brushes.DimGray;
+            }
+            wpfPara.BorderBrush     = bBrush;
+            wpfPara.BorderThickness = new Thickness(0, 0, 0, PtToDip(style.BorderBottomPt));
+        }
     }
 
     /// <summary>

@@ -125,11 +125,21 @@ public readonly record struct Color(byte R, byte G, byte B, byte A = 255)
     public static Color FromHex(string hex)
     {
         ArgumentNullException.ThrowIfNull(hex);
-        var span = hex.AsSpan().TrimStart('#');
-        if (span.Length is not (6 or 8))
+        var raw = hex.AsSpan().TrimStart('#');
+
+        // 3/4자리 단축 (#RGB / #RGBA) → #RRGGBB / #RRGGBBAA 로 확장.
+        string? expanded = null;
+        if (raw.Length is 3 or 4)
         {
-            throw new FormatException($"Invalid color hex: '{hex}'. Expected RRGGBB or RRGGBBAA.");
+            var sb = new System.Text.StringBuilder(raw.Length * 2);
+            foreach (var ch in raw) { sb.Append(ch); sb.Append(ch); }
+            expanded = sb.ToString();
         }
+
+        var span = expanded is not null ? expanded.AsSpan() : raw;
+
+        if (span.Length is not (6 or 8))
+            throw new FormatException($"Invalid color hex: '{hex}'. Expected #RGB, #RGBA, #RRGGBB, or #RRGGBBAA.");
 
         byte r = byte.Parse(span[..2], System.Globalization.NumberStyles.HexNumber);
         byte g = byte.Parse(span[2..4], System.Globalization.NumberStyles.HexNumber);
