@@ -194,9 +194,9 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
-                // 수평선(HR) 단락 — IsThematicBreak Paragraph 로 복원.
-                case Wpf.Paragraph hrPara when ReferenceEquals(
-                    hrPara.Tag, FlowDocumentBuilder.ThematicBreakTag):
+                // 수평선(HR) — BlockUIContainer(Rectangle) 로 렌더되며 ThematicBreakTag 로 식별.
+                case Wpf.BlockUIContainer hrUic when ReferenceEquals(
+                    hrUic.Tag, FlowDocumentBuilder.ThematicBreakTag):
                 {
                     var hrP = new Paragraph();
                     hrP.Style.IsThematicBreak = true;

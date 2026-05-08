@@ -533,23 +533,24 @@ public static class FlowDocumentBuilder
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>IsThematicBreak</c> 단락(hr)을 Paragraph 의 BorderBottom 으로 렌더링한다.
+    /// <c>IsThematicBreak</c> 단락(hr)을 BlockUIContainer + Rectangle 로 렌더링한다.
     /// <para>
-    /// 빈 Paragraph 는 FlowDocument 레이아웃에서 높이 0 으로 처리되어 border 가 보이지 않으므로
-    ///  (non-breaking space) Run 을 추가해 최소한의 높이를 확보한다.
-    /// FontSize = 1 로 줄 높이를 최소화해 수평선처럼 보이게 한다.
+    /// WPF RichTextBox 는 Block.BorderBrush/BorderThickness 를 텍스트 레이아웃 엔진에서 무시한다.
+    /// Rectangle UIElement 는 UIElement 렌더 파이프라인에서 처리되므로 항상 표시된다.
     /// </para>
     /// </summary>
-    private static Wpf.Paragraph BuildThematicBreak()
+    private static Wpf.BlockUIContainer BuildThematicBreak()
     {
-        return new Wpf.Paragraph(new Wpf.Run(" "))
+        var rule = new System.Windows.Shapes.Rectangle
         {
-            FontSize        = 1,
-            Padding         = new Thickness(0),
-            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA)),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Margin          = new Thickness(0, 6, 0, 6),
-            Tag             = ThematicBreakTag,
+            Height              = 1,
+            Fill                = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+        };
+        return new Wpf.BlockUIContainer(rule)
+        {
+            Margin = new Thickness(0, 6, 0, 6),
+            Tag    = ThematicBreakTag,
         };
     }
 
