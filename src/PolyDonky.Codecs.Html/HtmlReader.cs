@@ -69,6 +69,11 @@ public sealed class HtmlReader : IDocumentReader
         // 이후 단계의 모든 style 파싱이 자동으로 반영함.
         InlineCssClassRules(doc);
 
+        // 상속되는 CSS 속성(text-align 등)을 부모에서 자식 요소로 전파.
+        // .document-header { text-align: center } 같은 컨테이너 정렬이 자식 h1/div 에 적용되도록.
+        if (doc.Body is { } body)
+            PropagateInheritableStyles(body, parentTextAlign: null);
+
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
 
@@ -307,6 +312,23 @@ public sealed class HtmlReader : IDocumentReader
                 // CSS Grid/Flex 다단 레이아웃 → Table 로 근사 변환.
                 if (TryBuildGridAsTable(el, target, ctx))
                     break;
+
+                // 블록 자식이 없는 div(`<div>text</div>`, `<div>text<span>x</span></div>`) 는
+                // 단락처럼 처리해 div 자체의 text-align/스타일을 적용. 블록 자식이 하나라도 있으면
+                // 평탄화해 자식 처리(부모의 text-align 은 PropagateInheritableStyles 로 이미 자식에 전파됨).
+                bool hasBlockChild = el.Children.Any(c => IsBlockElement(c));
+                if (!hasBlockChild)
+                {
+                    var p = new Paragraph();
+                    p.Style.QuoteLevel = ctx.QuoteLevel;
+                    p.Style.ListMarker = CloneMarker(ctx.Marker);
+                    ApplyBlockStyle(p, el);
+                    var initial = ParseInlineStyle(el.GetAttribute("style"));
+                    foreach (var n in el.ChildNodes) AppendInlineNode(p, n, initial, url: null);
+                    if (p.Runs.Count > 0)
+                        target.Add(p);
+                    break;
+                }
                 ProcessChildren(el, target, ctx);
                 break;
             }
@@ -420,6 +442,8 @@ public sealed class HtmlReader : IDocumentReader
         var listStyle = el.GetAttribute("type")
             ?? StyleProp(el.GetAttribute("style") ?? "", "list-style-type");
         var listKind = ResolveListKind(isOrdered, listStyle);
+        bool hideMarker = listStyle is not null
+            && listStyle.Trim().Equals("none", StringComparison.OrdinalIgnoreCase);
 
         int counter = 0;
         foreach (var child in el.ChildNodes)
@@ -440,22 +464,37 @@ public sealed class HtmlReader : IDocumentReader
             var liStyle = li.GetAttribute("type")
                 ?? StyleProp(li.GetAttribute("style") ?? "", "list-style-type");
             var lmKind = liStyle is not null ? ResolveListKind(isOrdered, liStyle) : listKind;
+            bool liHide = liStyle is not null
+                ? liStyle.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)
+                : hideMarker;
 
             int order = li.GetAttribute("value") is { } v && int.TryParse(v, out var ov) ? ov : start + counter - 1;
-            var lm = isOrdered
-                ? new ListMarker
+            // list-style-type:none → ListMarker 자체를 생성하지 않아 마커 비표시.
+            // (체크박스 작업 목록은 예외 — 항상 표시)
+            ListMarker? lm;
+            if (liHide && checkedState is null)
+            {
+                lm = null;
+            }
+            else if (isOrdered)
+            {
+                lm = new ListMarker
                 {
                     Kind          = lmKind,
                     OrderedNumber = order,
                     Level         = ctx.ListLevel,
                     Checked       = checkedState,
-                }
-                : new ListMarker
+                };
+            }
+            else
+            {
+                lm = new ListMarker
                 {
                     Kind    = lmKind,
                     Level   = ctx.ListLevel,
                     Checked = checkedState,
                 };
+            }
 
             // <li> 내부의 첫 텍스트/인라인은 한 단락으로, 후속 블록(중첩 리스트 등)은 평탄화.
             var firstParagraph = new Paragraph();
@@ -771,7 +810,11 @@ public sealed class HtmlReader : IDocumentReader
             {
                 var href  = el.GetAttribute("href");
                 var style = MergeStyle(parentStyle, el);
-                style.Underline = true;
+                // CSS text-decoration: none → 밑줄 제거 (e.g. .toc a { text-decoration: none }).
+                var td = StyleProp(el.GetAttribute("style"), "text-decoration")
+                       ?? StyleProp(el.GetAttribute("style"), "text-decoration-line");
+                if (td is null || !td.Contains("none", StringComparison.OrdinalIgnoreCase))
+                    style.Underline = true;
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, style, href ?? parentUrl);
                 return;
             }
@@ -1824,6 +1867,31 @@ public sealed class HtmlReader : IDocumentReader
     /// 지원 셀렉터: .class, #id, tag, tag.class — 콤마 분리, 후행 단순 셀렉터 추출.
     /// 미지원: 자손/자식/형제 결합, [attr] 속성, 가상 클래스(:hover 등).
     /// </summary>
+    /// <summary>
+    /// CSS 의 상속(inherit)되는 속성(text-align 등)을 부모 → 자식 으로 전파해
+    /// 자식 요소의 inline style 에 직접 적어 둔다. 자식이 자체 값을 가지면 그 값이 우선.
+    /// 호출 시점은 <see cref="InlineCssClassRules"/> 직후 — 클래스 규칙이 inline style 로 머지된 뒤.
+    /// 상속되는 속성: text-align (목록은 향후 확장 가능 — color/font-family 등).
+    /// </summary>
+    private static void PropagateInheritableStyles(IElement el, string? parentTextAlign)
+    {
+        var style  = el.GetAttribute("style") ?? "";
+        var ownTa  = StyleProp(style, "text-align");
+        var effTa  = ownTa ?? parentTextAlign;
+
+        // 자체 값이 없고 부모로부터 상속받은 값이 있으면 inline style 에 추가.
+        if (ownTa is null && parentTextAlign is not null)
+        {
+            var sb = new StringBuilder(style);
+            if (sb.Length > 0 && sb[^1] != ';') sb.Append(';');
+            sb.Append("text-align:").Append(parentTextAlign).Append(';');
+            el.SetAttribute("style", sb.ToString());
+        }
+
+        foreach (var child in el.Children)
+            PropagateInheritableStyles(child, effTa);
+    }
+
     private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)
     {
         // selector → property → value

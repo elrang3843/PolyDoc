@@ -137,6 +137,14 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Added** — **DOCX 도형(ShapeObject) 보존 지원**: `DocxReader` 가 DrawingML `wps:wsp` 도형을 `ShapeObject`로 파싱 (rect/ellipse/triangle/polygon/polyline/line 및 customGeometry), `DocxWriter` 가 `ShapeObject` → `wp:anchor`/`wp:inline` + `wps:wsp` DrawingML 로 출력. EMU ↔ mm 단위 변환·stroke dash·arrow·fill opacity·rotation·BehindText 래핑 지원. `DocxRoundTripTests` 에 라운드트립 테스트 6건 추가.
 
+- **Fixed** — **HtmlReader CSS `text-align` 부모→자식 상속**: 새 `PropagateInheritableStyles` DOM 사전 처리 단계 — `.document-header { text-align: center }` 가 자식 `<h1>`/`<div>` 에도 인라인 style 로 전파되도록 했다. `InlineCssClassRules` 직후 실행되며, 자식이 자체 `text-align` 을 가지면 그 값이 우선. xUnit 테스트 2건 추가 (TextAlignInheritedFromParent / TextAlignChildOverridesInherited).
+
+- **Fixed** — **HtmlReader 블록 자식 없는 `<div>` 를 단락으로 처리**: `<div class="header-sim">text</div>` 처럼 인라인/텍스트만 직접 들어있는 `<div>` 가 `ProcessChildren` 으로 평탄화돼 div 자체의 `text-align`/스타일이 적용되지 않던 문제 수정 — 블록 자식이 하나라도 있으면 기존 평탄화 동작 유지(부모의 inheritable 속성은 PropagateInheritableStyles 가 자식에 이미 전파). xUnit 테스트 1건 추가 (DivWithTextAlignBecomesParagraph).
+
+- **Fixed** — **HtmlReader `list-style-type: none` 마커 비표시**: `<ul style="list-style-type: none">`/`<style>` 블록 클래스 규칙 모두 — `ListMarker` 자체를 생성하지 않아 마커가 보이지 않게 처리 (기존엔 `Bullet` 로 떨어져 disc 가 그대로 표시). 체크박스 작업 목록(`<input type=checkbox>`)은 마커 없는 형태로도 체크 표시 유지. xUnit 테스트 2건 추가.
+
+- **Fixed** — **HtmlReader `<a>` `text-decoration: none` 으로 밑줄 제거**: `.toc a { text-decoration: none }` 같은 클래스 규칙이 인라인 머지 후 적용되도록 — `<a>` 의 inline style 에서 `text-decoration` / `text-decoration-line` 을 읽고 `none` 이면 `Underline` 을 설정하지 않는다 (기존엔 항상 밑줄). xUnit 테스트 3건 추가 (Default / Inline none / List item via class).
+
 - **Added** — **HtmlReader `<ol>/<ul>` 인라인 list-style-type 파싱**: `type="A"/"a"/"I"/"i"/"1"` HTML 속성 및 `style="list-style-type: upper-alpha"` CSS 속성을 읽어 `ListKind.OrderedAlpha`/`OrderedRoman`/`OrderedDecimal` 으로 변환. `<li>` 개별 항목에 지정된 `type`은 부모 `<ol>` 보다 우선 적용. `ResolveListKind` 헬퍼 추가. xUnit 테스트 5건 추가.
 
 - **Added** — **HtmlReader CSS Grid/Flex 다단 레이아웃 → Table 변환 (`TryBuildGridAsTable`)**: `display:grid; grid-template-columns: 1fr 1fr` / `display:flex` 컨테이너 `<div>` 를 테두리 없는 다단 `Table` 로 근사 변환 — 열 수는 `grid-template-columns` 공백 구분 개수 또는 `repeat(N,…)` 구문, Flex 는 자식 div 개수. `flex-direction:column` 은 변환 제외(세로 배치). `gap`/`grid-gap` 을 우측 셀 패딩에 적용. 나머지 셀은 빈 단락으로 패딩. xUnit 테스트 5건 추가.

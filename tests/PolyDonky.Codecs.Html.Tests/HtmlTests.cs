@@ -1450,6 +1450,129 @@ public class HtmlTests
         Assert.Null(table);
     }
 
+    // ── CSS 상속 (text-align inheritance) ────────────────────────────
+
+    [Fact]
+    public void Reader_TextAlignInheritedFromParent()
+    {
+        // 부모의 text-align 이 자체 값이 없는 자식에게 전파.
+        const string html = """
+            <html><head><style>
+              .center { text-align: center; }
+            </style></head><body>
+              <div class="center">
+                <h1>Title</h1>
+                <p>Subtitle</p>
+              </div>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(2, ps.Count);
+        Assert.Equal(Alignment.Center, ps[0].Style.Alignment); // h1
+        Assert.Equal(Alignment.Center, ps[1].Style.Alignment); // p
+    }
+
+    [Fact]
+    public void Reader_TextAlignChildOverridesInherited()
+    {
+        // 자식의 자체 text-align 이 부모로부터 상속받는 값보다 우선.
+        const string html = """
+            <html><head><style>
+              .center { text-align: center; }
+              .right  { text-align: right; }
+            </style></head><body>
+              <div class="center">
+                <h1>Centered</h1>
+                <div class="right"><p>Right aligned</p></div>
+              </div>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(Alignment.Center, ps[0].Style.Alignment);
+        Assert.Equal(Alignment.Right,  ps[1].Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_DivWithTextAlignBecomesParagraph()
+    {
+        // 블록 자식 없는 <div>text</div> 가 단락으로 변환되어 div 의 text-align 적용.
+        const string html = "<div style=\"text-align: right\">우측 정렬 텍스트</div>";
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+        Assert.Equal("우측 정렬 텍스트", p.GetPlainText());
+    }
+
+    // ── list-style-type: none → 마커 비표시 ─────────────────────────
+
+    [Fact]
+    public void Reader_UlListStyleNone_NoMarker()
+    {
+        const string html = "<ul style=\"list-style-type: none\"><li>A</li><li>B</li></ul>";
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(2, ps.Count);
+        Assert.Null(ps[0].Style.ListMarker);
+        Assert.Null(ps[1].Style.ListMarker);
+    }
+
+    [Fact]
+    public void Reader_UlListStyleNoneViaCssClass_NoMarker()
+    {
+        // <style> 블록의 .toc ul { list-style-type: none } 도 동일 동작.
+        const string html = """
+            <html><head><style>
+              .toc ul { list-style-type: none; }
+            </style></head><body>
+              <div class="toc"><ul><li><a href="#x">link</a></li></ul></div>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Null(p.Style.ListMarker);
+    }
+
+    // ── <a> text-decoration: none → 밑줄 제거 ───────────────────────
+
+    [Fact]
+    public void Reader_AnchorTextDecorationNone_NoUnderline()
+    {
+        // 인라인 컨텍스트(`<p>` 안) 의 `<a>` 가 `text-decoration: none` 을 따라 밑줄 제거.
+        const string html = "<p><a href=\"#x\" style=\"text-decoration: none\">link</a></p>";
+        var rt  = HtmlReader.FromHtml(html);
+        var run = rt.EnumerateParagraphs().Single().Runs.Single();
+        Assert.False(run.Style.Underline);
+        Assert.Equal("#x", run.Url);
+    }
+
+    [Fact]
+    public void Reader_AnchorDefault_HasUnderline()
+    {
+        // 인라인 컨텍스트(`<p>` 안) 의 `<a>` 는 기본으로 밑줄 적용.
+        const string html = "<p><a href=\"#x\">link</a></p>";
+        var rt  = HtmlReader.FromHtml(html);
+        var run = rt.EnumerateParagraphs().Single().Runs.Single();
+        Assert.True(run.Style.Underline);
+    }
+
+    [Fact]
+    public void Reader_AnchorInListItem_TextDecorationNoneViaCssClass()
+    {
+        // .toc a { text-decoration: none } 시나리오 — `<li>` 안 `<a>` 도 동일 동작.
+        const string html = """
+            <html><head><style>
+              .toc a { text-decoration: none; }
+            </style></head><body>
+              <div class="toc"><ul><li><a href="#x">link</a></li></ul></div>
+            </body></html>
+            """;
+        var rt  = HtmlReader.FromHtml(html);
+        var run = rt.EnumerateParagraphs().Single().Runs.Single();
+        Assert.False(run.Style.Underline);
+    }
+
     [Fact]
     public void Reader_CssGridOddCells_LastRowPadded()
     {
