@@ -1349,6 +1349,39 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Del 키가 표 셀 끝에서 눌렸을 때 기본 WPF 동작(다음 셀 내용을 현재 셀에 병합)을 차단.
+    /// caret 이 TableCell 안에 있고 Del 로 이동할 다음 위치가 다른 셀/셀 밖이면 e.Handled=true 반환.
+    /// </summary>
+    private static bool BlockDeleteAtTableCellBoundary(RichTextBox rtb, KeyEventArgs e)
+    {
+        var caret = rtb.CaretPosition;
+        var ownerCell = GetOwnerTableCell(caret);
+        if (ownerCell is null) return false;
+
+        var next = caret.GetNextInsertionPosition(System.Windows.Documents.LogicalDirection.Forward);
+        if (next is null) return false; // RTB 끝 — TryDeleteAcrossPageBoundary 가 처리
+
+        // 다음 삽입 위치가 같은 셀 안이면 정상 Del 허용
+        if (GetOwnerTableCell(next) == ownerCell) return false;
+
+        // 다른 셀 또는 셀 밖 → 차단 (셀 내용 경계 보호)
+        e.Handled = true;
+        return true;
+    }
+
+    private static System.Windows.Documents.TableCell? GetOwnerTableCell(
+        System.Windows.Documents.TextPointer tp)
+    {
+        System.Windows.DependencyObject? cur = tp.Parent;
+        while (cur is System.Windows.FrameworkContentElement fce)
+        {
+            if (cur is System.Windows.Documents.TableCell cell) return cell;
+            cur = fce.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// TableRowSplitter 가 만든 표 조각들을 원본 한 개로 재결합한다.
     /// 모든 조각은 source.Id 를 공유하므로 동일 Id 를 가진 연속 표는 같은 원본의 조각으로 간주.
     /// 첫 조각은 그대로 두고, 후속 조각은 splitter 가 prepend 한 선두 IsHeader 행(원본 헤더의 클론)을
@@ -4670,6 +4703,14 @@ public partial class MainWindow : Window
             if (e.Key == Key.Y)           { PerformRedo(); e.Handled = true; return; }
             if (e.Key == Key.Z &&  shift) { PerformRedo(); e.Handled = true; return; }
         }
+
+        // Del 키: 표 셀 끝에서 기본 WPF 동작(다음 셀 내용 끌어오기)을 차단.
+        // TryHandlePageBoundaryNavigation 이전에 검사해야 한다 — boundary 판정 전에
+        // e.Handled 를 세워야 WPF 기본 Delete 처리가 실행되지 않는다.
+        if (e.Key == Key.Delete
+            && (Keyboard.Modifiers & ModifierKeys.Control) == 0
+            && BlockDeleteAtTableCellBoundary(rtb, e))
+            return;
 
         // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동을 직접 처리.
         TryHandlePageBoundaryNavigation(rtb, e);

@@ -69,6 +69,26 @@ internal static class TableRowSplitter
             curGroup!.Add(i);
         }
 
+        // Fallback: ContentEnd 체크가 실패한 경우(WPF 가 행 내용을 클립) 를 보완.
+        // 모든 본문 행이 같은 페이지에 있어도 표 전체의 ContentEnd 가 다음 페이지면
+        // 마지막 본문 행 하나를 다음 페이지로 밀어낸다.
+        if (result.Count == 1 && result[0].Item2.Count >= 2)
+        {
+            try
+            {
+                int tblStartPg = paginator.GetPageNumber(wpfTable.ContentStart);
+                int tblEndPg   = paginator.GetPageNumber(wpfTable.ContentEnd);
+                if (tblEndPg > tblStartPg)
+                {
+                    var indices = result[0].Item2;
+                    int lastBodyIdx = indices[^1];
+                    indices.RemoveAt(indices.Count - 1);
+                    result.Add((tblEndPg, new System.Collections.Generic.List<int> { lastBodyIdx }));
+                }
+            }
+            catch { }
+        }
+
         return result;
     }
 
