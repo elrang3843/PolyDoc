@@ -687,7 +687,11 @@ public static class FlowDocumentBuilder
             double lineDip = Math.Max(thicknessV, 1);
             var hrPara = new Wpf.Paragraph(new Wpf.Run("​"))   // ZWSP — 빈 단락 collapse 방지
             {
-                Tag                  = ThematicBreakTag,
+                // Tag = Core ThematicBreakBlock 인스턴스 — 페이지네이션 (FlowDocumentPaginationAdapter
+                // 가 'Tag is Block coreBlock' 으로 필터링) 과 파서 (Tag is ThematicBreakBlock thbCore)
+                // 가 동일한 식별을 공유한다. sentinel object 로 두면 페이지네이션이 HR 을 통째로 건너뛰어
+                // 어떤 페이지 슬라이스에도 HR 이 들어가지 않아 화면에 안 보이는 결정적 버그가 발생.
+                Tag                  = thb,
                 Background           = brush,
                 Foreground           = brush,                  // ZWSP 가 색깔 차이로 노출되지 않게 동일 색.
                 FontSize             = lineDip,
@@ -766,7 +770,8 @@ public static class FlowDocumentBuilder
         {
             Margin  = new Thickness(0, marginV, 0, marginV),
             Padding = new Thickness(0),
-            Tag     = ThematicBreakTag,
+            // Tag = Core ThematicBreakBlock 인스턴스 — 페이지네이션 / 파서 식별 공유 (위 Solid 케이스 주석 참조).
+            Tag     = thb,
         };
     }
 
@@ -777,9 +782,6 @@ public static class FlowDocumentBuilder
 
     /// <summary>줄 번호 InlineUIContainer 를 구분하는 센티넬 — 파서가 복사 대상에서 제외한다.</summary>
     internal static readonly object LineNumberTag = new();
-
-    /// <summary>수평선(ThematicBreakBlock) BlockUIContainer 를 구분하는 센티넬 — 파서가 ThematicBreakBlock 으로 복원한다.</summary>
-    internal static readonly object ThematicBreakTag = new();
 
     /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>
     private static Wpf.Paragraph BuildTableCaption(string caption)
