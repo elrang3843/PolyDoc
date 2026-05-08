@@ -37,9 +37,23 @@ internal static class TableRowSplitter
             int pg;
             try
             {
-                pg = i < wpfRows.Count
-                    ? paginator.GetPageNumber(wpfRows[i].ContentStart)
-                    : (result.Count > 0 ? result[^1].Item1 : 0);
+                if (i < wpfRows.Count)
+                {
+                    int startPg = paginator.GetPageNumber(wpfRows[i].ContentStart);
+                    pg = startPg;
+                    // ContentEnd 가 ContentStart 보다 뒤 페이지에 있으면 행이 페이지를 넘친 것.
+                    // 넘치는 행을 현재 페이지에 두면 RTB 가 스크롤을 발생시키므로 다음 페이지로 밀어낸다.
+                    try
+                    {
+                        int endPg = paginator.GetPageNumber(wpfRows[i].ContentEnd);
+                        if (endPg > startPg) pg = endPg;
+                    }
+                    catch { /* ContentEnd 조회 실패 시 startPg 유지 */ }
+                }
+                else
+                {
+                    pg = result.Count > 0 ? result[^1].Item1 : 0;
+                }
             }
             catch
             {
