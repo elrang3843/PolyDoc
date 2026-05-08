@@ -615,19 +615,22 @@ public static class FlowDocumentBuilder
         double thicknessV  = thb.ThicknessPt > 0 ? PtToDip(thb.ThicknessPt) : 1;
         var brush = new WpfMedia.SolidColorBrush(lineColor);
 
-        // 실선(Solid) — Wpf.Paragraph + BorderTop. Paragraph 는 자연스럽게 본문 폭을 채우므로
+        // 실선(Solid) — Wpf.Paragraph + Background. Paragraph 는 자연스럽게 본문 폭을 채우므로
         // BlockUIContainer + Stretch + Width 바인딩 패턴이 무한대 Measure / 비-RTB ancestor
-        // 컨텍스트에서 0 픽셀로 collapse 하던 문제를 회피한다. FontSize/LineHeight 를 매우 작게 잡아
-        // 단락 자체의 높이가 BorderTop 두께 이상으로 커지지 않게 한다.
+        // 컨텍스트에서 0 픽셀로 collapse 하던 문제를 회피한다. Background 로 단락 전체를 색칠해
+        // BorderTop 이 두께 < 단락 높이 케이스에서 보이지 않던 문제도 같이 해결.
+        // FontSize/LineHeight 를 정확히 thicknessV 로 잡아 단락 자체가 바로 그 두께의 가로선이 되도록.
         if (thb.LineStyle == ThematicLineStyle.Solid)
         {
+            // FontSize 는 1 이상 권장 — 너무 작으면 WPF 가 텍스트 측정을 거부해 단락 자체가 0 높이로 collapse 한다.
+            double lineDip = Math.Max(thicknessV, 1);
             var hrPara = new Wpf.Paragraph(new Wpf.Run("​"))   // ZWSP — 빈 단락 collapse 방지
             {
                 Tag                  = ThematicBreakTag,
-                BorderBrush          = brush,
-                BorderThickness      = new Thickness(0, thicknessV, 0, 0),
-                FontSize             = 0.1,
-                LineHeight           = 0.1,
+                Background           = brush,
+                Foreground           = brush,                  // ZWSP 가 색깔 차이로 노출되지 않게 동일 색.
+                FontSize             = lineDip,
+                LineHeight           = lineDip,
                 LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                 Padding              = new Thickness(0),
                 Margin               = new Thickness(0, marginV, 0, marginV),
