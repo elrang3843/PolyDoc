@@ -83,11 +83,13 @@ internal static class TableRowSplitter
         for (int gi = 0; gi < rowGroups.Count; gi++)
         {
             bool isFirst = gi == 0;
+            bool isLast  = gi == rowGroups.Count - 1;
             var (pageNum, bodyIndices) = rowGroups[gi];
 
             // 첫 조각: 캡션 유지. 이후 조각: 캡션 제거(반복 방지).
             bool prependHeaders = !isFirst && source.RepeatHeaderRowsOnBreak;
-            var frag = CreateFragment(source, bodyIndices, prependHeaders, omitCaption: !isFirst);
+            var frag = CreateFragment(source, bodyIndices, prependHeaders,
+                                      omitCaption: !isFirst, isLastFragment: isLast);
             fragments.Add((frag, pageNum));
         }
 
@@ -100,7 +102,8 @@ internal static class TableRowSplitter
         Table source,
         IReadOnlyList<int> bodyRowIndices,
         bool prependHeaders,
-        bool omitCaption)
+        bool omitCaption,
+        bool isLastFragment)
     {
         var frag = new Table
         {
@@ -127,27 +130,66 @@ internal static class TableRowSplitter
         foreach (var col in source.Columns)
             frag.Columns.Add(new TableColumn { WidthMm = col.WidthMm });
 
-        // 헤더 행
-        if (prependHeaders)
+        // 첫 번째 본문 행 / 마지막 본문 행의 원본 인덱스
+        // (앞머리 IsHeader vs 꼬리 IsHeader 구분에 사용)
+        int firstBodySrcIdx = -1, lastBodySrcIdx = -1;
+        for (int i = 0; i < source.Rows.Count; i++)
         {
-            foreach (var row in source.Rows.Where(r => r.IsHeader))
-                frag.Rows.Add(CloneRow(row, maxRowSpan: null));
-        }
-        else if (!omitCaption) // 첫 조각 — 원본 헤더 포함
-        {
-            foreach (var (row, idx) in source.Rows.Select((r, i) => (r, i)))
+            if (!source.Rows[i].IsHeader)
             {
-                if (row.IsHeader) frag.Rows.Add(CloneRow(row, maxRowSpan: null));
+                if (firstBodySrcIdx < 0) firstBodySrcIdx = i;
+                lastBodySrcIdx = i;
             }
         }
 
-        // 본문 행
-        for (int pos = 0; pos < bodyRowIndices.Count; pos++)
+        var bodySet     = new HashSet<int>(bodyRowIndices);
+        var posLookup   = new Dictionary<int, int>(bodyRowIndices.Count);
+        for (int p = 0; p < bodyRowIndices.Count; p++) posLookup[bodyRowIndices[p]] = p;
+
+        if (prependHeaders)
         {
-            var srcRow = source.Rows[bodyRowIndices[pos]];
-            // RowSpan 이 조각 경계를 넘으면 클립
-            int maxSpan = bodyRowIndices.Count - pos;
-            frag.Rows.Add(CloneRow(srcRow, maxSpan));
+            // 이후 조각: 앞머리 IsHeader(첫 본문 행 이전) 만 반복, 꼬리 IsHeader 는 마지막 조각에만
+            for (int i = 0; i < (firstBodySrcIdx >= 0 ? firstBodySrcIdx : source.Rows.Count); i++)
+            {
+                if (source.Rows[i].IsHeader)
+                    frag.Rows.Add(CloneRow(source.Rows[i], maxRowSpan: null));
+            }
+
+            for (int pos = 0; pos < bodyRowIndices.Count; pos++)
+            {
+                var srcRow = source.Rows[bodyRowIndices[pos]];
+                frag.Rows.Add(CloneRow(srcRow, bodyRowIndices.Count - pos));
+            }
+
+            if (isLastFragment && lastBodySrcIdx >= 0)
+            {
+                for (int i = lastBodySrcIdx + 1; i < source.Rows.Count; i++)
+                {
+                    if (source.Rows[i].IsHeader)
+                        frag.Rows.Add(CloneRow(source.Rows[i], maxRowSpan: null));
+                }
+            }
+        }
+        else
+        {
+            // 첫 조각: 원본 행 순서 보존
+            // 꼬리 IsHeader(마지막 본문 행 이후) 는 isLastFragment 일 때만 포함
+            for (int i = 0; i < source.Rows.Count; i++)
+            {
+                var row = source.Rows[i];
+                if (row.IsHeader)
+                {
+                    bool isTrailing = lastBodySrcIdx >= 0 && i > lastBodySrcIdx;
+                    if (isTrailing && !isLastFragment) continue;
+                    frag.Rows.Add(CloneRow(row, maxRowSpan: null));
+                }
+                else if (bodySet.Contains(i))
+                {
+                    int pos = posLookup[i];
+                    frag.Rows.Add(CloneRow(row, bodyRowIndices.Count - pos));
+                }
+                // 이 조각에 속하지 않는 본문 행은 건너뜀
+            }
         }
 
         return frag;
