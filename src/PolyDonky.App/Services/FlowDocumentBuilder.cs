@@ -243,7 +243,11 @@ public static class FlowDocumentBuilder
             }
         }
 
-        foreach (var block in blocks)
+        // 연속된 ShapeObject 구간은 ShapeOrdering 정책(ZOrder + 자동 컨테인먼트 보정)에 따라
+        // 그리는 순서를 재배열한다. 다른 블록이 끼어 있으면 그 위치는 유지.
+        var orderedBlocks = ReorderShapeRuns(blocks);
+
+        foreach (var block in orderedBlocks)
         {
             switch (block)
             {
@@ -313,6 +317,52 @@ public static class FlowDocumentBuilder
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// 연속된 <see cref="ShapeObject"/> 묶음을 <see cref="ShapeOrdering"/> 정책에 따라 재배열한다.
+    /// 도형이 아닌 블록의 위치는 절대 바꾸지 않으며, 도형이 한 개뿐이거나 0개인 묶음은 그대로 통과시킨다.
+    /// </summary>
+    private static IList<Block> ReorderShapeRuns(IList<Block> blocks)
+    {
+        // 도형 묶음이 없으면 비용 0 — 원본 리스트 반환.
+        bool anyConsecutive = false;
+        for (int i = 1; i < blocks.Count; i++)
+        {
+            if (blocks[i] is ShapeObject && blocks[i - 1] is ShapeObject)
+            {
+                anyConsecutive = true; break;
+            }
+        }
+        if (!anyConsecutive) return blocks;
+
+        var result = new List<Block>(blocks.Count);
+        int idx = 0;
+        while (idx < blocks.Count)
+        {
+            if (blocks[idx] is ShapeObject)
+            {
+                int end = idx;
+                while (end < blocks.Count && blocks[end] is ShapeObject) end++;
+                if (end - idx >= 2)
+                {
+                    var run = new ShapeObject[end - idx];
+                    for (int k = 0; k < run.Length; k++) run[k] = (ShapeObject)blocks[idx + k];
+                    foreach (var s in ShapeOrdering.OrderForRendering(run)) result.Add(s);
+                }
+                else
+                {
+                    result.Add(blocks[idx]);
+                }
+                idx = end;
+            }
+            else
+            {
+                result.Add(blocks[idx]);
+                idx++;
+            }
+        }
+        return result;
     }
 
     /// <summary>TocBlock 을 시각적 BlockUIContainer 로 빌드한다. Tag = TocBlock 으로 라운드트립 가능.</summary>

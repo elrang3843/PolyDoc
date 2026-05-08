@@ -2139,6 +2139,37 @@ public class HtmlTests
     }
 
     [Fact]
+    public void RoundTrip_Shape_ZOrderPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 50, HeightMm = 30, ZOrder = -3,
+        });
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse,   WidthMm = 40, HeightMm = 40, ZOrder = 0,
+        });
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Star,      WidthMm = 30, HeightMm = 30, ZOrder = 7, SideCount = 5,
+        });
+        doc.Sections.Add(sec);
+
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("data-pd-z-order=\"-3\"", html);
+        Assert.Contains("data-pd-z-order=\"7\"",  html);
+
+        var rt = HtmlReader.FromHtml(html);
+        var shapes = rt.Sections[0].Blocks.OfType<ShapeObject>().ToList();
+        Assert.Equal(3, shapes.Count);
+        Assert.Equal(-3, shapes[0].ZOrder);
+        Assert.Equal( 0, shapes[1].ZOrder);
+        Assert.Equal( 7, shapes[2].ZOrder);
+    }
+
+    [Fact]
     public void RoundTrip_PageSettings_PageNumberStartAndPaperColor()
     {
         var doc = new PolyDonkyument();

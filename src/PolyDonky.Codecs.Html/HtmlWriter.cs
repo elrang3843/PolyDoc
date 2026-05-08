@@ -803,6 +803,8 @@ public sealed class HtmlWriter : IDocumentWriter
             dataAttrs.Append(" data-pd-rotation=\"").Append(FmtNum(shape.RotationAngleDeg)).Append("deg\"");
         if (Math.Abs(shape.FillOpacity - 1.0) > 0.001)
             dataAttrs.Append(" data-pd-fill-opacity=\"").Append(FmtNum(shape.FillOpacity)).Append('"');
+        if (shape.ZOrder != 0)
+            dataAttrs.Append(" data-pd-z-order=\"").Append(shape.ZOrder).Append('"');
         if (shape.WrapMode != ImageWrapMode.Inline)
             dataAttrs.Append(" data-pd-wrap-mode=\"").Append(shape.WrapMode).Append('"');
         if (shape.WrapMode is ImageWrapMode.InFrontOfText or ImageWrapMode.BehindText)
