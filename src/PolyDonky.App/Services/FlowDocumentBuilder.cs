@@ -24,6 +24,11 @@ public static class FlowDocumentBuilder
     private const double PointsPerInch = 72.0;
     private const double MmPerInch = 25.4;
 
+    /// <summary>Superscript/Subscript 글자 크기 배율 — 브라우저 <sup>/<sub> 의 font-size:smaller (≈0.83em) 보다
+    /// 약간 작은 0.7. 한글 폰트가 sup/sub variant glyph 를 지원하지 않을 때 줄 높이 부풀림을 방지한다.
+    /// FlowDocumentParser 가 라운드트립 시 같은 배율로 역산해 base FontSizePt 를 복원한다.</summary>
+    internal const double SubSuperFontScale = 0.7;
+
     public static double PtToDip(double pt) => pt * (DipsPerInch / PointsPerInch);
     public static double DipToPt(double dip) => dip * (PointsPerInch / DipsPerInch);
     public static double MmToDip(double mm) => mm * (DipsPerInch / MmPerInch);
@@ -2101,10 +2106,18 @@ public static class FlowDocumentBuilder
         if (s.Background is { } bg)
             wpfRun.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
 
-        if (s.Superscript)
-            wpfRun.BaselineAlignment = BaselineAlignment.Superscript;
-        else if (s.Subscript)
-            wpfRun.BaselineAlignment = BaselineAlignment.Subscript;
+        if (s.Superscript || s.Subscript)
+        {
+            // 폰트(Noto Sans KR / Malgun Gothic 등 한글 폰트) 가 superscript/subscript variant glyph 를
+            // 지원하지 않을 때, BaselineAlignment 만으로는 글자 크기가 그대로 유지돼 줄 높이가 크게 부풀고
+            // 시각적으로 뜬 것처럼 분리돼 보인다. 브라우저가 <sup>/<sub> 에 적용하는 font-size:smaller
+            // (≈0.83em) 와 유사하게 0.7 배로 축소해 원본 라인 높이를 유지.
+            var basePt = s.FontSizePt > 0.001 ? s.FontSizePt : 11;
+            wpfRun.FontSize = PtToDip(basePt * SubSuperFontScale);
+            wpfRun.BaselineAlignment = s.Superscript
+                ? BaselineAlignment.Superscript
+                : BaselineAlignment.Subscript;
+        }
 
         wpfRun.Tag = run;
 

@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **위첨자(`<sup>`) / 아래첨자(`<sub>`) 가 줄 높이를 부풀리고 시각적으로 분리돼 보이던 문제** (예: `f(x) = a x²`, 적분/시그마 첨자): WPF FlowDocument 의 `BaselineAlignment.Superscript`/`Subscript` 는 폰트(Noto Sans KR / Malgun Gothic 등 한글 폰트) 의 superscript/subscript variant glyph 가 있을 때만 자동으로 글자 크기를 줄인다. 한글 폰트 대부분이 해당 variant 를 제공하지 않아 글자가 원래 크기 그대로 위로 떠올라 결과적으로 줄 간격이 비정상적으로 커지고 첨자가 본문에서 떨어진 듯이 보였다. 브라우저가 `<sup>`/`<sub>` 에 적용하는 `font-size:smaller` (≈0.83em) 와 유사하게, `FlowDocumentBuilder.BuildInline` 이 sub/super 런에 명시적으로 `FontSize = base × SubSuperFontScale (=0.7)` 를 적용. `FlowDocumentParser.ExtractRunStyle` 은 같은 배율로 역산해 base FontSizePt 를 복원하되, Tag 에 원본 Run 이 보존돼 있으면(각주·미주 참조 등 builder 가 명시적 폰트 크기로 만든 경우) 그 값을 우선해 잘못된 스케일링을 방지. 전체 369 크로스플랫폼 테스트 + WPF 앱 빌드 통과.
+
 - **Fixed** — **HTML 종합 샘플(`samples/모든 문서 구성 요소 테스트용.html`) 변환 라운드트립 누락·왜곡 일괄 수정**:
   - **목록 구조 보존(`ListMarker.HideBullet` 도입)**: `<ul style="list-style-type:none">`/`<ul class="checklist">` 같은 마커 숨김 목록을 이전엔 `ListMarker = null` 로 처리해 모든 `<li>` 가 일반 `<p>` 로 평탄화됐었다(샘플 TOC 16개 항목 손실). 이제 `ListMarker.HideBullet = true` 로 마커만 숨기고 구조 유지 — `HtmlReader` 가 설정, `HtmlWriter` 가 해당 묶음에 `<ul style="list-style-type:none;padding-left:0">` 직렬화. `FlowDocumentBuilder.EnsureList` 가 `hideBullet` 인자를 받아 WPF `MarkerStyle.None` 으로 표시; 같은 Kind/Level 이라도 HideBullet 이 다르면 별개 리스트로 취급. `FlowDocumentParser` 는 `MarkerStyle.None` 리스트를 HideBullet 으로 흡수하되 Checked 가 있으면(작업 목록) 해제.
   - **표 셀 안의 블록 콘텐츠 평탄화 버그**: `WriteRow` 가 모든 셀 블록을 `<br>` 로 연결한 인라인 텍스트로만 렌더해 셀 안의 중첩 목록·헤딩·표 등이 통째로 사라졌었다(샘플 다단 레이아웃의 7-8번 절 nested ul/ol 전체 소실). 단순 단락만 있는 셀은 기존처럼 인라인 + `<br>` 으로, 그 외(ListMarker / Outline / CodeLanguage / QuoteLevel / Table / Image / Shape / TextBox 등) 가 하나라도 있으면 전체 `WriteBlocks` 폴백으로 구조 보존.
