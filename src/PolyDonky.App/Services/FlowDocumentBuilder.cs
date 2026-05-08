@@ -981,8 +981,10 @@ public static class FlowDocumentBuilder
             return emptyBuc;
         }
 
-        // SVG: WPF BitmapImage 는 image/svg+xml 을 지원하지 않는다.
-        // 올바른 크기의 시각적 placeholder 를 표시한다.
+        // SVG: WPF BitmapImage 는 image/svg+xml 을 지원하지 않으므로 자체 SvgRenderer 가
+        // <rect>/<circle>/<ellipse>/<line>/<polygon>/<polyline>/<path>/<text> + <g> transform 을
+        // WPF Canvas + Shape 로 변환해 실제 도형을 그린다. 미지원 요소(marker, gradient 등) 는
+        // 무시되며, 라운드트립 원본 SVG 바이트는 image.Data 에 그대로 보존된다.
         if (image.MediaType == "image/svg+xml")
         {
             var svgHa = image.HAlign switch
@@ -991,28 +993,45 @@ public static class FlowDocumentBuilder
                 ImageHAlign.Right  => HorizontalAlignment.Right,
                 _                  => HorizontalAlignment.Left,
             };
-            var svgBox = new System.Windows.Controls.Border
+            var widthDip  = image.WidthMm  > 0 ? MmToDip(image.WidthMm)  : 0;
+            var heightDip = image.HeightMm > 0 ? MmToDip(image.HeightMm) : 0;
+
+            UIElement svgVisual;
+            var rendered = SvgRenderer.TryRender(image.Data, widthDip, heightDip);
+            if (rendered is not null)
             {
-                Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(248, 249, 250)),
-                BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(221, 221, 221)),
-                BorderThickness = new Thickness(1),
-                HorizontalAlignment = svgHa,
-            };
-            if (image.WidthMm  > 0) svgBox.Width  = MmToDip(image.WidthMm);
-            if (image.HeightMm > 0) svgBox.Height = MmToDip(image.HeightMm);
-            svgBox.Child = new System.Windows.Controls.TextBlock
+                if (rendered is FrameworkElement fe) fe.HorizontalAlignment = svgHa;
+                if (!string.IsNullOrEmpty(image.Description) && rendered is FrameworkElement fe2) fe2.ToolTip = image.Description;
+                svgVisual = rendered;
+            }
+            else
             {
-                Text                = "[SVG 다이어그램]",
-                Foreground          = WpfMedia.Brushes.Gray,
-                FontStyle           = FontStyles.Italic,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center,
-                Margin              = new Thickness(8),
-            };
-            if (!string.IsNullOrEmpty(image.Description)) svgBox.ToolTip = image.Description;
-            UIElement svgVisual = WrapImageWithTitle(svgBox, image, svgHa);
-            var svgMargin = new Thickness(0, MmToDip(image.MarginTopMm), 0, MmToDip(image.MarginBottomMm));
-            return new Wpf.BlockUIContainer(svgVisual) { Tag = image, Margin = svgMargin };
+                // 파싱 실패 시 기존 placeholder 폴백.
+                var svgBox = new System.Windows.Controls.Border
+                {
+                    Background          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(248, 249, 250)),
+                    BorderBrush         = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(221, 221, 221)),
+                    BorderThickness     = new Thickness(1),
+                    HorizontalAlignment = svgHa,
+                };
+                if (widthDip  > 0) svgBox.Width  = widthDip;
+                if (heightDip > 0) svgBox.Height = heightDip;
+                svgBox.Child = new System.Windows.Controls.TextBlock
+                {
+                    Text                = "[SVG 다이어그램]",
+                    Foreground          = WpfMedia.Brushes.Gray,
+                    FontStyle           = FontStyles.Italic,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center,
+                    Margin              = new Thickness(8),
+                };
+                if (!string.IsNullOrEmpty(image.Description)) svgBox.ToolTip = image.Description;
+                svgVisual = svgBox;
+            }
+
+            var wrappedSvg = WrapImageWithTitle(svgVisual, image, svgHa);
+            var svgMargin  = new Thickness(0, MmToDip(image.MarginTopMm), 0, MmToDip(image.MarginBottomMm));
+            return new Wpf.BlockUIContainer(wrappedSvg) { Tag = image, Margin = svgMargin };
         }
 
         var bitmap = new WpfMedia.Imaging.BitmapImage();

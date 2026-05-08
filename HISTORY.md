@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Added** — **SVG 기본 도형 렌더러 (`SvgRenderer`)**: 기존엔 `image/svg+xml` `ImageBlock` 이 회색 박스 + "[SVG 다이어그램]" 텍스트로만 표시됐다. 이제 자체 렌더러가 인라인 SVG 의 기본 요소를 WPF Canvas + `Shape` 트리로 변환해 실제 도형을 그린다. 지원: `<svg>`(width/height/viewBox), `<g transform="...">` (translate/scale/rotate/matrix/skewX/skewY), `<rect>`(x/y/width/height/rx/ry), `<circle>`(cx/cy/r), `<ellipse>`(cx/cy/rx/ry), `<line>`(x1/y1/x2/y2), `<polygon>`/`<polyline>`(points), `<path d="...">`, `<text>`(x/y/font-size/font-weight/font-family/text-anchor=start|middle|end + `FormattedText` 로 baseline·anchor 정확 보정). 페인트 속성: `fill` / `stroke` / `stroke-width` / `stroke-dasharray` / `fill-opacity` / `stroke-opacity` / `fill="none"` / `stroke="none"` — `style="..."` 인라인 선언과 attribute 둘 다 인식하고 부모 → 자식 상속. 미지원 요소(marker/clipPath/filter/gradient 등) 는 무시되고, 라운드트립 원본 SVG 바이트는 `ImageBlock.Data` 에 그대로 보존된다 — 본 렌더러는 view-only. 파싱 실패 시 기존 placeholder 박스로 폴백. (`src/PolyDonky.App/Services/SvgRenderer.cs` 신규, `FlowDocumentBuilder.BuildImage` SVG 분기 교체.) 전체 373 크로스플랫폼 테스트 + WPF 앱 빌드 성공.
+
 - **Changed** — **누락 이미지 폴백을 브라우저 스타일(아이콘 + alt 텍스트) 로 표시**: 기존 `[이미지 누락 — application/octet-stream]` 회색 이탤릭 한 줄 → Edge/Chrome 처럼 작은 16×16 회색 X 아이콘 박스 + alt 텍스트(`ImageBlock.Description`) 가로 배치. alt 가 없으면 아이콘만 표시(브라우저 동작 일치). `image.HAlign` 으로 가로 정렬, ToolTip 에도 Description 노출. (`FlowDocumentBuilder.BuildImage` 의 `image.Data.Length == 0` 폴백)
 
 - **Added** — **표 외곽선 면별 독립 속성 + 안쪽 가로/세로선 + 면별 편집 UI**: 이전엔 표 외곽선이 단일 `BorderThicknessPt`/`BorderColor` (4면 같은 값) 만 가질 수 있었고, 셀 면별(`BorderTop/Bottom/Left/Right`) 도 `CellBorderSide(두께, 색)` 만 지원했다. 이제 면별로 두께·색·선 종류를 독립 지정.
