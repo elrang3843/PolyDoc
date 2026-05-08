@@ -533,15 +533,23 @@ public static class FlowDocumentBuilder
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>ThematicBreakBlock</c> 을 <c>Wpf.Paragraph.BorderBottom</c> 으로 렌더링한다.
+    /// <c>ThematicBreakBlock</c> 을 <c>BlockUIContainer</c> + <c>Border</c> (RichTextBox.ActualWidth 바인딩)
+    /// 로 렌더링한다.
     /// <para>
-    /// h1 의 <c>border-bottom</c> 이 같은 방식으로 정상 표시되므로 (BuildParagraph 의
-    /// BorderBottomPt 처리), HR 도 동일 패턴을 사용한다. 빈 단락이 높이 0 으로 collapse
-    /// 되지 않도록 <c>LineHeight</c> + <c>LineStackingStrategy.BlockLineHeight</c> 로
-    /// 최소 라인 높이를 강제한다 — Run 없이도 단락이 measurable 한 높이를 갖는다.
+    /// 이전 시도들이 실패한 원인:
+    /// (a) <c>Wpf.Paragraph.BorderBottom</c> + <c>FontSize=1/LineHeight=1</c> — 단락 높이가 너무
+    ///     작아 보더가 시각적으로 사라지거나, FlowDocument 가 1px 높이를 정밀하게 그리지 못함.
+    /// (b) <c>BlockUIContainer</c> + <c>Rectangle</c>/<c>Grid</c> + <c>HorizontalAlignment.Stretch</c>
+    ///     — FlowDocument 의 첫 Measure 가 infinite 폭을 패스해서 자식 요소가 폭=0 으로 측정되고,
+    ///     그 결과 폭=0 으로 Arrange 됨.
+    /// </para>
+    /// <para>
+    /// 해결: <c>Border</c> 의 <c>Width</c> 를 ancestor <c>FlowDocumentScrollViewer</c> /
+    /// <c>RichTextBox</c> 의 <c>ActualWidth</c> 에 바인딩해 명시적으로 컬럼 폭을 받는다.
+    /// 바인딩이 visual tree 부착 후 동작하므로, 초기 0 폭 측정 문제를 우회한다.
     /// </para>
     /// </summary>
-    private static Wpf.Paragraph BuildThematicBreak(ThematicBreakBlock thb)
+    private static Wpf.BlockUIContainer BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
         if (!string.IsNullOrEmpty(thb.LineColor))
@@ -550,16 +558,33 @@ public static class FlowDocumentBuilder
             catch { /* 파싱 실패 시 기본 회색 유지 */ }
         }
         double marginV = thb.MarginPt > 0 ? PtToDip(thb.MarginPt) : 6;
-        return new Wpf.Paragraph(new Wpf.Run(" "))
+
+        var line = new System.Windows.Controls.Border
         {
-            FontSize             = 1,
-            LineHeight           = 1,
-            LineStackingStrategy = System.Windows.LineStackingStrategy.BlockLineHeight,
-            Padding              = new Thickness(0),
-            BorderBrush          = new WpfMedia.SolidColorBrush(lineColor),
-            BorderThickness      = new Thickness(0, 0, 0, 1),
-            Margin               = new Thickness(0, marginV, 0, marginV),
-            Tag                  = ThematicBreakTag,
+            BorderBrush         = new WpfMedia.SolidColorBrush(lineColor),
+            BorderThickness     = new Thickness(0, 1, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment   = VerticalAlignment.Center,
+            MinHeight           = 1,
+            SnapsToDevicePixels = true,
+        };
+        // ancestor RichTextBox.Document.PageWidth 에 폭을 바인딩 — Build() 에서 PageWidth =
+        // ComputeContentWidthDip(page) 로 컬럼 본문 폭을 직접 설정해 두므로, 이 값이 그대로
+        // HR 폭이 된다. visual tree 부착 후 동작해서 초기 무한대 Measure 문제를 우회한다.
+        var binding = new System.Windows.Data.Binding("Document.PageWidth")
+        {
+            RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.FindAncestor)
+            {
+                AncestorType = typeof(System.Windows.Controls.RichTextBox),
+            },
+        };
+        line.SetBinding(FrameworkElement.WidthProperty, binding);
+
+        return new Wpf.BlockUIContainer(line)
+        {
+            Margin  = new Thickness(0, marginV, 0, marginV),
+            Padding = new Thickness(0),
+            Tag     = ThematicBreakTag,
         };
     }
 

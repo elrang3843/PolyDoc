@@ -194,9 +194,9 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
-                // 수평선(ThematicBreakBlock) — Paragraph.BorderBottom 으로 렌더되며 ThematicBreakTag 로 식별.
-                case Wpf.Paragraph hrPara when ReferenceEquals(
-                    hrPara.Tag, FlowDocumentBuilder.ThematicBreakTag):
+                // 수평선(ThematicBreakBlock) — BlockUIContainer 로 렌더되며 ThematicBreakTag 로 식별.
+                case Wpf.BlockUIContainer hrContainer when ReferenceEquals(
+                    hrContainer.Tag, FlowDocumentBuilder.ThematicBreakTag):
                     target.Add(new ThematicBreakBlock());
                     break;
 

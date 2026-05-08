@@ -56,7 +56,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Fixed** — **RowSpan 병합 셀이 페이지 경계에서 분리되던 문제**: `TableRowSplitter.AdjustGroupsForRowSpan` 후처리 추가 — 한 그룹 안 행의 셀이 `RowSpan > 1` 로 다음 그룹의 행까지 닿으면, 그 기준 행 이후 모든 행을 다음 그룹 앞쪽으로 이동시켜 병합 셀이 시각적으로 끊기지 않게 보장한다. 체인 형태 스팬도 안정화될 때까지 반복 처리.
 
-- **Fixed** — **수평선(`<hr>`)이 보이지 않던 문제**: `FlowDocumentBuilder.BuildThematicBreak` 가 `Paragraph.BorderBottom` 방식을 사용했으나 WPF `RichTextBox` 의 텍스트 레이아웃 엔진은 `Block.BorderBrush`/`BorderThickness` 를 렌더링하지 않는다 — `BlockUIContainer(Grid { Height=1, Background=color })` 방식으로 교체해 UIElement 렌더 파이프라인에서 처리되도록 수정.
+- **Fixed** — **수평선(`<hr>`)이 보이지 않던 문제**: 여러 시도(Paragraph.BorderBottom, BlockUIContainer + Rectangle/Grid + HorizontalAlignment.Stretch) 끝에 `BlockUIContainer(Border)` + `Border.Width` 를 ancestor `RichTextBox.Document.PageWidth` 에 RelativeSource 바인딩하는 방식으로 정착. FlowDocument 의 첫 Measure 가 infinite 폭으로 호출되어 Stretch 자식이 폭=0 으로 측정되던 문제를 visual tree 부착 후 PageWidth 값으로 우회. `Build()` 에서 `PageWidth = ComputeContentWidthDip(page)` 로 컬럼 본문 폭이 직접 설정되므로, 바인딩 결과가 정확한 HR 폭이 된다. 파서도 `Wpf.BlockUIContainer.Tag == ThematicBreakTag` 매칭으로 복원.
 
 - **Internal** — **`ThematicBreakBlock` 전용 블록 타입 도입 (모델 정리)**: `ParagraphStyle.IsThematicBreak`/`ThematicBreakColor` 플래그를 `ThematicBreakBlock : Block { LineColor, MarginPt }` 전용 타입으로 대체. `Paragraph` 의미가 명확해지고 렌더·파서·코덱 코드가 단순화됨. `BlockJsonConverter` 에 `"thematicBreak"` discriminator 추가; HTML/XML/Markdown reader·writer, FlowDocumentBuilder/Parser, SmokeTest, xUnit 테스트 전부 업데이트.
 
