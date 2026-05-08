@@ -187,6 +187,10 @@ public sealed class HtmlReader : IDocumentReader
             var p = new Paragraph();
             p.Style.QuoteLevel = ctx.QuoteLevel;
             p.Style.ListMarker = CloneMarker(ctx.Marker);
+            // 부모 요소의 text-align 을 텍스트노드 단락에도 적용
+            // (PropagateInheritableStyles 는 요소만 처리하므로 raw 텍스트노드는 누락된다).
+            if (txt.ParentElement is { } parentEl)
+                ApplyBlockAlignment(p, parentEl);
             p.AddText(NormalizeWhitespace(txt.Data));
             target.Add(p);
             return;
