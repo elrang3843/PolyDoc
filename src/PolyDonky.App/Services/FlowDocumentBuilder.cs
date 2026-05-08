@@ -550,6 +550,9 @@ public static class FlowDocumentBuilder
     /// 캡션 단락이 모델에 누적되어 여러 개로 보인다.</summary>
     internal static readonly object TableCaptionTag = new();
 
+    /// <summary>줄 번호 InlineUIContainer 를 구분하는 센티넬 — 파서가 복사 대상에서 제외한다.</summary>
+    internal static readonly object LineNumberTag = new();
+
     /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>
     private static Wpf.Paragraph BuildTableCaption(string caption)
         => new Wpf.Paragraph(new Wpf.Run(caption))
@@ -1674,13 +1677,77 @@ public static class FlowDocumentBuilder
     {
         var wpfPara = new Wpf.Paragraph();
         ApplyParagraphStyle(wpfPara, p.Style, outlineStyles);
-        foreach (var run in p.Runs)
-        {
-            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
-        }
+
+        if (p.Style.ShowLineNumbers && p.Style.CodeLanguage is not null)
+            BuildCodeBlockWithLineNumbers(wpfPara, p.Runs);
+        else
+            foreach (var run in p.Runs)
+                wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
+
         // 원본 PolyDonky.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
         return wpfPara;
+    }
+
+    /// <summary>
+    /// 코드 블록의 각 줄 앞에 줄 번호를 <see cref="Wpf.InlineUIContainer"/> 로 삽입한다.
+    /// InlineUIContainer 는 WPF 텍스트 선택·복사 대상에서 제외되므로 Ctrl+C 시 줄 번호가 빠진다.
+    /// </summary>
+    private static void BuildCodeBlockWithLineNumbers(Wpf.Paragraph wpfPara, IList<Run> sourceRuns)
+    {
+        var fullText = string.Concat(sourceRuns.Select(r => r.Text));
+        if (fullText.EndsWith('\n')) fullText = fullText[..^1];
+
+        var lines = fullText.Split('\n');
+        int maxDigits = lines.Length.ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
+        double fontSize = wpfPara.FontSize > 0 ? wpfPara.FontSize : PtToDip(11);
+        double numWidth = fontSize * 0.6 * maxDigits + PtToDip(8);
+
+        var numFg     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x88, 0x88, 0x88));
+        var numBorder = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0));
+        var monoFamily = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var numTb = new System.Windows.Controls.TextBlock
+            {
+                Text          = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                       .PadLeft(maxDigits),
+                Width         = numWidth,
+                TextAlignment = TextAlignment.Right,
+                Foreground    = numFg,
+                FontFamily    = monoFamily,
+                FontSize      = fontSize,
+            };
+            var numBorderEl = new System.Windows.Controls.Border
+            {
+                Child           = numTb,
+                BorderBrush     = numBorder,
+                BorderThickness = new Thickness(0, 0, 1, 0),
+                Padding         = new Thickness(0, 0, 6, 0),
+            };
+            wpfPara.Inlines.Add(new Wpf.InlineUIContainer(numBorderEl)
+            {
+                BaselineAlignment = BaselineAlignment.TextTop,
+                Tag               = LineNumberTag,
+            });
+
+            var lineRun = new Wpf.Run(" " + lines[i])
+            {
+                FontFamily = monoFamily,
+                FontSize   = fontSize,
+            };
+            if (sourceRuns.Count > 0)
+            {
+                var rs = sourceRuns[0].Style;
+                if (rs.Bold)   lineRun.FontWeight = FontWeights.Bold;
+                if (rs.Italic) lineRun.FontStyle  = FontStyles.Italic;
+            }
+            wpfPara.Inlines.Add(lineRun);
+
+            if (i < lines.Length - 1)
+                wpfPara.Inlines.Add(new Wpf.LineBreak());
+        }
     }
 
     private static void ApplyParagraphStyle(Wpf.Paragraph wpfPara, ParagraphStyle style,

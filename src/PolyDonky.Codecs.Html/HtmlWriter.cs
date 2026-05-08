@@ -261,11 +261,23 @@ public sealed class HtmlWriter : IDocumentWriter
         if (p.Style.CodeLanguage is not null)
         {
             var code = EscapeHtml(p.GetPlainText());
+            var preClass = p.Style.ShowLineNumbers ? " class=\"line-numbers\"" : "";
             var langAttr = p.Style.CodeLanguage.Length > 0
                 ? $" class=\"language-{EscapeAttr(p.Style.CodeLanguage)}\""
                 : "";
-            sb.Append(indent).Append("<pre><code").Append(langAttr).Append('>')
-              .Append(code).Append("</code></pre>\n");
+            if (p.Style.ShowLineNumbers)
+            {
+                // 줄 번호 재현을 위해 각 줄을 <span>으로 감싸 출력
+                var lines = code.Split('\n');
+                var spanLines = string.Join("\n", lines.Select(l => $"<span>{l}</span>"));
+                sb.Append(indent).Append("<pre").Append(preClass).Append("><code").Append(langAttr).Append('>')
+                  .Append(spanLines).Append("</code></pre>\n");
+            }
+            else
+            {
+                sb.Append(indent).Append("<pre><code").Append(langAttr).Append('>')
+                  .Append(code).Append("</code></pre>\n");
+            }
             return;
         }
 

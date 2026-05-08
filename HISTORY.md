@@ -50,6 +50,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **Fixed** — **`<span class="cite">` 처럼 CSS `display: block` 적용 인라인 요소가 정렬을 잃던 문제**: `HtmlReader` 의 default 케이스가 단순히 자식을 평탄화해 `text-align:right` 같은 블록 정렬이 사라지던 문제 — 자식이 모두 인라인이고 자체 스타일에 `display: block` / `inline-block` 이 있으면 자체 단락으로 처리해 `ApplyBlockAlignment` 가 정상 적용되도록 수정. 블록쿼트 안 출처 표기(`- 저자명`) 우측 정렬 등이 보존된다.
 
+- **Added** — **코드 블록 줄 번호 표시 (`ShowLineNumbers`)**: `ParagraphStyle.ShowLineNumbers = true` 이면 코드 블록 각 줄 앞에 줄 번호를 `InlineUIContainer(Border > TextBlock)` 으로 렌더링 — WPF 텍스트 선택 범위에 포함되지 않으므로 Ctrl+C 복사 시 줄 번호가 제외됨. `HtmlReader` 가 `<pre class="line-numbers"><code><span>…</span></code></pre>` 패턴을 감지해 자동 설정; `HtmlWriter` 가 역직렬화 시 동일 패턴으로 복원(라운드트립 보장). `FlowDocumentParser` 는 `LineNumberTag` 센티넬로 줄 번호 컨테이너를 건너뜀.
+
 - **Fixed** — **RowSpan 병합 셀이 페이지 경계에서 분리되던 문제**: `TableRowSplitter.AdjustGroupsForRowSpan` 후처리 추가 — 한 그룹 안 행의 셀이 `RowSpan > 1` 로 다음 그룹의 행까지 닿으면, 그 기준 행 이후 모든 행을 다음 그룹 앞쪽으로 이동시켜 병합 셀이 시각적으로 끊기지 않게 보장한다. 체인 형태 스팬도 안정화될 때까지 반복 처리.
 
 - **Added** — **HtmlReader CSS `<style>` 블록 클래스 규칙 머지**: 문서 내 `<style>` 블록에서 단순 셀렉터 (`.class`, `#id`, `tag`, `tag.class`) 규칙을 추출해 매칭되는 모든 요소의 `style` 속성에 머지 — 인라인 style 이 클래스 규칙보다 우선. CSS 자손/자식/형제 결합자(` `, `>`, `+`, `~`)는 우측 단순 셀렉터만 사용. 가상 클래스(`:hover`)·속성 셀렉터(`[type=...]`)·@규칙(`@page`/`@media` 등)은 무시. 클래스 기반 text-align/background/padding/border/color 등이 단락·헤딩·표 등에 정상 반영. xUnit 테스트 5건 추가.

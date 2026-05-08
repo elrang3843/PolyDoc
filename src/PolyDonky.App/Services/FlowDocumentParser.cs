@@ -437,6 +437,9 @@ public static class FlowDocumentParser
             }
             case Wpf.InlineUIContainer iuc:
             {
+                // 줄 번호 컨테이너 — 시각 전용, 텍스트 모델에서 제외.
+                if (ReferenceEquals(iuc.Tag, FlowDocumentBuilder.LineNumberTag)) break;
+
                 // FlowDocumentBuilder 가 만든 컨테이너.
                 // Tag 에 원본 PolyDonky Run 이 있으면 직접 회수. 없으면 시각 트리에서 추출.
                 if (iuc.Tag is Run origRun)

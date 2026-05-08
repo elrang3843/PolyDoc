@@ -599,6 +599,12 @@ public sealed class HtmlReader : IDocumentReader
         var lang  = inner is not null ? ExtractCodeLanguage(inner) : ExtractCodeLanguage(preEl);
         p.Style.CodeLanguage = lang ?? "";
 
+        // class="line-numbers" → ShowLineNumbers
+        var preClass = preEl.GetAttribute("class") ?? "";
+        if (preClass.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Any(c => c.Equals("line-numbers", StringComparison.OrdinalIgnoreCase)))
+            p.Style.ShowLineNumbers = true;
+
         var text = inner?.TextContent ?? preEl.TextContent;
         // <pre> 의 leading newline 제거 (HTML 관례).
         if (text.StartsWith('\n')) text = text[1..];

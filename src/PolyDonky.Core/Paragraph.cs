@@ -48,6 +48,9 @@ public sealed class ParagraphStyle
     /// Markdown 펜스드 코드 블록의 info string 에 대응. non-null 이면 단락 전체가 코드 블록.</summary>
     public string? CodeLanguage { get; set; }
 
+    /// <summary>코드 블록 줄 번호 표시. <see cref="CodeLanguage"/> 가 non-null 인 경우에만 유의미.</summary>
+    public bool ShowLineNumbers { get; set; }
+
     /// <summary>구분선(thematic break / horizontal rule) 단락. true 이면 본문이 무시되고 가로선만 그려진다.</summary>
     public bool IsThematicBreak { get; set; }
 
@@ -75,6 +78,7 @@ public sealed class ParagraphStyle
         ListMarker             = ListMarker?.Clone(),
         QuoteLevel             = QuoteLevel,
         CodeLanguage           = CodeLanguage,
+        ShowLineNumbers        = ShowLineNumbers,
         IsThematicBreak        = IsThematicBreak,
         ForcePageBreakBefore   = ForcePageBreakBefore,
         BorderBottomPt         = BorderBottomPt,
