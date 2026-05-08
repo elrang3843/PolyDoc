@@ -931,15 +931,53 @@ public static class FlowDocumentBuilder
         }
 
         // ── 미사용 Image 폴백 ────────────────────────────────────────
+        // 브라우저(Edge/Chrome) 의 깨진-이미지 모양을 흉내낸다: 작은 X 아이콘 + alt 텍스트(Description).
         if (image.Data.Length == 0)
         {
             var emptyBuc = new Wpf.BlockUIContainer { Tag = image };
-            emptyBuc.Child = new System.Windows.Controls.TextBlock
+
+            var icon = new System.Windows.Controls.Border
             {
-                Text = $"[이미지 누락 — {image.MediaType}]",
-                Foreground = WpfMedia.Brushes.Gray,
-                FontStyle = FontStyles.Italic,
+                Width               = 16,
+                Height              = 16,
+                BorderBrush         = WpfMedia.Brushes.Gray,
+                BorderThickness     = new Thickness(1),
+                Background          = WpfMedia.Brushes.WhiteSmoke,
+                VerticalAlignment   = VerticalAlignment.Center,
+                Margin              = new Thickness(0, 0, 4, 0),
+                Child = new System.Windows.Shapes.Path
+                {
+                    Stroke           = WpfMedia.Brushes.Gray,
+                    StrokeThickness  = 1,
+                    Data             = WpfMedia.Geometry.Parse("M2,2 L14,14 M14,2 L2,14"),
+                },
             };
+
+            var stack = new System.Windows.Controls.StackPanel
+            {
+                Orientation         = System.Windows.Controls.Orientation.Horizontal,
+                HorizontalAlignment = image.HAlign switch
+                {
+                    ImageHAlign.Center => HorizontalAlignment.Center,
+                    ImageHAlign.Right  => HorizontalAlignment.Right,
+                    _                  => HorizontalAlignment.Left,
+                },
+            };
+            stack.Children.Add(icon);
+
+            // alt 텍스트가 있을 때만 표시 — 없으면 아이콘만(브라우저 동작과 동일).
+            if (!string.IsNullOrWhiteSpace(image.Description))
+            {
+                stack.Children.Add(new System.Windows.Controls.TextBlock
+                {
+                    Text              = image.Description,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+            }
+
+            if (!string.IsNullOrEmpty(image.Description)) emptyBuc.ToolTip = image.Description;
+
+            emptyBuc.Child = stack;
             return emptyBuc;
         }
 

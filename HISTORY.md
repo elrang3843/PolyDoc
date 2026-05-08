@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Changed** — **누락 이미지 폴백을 브라우저 스타일(아이콘 + alt 텍스트) 로 표시**: 기존 `[이미지 누락 — application/octet-stream]` 회색 이탤릭 한 줄 → Edge/Chrome 처럼 작은 16×16 회색 X 아이콘 박스 + alt 텍스트(`ImageBlock.Description`) 가로 배치. alt 가 없으면 아이콘만 표시(브라우저 동작 일치). `image.HAlign` 으로 가로 정렬, ToolTip 에도 Description 노출. (`FlowDocumentBuilder.BuildImage` 의 `image.Data.Length == 0` 폴백)
+
 - **Added** — **표 외곽선 면별 독립 속성 + 안쪽 가로/세로선 + 면별 편집 UI**: 이전엔 표 외곽선이 단일 `BorderThicknessPt`/`BorderColor` (4면 같은 값) 만 가질 수 있었고, 셀 면별(`BorderTop/Bottom/Left/Right`) 도 `CellBorderSide(두께, 색)` 만 지원했다. 이제 면별로 두께·색·선 종류를 독립 지정.
   - **모델 (`Core/Table.cs`)**: `CellBorderSide` 에 `LineStyle` (`BorderLineStyle.Solid` / `Dashed` / `Dotted` / `Double` / `DashDot` 신규 enum) 추가. `Table` 에 `BorderTop` / `BorderBottom` / `BorderLeft` / `BorderRight` (외곽 4면) 와 `InnerBorderHorizontal` / `InnerBorderVertical` (안쪽 가로/세로 구분선 공통 스타일) 6개 면별 `CellBorderSide?` 프로퍼티 신설. 면별 미지정 시 `BorderThicknessPt` / `BorderColor` 공통값 폴백.
   - **WPF 렌더링 (`FlowDocumentBuilder.BuildTable` + `ApplyCellPropertiesToWpf`)**: 신규 `ResolveBorderSide` cascade — 셀 면 지정 > 표 외곽/안쪽 면 (셀이 표 가장자리/내부 어디인지에 따라) > 셀/표 공통값. `BuildTable` 이 각 셀의 `(rowIdx, colIdx, rowSpan, colSpan)` 에서 `atTop/Bottom/Left/Right Edge` 경계 플래그를 계산해 `ApplyCellPropertiesToWpf` 로 전달. `Wpf.TableCell.BorderThickness` (Thickness 구조체) 를 4면 두께로 설정하고, 색상은 면별 중 가장 먼저 명시된 것을 단일 `BorderBrush` 로 사용 (Wpf.TableCell 한계 — 면별 색상 다른 경우는 best-effort). `Wpf.Table` 자체의 BorderBrush/Thickness 는 0 으로 두어 셀 외곽선과 겹침 방지.
