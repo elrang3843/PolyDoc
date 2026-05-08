@@ -576,21 +576,12 @@ public static class FlowDocumentParser
         }
 
         // 자간·글자폭 — Tag 에 원본 Run 이 있으면 그 값을 보존 (MergeInlineProperties 가 덮어쓰지 않으므로 여기서 복원).
-        // Sub/Sup 의 base FontSizePt 도 Tag 에 보존된 원본 Style.FontSizePt 가 있으면 그걸 우선 — 각주·미주 참조처럼
-        // builder 가 명시적 작은 폰트로 만든 경우 (8pt) 와 일반 sub/sup (base × 0.7) 을 구분.
         if (wpfRun.Tag is Run origRun)
         {
             if (Math.Abs(origRun.Style.LetterSpacingPx) > 0.01)
                 s.LetterSpacingPx = origRun.Style.LetterSpacingPx;
             if (Math.Abs(origRun.Style.WidthPercent - 100) > 0.5)
                 s.WidthPercent = origRun.Style.WidthPercent;
-            if ((s.Superscript || s.Subscript) && origRun.Style.FontSizePt > 0.001)
-                s.FontSizePt = origRun.Style.FontSizePt;
-        }
-        else if (s.Superscript || s.Subscript)
-        {
-            // Tag 가 없으면(붙여넣기 등) Builder 가 적용한 SubSuperFontScale 를 역산해 base 복원.
-            s.FontSizePt /= FlowDocumentBuilder.SubSuperFontScale;
         }
     }
 
