@@ -63,15 +63,39 @@ public static class FlowDocumentPaginationAdapter
         // sentinel 블록(PageBreakPadder 삽입 잔존물)이 있으면 제거
         PageBreakPadder.RemoveAll(fd.Blocks);
 
-        // 2. DocumentPaginator 로 정확한 페이지 수 산출
-        int pageCount = ComputePageCountSync(fd, geo);
+        // 2. DocumentPaginator 로 정확한 페이지 수 산출.
+        // ComputePageCountSync 내부에서 모든 페이지를 GetPage(n) 으로 강제 레이아웃하므로
+        // 반환 시점에 paginator 는 완전한 페이지 배치 정보를 갖고 있다.
+        var paginator = (WpfDocs.DynamicDocumentPaginator)
+            ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
+        int pageCount = ComputePageCountSync(fd, geo, paginator);
+
+        // 표(Wpf.Table) 전용 페이지 배정 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
+        // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표가 속한 페이지를 직접 질의한다.
+        // Wpf.Table.ContentStart(= TextPointer, ContentPosition 의 서브클래스) 를 넘기면
+        // GetPageNumber 가 해당 표의 0-based 페이지 인덱스를 돌려준다.
+        // Y 좌표 측정 방식은 오프스크린 RTB 에서 표 셀 내부 rect 를 신뢰할 수 없어 여러 번
+        // 실패했으므로 paginator 의 확정 값으로 대체한다.
+        var tablePageMap = new System.Collections.Generic.Dictionary<WpfDocs.Table, int>();
+        foreach (var b in FlattenBlocks(fd.Blocks))
+        {
+            if (b is WpfDocs.Table tbl && !tablePageMap.ContainsKey(tbl))
+            {
+                try
+                {
+                    int pg = paginator.GetPageNumber(tbl.ContentStart);
+                    if (pg >= 0) tablePageMap[tbl] = pg;
+                }
+                catch { }
+            }
+        }
 
         // 3. 오프스크린 RichTextBox 에서 본문 블록 Y 좌표 측정 → (페이지, 단) 배정.
         // 측정 폭은 단 폭(geo.ColWidthDip) — 단일 단이면 본문 폭과 동일.
         // 전체 용지 폭으로 두면 줄바꿈이 적게 일어나 Y 좌표가 실제 단 RTB 와 달라진다.
         fd.PageWidth   = geo.ColWidthDip;
         fd.PagePadding = new Thickness(0);
-        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount);
+        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount, tablePageMap);
 
         // 본문 블록의 실제 배치 결과로 pageCount 보정.
         // DocumentPaginator(풀 페이지+여백) 와 오프스크린 RTB(단 폭·단 슬롯 높이) 측정이
@@ -106,11 +130,13 @@ public static class FlowDocumentPaginationAdapter
 
     // ── 페이지 수 계산 ────────────────────────────────────────────────────────
 
-    private static int ComputePageCountSync(WpfDocs.FlowDocument fd, PageGeometry geo)
+    private static int ComputePageCountSync(
+        WpfDocs.FlowDocument fd, PageGeometry geo,
+        WpfDocs.DynamicDocumentPaginator? paginator = null)
     {
         try
         {
-            var paginator = (WpfDocs.DynamicDocumentPaginator)
+            paginator ??= (WpfDocs.DynamicDocumentPaginator)
                 ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
             paginator.PageSize = new Size(geo.PageWidthDip, geo.PageHeightDip);
 
@@ -136,7 +162,9 @@ public static class FlowDocumentPaginationAdapter
     // ── 본문 블록 → 페이지·단 매핑 ──────────────────────────────────────────
 
     private static List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)>
-        MapBodyBlocksToPages(WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount)
+        MapBodyBlocksToPages(
+            WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount,
+            System.Collections.Generic.Dictionary<WpfDocs.Table, int>? tablePageMap = null)
     {
         var result = new List<(int, int, Block, Rect)>();
 
@@ -210,20 +238,18 @@ public static class FlowDocumentPaginationAdapter
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock);
 
-            // Wpf.Table 의 GetCharacterRect 는 표 안 셀을 포함해 오프스크린 RTB 에서 신뢰할 수 없다.
-            // 바로 다음에 오는 블록(주로 캡션 단락 또는 다음 표)의 topY 가 현재 표의 실제 하단과
-            // 동일하므로 이를 대리값으로 사용한다.
-            if (double.IsNaN(bottomY) && wpfBlock is WpfDocs.Table && !double.IsNaN(topY))
+            // 표(Wpf.Table) 는 paginator 가 확정한 페이지 인덱스를 우선 사용한다.
+            // GetCharacterRect 기반 Y 측정은 오프스크린 RTB 에서 표 셀 안까지 신뢰할 수 없어
+            // 여러 차례 실패했으므로 paginator.GetPageNumber(table.ContentStart) 값으로 대체.
+            if (wpfBlock is WpfDocs.Table wTbl
+                && tablePageMap is not null
+                && tablePageMap.TryGetValue(wTbl, out int tblPage))
             {
-                for (int j = i + 1; j < flat.Count; j++)
-                {
-                    double nextTop = TryGetTopY(flat[j]);
-                    if (!double.IsNaN(nextTop) && nextTop > topY)
-                    {
-                        bottomY = nextTop;
-                        break;
-                    }
-                }
+                int tblSlot = Math.Max(minSlot, tblPage * colCount);
+                result.Add((tblSlot / colCount, tblSlot % colCount, coreBlock, Rect.Empty));
+                prevSlot = tblSlot;
+                minSlot  = Math.Max(minSlot, tblSlot);
+                continue;
             }
 
             // Y 를 측정할 수 없으면 minSlot 슬롯에 배정하고 다음 블록으로.
