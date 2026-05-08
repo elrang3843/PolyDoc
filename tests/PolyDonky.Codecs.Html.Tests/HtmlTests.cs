@@ -1937,4 +1937,223 @@ public class HtmlTests
         Assert.Equal(0x00, fg!.Value.G);
         Assert.Equal(0x00, fg!.Value.B);
     }
+
+    // ── 도형 확장 라운드트립 (data-pd-* 속성) ─────────────────────────────────
+
+    [Fact]
+    public void RoundTrip_Shape_RegularPolygonPreservesKindAndSideCount()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.RegularPolygon, WidthMm = 40, HeightMm = 40, SideCount = 7,
+        });
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.Equal(ShapeKind.RegularPolygon, s.Kind);
+        Assert.Equal(7, s.SideCount);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_StarPreservesKindSideCountInnerRatio()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Star, WidthMm = 40, HeightMm = 40, SideCount = 6, InnerRadiusRatio = 0.4,
+        });
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.Equal(ShapeKind.Star,  s.Kind);
+        Assert.Equal(6,               s.SideCount);
+        Assert.InRange(s.InnerRadiusRatio, 0.39, 0.41);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_RotationAngle()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 50, HeightMm = 30, RotationAngleDeg = 30,
+        });
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.InRange(s.RotationAngleDeg, 29.5, 30.5);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_ArrowsPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        var ln  = new ShapeObject
+        {
+            Kind = ShapeKind.Line, WidthMm = 80, HeightMm = 5,
+            StartArrow = ShapeArrow.Open, EndArrow = ShapeArrow.Filled,
+        };
+        ln.Points.Add(new ShapePoint { X = 0,  Y = 2 });
+        ln.Points.Add(new ShapePoint { X = 80, Y = 2 });
+        sec.Blocks.Add(ln);
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.Equal(ShapeArrow.Open,   s.StartArrow);
+        Assert.Equal(ShapeArrow.Filled, s.EndArrow);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_StrokeDashAllVariants()
+    {
+        foreach (var dash in new[] { StrokeDash.Dashed, StrokeDash.Dotted, StrokeDash.DashDot })
+        {
+            var doc = new PolyDonkyument();
+            var sec = new Section();
+            sec.Blocks.Add(new ShapeObject
+            {
+                Kind = ShapeKind.Rectangle, WidthMm = 30, HeightMm = 20, StrokeDash = dash,
+            });
+            doc.Sections.Add(sec);
+            var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+            var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+            Assert.Equal(dash, s.StrokeDash);
+        }
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_LabelStylingPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 60, HeightMm = 30,
+            LabelText = "라벨", LabelFontSizePt = 14, LabelBold = true, LabelItalic = true,
+            LabelColor = "#FF0000", LabelBackgroundColor = "#FFFF00",
+            LabelHAlign = ShapeLabelHAlign.Right, LabelVAlign = ShapeLabelVAlign.Bottom,
+            LabelOffsetXMm = 2, LabelOffsetYMm = -1,
+        });
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.Equal("라벨",                  s.LabelText);
+        Assert.InRange(s.LabelFontSizePt,    13.5, 14.5);
+        Assert.True(s.LabelBold);
+        Assert.True(s.LabelItalic);
+        Assert.Equal("#FF0000",                       s.LabelColor, ignoreCase: true);
+        Assert.Equal("#FFFF00",                       s.LabelBackgroundColor, ignoreCase: true);
+        Assert.Equal(ShapeLabelHAlign.Right,           s.LabelHAlign);
+        Assert.Equal(ShapeLabelVAlign.Bottom,          s.LabelVAlign);
+        Assert.InRange(s.LabelOffsetXMm,  1.9, 2.1);
+        Assert.InRange(s.LabelOffsetYMm, -1.1, -0.9);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_FillOpacityPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 40, HeightMm = 40,
+            FillColor = "#3366CC", FillOpacity = 0.4,
+        });
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.InRange(s.FillOpacity, 0.39, 0.41);
+    }
+
+    [Fact]
+    public void RoundTrip_Shape_OverlayPositionPreserved()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 30, HeightMm = 20,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            AnchorPageIndex = 2, OverlayXMm = 12.5, OverlayYMm = 7.25,
+        });
+        doc.Sections.Add(sec);
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var s  = rt.Sections[0].Blocks.OfType<ShapeObject>().Single();
+        Assert.Equal(ImageWrapMode.InFrontOfText, s.WrapMode);
+        Assert.Equal(2,                            s.AnchorPageIndex);
+        Assert.InRange(s.OverlayXMm, 12.4, 12.6);
+        Assert.InRange(s.OverlayYMm,  7.2,  7.3);
+    }
+
+    // ── 페이지 설정 확장 라운드트립 ─────────────────────────────────────────────
+
+    [Fact]
+    public void RoundTrip_HeaderFooter_LeftCenterRight()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.Header.Left   = HeaderFooterSlot.FromText("문서 제목");
+        sec.Page.Header.Center = HeaderFooterSlot.FromText("회사명");
+        sec.Page.Footer.Right  = HeaderFooterSlot.FromText("페이지");
+        doc.Sections.Add(sec);
+
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("<header class=\"pd-header\">", html);
+        Assert.Contains("<footer class=\"pd-footer\">", html);
+
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.Sections[0].Page;
+        Assert.Equal("문서 제목", p.Header.Left.GetPlainText());
+        Assert.Equal("회사명",   p.Header.Center.GetPlainText());
+        Assert.Equal("페이지",   p.Footer.Right.GetPlainText());
+        Assert.True(p.Header.Right.IsEmpty);
+        Assert.True(p.Footer.Left.IsEmpty);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_MultiColumnLayout()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ColumnCount             = 3;
+        sec.Page.ColumnGapMm             = 10;
+        sec.Page.ColumnDividerVisible    = true;
+        sec.Page.ColumnDividerStyle      = ColumnDividerStyle.Solid;
+        sec.Page.ColumnDividerColor      = "#0000FF";
+        sec.Page.ColumnDividerThicknessPt = 1.2;
+        doc.Sections.Add(sec);
+
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var p  = rt.Sections[0].Page;
+        Assert.Equal(3,                       p.ColumnCount);
+        Assert.InRange(p.ColumnGapMm, 9.5, 10.5);
+        Assert.True(p.ColumnDividerVisible);
+        Assert.Equal(ColumnDividerStyle.Solid, p.ColumnDividerStyle);
+        Assert.Equal("#0000FF",                p.ColumnDividerColor, ignoreCase: true);
+        Assert.InRange(p.ColumnDividerThicknessPt, 1.1, 1.3);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_PageNumberStartAndPaperColor()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.PageNumberStart = 5;
+        sec.Page.PaperColor      = "#FFFEEE";
+        sec.Page.MarginHeaderMm  = 15;
+        sec.Page.MarginFooterMm  = 12;
+        doc.Sections.Add(sec);
+
+        var rt = HtmlReader.FromHtml(HtmlWriter.ToHtml(doc));
+        var p  = rt.Sections[0].Page;
+        Assert.Equal(5,           p.PageNumberStart);
+        Assert.Equal("#FFFEEE",    p.PaperColor, ignoreCase: true);
+        Assert.InRange(p.MarginHeaderMm, 14.5, 15.5);
+        Assert.InRange(p.MarginFooterMm, 11.5, 12.5);
+    }
 }

@@ -52,13 +52,12 @@ public sealed class HtmlWriter : IDocumentWriter
         var notes = BuildNoteNums(document);
         var indent = fullDocument ? "  " : "";
 
+        var page = document.Sections.Count > 0 ? document.Sections[0].Page : new PageSettings();
         if (fullDocument)
         {
             var docTitle = title ?? document.EnumerateParagraphs()
                 .FirstOrDefault(p => p.Style.Outline == OutlineLevel.H1)?.GetPlainText()
                 ?? "PolyDonky 문서";
-
-            var page = document.Sections.Count > 0 ? document.Sections[0].Page : new PageSettings();
 
             sb.Append("<!DOCTYPE html>\n");
             sb.Append("<html lang=\"ko\">\n");
@@ -79,9 +78,14 @@ public sealed class HtmlWriter : IDocumentWriter
                 sb.Append("  <meta name=\"pd-page-height\" content=\"")
                   .Append(page.HeightMm.ToString("0.##", CultureInfo.InvariantCulture)).Append("mm\">\n");
             }
+            WriteExtraPageMeta(sb, page);
             WriteStyleBlock(sb, document.Styles, page);
             sb.Append("</head>\n");
             sb.Append("<body>\n");
+
+            // 머리말 (Section[0].Page.Header)
+            if (!page.Header.IsEmpty)
+                WriteHeaderFooter(sb, page.Header, "header", indent, notes);
         }
 
         foreach (var section in document.Sections)
@@ -91,6 +95,11 @@ public sealed class HtmlWriter : IDocumentWriter
         {
             if (notes.HasNotes)
                 WriteNoteSections(sb, document, notes, indent);
+
+            // 꼬리말 (Section[0].Page.Footer)
+            if (!page.Footer.IsEmpty)
+                WriteHeaderFooter(sb, page.Footer, "footer", indent, notes);
+
             sb.Append("</body>\n</html>\n");
         }
 
@@ -350,6 +359,73 @@ public sealed class HtmlWriter : IDocumentWriter
     {
         var parts = BuildParagraphCssParts(s);
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
+    }
+
+    /// <summary>기본값과 다른 PageSettings 필드를 pd-page-* meta 태그로 직렬화.</summary>
+    private static void WriteExtraPageMeta(StringBuilder sb, PageSettings page)
+    {
+        if (page.PaperColor is { Length: > 0 } pc)
+            sb.Append("  <meta name=\"pd-paper-color\" content=\"").Append(EscapeAttr(pc)).Append("\">\n");
+        if (Math.Abs(page.MarginHeaderMm - 10) > 0.01)
+            sb.Append("  <meta name=\"pd-margin-header\" content=\"").Append(FmtNum(page.MarginHeaderMm)).Append("mm\">\n");
+        if (Math.Abs(page.MarginFooterMm - 10) > 0.01)
+            sb.Append("  <meta name=\"pd-margin-footer\" content=\"").Append(FmtNum(page.MarginFooterMm)).Append("mm\">\n");
+        if (page.ColumnCount > 1)
+        {
+            sb.Append("  <meta name=\"pd-column-count\" content=\"").Append(page.ColumnCount).Append("\">\n");
+            if (Math.Abs(page.ColumnGapMm - 8) > 0.01)
+                sb.Append("  <meta name=\"pd-column-gap\" content=\"").Append(FmtNum(page.ColumnGapMm)).Append("mm\">\n");
+            if (page.ColumnWidthsMm is { Count: > 0 } cw)
+            {
+                var joined = string.Join(',', cw.Select(w => w.ToString("0.##", CultureInfo.InvariantCulture)));
+                sb.Append("  <meta name=\"pd-column-widths\" content=\"").Append(joined).Append("mm\">\n");
+            }
+            if (!page.ColumnDividerVisible)
+                sb.Append("  <meta name=\"pd-column-divider\" content=\"none\">\n");
+            else if (page.ColumnDividerStyle != ColumnDividerStyle.Dashed
+                  || page.ColumnDividerColor != "#888888"
+                  || Math.Abs(page.ColumnDividerThicknessPt - 0.7) > 0.01)
+            {
+                sb.Append("  <meta name=\"pd-column-divider\" content=\"")
+                  .Append(page.ColumnDividerStyle).Append(' ')
+                  .Append(FmtNum(page.ColumnDividerThicknessPt)).Append("pt ")
+                  .Append(EscapeAttr(page.ColumnDividerColor)).Append("\">\n");
+            }
+        }
+        if (page.PageNumberStart != 1)
+            sb.Append("  <meta name=\"pd-page-number-start\" content=\"").Append(page.PageNumberStart).Append("\">\n");
+        if (page.TextOrientation != TextOrientation.Horizontal)
+            sb.Append("  <meta name=\"pd-text-orientation\" content=\"vertical\">\n");
+        if (page.TextProgression != TextProgression.Rightward)
+            sb.Append("  <meta name=\"pd-text-progression\" content=\"leftward\">\n");
+        if (page.DifferentFirstPage)
+            sb.Append("  <meta name=\"pd-different-first-page\" content=\"true\">\n");
+        if (page.DifferentOddEven)
+            sb.Append("  <meta name=\"pd-different-odd-even\" content=\"true\">\n");
+    }
+
+    /// <summary>머리말/꼬리말 좌·중·우 슬롯을 &lt;header&gt;/&lt;footer&gt; 로 직렬화.</summary>
+    private static void WriteHeaderFooter(StringBuilder sb, HeaderFooterContent hf, string tag, string indent, NoteNums? notes)
+    {
+        sb.Append(indent).Append('<').Append(tag).Append(" class=\"pd-").Append(tag).Append("\">\n");
+        WriteHeaderFooterSlot(sb, hf.Left,   "left",   indent + "  ", notes);
+        WriteHeaderFooterSlot(sb, hf.Center, "center", indent + "  ", notes);
+        WriteHeaderFooterSlot(sb, hf.Right,  "right",  indent + "  ", notes);
+        sb.Append(indent).Append("</").Append(tag).Append(">\n");
+    }
+
+    private static void WriteHeaderFooterSlot(StringBuilder sb, HeaderFooterSlot slot, string slotKey, string indent, NoteNums? notes)
+    {
+        if (slot.IsEmpty) return;
+        sb.Append(indent).Append("<div class=\"pd-hf-").Append(slotKey).Append("\">\n");
+        // 머리말/꼬리말의 단락은 일반 본문과 동일한 inline 처리만 사용 — 표/이미지 등은 비대상.
+        foreach (var p in slot.Paragraphs)
+        {
+            sb.Append(indent).Append("  <p>");
+            sb.Append(RenderRuns(p.Runs, notes));
+            sb.Append("</p>\n");
+        }
+        sb.Append(indent).Append("</div>\n");
     }
 
     private static void WriteStyleBlock(StringBuilder sb, StyleSheet styles, PageSettings? page = null)
@@ -684,21 +760,142 @@ public sealed class HtmlWriter : IDocumentWriter
         var wPx = MmToPx(shape.WidthMm  > 0 ? shape.WidthMm  : 40);
         var hPx = MmToPx(shape.HeightMm > 0 ? shape.HeightMm : 30);
 
-        var alignStyle = shape.HAlign switch
+        // 정렬·여백·테두리 표시 — Inline 모드에서만 의미가 있음.
+        var figStyleParts = new List<string>(4);
+        if (shape.WrapMode == ImageWrapMode.Inline)
         {
-            ImageHAlign.Center => " style=\"display:block;margin-left:auto;margin-right:auto\"",
-            ImageHAlign.Right  => " style=\"display:block;margin-left:auto\"",
+            switch (shape.HAlign)
+            {
+                case ImageHAlign.Center:
+                    figStyleParts.Add("display:block");
+                    figStyleParts.Add("margin-left:auto");
+                    figStyleParts.Add("margin-right:auto");
+                    break;
+                case ImageHAlign.Right:
+                    figStyleParts.Add("display:block");
+                    figStyleParts.Add("margin-left:auto");
+                    break;
+            }
+        }
+        if (shape.MarginTopMm    > 0) figStyleParts.Add($"margin-top:{FmtMm(shape.MarginTopMm)}");
+        if (shape.MarginBottomMm > 0) figStyleParts.Add($"margin-bottom:{FmtMm(shape.MarginBottomMm)}");
+        var alignStyle = figStyleParts.Count > 0 ? $" style=\"{string.Join(";", figStyleParts)}\"" : "";
+
+        // 무손실 라운드트립을 위한 data-pd-* 속성 — geometry/SVG 만으로 복원 불가능한 필드를
+        // 명시적으로 보존한다.
+        var dataAttrs = new StringBuilder(128);
+        dataAttrs.Append(" data-pd-kind=\"").Append(shape.Kind).Append('"');
+        if (shape.StrokeDash != StrokeDash.Solid)
+            dataAttrs.Append(" data-pd-stroke-dash=\"").Append(shape.StrokeDash).Append('"');
+        if (shape.StartArrow != ShapeArrow.None)
+            dataAttrs.Append(" data-pd-start-arrow=\"").Append(shape.StartArrow).Append('"');
+        if (shape.EndArrow != ShapeArrow.None)
+            dataAttrs.Append(" data-pd-end-arrow=\"").Append(shape.EndArrow).Append('"');
+        if (shape.EndShapeSizeMm > 0)
+            dataAttrs.Append(" data-pd-end-shape-size=\"").Append(FmtNum(shape.EndShapeSizeMm)).Append("mm\"");
+        if (shape.Kind is ShapeKind.RegularPolygon or ShapeKind.Star)
+            dataAttrs.Append(" data-pd-side-count=\"").Append(shape.SideCount).Append('"');
+        if (shape.Kind == ShapeKind.Star)
+            dataAttrs.Append(" data-pd-inner-radius-ratio=\"").Append(FmtNum(shape.InnerRadiusRatio)).Append('"');
+        if (shape.Kind == ShapeKind.RoundedRect && shape.CornerRadiusMm > 0)
+            dataAttrs.Append(" data-pd-corner-radius=\"").Append(FmtNum(shape.CornerRadiusMm)).Append("mm\"");
+        if (shape.RotationAngleDeg != 0)
+            dataAttrs.Append(" data-pd-rotation=\"").Append(FmtNum(shape.RotationAngleDeg)).Append("deg\"");
+        if (Math.Abs(shape.FillOpacity - 1.0) > 0.001)
+            dataAttrs.Append(" data-pd-fill-opacity=\"").Append(FmtNum(shape.FillOpacity)).Append('"');
+        if (shape.WrapMode != ImageWrapMode.Inline)
+            dataAttrs.Append(" data-pd-wrap-mode=\"").Append(shape.WrapMode).Append('"');
+        if (shape.WrapMode is ImageWrapMode.InFrontOfText or ImageWrapMode.BehindText)
+        {
+            dataAttrs.Append(" data-pd-anchor-page=\"").Append(shape.AnchorPageIndex).Append('"');
+            dataAttrs.Append(" data-pd-overlay-x=\"").Append(FmtNum(shape.OverlayXMm)).Append("mm\"");
+            dataAttrs.Append(" data-pd-overlay-y=\"").Append(FmtNum(shape.OverlayYMm)).Append("mm\"");
+        }
+
+        var svgBody    = BuildShapeSvgBody(shape, wPx, hPx, xhtml: false);
+        var defs       = BuildShapeSvgDefs(shape, xhtml: false);
+        var rootXform  = shape.RotationAngleDeg != 0
+            ? $" transform=\"rotate({FmtNum(shape.RotationAngleDeg)} {wPx / 2:0.##} {hPx / 2:0.##})\""
+            : "";
+
+        sb.Append(indent).Append("<figure class=\"pd-shape\"").Append(dataAttrs).Append(alignStyle).Append(">\n");
+        sb.Append(indent).Append("  <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"")
+          .Append(wPx.ToString("0.#", CultureInfo.InvariantCulture))
+          .Append("\" height=\"").Append(hPx.ToString("0.#", CultureInfo.InvariantCulture)).Append("\">");
+        if (defs.Length > 0) sb.Append(defs);
+        sb.Append("<g").Append(rootXform).Append('>');
+        sb.Append(svgBody).Append("</g></svg>\n");
+        if (!string.IsNullOrEmpty(shape.LabelText))
+        {
+            var labelStyle = BuildShapeLabelStyle(shape);
+            var styleAttr  = labelStyle.Length > 0 ? $" style=\"{labelStyle}\"" : "";
+            var capData = new StringBuilder();
+            if (shape.LabelVAlign != ShapeLabelVAlign.Middle)
+                capData.Append(" data-pd-valign=\"").Append(shape.LabelVAlign).Append('"');
+            if (shape.LabelOffsetXMm != 0)
+                capData.Append(" data-pd-offset-x=\"").Append(FmtNum(shape.LabelOffsetXMm)).Append("mm\"");
+            if (shape.LabelOffsetYMm != 0)
+                capData.Append(" data-pd-offset-y=\"").Append(FmtNum(shape.LabelOffsetYMm)).Append("mm\"");
+            sb.Append(indent).Append("  <figcaption").Append(capData).Append(styleAttr).Append('>')
+              .Append(EscapeHtml(shape.LabelText)).Append("</figcaption>\n");
+        }
+        sb.Append(indent).Append("</figure>\n");
+    }
+
+    private static string FmtNum(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>도형의 stroke-dasharray, marker-start/end 정의 + arrow 마커 등 시각 보정을 위한 SVG &lt;defs&gt;.</summary>
+    private static string BuildShapeSvgDefs(ShapeObject shape, bool xhtml)
+    {
+        bool needsStart = shape.StartArrow != ShapeArrow.None;
+        bool needsEnd   = shape.EndArrow   != ShapeArrow.None;
+        if (!needsStart && !needsEnd) return "";
+
+        var sb = new StringBuilder("<defs>");
+        if (needsStart) sb.Append(BuildArrowMarker("pd-arr-s", shape.StartArrow, shape.StrokeColor, reverse: true,  xhtml));
+        if (needsEnd)   sb.Append(BuildArrowMarker("pd-arr-e", shape.EndArrow,   shape.StrokeColor, reverse: false, xhtml));
+        sb.Append("</defs>");
+        return sb.ToString();
+    }
+
+    private static string BuildArrowMarker(string id, ShapeArrow kind, string color, bool reverse, bool xhtml)
+    {
+        var clr  = EscapeAttr(string.IsNullOrEmpty(color) ? "#000000" : color);
+        var refX = reverse ? "0" : "10";
+        var orient = reverse ? "auto-start-reverse" : "auto";
+        var sc = xhtml ? "/" : "";
+        var inner = kind switch
+        {
+            ShapeArrow.Open    => $"<path d=\"M0,0 L10,5 L0,10\" fill=\"none\" stroke=\"{clr}\" stroke-width=\"1\"{sc}>" + (xhtml ? "" : "</path>"),
+            ShapeArrow.Filled  => $"<path d=\"M0,0 L10,5 L0,10 Z\" fill=\"{clr}\" stroke=\"none\"{sc}>"                  + (xhtml ? "" : "</path>"),
+            ShapeArrow.Diamond => $"<path d=\"M0,5 L5,0 L10,5 L5,10 Z\" fill=\"{clr}\" stroke=\"none\"{sc}>"             + (xhtml ? "" : "</path>"),
+            ShapeArrow.Circle  => $"<circle cx=\"5\" cy=\"5\" r=\"4\" fill=\"{clr}\" stroke=\"none\"{sc}>"               + (xhtml ? "" : "</circle>"),
             _                  => "",
         };
+        return $"<marker id=\"{id}\" viewBox=\"0 0 10 10\" refX=\"{refX}\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"{orient}\">"
+             + inner + "</marker>";
+    }
 
-        var svgBody = BuildShapeSvgBody(shape, wPx, hPx, xhtml: false);
-        sb.Append(indent).Append("<figure class=\"pd-shape\"").Append(alignStyle).Append(">\n");
-        sb.Append(indent).Append("  <svg width=\"").Append(wPx.ToString("0.#", CultureInfo.InvariantCulture))
-          .Append("\" height=\"").Append(hPx.ToString("0.#", CultureInfo.InvariantCulture)).Append("\">");
-        sb.Append(svgBody).Append("</svg>\n");
-        if (!string.IsNullOrEmpty(shape.LabelText))
-            sb.Append(indent).Append("  <figcaption>").Append(EscapeHtml(shape.LabelText)).Append("</figcaption>\n");
-        sb.Append(indent).Append("</figure>\n");
+    private static string BuildShapeLabelStyle(ShapeObject shape)
+    {
+        var p = new List<string>(8);
+        if (shape.LabelFontFamily is { Length: > 0 } ff) p.Add($"font-family:{EscapeAttr(ff)}");
+        if (shape.LabelFontSizePt > 0 && Math.Abs(shape.LabelFontSizePt - 10) > 0.01)
+            p.Add($"font-size:{FmtNum(shape.LabelFontSizePt)}pt");
+        if (shape.LabelBold)   p.Add("font-weight:bold");
+        if (shape.LabelItalic) p.Add("font-style:italic");
+        if (shape.LabelColor is { Length: > 0 } lc) p.Add($"color:{lc}");
+        if (shape.LabelBackgroundColor is { Length: > 0 } lbg) p.Add($"background-color:{lbg}");
+        var ta = shape.LabelHAlign switch
+        {
+            ShapeLabelHAlign.Left   => "left",
+            ShapeLabelHAlign.Right  => "right",
+            ShapeLabelHAlign.Center => "center",
+            _ => null,
+        };
+        if (ta is not null && shape.LabelHAlign != ShapeLabelHAlign.Center) p.Add($"text-align:{ta}");
+        // VAlign / Offset 은 시각적으로 figcaption 으로 표현이 어려워 data-* 로만 보존.
+        return string.Join(";", p);
     }
 
     private static string BuildShapeSvgBody(ShapeObject shape, double wPx, double hPx, bool xhtml)
@@ -707,43 +904,67 @@ public sealed class HtmlWriter : IDocumentWriter
         var fill   = shape.FillColor is { Length: > 0 } fc ? EscapeAttr(fc) : "none";
         var sw     = shape.StrokeThicknessPt.ToString("0.##", CultureInfo.InvariantCulture);
 
+        var paint = new StringBuilder($"stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"");
+        if (shape.StrokeDash != StrokeDash.Solid)
+        {
+            var dash = shape.StrokeDash switch
+            {
+                StrokeDash.Dashed  => "6,3",
+                StrokeDash.Dotted  => "1,2",
+                StrokeDash.DashDot => "6,3,1,3",
+                _                  => null,
+            };
+            if (dash is not null) paint.Append($" stroke-dasharray=\"{dash}\"");
+        }
+        if (Math.Abs(shape.FillOpacity - 1.0) > 0.001 && fill != "none")
+            paint.Append($" fill-opacity=\"{FmtNum(shape.FillOpacity)}\"");
+
+        // Line/Polyline/Spline 류만 끝모양 적용. Polygon/Closed 류는 닫힌 도형이라 의미 없음.
+        bool linear = shape.Kind is ShapeKind.Line or ShapeKind.Polyline or ShapeKind.Spline;
+        var markers = new StringBuilder();
+        if (linear && shape.StartArrow != ShapeArrow.None) markers.Append(" marker-start=\"url(#pd-arr-s)\"");
+        if (linear && shape.EndArrow   != ShapeArrow.None) markers.Append(" marker-end=\"url(#pd-arr-e)\"");
+
+        var paintAttrs   = paint.ToString();
+        var paintNoFill  = paintAttrs.Replace($"fill=\"{fill}\"", "fill=\"none\"", StringComparison.Ordinal);
+
         return shape.Kind switch
         {
             ShapeKind.Rectangle =>
-                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" {paintAttrs}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</rect>"),
 
             ShapeKind.RoundedRect =>
-                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" rx=\"{MmToPx(shape.CornerRadiusMm):0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" rx=\"{MmToPx(shape.CornerRadiusMm):0.#}\" {paintAttrs}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</rect>"),
 
             ShapeKind.Ellipse =>
-                $"<ellipse cx=\"{wPx / 2:0.#}\" cy=\"{hPx / 2:0.#}\" rx=\"{(wPx - 1) / 2:0.#}\" ry=\"{(hPx - 1) / 2:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                $"<ellipse cx=\"{wPx / 2:0.#}\" cy=\"{hPx / 2:0.#}\" rx=\"{(wPx - 1) / 2:0.#}\" ry=\"{(hPx - 1) / 2:0.#}\" {paintAttrs}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</ellipse>"),
 
             ShapeKind.Line when shape.Points.Count >= 2 =>
-                $"<line x1=\"{MmToPx(shape.Points[0].X):0.#}\" y1=\"{MmToPx(shape.Points[0].Y):0.#}\" x2=\"{MmToPx(shape.Points[^1].X):0.#}\" y2=\"{MmToPx(shape.Points[^1].Y):0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"none\"{(xhtml ? "/" : "")}>"
+                $"<line x1=\"{MmToPx(shape.Points[0].X):0.#}\" y1=\"{MmToPx(shape.Points[0].Y):0.#}\" x2=\"{MmToPx(shape.Points[^1].X):0.#}\" y2=\"{MmToPx(shape.Points[^1].Y):0.#}\" {paintNoFill}{markers}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</line>"),
 
             ShapeKind.Polyline when shape.Points.Count >= 2 =>
-                $"<polyline points=\"{PointsToSvg(shape.Points)}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"none\"{(xhtml ? "/" : "")}>"
+                $"<polyline points=\"{PointsToSvg(shape.Points)}\" {paintNoFill}{markers}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</polyline>"),
 
             ShapeKind.Polygon or ShapeKind.Triangle when shape.Points.Count >= 3 =>
-                $"<polygon points=\"{PointsToSvg(shape.Points)}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                $"<polygon points=\"{PointsToSvg(shape.Points)}\" {paintAttrs}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</polygon>"),
 
             ShapeKind.Spline or ShapeKind.ClosedSpline when shape.Points.Count >= 2 =>
-                BuildSplinePath(shape, stroke, fill, sw, xhtml),
+                BuildSplinePath(shape, paintAttrs, markers.ToString(), xhtml),
 
             ShapeKind.RegularPolygon =>
-                BuildRegularPolygonSvg(shape, wPx, hPx, stroke, fill, sw, xhtml),
+                BuildRegularPolygonSvg(shape, wPx, hPx, paintAttrs, xhtml),
 
             ShapeKind.Star =>
-                BuildStarSvg(shape, wPx, hPx, stroke, fill, sw, xhtml),
+                BuildStarSvg(shape, wPx, hPx, paintAttrs, xhtml),
 
             _ =>
-                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" {paintAttrs}{(xhtml ? "/" : "")}>"
                 + (xhtml ? "" : "</rect>"),
         };
     }
@@ -751,7 +972,7 @@ public sealed class HtmlWriter : IDocumentWriter
     private static string PointsToSvg(IList<ShapePoint> pts)
         => string.Join(" ", pts.Select(p => $"{MmToPx(p.X):0.#},{MmToPx(p.Y):0.#}"));
 
-    private static string BuildSplinePath(ShapeObject shape, string stroke, string fill, string sw, bool xhtml)
+    private static string BuildSplinePath(ShapeObject shape, string paintAttrs, string markers, bool xhtml)
     {
         var pts = shape.Points;
         bool closed = shape.Kind == ShapeKind.ClosedSpline;
@@ -783,12 +1004,12 @@ public sealed class HtmlWriter : IDocumentWriter
         }
         if (closed) sb.Append(" Z");
         var sc = xhtml ? "/" : "";
-        sb.Append($"\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{sc}>");
+        sb.Append($"\" {paintAttrs}{markers}{sc}>");
         if (!xhtml) sb.Append("</path>");
         return sb.ToString();
     }
 
-    private static string BuildRegularPolygonSvg(ShapeObject shape, double wPx, double hPx, string stroke, string fill, string sw, bool xhtml)
+    private static string BuildRegularPolygonSvg(ShapeObject shape, double wPx, double hPx, string paintAttrs, bool xhtml)
     {
         int sides = Math.Max(3, shape.SideCount);
         double cx = wPx / 2, cy = hPx / 2, rx = (wPx - 1) / 2, ry = (hPx - 1) / 2;
@@ -798,11 +1019,11 @@ public sealed class HtmlWriter : IDocumentWriter
             return $"{(cx + rx * Math.Cos(a)):0.#},{(cy + ry * Math.Sin(a)):0.#}";
         }));
         var sc = xhtml ? "/" : "";
-        return $"<polygon points=\"{pts}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{sc}>"
+        return $"<polygon points=\"{pts}\" {paintAttrs}{sc}>"
                + (xhtml ? "" : "</polygon>");
     }
 
-    private static string BuildStarSvg(ShapeObject shape, double wPx, double hPx, string stroke, string fill, string sw, bool xhtml)
+    private static string BuildStarSvg(ShapeObject shape, double wPx, double hPx, string paintAttrs, bool xhtml)
     {
         int spikes = Math.Max(3, shape.SideCount);
         double cx = wPx / 2, cy = hPx / 2;
@@ -816,7 +1037,7 @@ public sealed class HtmlWriter : IDocumentWriter
             return $"{(cx + rx * Math.Cos(a)):0.#},{(cy + ry * Math.Sin(a)):0.#}";
         }));
         var sc = xhtml ? "/" : "";
-        return $"<polygon points=\"{pts}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{sc}>"
+        return $"<polygon points=\"{pts}\" {paintAttrs}{sc}>"
                + (xhtml ? "" : "</polygon>");
     }
 

@@ -80,6 +80,9 @@ public sealed class HtmlReader : IDocumentReader
         // 각주/미주 섹션 먼저 추출 후 DOM 에서 제거 (본문 순회 전).
         ExtractNotesSections(root, pd);
 
+        // 머리말/꼬리말 추출 후 DOM 에서 제거 — 본문에 섞이지 않도록.
+        ExtractHeaderFooter(root, section.Page);
+
         var ctx = new InlineCtx { Shared = new ReadShared { MaxBlocks = maxBlocks } };
         ProcessChildren(root, section.Blocks, ctx);
 
@@ -112,6 +115,48 @@ public sealed class HtmlReader : IDocumentReader
         foreach (var sect in queryRoot.QuerySelectorAll("section.endnotes").ToList())
         {
             ParseAndRemoveNotesSection(sect, pd.Endnotes, "en-");
+        }
+    }
+
+    /// <summary>&lt;header class="pd-header"&gt; / &lt;footer class="pd-footer"&gt; 를 page.Header/Footer 로 흡수 후 DOM 에서 제거.</summary>
+    private static void ExtractHeaderFooter(INode root, PageSettings page)
+    {
+        if (root is not IParentNode queryRoot) return;
+
+        foreach (var headerEl in queryRoot.QuerySelectorAll("header.pd-header").ToList())
+        {
+            ParseHeaderFooterContent(headerEl, page.Header);
+            headerEl.Remove();
+        }
+        foreach (var footerEl in queryRoot.QuerySelectorAll("footer.pd-footer").ToList())
+        {
+            ParseHeaderFooterContent(footerEl, page.Footer);
+            footerEl.Remove();
+        }
+    }
+
+    private static void ParseHeaderFooterContent(IElement el, HeaderFooterContent target)
+    {
+        ParseHeaderFooterSlot(el.QuerySelector("div.pd-hf-left"),   target.Left);
+        ParseHeaderFooterSlot(el.QuerySelector("div.pd-hf-center"), target.Center);
+        ParseHeaderFooterSlot(el.QuerySelector("div.pd-hf-right"),  target.Right);
+    }
+
+    private static void ParseHeaderFooterSlot(IElement? slotEl, HeaderFooterSlot slot)
+    {
+        if (slotEl is null) return;
+        slot.Paragraphs.Clear();
+        foreach (var pEl in slotEl.QuerySelectorAll("p"))
+        {
+            var p = new Paragraph();
+            AppendInline(p, pEl);
+            slot.Paragraphs.Add(p);
+        }
+        // <p> 가 없는 경우(레거시) 슬롯 텍스트 전체를 단일 단락으로.
+        if (slot.Paragraphs.Count == 0)
+        {
+            var text = slotEl.TextContent.Trim();
+            if (text.Length > 0) slot.Paragraphs.Add(Paragraph.Of(text));
         }
     }
 
@@ -869,11 +914,13 @@ public sealed class HtmlReader : IDocumentReader
             var svgEl = figEl.QuerySelector("svg");
             if (svgEl is not null && TryParseShapeFromSvgElement(svgEl, out var shapeObj))
             {
+                ApplyShapeDataAttributes(figEl, shapeObj!);
                 var captionEl2 = figEl.QuerySelector("figcaption");
                 if (captionEl2 is not null)
                 {
                     var lbl = captionEl2.TextContent.Trim();
                     if (lbl.Length > 0) shapeObj!.LabelText = lbl;
+                    ApplyShapeLabelStyle(captionEl2, shapeObj!);
                 }
                 target.Add(shapeObj!);
                 return;
@@ -1880,7 +1927,8 @@ public sealed class HtmlReader : IDocumentReader
         if (!double.TryParse(svgEl.GetAttribute("height"), NumberStyles.Any, CultureInfo.InvariantCulture, out var hPx) || hPx <= 0) return false;
 
         // 첫 번째 도형 요소를 찾는다 (<defs>, <title>, <desc> 제외).
-        IElement? shapeEl = null;
+        IElement? shapeEl  = null;
+        IElement? wrapperG = null;
         foreach (var child in svgEl.Children)
         {
             switch (child.LocalName)
@@ -1890,14 +1938,15 @@ public sealed class HtmlReader : IDocumentReader
                     shapeEl = child;
                     break;
                 case "g":
-                    // <g> 래퍼 안까지 1단계 탐색.
+                    // <g> 래퍼 안까지 1단계 탐색. transform="rotate(...)" 를 가진 그룹이면 회전각 추출.
                     foreach (var gc in child.Children)
                     {
                         switch (gc.LocalName)
                         {
                             case "rect": case "ellipse": case "circle":
                             case "line": case "polyline": case "polygon": case "path":
-                                shapeEl = gc;
+                                shapeEl  = gc;
+                                wrapperG = child;
                                 break;
                         }
                         if (shapeEl is not null) break;
@@ -1914,6 +1963,11 @@ public sealed class HtmlReader : IDocumentReader
             HeightMm = hPx * 25.4 / 96.0,
         };
         ParseSvgPaintAttrs(shapeEl, s);
+
+        // <g transform="rotate(angle cx cy)"> 또는 transform attribute 가 도형 자체에 있는 경우 회전각 추출.
+        var xform = wrapperG?.GetAttribute("transform") ?? shapeEl.GetAttribute("transform");
+        if (xform is not null && TryParseSvgRotate(xform, out var rotDeg))
+            s.RotationAngleDeg = rotDeg;
 
         switch (shapeEl.LocalName)
         {
@@ -1999,7 +2053,136 @@ public sealed class HtmlReader : IDocumentReader
 
         var sda = el.GetAttribute("stroke-dasharray");
         if (sda is { Length: > 0 } && sda != "none")
-            s.StrokeDash = sda.Contains(',') ? StrokeDash.DashDot : StrokeDash.Dashed;
+        {
+            // 4값 ("a,b,c,d") = DashDot, 2값에서 첫 값이 작으면 Dotted, 아니면 Dashed.
+            var nums = sda.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            s.StrokeDash = nums.Length switch
+            {
+                >= 4 => StrokeDash.DashDot,
+                2 when double.TryParse(nums[0], NumberStyles.Any, CultureInfo.InvariantCulture, out var first) && first <= 1.5
+                     => StrokeDash.Dotted,
+                _    => StrokeDash.Dashed,
+            };
+        }
+
+        if (double.TryParse(el.GetAttribute("fill-opacity"), NumberStyles.Any, CultureInfo.InvariantCulture, out var fo)
+            && fo >= 0 && fo <= 1)
+            s.FillOpacity = fo;
+    }
+
+    /// <summary>SVG <c>transform="rotate(angle [cx cy])"</c> 에서 angle 만 추출. 다른 변환과 합성된 경우는 미지원.</summary>
+    private static bool TryParseSvgRotate(string xform, out double angleDeg)
+    {
+        angleDeg = 0;
+        int i = xform.IndexOf("rotate", StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return false;
+        int open = xform.IndexOf('(', i);
+        int close = xform.IndexOf(')', open + 1);
+        if (open < 0 || close < 0) return false;
+        var inside = xform.Substring(open + 1, close - open - 1);
+        var parts = inside.Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return false;
+        return double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out angleDeg);
+    }
+
+    /// <summary>&lt;figure class="pd-shape"&gt; 의 data-pd-* 속성을 ShapeObject 에 반영.
+    /// SVG geometry 만으로 구분되지 않는 필드(Kind 모호성, 회전, dash, arrow, label, overlay 등)를 명시적으로 복원한다.</summary>
+    private static void ApplyShapeDataAttributes(IElement figEl, ShapeObject s)
+    {
+        // Kind: 명시적 표기가 있으면 SVG primitive 추정값보다 우선.
+        var kindStr = figEl.GetAttribute("data-pd-kind");
+        if (kindStr is not null && Enum.TryParse<ShapeKind>(kindStr, ignoreCase: true, out var kind))
+            s.Kind = kind;
+
+        var dashStr = figEl.GetAttribute("data-pd-stroke-dash");
+        if (dashStr is not null && Enum.TryParse<StrokeDash>(dashStr, ignoreCase: true, out var dash))
+            s.StrokeDash = dash;
+
+        var saStr = figEl.GetAttribute("data-pd-start-arrow");
+        if (saStr is not null && Enum.TryParse<ShapeArrow>(saStr, ignoreCase: true, out var sa))
+            s.StartArrow = sa;
+        var eaStr = figEl.GetAttribute("data-pd-end-arrow");
+        if (eaStr is not null && Enum.TryParse<ShapeArrow>(eaStr, ignoreCase: true, out var ea))
+            s.EndArrow = ea;
+
+        if (TryParseCssMm(figEl.GetAttribute("data-pd-end-shape-size"), out var esz) && esz > 0)
+            s.EndShapeSizeMm = esz;
+
+        if (int.TryParse(figEl.GetAttribute("data-pd-side-count"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sc) && sc >= 3)
+            s.SideCount = sc;
+        if (double.TryParse(figEl.GetAttribute("data-pd-inner-radius-ratio"), NumberStyles.Any, CultureInfo.InvariantCulture, out var irr) && irr > 0 && irr < 1)
+            s.InnerRadiusRatio = irr;
+
+        if (TryParseCssMm(figEl.GetAttribute("data-pd-corner-radius"), out var cr) && cr > 0)
+            s.CornerRadiusMm = cr;
+
+        var rotStr = figEl.GetAttribute("data-pd-rotation");
+        if (rotStr is not null)
+        {
+            var trimmed = rotStr.Trim();
+            if (trimmed.EndsWith("deg", StringComparison.OrdinalIgnoreCase))
+                trimmed = trimmed[..^3].Trim();
+            if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out var rot))
+                s.RotationAngleDeg = rot;
+        }
+
+        if (double.TryParse(figEl.GetAttribute("data-pd-fill-opacity"), NumberStyles.Any, CultureInfo.InvariantCulture, out var fo) && fo >= 0 && fo <= 1)
+            s.FillOpacity = fo;
+
+        var wmStr = figEl.GetAttribute("data-pd-wrap-mode");
+        if (wmStr is not null && Enum.TryParse<ImageWrapMode>(wmStr, ignoreCase: true, out var wm))
+            s.WrapMode = wm;
+
+        if (int.TryParse(figEl.GetAttribute("data-pd-anchor-page"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ap) && ap >= 0)
+            s.AnchorPageIndex = ap;
+        if (TryParseCssMm(figEl.GetAttribute("data-pd-overlay-x"), out var ox)) s.OverlayXMm = ox;
+        if (TryParseCssMm(figEl.GetAttribute("data-pd-overlay-y"), out var oy)) s.OverlayYMm = oy;
+
+        // 인라인 figure의 정렬(margin:auto 패턴) 추론.
+        var figStyle = figEl.GetAttribute("style");
+        if (figStyle is not null)
+        {
+            bool ml = StyleProp(figStyle, "margin-left")  is { } mlv && mlv.Equals("auto", StringComparison.OrdinalIgnoreCase);
+            bool mr = StyleProp(figStyle, "margin-right") is { } mrv && mrv.Equals("auto", StringComparison.OrdinalIgnoreCase);
+            if (ml && mr)      s.HAlign = ImageHAlign.Center;
+            else if (ml && !mr) s.HAlign = ImageHAlign.Right;
+            if (TryParseCssMm(StyleProp(figStyle, "margin-top"),    out var mt) && mt > 0) s.MarginTopMm    = mt;
+            if (TryParseCssMm(StyleProp(figStyle, "margin-bottom"), out var mb) && mb > 0) s.MarginBottomMm = mb;
+        }
+    }
+
+    /// <summary>&lt;figcaption&gt; 의 inline style + data-pd-* 속성을 도형 레이블 스타일로 반영.</summary>
+    private static void ApplyShapeLabelStyle(IElement capEl, ShapeObject s)
+    {
+        var style = capEl.GetAttribute("style");
+        if (!string.IsNullOrEmpty(style))
+        {
+            if (StyleProp(style, "font-family") is { } ff) s.LabelFontFamily = ff.Trim('"', '\'');
+            if (StyleProp(style, "font-size") is { } fs && TryParseCssPt(fs, baseFontSizePt: 10, out var fsPt) && fsPt > 0)
+                s.LabelFontSizePt = fsPt;
+            var fw = StyleProp(style, "font-weight");
+            if (fw is not null && (fw.Equals("bold", StringComparison.OrdinalIgnoreCase) ||
+                                   (int.TryParse(fw, out var fwn) && fwn >= 600)))
+                s.LabelBold = true;
+            var fst = StyleProp(style, "font-style");
+            if (fst is not null && fst.Equals("italic", StringComparison.OrdinalIgnoreCase))
+                s.LabelItalic = true;
+            if (StyleProp(style, "color") is { } c)            s.LabelColor           = c;
+            if (StyleProp(style, "background-color") is { } b) s.LabelBackgroundColor = b;
+            var ta = StyleProp(style, "text-align");
+            if (ta is not null)
+            {
+                if (ta.Equals("left",   StringComparison.OrdinalIgnoreCase)) s.LabelHAlign = ShapeLabelHAlign.Left;
+                if (ta.Equals("right",  StringComparison.OrdinalIgnoreCase)) s.LabelHAlign = ShapeLabelHAlign.Right;
+                if (ta.Equals("center", StringComparison.OrdinalIgnoreCase)) s.LabelHAlign = ShapeLabelHAlign.Center;
+            }
+        }
+
+        var vaStr = capEl.GetAttribute("data-pd-valign");
+        if (vaStr is not null && Enum.TryParse<ShapeLabelVAlign>(vaStr, ignoreCase: true, out var va))
+            s.LabelVAlign = va;
+        if (TryParseCssMm(capEl.GetAttribute("data-pd-offset-x"), out var ox)) s.LabelOffsetXMm = ox;
+        if (TryParseCssMm(capEl.GetAttribute("data-pd-offset-y"), out var oy)) s.LabelOffsetYMm = oy;
     }
 
     private static void ParseSvgPointsList(string pointsStr, IList<ShapePoint> points)
@@ -2496,6 +2679,72 @@ public sealed class HtmlReader : IDocumentReader
         bool hasSizeMeta = sizeMeta is not null;
         foreach (var styleEl in head.QuerySelectorAll("style"))
             ParseAtPageRule(styleEl.TextContent, page, applySize: !hasSizeMeta);
+
+        // 5. 추가 페이지 설정 meta — 다단·페이지번호·머리/꼬리 여백·텍스트 방향 등.
+        ApplyExtraPageMeta(head, page);
+    }
+
+    private static void ApplyExtraPageMeta(IElement head, PageSettings page)
+    {
+        string? Get(string name) => head.QuerySelector($"meta[name='{name}']")?.GetAttribute("content");
+
+        if (Get("pd-paper-color") is { Length: > 0 } pc)
+            page.PaperColor = pc;
+
+        if (TryParseCssMm(Get("pd-margin-header"), out var mh) && mh > 0) page.MarginHeaderMm = mh;
+        if (TryParseCssMm(Get("pd-margin-footer"), out var mf) && mf > 0) page.MarginFooterMm = mf;
+
+        if (int.TryParse(Get("pd-column-count"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cc) && cc > 0)
+            page.ColumnCount = cc;
+        if (TryParseCssMm(Get("pd-column-gap"), out var cg) && cg >= 0) page.ColumnGapMm = cg;
+        var widthsStr = Get("pd-column-widths");
+        if (widthsStr is { Length: > 0 })
+        {
+            var widths = new List<double>();
+            foreach (var part in widthsStr.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                if (TryParseCssMm(part.Trim(), out var w) && w > 0) widths.Add(w);
+            if (widths.Count > 0) page.ColumnWidthsMm = widths;
+        }
+        var divStr = Get("pd-column-divider");
+        if (divStr is { Length: > 0 })
+        {
+            var trimmed = divStr.Trim();
+            if (trimmed.Equals("none", StringComparison.OrdinalIgnoreCase))
+            {
+                page.ColumnDividerVisible = false;
+            }
+            else
+            {
+                page.ColumnDividerVisible = true;
+                // "<style> <thicknessPt>pt <#color>" 또는 그냥 style 만.
+                var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in parts)
+                {
+                    if (Enum.TryParse<ColumnDividerStyle>(part, ignoreCase: true, out var st))
+                        page.ColumnDividerStyle = st;
+                    else if (part.EndsWith("pt", StringComparison.OrdinalIgnoreCase)
+                          && double.TryParse(part[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var t))
+                        page.ColumnDividerThicknessPt = t;
+                    else if (part.StartsWith('#'))
+                        page.ColumnDividerColor = part;
+                }
+            }
+        }
+
+        if (int.TryParse(Get("pd-page-number-start"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pns))
+            page.PageNumberStart = pns;
+
+        if (Get("pd-text-orientation") is { } toStr
+            && toStr.Equals("vertical", StringComparison.OrdinalIgnoreCase))
+            page.TextOrientation = TextOrientation.Vertical;
+        if (Get("pd-text-progression") is { } tpStr
+            && tpStr.Equals("leftward", StringComparison.OrdinalIgnoreCase))
+            page.TextProgression = TextProgression.Leftward;
+
+        if (string.Equals(Get("pd-different-first-page"), "true", StringComparison.OrdinalIgnoreCase))
+            page.DifferentFirstPage = true;
+        if (string.Equals(Get("pd-different-odd-even"), "true", StringComparison.OrdinalIgnoreCase))
+            page.DifferentOddEven = true;
     }
 
     private static void ParseAtPageRule(string cssText, PageSettings page, bool applySize)
