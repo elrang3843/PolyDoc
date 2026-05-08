@@ -63,19 +63,34 @@ internal static class SvgRenderer
         if (vbX != 0 || vbY != 0)
             canvas.RenderTransform = new TranslateTransform(-vbX, -vbY);
 
-        // 루트 svg 의 style="background:..." / 인라인 fill 등 흡수
+        // 루트 svg 의 style="background:..." / 인라인 fill / border 등 흡수
         var rootCtx = SvgContext.Default.MergedWith(root);
         if (rootCtx.RootBackground is { } bg) canvas.Background = bg;
 
         foreach (var el in root.Elements())
             RenderElement(el, canvas, rootCtx);
 
+        // 루트 svg 의 style="border:..." 은 SVG 사양은 아니지만 HTML 안의 인라인 SVG 에서
+        // 자주 쓰여 시각적으로 의미가 있다. Canvas 자체에는 BorderBrush 가 없으므로
+        // Border 로 한 번 더 감싼다.
+        FrameworkElement svgRoot = canvas;
+        if (rootCtx.RootBorderBrush is { } bb && rootCtx.RootBorderThickness > 0)
+        {
+            svgRoot = new System.Windows.Controls.Border
+            {
+                Child           = canvas,
+                BorderBrush     = bb,
+                BorderThickness = new Thickness(rootCtx.RootBorderThickness),
+                Background      = rootCtx.RootBackground, // 테두리와 배경의 ViewBox 외 영역도 함께 칠해짐
+            };
+        }
+
         var viewbox = new Viewbox
         {
             Stretch              = Stretch.Uniform,
             HorizontalAlignment  = HorizontalAlignment.Center,
             VerticalAlignment    = VerticalAlignment.Center,
-            Child                = canvas,
+            Child                = svgRoot,
         };
         if (targetWidthDip  > 0) viewbox.Width  = targetWidthDip;
         if (targetHeightDip > 0) viewbox.Height = targetHeightDip;
@@ -101,6 +116,8 @@ internal static class SvgRenderer
         public FontStyle  FontStyle      { get; set; } = FontStyles.Normal;
         public string     TextAnchor     { get; set; } = "start";
         public Brush?     RootBackground { get; set; }
+        public Brush?     RootBorderBrush { get; set; }
+        public double     RootBorderThickness { get; set; }
 
         public static SvgContext Default => new()
         {
@@ -160,14 +177,49 @@ internal static class SvgRenderer
             var ta = Get("text-anchor");
             if (!string.IsNullOrWhiteSpace(ta)) c.TextAnchor = ta!;
 
-            // 루트 svg 의 background (style 에서만)
+            // 루트 svg 의 background (style 에서만 — SVG 사양은 아니지만 HTML 인라인 SVG 에서 흔함)
             if (styleProps.TryGetValue("background", out var bg) || styleProps.TryGetValue("background-color", out bg))
             {
                 if (TryParseBrush(SplitFirstToken(bg)) is { } bgBrush) c.RootBackground = bgBrush;
             }
 
+            // 루트 svg 의 border (style="border: 1px solid #ddd" 같은 인라인 CSS — SVG 사양은 아니지만 동일).
+            // shorthand 또는 border-(width|style|color) 분리 모두 지원.
+            if (styleProps.TryGetValue("border", out var bd))
+            {
+                if (TryParseBorderShorthand(bd, out var bw, out var bbrush))
+                { c.RootBorderThickness = bw; c.RootBorderBrush = bbrush; }
+            }
+            if (styleProps.TryGetValue("border-width", out var bdw) &&
+                TryParseLengthPx(bdw, out var bwv) && bwv > 0)
+                c.RootBorderThickness = bwv;
+            if (styleProps.TryGetValue("border-color", out var bdc) &&
+                TryParseBrush(bdc) is { } bdcb)
+                c.RootBorderBrush = bdcb;
+
             return c;
         }
+    }
+
+    /// <summary>"1px solid #ddd" 같은 border shorthand 에서 width 와 color 를 추출한다.</summary>
+    private static bool TryParseBorderShorthand(string value, out double widthPx, out Brush brush)
+    {
+        widthPx = 1; brush = Brushes.Black;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var tokens = value.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        bool gotWidth = false, gotColor = false;
+        foreach (var t in tokens)
+        {
+            if (!gotWidth && TryParseLengthPx(t, out var w) && w >= 0)  { widthPx = w; gotWidth = true; continue; }
+            if (string.Equals(t, "solid", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t, "dashed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t, "dotted", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t, "double", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t, "none", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (TryParseBrush(t) is { } b) { brush = b; gotColor = true; }
+        }
+        return gotWidth || gotColor;
     }
 
     // ─────────────────────────────────────────────────────────────
