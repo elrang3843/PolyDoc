@@ -70,24 +70,27 @@ public static class FlowDocumentPaginationAdapter
             ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
         int pageCount = ComputePageCountSync(fd, geo, paginator);
 
-        // 표(Wpf.Table) 전용 페이지 배정 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
-        // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표가 속한 페이지를 직접 질의한다.
-        // Wpf.Table.ContentStart(= TextPointer, ContentPosition 의 서브클래스) 를 넘기면
-        // GetPageNumber 가 해당 표의 0-based 페이지 인덱스를 돌려준다.
+        // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
+        // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
+        // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
         // Y 좌표 측정 방식은 오프스크린 RTB 에서 표 셀 내부 rect 를 신뢰할 수 없어 여러 번
         // 실패했으므로 paginator 의 확정 값으로 대체한다.
-        var tablePageMap = new System.Collections.Generic.Dictionary<WpfDocs.Table, int>();
+        var tableFragmentMap =
+            new System.Collections.Generic.Dictionary<
+                WpfDocs.Table,
+                System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>();
         foreach (var b in FlattenBlocks(fd.Blocks))
         {
-            if (b is WpfDocs.Table tbl && !tablePageMap.ContainsKey(tbl))
-            {
-                try
-                {
-                    int pg = paginator.GetPageNumber(tbl.ContentStart);
-                    if (pg >= 0) tablePageMap[tbl] = pg;
-                }
-                catch { }
-            }
+            if (b is not WpfDocs.Table wpfTbl) continue;
+            if (b.Tag is not Core.Table coreTbl) continue;
+            if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+
+            var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
+            var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+
+            tableFragmentMap[wpfTbl] = fragments
+                .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                .ToList();
         }
 
         // 3. 오프스크린 RichTextBox 에서 본문 블록 Y 좌표 측정 → (페이지, 단) 배정.
@@ -95,7 +98,7 @@ public static class FlowDocumentPaginationAdapter
         // 전체 용지 폭으로 두면 줄바꿈이 적게 일어나 Y 좌표가 실제 단 RTB 와 달라진다.
         fd.PageWidth   = geo.ColWidthDip;
         fd.PagePadding = new Thickness(0);
-        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount, tablePageMap);
+        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount, tableFragmentMap);
 
         // 본문 블록의 실제 배치 결과로 pageCount 보정.
         // DocumentPaginator(풀 페이지+여백) 와 오프스크린 RTB(단 폭·단 슬롯 높이) 측정이
@@ -164,7 +167,9 @@ public static class FlowDocumentPaginationAdapter
     private static List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)>
         MapBodyBlocksToPages(
             WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount,
-            System.Collections.Generic.Dictionary<WpfDocs.Table, int>? tablePageMap = null)
+            System.Collections.Generic.Dictionary<
+                WpfDocs.Table,
+                System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>? tableFragmentMap = null)
     {
         var result = new List<(int, int, Block, Rect)>();
 
@@ -238,17 +243,20 @@ public static class FlowDocumentPaginationAdapter
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock);
 
-            // 표(Wpf.Table) 는 paginator 가 확정한 페이지 인덱스를 우선 사용한다.
-            // GetCharacterRect 기반 Y 측정은 오프스크린 RTB 에서 표 셀 안까지 신뢰할 수 없어
-            // 여러 차례 실패했으므로 paginator.GetPageNumber(table.ContentStart) 값으로 대체.
+            // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
+            // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
             if (wpfBlock is WpfDocs.Table wTbl
-                && tablePageMap is not null
-                && tablePageMap.TryGetValue(wTbl, out int tblPage))
+                && tableFragmentMap is not null
+                && tableFragmentMap.TryGetValue(wTbl, out var tblFragments)
+                && tblFragments.Count > 0)
             {
-                int tblSlot = Math.Max(minSlot, tblPage * colCount);
-                result.Add((tblSlot / colCount, tblSlot % colCount, coreBlock, Rect.Empty));
-                prevSlot = tblSlot;
-                minSlot  = Math.Max(minSlot, tblSlot);
+                foreach (var (coreFragment, slotIdx) in tblFragments)
+                {
+                    int tblSlot = Math.Max(minSlot, slotIdx);
+                    result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
+                    prevSlot = tblSlot;
+                    minSlot  = Math.Max(minSlot, tblSlot);
+                }
                 continue;
             }
 
