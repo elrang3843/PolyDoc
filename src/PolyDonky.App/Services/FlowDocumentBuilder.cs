@@ -112,6 +112,21 @@ public static class FlowDocumentBuilder
     }
 
     /// <summary>
+    /// 리스트 종류·중첩 깊이·대소문자 지정에 따라 브라우저 기본 마커 스타일을 선택한다.
+    /// - Bullet: disc → circle → square (≥2단계 동일).
+    /// - OrderedDecimal: 모든 깊이 decimal.
+    /// - OrderedAlpha:  upperCase 가 명시되면 그 값, null 이면 L0=Upper, L≥1=Lower 휴리스틱.
+    /// - OrderedRoman:  같은 규칙.
+    /// </summary>
+    private static TextMarkerStyle MarkerStyleForLevel(ListKind kind, int level, bool? upperCase = null) => kind switch
+    {
+        ListKind.Bullet         => level switch { 0 => TextMarkerStyle.Disc, 1 => TextMarkerStyle.Circle, _ => TextMarkerStyle.Square },
+        ListKind.OrderedAlpha   => (upperCase ?? level == 0) ? TextMarkerStyle.UpperLatin : TextMarkerStyle.LowerLatin,
+        ListKind.OrderedRoman   => (upperCase ?? level == 0) ? TextMarkerStyle.UpperRoman : TextMarkerStyle.LowerRoman,
+        _                       => TextMarkerStyle.Decimal,
+    };
+
+    /// <summary>
     /// 지정한 Core.Block 목록만 포함하는 FlowDocument 를 빌드한다.
     /// per-page 편집기·per-page RTB 측정에 사용. STA 스레드 필수.
     /// </summary>
@@ -168,7 +183,9 @@ public static class FlowDocumentBuilder
 
         // 지정 level·kind 의 WPF List 를 반환한다.
         // 스택이 부족하면 새 List 를 생성해 부모 ListItem 에 붙이고 push 한다.
-        Wpf.List EnsureList(int level, ListKind kind, int startIndex)
+        // 작업 목록(checked != null)은 마커가 ☐/☑ 텍스트로 단락 본문에 prepend 되므로
+        // WPF MarkerStyle 은 None — 중복 마커 방지.
+        Wpf.List EnsureList(int level, ListKind kind, int startIndex, bool? upperCase, bool isTaskList)
         {
             // 초과 레벨 팝
             while (listStack.Count > level + 1)
@@ -185,14 +202,16 @@ public static class FlowDocumentBuilder
             // 레벨이 스택보다 깊으면 중간 레벨을 채운다 (정상 HTML 에선 발생하지 않음)
             while (listStack.Count < level)
             {
-                var mid = new Wpf.List { MarkerStyle = TextMarkerStyle.Disc };
+                var mid = new Wpf.List { MarkerStyle = MarkerStyleForLevel(ListKind.Bullet, listStack.Count) };
                 AppendListToParent(mid);
                 listStack.Push((mid, ListKind.Bullet));
             }
 
             var newList = new Wpf.List
             {
-                MarkerStyle = kind == ListKind.Bullet ? TextMarkerStyle.Disc : TextMarkerStyle.Decimal,
+                MarkerStyle = isTaskList
+                    ? TextMarkerStyle.None
+                    : MarkerStyleForLevel(kind, level, upperCase),
             };
             if (kind != ListKind.Bullet && startIndex >= 1)
                 newList.StartIndex = startIndex;
@@ -232,25 +251,43 @@ public static class FlowDocumentBuilder
                 {
                     int level = Math.Max(0, marker.Level);
                     int start = marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } s && s >= 1 ? s : 1;
-                    var list  = EnsureList(level, marker.Kind, start);
-                    list.ListItems.Add(new Wpf.ListItem(BuildParagraph(p, outlineStyles, fnNums, enNums)));
+                    bool isTaskList = marker.Checked is not null;
+                    var list  = EnsureList(level, marker.Kind, start, marker.UpperCase, isTaskList);
+                    var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums);
+                    if (isTaskList)
+                    {
+                        // CSS 의 :before 가상 요소처럼 ☐/☑ 를 단락 첫머리에 직접 삽입.
+                        // (WPF List MarkerStyle 만으로는 체크 상태를 표현할 수 없으므로 텍스트로 그린다.)
+                        var checkRun = new Wpf.Run(marker.Checked == true ? "☑ " : "☐ ");
+                        if (wpfPara.Inlines.FirstInline is { } firstInline)
+                            wpfPara.Inlines.InsertBefore(firstInline, checkRun);
+                        else
+                            wpfPara.Inlines.Add(checkRun);
+                    }
+                    list.ListItems.Add(new Wpf.ListItem(wpfPara));
                     break;
                 }
 
-                case Paragraph p when p.Style.IsThematicBreak:
+                case ThematicBreakBlock thb:
                     listStack.Clear();
-                    target.Add(BuildThematicBreak());
+                    target.Add(BuildThematicBreak(thb));
                     break;
 
                 case Paragraph p:
                     listStack.Clear();
                     target.Add(BuildParagraph(p, outlineStyles, fnNums, enNums));
+                    MergeAdjacentBlockquoteMargins(target);
                     break;
 
                 case Table t:
                     listStack.Clear();
                     if (t.WrapMode == TableWrapMode.Block)
+                    {
+                        // <caption> 이 있으면 표 위에 가운데 정렬 단락으로 렌더링.
+                        if (!string.IsNullOrEmpty(t.Caption))
+                            target.Add(BuildTableCaption(t.Caption));
                         target.Add(BuildTable(t, outlineStyles));
+                    }
                     else
                         target.Add(BuildTableAnchor(t));   // 오버레이 모드 — 앵커만 추가
                     break;
@@ -371,9 +408,12 @@ public static class FlowDocumentBuilder
 
         foreach (var col in table.Columns)
         {
+            // WidthMm > 0 이면 명시 폭, 아니면 Star(1*) — 가용 폭을 균등 분배.
+            // Auto 로 두면 셀 콘텐츠 기준으로 좁게 잡혀 텍스트 줄바꿈이 과도해지고
+            // 셀 높이가 비정상적으로 커져 표 전체가 페이지를 넘기는 증상이 발생한다.
             var width = col.WidthMm > 0
                 ? new GridLength(MmToDip(col.WidthMm))
-                : GridLength.Auto;
+                : new GridLength(1, GridUnitType.Star);
             wtable.Columns.Add(new Wpf.TableColumn { Width = width });
         }
 
@@ -492,18 +532,84 @@ public static class FlowDocumentBuilder
 
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
 
-    /// <summary><c>IsThematicBreak</c> 단락(hr)을 1px 수평선 BlockUIContainer 로 렌더링한다.</summary>
-    private static Wpf.BlockUIContainer BuildThematicBreak()
+    /// <summary>
+    /// <c>ThematicBreakBlock</c> 을 <c>BlockUIContainer</c> + <c>Border</c> (RichTextBox.ActualWidth 바인딩)
+    /// 로 렌더링한다.
+    /// <para>
+    /// 이전 시도들이 실패한 원인:
+    /// (a) <c>Wpf.Paragraph.BorderBottom</c> + <c>FontSize=1/LineHeight=1</c> — 단락 높이가 너무
+    ///     작아 보더가 시각적으로 사라지거나, FlowDocument 가 1px 높이를 정밀하게 그리지 못함.
+    /// (b) <c>BlockUIContainer</c> + <c>Rectangle</c>/<c>Grid</c> + <c>HorizontalAlignment.Stretch</c>
+    ///     — FlowDocument 의 첫 Measure 가 infinite 폭을 패스해서 자식 요소가 폭=0 으로 측정되고,
+    ///     그 결과 폭=0 으로 Arrange 됨.
+    /// </para>
+    /// <para>
+    /// 해결: <c>Border</c> 의 <c>Width</c> 를 ancestor <c>FlowDocumentScrollViewer</c> /
+    /// <c>RichTextBox</c> 의 <c>ActualWidth</c> 에 바인딩해 명시적으로 컬럼 폭을 받는다.
+    /// 바인딩이 visual tree 부착 후 동작하므로, 초기 0 폭 측정 문제를 우회한다.
+    /// </para>
+    /// </summary>
+    private static Wpf.BlockUIContainer BuildThematicBreak(ThematicBreakBlock thb)
     {
+        WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
+        if (!string.IsNullOrEmpty(thb.LineColor))
+        {
+            try { lineColor = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(thb.LineColor); }
+            catch { /* 파싱 실패 시 기본 회색 유지 */ }
+        }
+        double marginV = thb.MarginPt > 0 ? PtToDip(thb.MarginPt) : 6;
+
         var line = new System.Windows.Controls.Border
         {
-            Height              = 1,
-            Margin              = new Thickness(0, 4, 0, 4),
-            Background          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xCC, 0xCC, 0xCC)),
+            BorderBrush         = new WpfMedia.SolidColorBrush(lineColor),
+            BorderThickness     = new Thickness(0, 1, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment   = VerticalAlignment.Center,
+            MinHeight           = 1,
+            SnapsToDevicePixels = true,
         };
-        return new Wpf.BlockUIContainer(line);
+        // ancestor RichTextBox.Document.PageWidth 에 폭을 바인딩 — Build() 에서 PageWidth =
+        // ComputeContentWidthDip(page) 로 컬럼 본문 폭을 직접 설정해 두므로, 이 값이 그대로
+        // HR 폭이 된다. visual tree 부착 후 동작해서 초기 무한대 Measure 문제를 우회한다.
+        var binding = new System.Windows.Data.Binding("Document.PageWidth")
+        {
+            RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.FindAncestor)
+            {
+                AncestorType = typeof(System.Windows.Controls.RichTextBox),
+            },
+        };
+        line.SetBinding(FrameworkElement.WidthProperty, binding);
+
+        return new Wpf.BlockUIContainer(line)
+        {
+            Margin  = new Thickness(0, marginV, 0, marginV),
+            Padding = new Thickness(0),
+            Tag     = ThematicBreakTag,
+        };
     }
+
+    /// <summary>표 캡션 단락 식별용 Tag 센티넬. Parser 가 이 Tag 를 보면 모델에 추가하지 않고 건너뛴다
+    /// (Table.Caption 이 다음 렌더에서 다시 생성). 이 마커가 없으면 매 라이브 페이지네이션마다
+    /// 캡션 단락이 모델에 누적되어 여러 개로 보인다.</summary>
+    internal static readonly object TableCaptionTag = new();
+
+    /// <summary>줄 번호 InlineUIContainer 를 구분하는 센티넬 — 파서가 복사 대상에서 제외한다.</summary>
+    internal static readonly object LineNumberTag = new();
+
+    /// <summary>수평선(ThematicBreakBlock) BlockUIContainer 를 구분하는 센티넬 — 파서가 ThematicBreakBlock 으로 복원한다.</summary>
+    internal static readonly object ThematicBreakTag = new();
+
+    /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>
+    private static Wpf.Paragraph BuildTableCaption(string caption)
+        => new Wpf.Paragraph(new Wpf.Run(caption))
+        {
+            Tag           = TableCaptionTag,
+            TextAlignment = TextAlignment.Center,
+            FontStyle     = FontStyles.Italic,
+            FontSize      = PtToDip(9.5),
+            Foreground    = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x55, 0x55, 0x55)),
+            Margin        = new Thickness(0, 0, 0, PtToDip(2)),
+        };
 
     /// <summary>오버레이(InFrontOfText/BehindText/Fixed) 모드 표를 위한 최소 앵커 단락을 반환한다.</summary>
     internal static Wpf.Paragraph BuildTableAnchor(Table table)
@@ -651,6 +757,40 @@ public static class FlowDocumentBuilder
                 FontStyle = FontStyles.Italic,
             };
             return emptyBuc;
+        }
+
+        // SVG: WPF BitmapImage 는 image/svg+xml 을 지원하지 않는다.
+        // 올바른 크기의 시각적 placeholder 를 표시한다.
+        if (image.MediaType == "image/svg+xml")
+        {
+            var svgHa = image.HAlign switch
+            {
+                ImageHAlign.Center => HorizontalAlignment.Center,
+                ImageHAlign.Right  => HorizontalAlignment.Right,
+                _                  => HorizontalAlignment.Left,
+            };
+            var svgBox = new System.Windows.Controls.Border
+            {
+                Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(248, 249, 250)),
+                BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(221, 221, 221)),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = svgHa,
+            };
+            if (image.WidthMm  > 0) svgBox.Width  = MmToDip(image.WidthMm);
+            if (image.HeightMm > 0) svgBox.Height = MmToDip(image.HeightMm);
+            svgBox.Child = new System.Windows.Controls.TextBlock
+            {
+                Text                = "[SVG 다이어그램]",
+                Foreground          = WpfMedia.Brushes.Gray,
+                FontStyle           = FontStyles.Italic,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                Margin              = new Thickness(8),
+            };
+            if (!string.IsNullOrEmpty(image.Description)) svgBox.ToolTip = image.Description;
+            UIElement svgVisual = WrapImageWithTitle(svgBox, image, svgHa);
+            var svgMargin = new Thickness(0, MmToDip(image.MarginTopMm), 0, MmToDip(image.MarginBottomMm));
+            return new Wpf.BlockUIContainer(svgVisual) { Tag = image, Margin = svgMargin };
         }
 
         var bitmap = new WpfMedia.Imaging.BitmapImage();
@@ -1030,8 +1170,6 @@ public static class FlowDocumentBuilder
             Height = hDip,
         };
 
-        var geometry = BuildShapeGeometry(shape, wDip, hDip);
-
         // 채우기 브러시
         WpfMedia.Brush fillBrush = WpfMedia.Brushes.Transparent;
         if (!string.IsNullOrEmpty(shape.FillColor))
@@ -1046,30 +1184,72 @@ public static class FlowDocumentBuilder
         }
 
         // 선 브러시
-        WpfMedia.Brush strokeBrush = WpfMedia.Brushes.Black;
+        WpfMedia.Brush strokeBrushVal = WpfMedia.Brushes.Black;
         if (!string.IsNullOrEmpty(shape.StrokeColor))
         {
             try
             {
                 var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(shape.StrokeColor)!;
-                strokeBrush = new WpfMedia.SolidColorBrush(c);
+                strokeBrushVal = new WpfMedia.SolidColorBrush(c);
             }
             catch { }
         }
 
         double strokeDip = shape.StrokeThicknessPt > 0 ? PtToDip(shape.StrokeThicknessPt) : 0;
+        // StrokeThickness=0 일 때 Stroke 를 Transparent 로 설정해 렌더링 경계 계산 오류를 방지한다.
+        WpfMedia.Brush effectiveStroke = strokeDip > 0 ? strokeBrushVal : WpfMedia.Brushes.Transparent;
 
+        // 단순 박스 도형(Rectangle·RoundedRect·Ellipse)은 WPF 전용 Shape 컨트롤 사용.
+        // Path + RectangleGeometry + Stretch.None 조합은 일부 WPF 버전에서 채우기가 보이지 않는 경우가 있어
+        // WPF Shape(System.Windows.Shapes.Rectangle / Ellipse) 으로 대체한다.
+        if (shape.Kind is ShapeKind.Rectangle or ShapeKind.RoundedRect)
+        {
+            double rx = shape.Kind == ShapeKind.RoundedRect
+                ? Math.Clamp(MmToDip(shape.CornerRadiusMm), 0, Math.Min(wDip, hDip) / 2.0)
+                : 0;
+            var rect = new WpfShapes.Rectangle
+            {
+                Width           = wDip,
+                Height          = hDip,
+                Fill            = fillBrush,
+                Stroke          = effectiveStroke,
+                StrokeThickness = strokeDip,
+                RadiusX         = rx,
+                RadiusY         = rx,
+            };
+            if (strokeDip > 0)
+                rect.StrokeDashArray = BuildDashArray(shape.StrokeDash, strokeDip);
+            canvas.Children.Add(rect);
+        }
+        else if (shape.Kind == ShapeKind.Ellipse)
+        {
+            var ellipse = new WpfShapes.Ellipse
+            {
+                Width           = wDip,
+                Height          = hDip,
+                Fill            = fillBrush,
+                Stroke          = effectiveStroke,
+                StrokeThickness = strokeDip,
+            };
+            if (strokeDip > 0)
+                ellipse.StrokeDashArray = BuildDashArray(shape.StrokeDash, strokeDip);
+            canvas.Children.Add(ellipse);
+        }
+        else
+        {
+        var geometry = BuildShapeGeometry(shape, wDip, hDip);
         var path = new WpfShapes.Path
         {
             Data            = geometry,
             Fill            = fillBrush,
-            Stroke          = strokeBrush,
+            Stroke          = effectiveStroke,
             StrokeThickness = strokeDip,
             StrokeDashArray = BuildDashArray(shape.StrokeDash, strokeDip),
             Stretch         = WpfMedia.Stretch.None,
         };
 
         canvas.Children.Add(path);
+        }
 
         // 끝모양 (선 계열 — 열린 선에만); path 추가 후 그 위에 그림
         if (shape.Kind is ShapeKind.Line or ShapeKind.Polyline or ShapeKind.Spline)
@@ -1079,7 +1259,7 @@ public static class FlowDocumentBuilder
             {
                 ptsDip = new List<Point> { new(0, hDip / 2), new(wDip, hDip / 2) };
             }
-            AddArrowHeads(canvas, shape.StartArrow, shape.EndArrow, shape.EndShapeSizeMm, ptsDip, strokeBrush, strokeDip);
+            AddArrowHeads(canvas, shape.StartArrow, shape.EndArrow, shape.EndShapeSizeMm, ptsDip, strokeBrushVal, strokeDip);
         }
 
         // 레이블
@@ -1543,13 +1723,77 @@ public static class FlowDocumentBuilder
     {
         var wpfPara = new Wpf.Paragraph();
         ApplyParagraphStyle(wpfPara, p.Style, outlineStyles);
-        foreach (var run in p.Runs)
-        {
-            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
-        }
+
+        if (p.Style.ShowLineNumbers && p.Style.CodeLanguage is not null)
+            BuildCodeBlockWithLineNumbers(wpfPara, p.Runs);
+        else
+            foreach (var run in p.Runs)
+                wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
+
         // 원본 PolyDonky.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
         return wpfPara;
+    }
+
+    /// <summary>
+    /// 코드 블록의 각 줄 앞에 줄 번호를 <see cref="Wpf.InlineUIContainer"/> 로 삽입한다.
+    /// InlineUIContainer 는 WPF 텍스트 선택·복사 대상에서 제외되므로 Ctrl+C 시 줄 번호가 빠진다.
+    /// </summary>
+    private static void BuildCodeBlockWithLineNumbers(Wpf.Paragraph wpfPara, IList<Run> sourceRuns)
+    {
+        var fullText = string.Concat(sourceRuns.Select(r => r.Text));
+        if (fullText.EndsWith('\n')) fullText = fullText[..^1];
+
+        var lines = fullText.Split('\n');
+        int maxDigits = lines.Length.ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
+        double fontSize = wpfPara.FontSize > 0 ? wpfPara.FontSize : PtToDip(11);
+        double numWidth = fontSize * 0.6 * maxDigits + PtToDip(8);
+
+        var numFg     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x88, 0x88, 0x88));
+        var numBorder = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0));
+        var monoFamily = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var numTb = new System.Windows.Controls.TextBlock
+            {
+                Text          = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                       .PadLeft(maxDigits),
+                Width         = numWidth,
+                TextAlignment = TextAlignment.Right,
+                Foreground    = numFg,
+                FontFamily    = monoFamily,
+                FontSize      = fontSize,
+            };
+            var numBorderEl = new System.Windows.Controls.Border
+            {
+                Child           = numTb,
+                BorderBrush     = numBorder,
+                BorderThickness = new Thickness(0, 0, 1, 0),
+                Padding         = new Thickness(0, 0, 6, 0),
+            };
+            wpfPara.Inlines.Add(new Wpf.InlineUIContainer(numBorderEl)
+            {
+                BaselineAlignment = BaselineAlignment.TextTop,
+                Tag               = LineNumberTag,
+            });
+
+            var lineRun = new Wpf.Run(" " + lines[i])
+            {
+                FontFamily = monoFamily,
+                FontSize   = fontSize,
+            };
+            if (sourceRuns.Count > 0)
+            {
+                var rs = sourceRuns[0].Style;
+                if (rs.Bold)   lineRun.FontWeight = FontWeights.Bold;
+                if (rs.Italic) lineRun.FontStyle  = FontStyles.Italic;
+            }
+            wpfPara.Inlines.Add(lineRun);
+
+            if (i < lines.Length - 1)
+                wpfPara.Inlines.Add(new Wpf.LineBreak());
+        }
     }
 
     private static void ApplyParagraphStyle(Wpf.Paragraph wpfPara, ParagraphStyle style,
@@ -1589,22 +1833,28 @@ public static class FlowDocumentBuilder
                 }
                 catch { }
             }
-            if (ls.Border.ShowTop || ls.Border.ShowBottom)
+            // OutlineStyle 경계선 + CSS border-bottom 통합.
+            bool showTop    = ls.Border.ShowTop;
+            bool showBottom = ls.Border.ShowBottom || style.BorderBottomPt > 0;
+            if (showTop || showBottom)
             {
                 WpfMedia.SolidColorBrush borderBrush;
-                if (!string.IsNullOrEmpty(ls.Border.Color))
+                // CSS border-bottom 색이 있으면 우선 사용.
+                string? borderColorStr = style.BorderBottomPt > 0 ? style.BorderBottomColor : null;
+                borderColorStr ??= ls.Border.Color;
+                if (!string.IsNullOrEmpty(borderColorStr))
                 {
-                    try { borderBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(ls.Border.Color)); }
+                    try { borderBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(borderColorStr)); }
                     catch { borderBrush = WpfMedia.Brushes.DimGray; }
                 }
                 else
                 {
                     borderBrush = WpfMedia.Brushes.DimGray;
                 }
+                double bottomThick = style.BorderBottomPt > 0 ? PtToDip(style.BorderBottomPt)
+                                   : showBottom ? 1.0 : 0.0;
                 wpfPara.BorderBrush     = borderBrush;
-                wpfPara.BorderThickness = new Thickness(0,
-                    ls.Border.ShowTop    ? 1 : 0, 0,
-                    ls.Border.ShowBottom ? 1 : 0);
+                wpfPara.BorderThickness = new Thickness(0, showTop ? 1 : 0, 0, bottomThick);
             }
             // Para 공간 설정은 OutlineStyle 의 Para 를 우선하되, ParagraphStyle 직접 값이 0이 아니면 덮어씀
             var paraStyle = ls.Para;
@@ -1656,6 +1906,42 @@ public static class FlowDocumentBuilder
 
         ApplyCodeBlockStyle(wpfPara, style.CodeLanguage);
         ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
+
+        // CSS border-bottom (예: 단락 구분선).
+        if (style.BorderBottomPt > 0)
+        {
+            WpfMedia.SolidColorBrush bBrush;
+            if (!string.IsNullOrEmpty(style.BorderBottomColor))
+            {
+                try { bBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(style.BorderBottomColor)); }
+                catch { bBrush = WpfMedia.Brushes.DimGray; }
+            }
+            else
+            {
+                bBrush = WpfMedia.Brushes.DimGray;
+            }
+            wpfPara.BorderBrush     = bBrush;
+            wpfPara.BorderThickness = new Thickness(0, 0, 0, PtToDip(style.BorderBottomPt));
+        }
+    }
+
+    /// <summary>
+    /// 직전 블록과 현재 블록이 같은 QuoteLevel(>0) 의 단락이면 두 단락 사이의
+    /// 위/아래 마진을 0 으로 만들어 좌측 인용 바가 끊기지 않게 이어 붙인다.
+    /// </summary>
+    private static void MergeAdjacentBlockquoteMargins(System.Collections.IList target)
+    {
+        if (target.Count < 2) return;
+        if (target[target.Count - 1] is not Wpf.Paragraph cur) return;
+        if (target[target.Count - 2] is not Wpf.Paragraph prev) return;
+        if (cur.Tag is not Paragraph curP || prev.Tag is not Paragraph prevP) return;
+        if (curP.Style.QuoteLevel <= 0) return;
+        if (curP.Style.QuoteLevel != prevP.Style.QuoteLevel) return;
+
+        var pm = prev.Margin;
+        prev.Margin = new Thickness(pm.Left, pm.Top, pm.Right, 0);
+        var cm = cur.Margin;
+        cur.Margin  = new Thickness(cm.Left, 0, cm.Right, cm.Bottom);
     }
 
     /// <summary>

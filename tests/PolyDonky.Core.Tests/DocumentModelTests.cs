@@ -57,6 +57,11 @@ public class DocumentModelTests
     [InlineData("#FF0000", 255, 0, 0, 255)]
     [InlineData("#00FF00", 0, 255, 0, 255)]
     [InlineData("#1234567F", 0x12, 0x34, 0x56, 0x7F)]
+    // CSS 3/4-char shorthand (#RGB / #RGBA)
+    [InlineData("#FFF", 255, 255, 255, 255)]
+    [InlineData("#000", 0, 0, 0, 255)]
+    [InlineData("#F80", 255, 136, 0, 255)]
+    [InlineData("#F80A", 255, 136, 0, 170)]
     public void Color_FromHex_ParsesCorrectly(string hex, byte r, byte g, byte b, byte a)
     {
         var color = Color.FromHex(hex);
@@ -77,7 +82,9 @@ public class DocumentModelTests
     [Fact]
     public void Color_FromHex_RejectsInvalidLength()
     {
-        Assert.Throws<FormatException>(() => Color.FromHex("#FFF"));
+        // 2-char and 5-char hex strings are not valid CSS color formats.
+        Assert.Throws<FormatException>(() => Color.FromHex("#FF"));
+        Assert.Throws<FormatException>(() => Color.FromHex("#FFFFF"));
     }
 
     // ── IWPF 통합 (2026-04-29) — TextBoxObject 가 Block 트리 안에 들어왔는지 검증 ──

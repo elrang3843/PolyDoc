@@ -63,15 +63,42 @@ public static class FlowDocumentPaginationAdapter
         // sentinel 블록(PageBreakPadder 삽입 잔존물)이 있으면 제거
         PageBreakPadder.RemoveAll(fd.Blocks);
 
-        // 2. DocumentPaginator 로 정확한 페이지 수 산출
-        int pageCount = ComputePageCountSync(fd, geo);
+        // 2. DocumentPaginator 로 정확한 페이지 수 산출.
+        // ComputePageCountSync 내부에서 모든 페이지를 GetPage(n) 으로 강제 레이아웃하므로
+        // 반환 시점에 paginator 는 완전한 페이지 배치 정보를 갖고 있다.
+        var paginator = (WpfDocs.DynamicDocumentPaginator)
+            ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
+        int pageCount = ComputePageCountSync(fd, geo, paginator);
+
+        // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
+        // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
+        // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
+        // Y 좌표 측정 방식은 오프스크린 RTB 에서 표 셀 내부 rect 를 신뢰할 수 없어 여러 번
+        // 실패했으므로 paginator 의 확정 값으로 대체한다.
+        var tableFragmentMap =
+            new System.Collections.Generic.Dictionary<
+                WpfDocs.Table,
+                System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>();
+        foreach (var b in FlattenBlocks(fd.Blocks))
+        {
+            if (b is not WpfDocs.Table wpfTbl) continue;
+            if (b.Tag is not Core.Table coreTbl) continue;
+            if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+
+            var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
+            var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+
+            tableFragmentMap[wpfTbl] = fragments
+                .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                .ToList();
+        }
 
         // 3. 오프스크린 RichTextBox 에서 본문 블록 Y 좌표 측정 → (페이지, 단) 배정.
         // 측정 폭은 단 폭(geo.ColWidthDip) — 단일 단이면 본문 폭과 동일.
         // 전체 용지 폭으로 두면 줄바꿈이 적게 일어나 Y 좌표가 실제 단 RTB 와 달라진다.
         fd.PageWidth   = geo.ColWidthDip;
         fd.PagePadding = new Thickness(0);
-        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount);
+        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount, tableFragmentMap);
 
         // 본문 블록의 실제 배치 결과로 pageCount 보정.
         // DocumentPaginator(풀 페이지+여백) 와 오프스크린 RTB(단 폭·단 슬롯 높이) 측정이
@@ -106,11 +133,13 @@ public static class FlowDocumentPaginationAdapter
 
     // ── 페이지 수 계산 ────────────────────────────────────────────────────────
 
-    private static int ComputePageCountSync(WpfDocs.FlowDocument fd, PageGeometry geo)
+    private static int ComputePageCountSync(
+        WpfDocs.FlowDocument fd, PageGeometry geo,
+        WpfDocs.DynamicDocumentPaginator? paginator = null)
     {
         try
         {
-            var paginator = (WpfDocs.DynamicDocumentPaginator)
+            paginator ??= (WpfDocs.DynamicDocumentPaginator)
                 ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
             paginator.PageSize = new Size(geo.PageWidthDip, geo.PageHeightDip);
 
@@ -136,7 +165,11 @@ public static class FlowDocumentPaginationAdapter
     // ── 본문 블록 → 페이지·단 매핑 ──────────────────────────────────────────
 
     private static List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)>
-        MapBodyBlocksToPages(WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount)
+        MapBodyBlocksToPages(
+            WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount,
+            System.Collections.Generic.Dictionary<
+                WpfDocs.Table,
+                System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>? tableFragmentMap = null)
     {
         var result = new List<(int, int, Block, Rect)>();
 
@@ -201,13 +234,31 @@ public static class FlowDocumentPaginationAdapter
         // (모든 콘텐츠가 한 페이지에 들어갈 만큼 짧아도 페이지 나누기가 정확히 작동하게 함.)
         int minSlot = 0;
 
-        foreach (var wpfBlock in FlattenBlocks(fd.Blocks))
+        for (int i = 0; i < flat.Count; i++)
         {
+            var wpfBlock = flat[i];
             if (wpfBlock.Tag is not Block coreBlock) continue;
             if (IsOverlayMode(coreBlock)) continue;
 
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock);
+
+            // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
+            // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
+            if (wpfBlock is WpfDocs.Table wTbl
+                && tableFragmentMap is not null
+                && tableFragmentMap.TryGetValue(wTbl, out var tblFragments)
+                && tblFragments.Count > 0)
+            {
+                foreach (var (coreFragment, slotIdx) in tblFragments)
+                {
+                    int tblSlot = Math.Max(minSlot, slotIdx);
+                    result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
+                    prevSlot = tblSlot;
+                    minSlot  = Math.Max(minSlot, tblSlot);
+                }
+                continue;
+            }
 
             // Y 를 측정할 수 없으면 minSlot 슬롯에 배정하고 다음 블록으로.
             if (double.IsNaN(topY))
@@ -298,10 +349,15 @@ public static class FlowDocumentPaginationAdapter
             // BoundaryTol 이하의 초과는 mm→DIP 변환 오차로 보고 현재 슬롯에 유지한다.
             // 강제 페이지 나누기 단락은 위에서 이미 슬롯을 끌어올렸으므로 이 보정을 건너뛴다
             // (자연 Y 기준 boundary 검사가 강제 슬롯과 어긋나면 잘못된 +1 이 일어날 수 있다).
+            //
+            // 표(Wpf.Table) 는 한 슬롯 높이를 넘어도 다음 슬롯으로 이동을 허용한다 —
+            // 표 분할이 구현되어 있지 않은 현재 상태에서는 "현재 페이지 끝에서 잘려 일부만 보이는"
+            // 것보다 "다음 페이지 시작에 통째로 놓이고 끝이 잘리는" 편이 본문 행이 더 많이 보여 낫다.
+            bool isTable = wpfBlock is WpfDocs.Table;
             if (!isPageBreak
                 && !double.IsNaN(bottomY)
                 && bottomY > (slotTop + 1) * bodyH + BoundaryTol
-                && blockH < bodyH)
+                && (blockH < bodyH || isTable))
             {
                 slotTop += 1;
             }
@@ -459,7 +515,7 @@ public static class FlowDocumentPaginationAdapter
         Status  = p.Status,
         StyleId = p.StyleId,
         // ParagraphStyle.Clone() 으로 모든 필드 복사 — 이전 자체 구현은 ListMarker / QuoteLevel /
-        // CodeLanguage / IsThematicBreak 누락. 호출측에서 second.Style.ListMarker = null 로 마커 제거.
+        // CodeLanguage 누락. 호출측에서 second.Style.ListMarker = null 로 마커 제거.
         Style   = p.Style.Clone(),
     };
 
@@ -503,15 +559,80 @@ public static class FlowDocumentPaginationAdapter
     {
         try
         {
+            // BlockUIContainer 는 GetCharacterRect 가 캐럿 높이만 반환하는 경우가 있어
+            // 내부 UIElement 의 ActualHeight 를 직접 읽어 bottomY 를 계산한다.
+            if (block is WpfDocs.BlockUIContainer buc && buc.Child is FrameworkElement fe
+                && !double.IsNaN(fe.ActualHeight) && fe.ActualHeight > 0)
+            {
+                double topY = TryGetTopY(block);
+                if (!double.IsNaN(topY))
+                    return topY + fe.ActualHeight + block.Margin.Top + block.Margin.Bottom;
+            }
+
+            // Wpf.Table 은 ContentEnd.GetCharacterRect 가 표 직후 캐럿 위치(≈ 표의 top) 만
+            // 반환한다. 셀 내부 단락도 오프스크린 RTB 에서 NaN 을 반환하는 경우가 많아
+            // 여기서는 NaN 을 그대로 반환 — 호출측(MapBodyBlocksToPages) 에서 다음 블록
+            // topY 대리값으로 보정한다.
+            if (block is WpfDocs.Table)
+                return double.NaN;
+
             var r = block.ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
             if (r == Rect.Empty || double.IsNaN(r.Bottom) || double.IsInfinity(r.Bottom))
+            {
+                // Paragraph 에 InlineUIContainer 가 있으면(코드 블록 줄 번호, 수식 FormulaControl 등)
+                // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환하는 경우가 있다.
+                // InlineUIContainer.Child.ActualHeight 와 LineBreak 수를 이용해 높이를 추정한다.
+                if (block is WpfDocs.Paragraph para)
+                    return TryEstimateParaBottomViaInlines(para);
                 return double.NaN;
+            }
             return r.Bottom;
         }
         catch
         {
             return double.NaN;
         }
+    }
+
+    /// <summary>
+    /// <c>ContentEnd.GetCharacterRect</c> 가 실패한 <c>Paragraph</c> 의 bottomY 를
+    /// <c>InlineUIContainer.Child.ActualHeight</c> 와 <c>LineBreak</c> 수에서 추정한다.
+    /// <para>
+    /// 코드 블록 줄 번호(<c>BuildCodeBlockWithLineNumbers</c>) 나 수식(<c>FormulaControl</c>) 처럼
+    /// 오프스크린 RTB 에서 UIElement 를 포함한 단락이 <c>Rect.Empty</c> 를 반환할 때 사용한다.
+    /// </para>
+    /// </summary>
+    private static double TryEstimateParaBottomViaInlines(WpfDocs.Paragraph para)
+    {
+        double topY = TryGetTopY(para);
+        if (double.IsNaN(topY)) return double.NaN;
+
+        int    lineCount  = 1;
+        double lineHeight = 0;
+
+        foreach (var inline in para.Inlines)
+        {
+            if (inline is WpfDocs.LineBreak)
+            {
+                lineCount++;
+            }
+            else if (inline is WpfDocs.InlineUIContainer { Child: FrameworkElement fe })
+            {
+                double h = fe.ActualHeight;
+                if (h > 0 && !double.IsNaN(h) && h > lineHeight) lineHeight = h;
+            }
+        }
+
+        if (lineHeight <= 0)
+        {
+            // InlineUIContainer 없음(일반 단락) — FontSize × 기본 행간으로 추정
+            lineHeight = (para.FontSize > 0 ? para.FontSize : FlowDocumentBuilder.PtToDip(11)) * 1.2;
+        }
+
+        return topY
+               + lineCount * lineHeight
+               + para.Padding.Top + para.Padding.Bottom
+               + para.Margin.Top  + para.Margin.Bottom;
     }
 
     /// <summary>
@@ -531,11 +652,31 @@ public static class FlowDocumentPaginationAdapter
                 return Rect.Empty;
 
             double globalTop    = topRect.Y;
-            double globalBottom = (botRect != Rect.Empty
-                                   && !double.IsNaN(botRect.Bottom)
-                                   && !double.IsInfinity(botRect.Bottom))
-                ? botRect.Bottom
-                : globalTop;
+
+            // BlockUIContainer 는 ContentEnd.GetCharacterRect 가 캐럿 높이만 반환할 수 있어
+            // 내부 UIElement.ActualHeight 로 globalBottom 을 계산한다.
+            double globalBottom;
+            if (block is WpfDocs.BlockUIContainer buc2 && buc2.Child is FrameworkElement fe2
+                && !double.IsNaN(fe2.ActualHeight) && fe2.ActualHeight > 0)
+            {
+                globalBottom = globalTop + fe2.ActualHeight + block.Margin.Top + block.Margin.Bottom;
+            }
+            else if (botRect != Rect.Empty
+                     && !double.IsNaN(botRect.Bottom)
+                     && !double.IsInfinity(botRect.Bottom))
+            {
+                globalBottom = botRect.Bottom;
+            }
+            else
+            {
+                // Paragraph 에 InlineUIContainer(코드 블록 줄 번호, 수식 등)가 있으면
+                // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환할 수 있다.
+                // TryEstimateParaBottomViaInlines 로 추정값을 구하되, 실패 시 globalTop 사용.
+                double estimated = block is WpfDocs.Paragraph para2
+                    ? TryEstimateParaBottomViaInlines(para2)
+                    : double.NaN;
+                globalBottom = !double.IsNaN(estimated) ? estimated : globalTop;
+            }
 
             // 단 슬롯 인덱스 (다단에서 페이지·단을 통합 순서로 열거)
             int    slotIdx     = pageIdx * colCount + colIdx;

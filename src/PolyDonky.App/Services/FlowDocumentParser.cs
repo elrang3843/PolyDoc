@@ -194,6 +194,18 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
+                // 수평선(ThematicBreakBlock) — BlockUIContainer 로 렌더되며 ThematicBreakTag 로 식별.
+                case Wpf.BlockUIContainer hrContainer when ReferenceEquals(
+                    hrContainer.Tag, FlowDocumentBuilder.ThematicBreakTag):
+                    target.Add(new ThematicBreakBlock());
+                    break;
+
+                // 표 캡션 단락 — Table.Caption 이 다음 렌더에서 재생성하므로 모델에 추가하지 않는다
+                // (추가하면 라이브 페이지네이션마다 캡션이 1개씩 누적됨).
+                case Wpf.Paragraph captionPara when ReferenceEquals(
+                    captionPara.Tag, FlowDocumentBuilder.TableCaptionTag):
+                    break;
+
                 // Fallback: 붙여넣기로 Tag 가 사라진 AsText/WrapLeft/WrapRight 이미지 단락.
                 // WPF XamlPackage 클립보드 포맷은 BitmapSource 를 보존하므로 시각 트리에서 ImageBlock 을 재구성한다.
                 // 반드시 일반 'case Wpf.Paragraph' 보다 먼저 위치해야 한다.
@@ -272,8 +284,10 @@ public static class FlowDocumentParser
                 Status  = original.Status,
                 WrapMode  = original.WrapMode,
                 HAlign    = original.HAlign,
+                AnchorPageIndex = original.AnchorPageIndex,
                 OverlayXMm = original.OverlayXMm,
                 OverlayYMm = original.OverlayYMm,
+                Caption                      = original.Caption,
                 BackgroundColor              = original.BackgroundColor,
                 DefaultCellPaddingTopMm      = original.DefaultCellPaddingTopMm,
                 DefaultCellPaddingBottomMm   = original.DefaultCellPaddingBottomMm,
@@ -285,6 +299,8 @@ public static class FlowDocumentParser
                 OuterMarginRightMm           = original.OuterMarginRightMm,
                 BorderThicknessPt            = original.BorderThicknessPt,
                 BorderColor                  = original.BorderColor,
+                RepeatHeaderRowsOnBreak      = original.RepeatHeaderRowsOnBreak,
+                HeaderColumnCount            = original.HeaderColumnCount,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();
@@ -427,6 +443,9 @@ public static class FlowDocumentParser
             }
             case Wpf.InlineUIContainer iuc:
             {
+                // 줄 번호 컨테이너 — 시각 전용, 텍스트 모델에서 제외.
+                if (ReferenceEquals(iuc.Tag, FlowDocumentBuilder.LineNumberTag)) break;
+
                 // FlowDocumentBuilder 가 만든 컨테이너.
                 // Tag 에 원본 PolyDonky Run 이 있으면 직접 회수. 없으면 시각 트리에서 추출.
                 if (iuc.Tag is Run origRun)

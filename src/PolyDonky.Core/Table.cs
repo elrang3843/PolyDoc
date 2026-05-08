@@ -62,6 +62,16 @@ public sealed class Table : Block, IOverlayAnchored
     /// <summary>표 전체 배경색 hex. null 이면 투명.</summary>
     public string? BackgroundColor { get; set; }
 
+    /// <summary>표 캡션 텍스트 (HTML <c>&lt;caption&gt;</c>, DOCX table title 에 대응).
+    /// null 이면 캡션 없음. 렌더러는 표 위에 가운데 정렬 작은 단락으로 표시한다.</summary>
+    public string? Caption { get; set; }
+
+    // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
+    /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
+    public bool RepeatHeaderRowsOnBreak { get; set; } = true;
+    /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
+    public int HeaderColumnCount { get; set; }
+
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }

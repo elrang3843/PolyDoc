@@ -62,6 +62,18 @@ public sealed class HtmlReader : IDocumentReader
         var section  = new Section();
         pd.Sections.Add(section);
 
+        // 편집용지 설정 복원 — <meta name="pd-page-*"> + @page CSS 파싱.
+        ApplyPageSettings(doc, section);
+
+        // CSS 규칙 (<style> 블록의 .class / #id / tag 셀렉터) 을 인라인 style 속성으로 머지.
+        // 이후 단계의 모든 style 파싱이 자동으로 반영함.
+        InlineCssClassRules(doc);
+
+        // 상속되는 CSS 속성(text-align 등)을 부모에서 자식 요소로 전파.
+        // .document-header { text-align: center } 같은 컨테이너 정렬이 자식 h1/div 에 적용되도록.
+        if (doc.Body is { } body)
+            PropagateInheritableStyles(body, parentTextAlign: null, parentColor: null, parentLineHeight: null);
+
         // <body> 가 없는 단편(fragment) 도 안전하게 처리.
         INode root = doc.Body ?? (INode?)doc.DocumentElement ?? doc;
 
@@ -175,6 +187,10 @@ public sealed class HtmlReader : IDocumentReader
             var p = new Paragraph();
             p.Style.QuoteLevel = ctx.QuoteLevel;
             p.Style.ListMarker = CloneMarker(ctx.Marker);
+            // 부모 요소의 text-align 을 텍스트노드 단락에도 적용
+            // (PropagateInheritableStyles 는 요소만 처리하므로 raw 텍스트노드는 누락된다).
+            if (txt.ParentElement is { } parentEl)
+                ApplyBlockAlignment(p, parentEl);
             p.AddText(NormalizeWhitespace(txt.Data));
             target.Add(p);
             return;
@@ -187,10 +203,18 @@ public sealed class HtmlReader : IDocumentReader
             case "h1": case "h2": case "h3": case "h4": case "h5": case "h6":
             {
                 var p = new Paragraph();
-                p.Style.Outline    = (OutlineLevel)(el.LocalName[1] - '0');
+                p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
+                var level          = (OutlineLevel)(el.LocalName[1] - '0');
+                p.Style.Outline    = level;
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
-                ApplyBlockStyle(p, el);
+                // em 단위 margin 환산을 위해 실제 폰트 크기를 미리 결정.
+                // CSS 에 명시적 font-size 가 있으면 그것을, 없으면 OutlineStyleSet 기본값을 사용.
+                var hInline        = ParseInlineStyle(el.GetAttribute("style"));
+                double hBasePt     = hInline.FontSizePt > 0
+                                     ? hInline.FontSizePt
+                                     : OutlineStyleSet.DefaultForLevel(level).Char.FontSizePt;
+                ApplyBlockStyle(p, el, hBasePt);
                 AppendInline(p, el);
                 target.Add(p);
                 break;
@@ -199,6 +223,7 @@ public sealed class HtmlReader : IDocumentReader
             case "p":
             {
                 var p = new Paragraph();
+                p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
                 ApplyBlockAlignment(p, el);
@@ -218,11 +243,24 @@ public sealed class HtmlReader : IDocumentReader
 
             case "hr":
             {
-                var p = new Paragraph();
-                p.Style.IsThematicBreak = true;
-                p.Style.QuoteLevel      = ctx.QuoteLevel;
-                p.Style.ListMarker      = CloneMarker(ctx.Marker);
-                target.Add(p);
+                var thb = new ThematicBreakBlock();
+
+                var hrStyle = el.GetAttribute("style") ?? "";
+                ExtractBorderSizeColor(StyleProp(hrStyle, "border-top"), out _, out string? hrColor);
+                hrColor ??= StyleProp(hrStyle, "border-color");
+                hrColor ??= StyleProp(hrStyle, "color");
+                if (hrColor is not null)
+                    thb.LineColor = hrColor;
+
+                double marginPt = 0;
+                if (TryParseCssPt(StyleProp(hrStyle, "margin-top"), out var hrMt))
+                    marginPt = hrMt;
+                else if (TryParseCssPt(StyleProp(hrStyle, "margin"), out var hrM))
+                    marginPt = hrM;
+                if (marginPt > 0)
+                    thb.MarginPt = marginPt;
+
+                target.Add(thb);
                 break;
             }
 
@@ -276,12 +314,112 @@ public sealed class HtmlReader : IDocumentReader
                 break;
             }
 
+            case "div":
+            {
+                var divCls = el.GetAttribute("class") ?? "";
+                if (divCls.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          .Any(c => c.Equals("page-break",  StringComparison.OrdinalIgnoreCase)
+                                 || c.Equals("pagebreak",   StringComparison.OrdinalIgnoreCase)
+                                 || c.Equals("break-page",  StringComparison.OrdinalIgnoreCase)))
+                {
+                    var pb = new Paragraph();
+                    pb.Style.ForcePageBreakBefore = true;
+                    target.Add(pb);
+                    break;
+                }
+                // CSS 도형 패턴 감지 (텍스트·자식 없는 순수 모양 div).
+                if (TryParseCssShapeFromDiv(el, out var cssShape))
+                {
+                    target.Add(cssShape!);
+                    break;
+                }
+                // CSS Grid/Flex 다단 레이아웃 → Table 로 근사 변환.
+                if (TryBuildGridAsTable(el, target, ctx))
+                    break;
+
+                // 블록 자식이 없는 div(`<div>text</div>`, `<div>text<span>x</span></div>`) 는
+                // 단락처럼 처리해 div 자체의 text-align/스타일을 적용. 블록 자식이 하나라도 있으면
+                // 평탄화해 자식 처리(부모의 text-align 은 PropagateInheritableStyles 로 이미 자식에 전파됨).
+                bool hasBlockChild = el.Children.Any(c => IsBlockElement(c));
+                if (!hasBlockChild)
+                {
+                    var p = new Paragraph();
+                    p.Style.QuoteLevel = ctx.QuoteLevel;
+                    p.Style.ListMarker = CloneMarker(ctx.Marker);
+                    ApplyBlockStyle(p, el);
+                    var initial = ParseInlineStyle(el.GetAttribute("style"));
+                    foreach (var n in el.ChildNodes) AppendInlineNode(p, n, initial, url: null);
+                    if (p.Runs.Count > 0)
+                        target.Add(p);
+                    break;
+                }
+                ProcessChildren(el, target, ctx);
+                break;
+            }
+
+            case "nav":
+            {
+                var navCls = el.GetAttribute("class") ?? "";
+                if (navCls.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          .Any(c => c.Equals("pd-toc", StringComparison.OrdinalIgnoreCase)))
+                {
+                    target.Add(BuildTocBlock(el));
+                    break;
+                }
+                ProcessChildren(el, target, ctx);
+                break;
+            }
+
+            case "details":
+                ProcessDetails(el, target, ctx);
+                break;
+
+            case "dl":
+                ProcessDefinitionList(el, target, ctx);
+                break;
+
+            case "svg":
+            {
+                // PolyDonky 자체 출력 (단일 도형, 텍스트 레이블 없음) → ShapeObject.
+                // 복합 SVG (텍스트·복수 도형 포함 다이어그램) → ImageBlock 으로 보존.
+                bool isSingleShape = CountSvgShapeElements(el) == 1 && !SvgHasTextElements(el);
+                if (isSingleShape && TryParseShapeFromSvgElement(el, out var shapeFromSvg))
+                    target.Add(shapeFromSvg!);
+                else
+                    target.Add(BuildImageFromSvg(el));
+                break;
+            }
+
+            case "math":
+            {
+                // <annotation encoding="application/x-tex"> 에서 LaTeX 추출 시도.
+                var mathAnnot = el.QuerySelector("annotation[encoding='application/x-tex']")
+                             ?? el.QuerySelector("annotation[encoding='text/latex']");
+                if (mathAnnot is not null)
+                {
+                    var latex = mathAnnot.TextContent.Trim();
+                    if (latex.Length > 0)
+                    {
+                        var mp = new Paragraph();
+                        mp.Runs.Add(new Run { LatexSource = latex, IsDisplayEquation = true });
+                        target.Add(mp);
+                        break;
+                    }
+                }
+                target.Add(new OpaqueBlock
+                {
+                    Format       = "html",
+                    Xml          = el.OuterHtml,
+                    DisplayLabel = "[수식]",
+                });
+                break;
+            }
+
             // 시멘틱 sectioning + 일반 컨테이너 — 자식을 그대로 펼친다.
-            case "div":  case "section": case "article":
-            case "main": case "aside":   case "header":  case "footer":
-            case "nav":  case "details": case "summary":
-            case "dl":   case "dt":      case "dd":
-            case "form": case "fieldset":
+            case "section": case "article":
+            case "main":    case "aside":   case "header":  case "footer":
+            case "summary": case "dt":      case "dd":
+            case "form":    case "fieldset":
             {
                 ProcessChildren(el, target, ctx);
                 break;
@@ -289,8 +427,8 @@ public sealed class HtmlReader : IDocumentReader
 
             // 무시할 요소 — script/style/template/noscript/...
             case "script": case "style":  case "template":
-            case "noscript": case "svg":   case "math":
-            case "head":    case "meta":   case "link": case "title":
+            case "noscript":
+            case "head":   case "meta":   case "link": case "title":
             {
                 break;
             }
@@ -311,6 +449,25 @@ public sealed class HtmlReader : IDocumentReader
             // <html>, <body> 등 알 수 없는 컨테이너 — 자식 평탄화.
             default:
             {
+                // CSS 로 display:block / inline-block 이 적용된 인라인 요소(예: <span class="cite">)
+                // 는 자체 단락처럼 다뤄 정렬·인용 컨텍스트를 보존한다. 자식이 모두 인라인일 때만 적용.
+                var styleAttr = el.GetAttribute("style") ?? "";
+                var disp = StyleProp(styleAttr, "display");
+                bool blockLike = disp is not null
+                    && (disp.Equals("block", StringComparison.OrdinalIgnoreCase)
+                     || disp.Equals("inline-block", StringComparison.OrdinalIgnoreCase));
+                if (blockLike && !el.Children.Any(IsBlockElement))
+                {
+                    var p = new Paragraph();
+                    p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
+                    p.Style.QuoteLevel = ctx.QuoteLevel;
+                    p.Style.ListMarker = CloneMarker(ctx.Marker);
+                    ApplyBlockAlignment(p, el);
+                    AppendInline(p, el);
+                    if (p.Runs.Count > 0) target.Add(p);
+                    break;
+                }
+
                 if (el.ChildNodes.Length > 0)
                     ProcessChildren(el, target, ctx);
                 break;
@@ -323,6 +480,22 @@ public sealed class HtmlReader : IDocumentReader
         bool isOrdered = el.LocalName == "ol";
         int  start     = 1;
         if (isOrdered && int.TryParse(el.GetAttribute("start"), out var s)) start = s;
+
+        // list-style-type 속성 또는 CSS inline style에서 ListKind 결정.
+        var listStyle = el.GetAttribute("type")
+            ?? StyleProp(el.GetAttribute("style") ?? "", "list-style-type");
+        var (listKind, listUpper) = ResolveListKindAndCase(isOrdered, listStyle);
+        bool hideMarker = listStyle is not null
+            && listStyle.Trim().Equals("none", StringComparison.OrdinalIgnoreCase);
+
+        // CSS class="checklist" 패턴 — `:before` 가상 요소로 ☐/☑ 를 그리는 사용자 정의 작업 목록.
+        // <li class="checked"> = 체크됨, 그 외 = 미체크.
+        var ulClasses = (el.GetAttribute("class") ?? "")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool isChecklist = ulClasses.Any(c =>
+            c.Equals("checklist",     StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("task-list",     StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("contains-task-list", StringComparison.OrdinalIgnoreCase));
 
         int counter = 0;
         foreach (var child in el.ChildNodes)
@@ -338,22 +511,59 @@ public sealed class HtmlReader : IDocumentReader
                 checkedState = firstInput.HasAttribute("checked");
                 firstInput.Remove();
             }
+            else if (isChecklist)
+            {
+                // CSS-only 체크리스트 — `<li class="checked">` 으로 체크 상태 판단.
+                var liClasses = (li.GetAttribute("class") ?? "")
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                checkedState = liClasses.Any(c =>
+                    c.Equals("checked",   StringComparison.OrdinalIgnoreCase) ||
+                    c.Equals("done",      StringComparison.OrdinalIgnoreCase) ||
+                    c.Equals("complete",  StringComparison.OrdinalIgnoreCase));
+            }
+
+            // <li> 자체의 list-style-type 이 있으면 개별 마커에 적용.
+            var liStyle = li.GetAttribute("type")
+                ?? StyleProp(li.GetAttribute("style") ?? "", "list-style-type");
+            ListKind lmKind;
+            bool? lmUpper;
+            if (liStyle is not null)
+                (lmKind, lmUpper) = ResolveListKindAndCase(isOrdered, liStyle);
+            else
+                (lmKind, lmUpper) = (listKind, listUpper);
+            bool liHide = liStyle is not null
+                ? liStyle.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)
+                : hideMarker;
 
             int order = li.GetAttribute("value") is { } v && int.TryParse(v, out var ov) ? ov : start + counter - 1;
-            var lm = isOrdered
-                ? new ListMarker
+            // list-style-type:none → ListMarker 자체를 생성하지 않아 마커 비표시.
+            // (체크박스 작업 목록은 예외 — 항상 표시)
+            ListMarker? lm;
+            if (liHide && checkedState is null)
+            {
+                lm = null;
+            }
+            else if (isOrdered)
+            {
+                lm = new ListMarker
                 {
-                    Kind          = ListKind.OrderedDecimal,
+                    Kind          = lmKind,
                     OrderedNumber = order,
                     Level         = ctx.ListLevel,
                     Checked       = checkedState,
-                }
-                : new ListMarker
-                {
-                    Kind    = ListKind.Bullet,
-                    Level   = ctx.ListLevel,
-                    Checked = checkedState,
+                    UpperCase     = lmUpper,
                 };
+            }
+            else
+            {
+                lm = new ListMarker
+                {
+                    Kind      = lmKind,
+                    Level     = ctx.ListLevel,
+                    Checked   = checkedState,
+                    UpperCase = lmUpper,
+                };
+            }
 
             // <li> 내부의 첫 텍스트/인라인은 한 단락으로, 후속 블록(중첩 리스트 등)은 평탄화.
             var firstParagraph = new Paragraph();
@@ -406,6 +616,12 @@ public sealed class HtmlReader : IDocumentReader
         var lang  = inner is not null ? ExtractCodeLanguage(inner) : ExtractCodeLanguage(preEl);
         p.Style.CodeLanguage = lang ?? "";
 
+        // class="line-numbers" → ShowLineNumbers
+        var preClass = preEl.GetAttribute("class") ?? "";
+        if (preClass.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Any(c => c.Equals("line-numbers", StringComparison.OrdinalIgnoreCase)))
+            p.Style.ShowLineNumbers = true;
+
         var text = inner?.TextContent ?? preEl.TextContent;
         // <pre> 의 leading newline 제거 (HTML 관례).
         if (text.StartsWith('\n')) text = text[1..];
@@ -429,6 +645,15 @@ public sealed class HtmlReader : IDocumentReader
     private static PdTable BuildTable(IElement tableEl, InlineCtx ctx)
     {
         var t = new PdTable();
+
+        // 표 캡션 — <caption> 은 <table> 의 직접 자식으로만 허용됨.
+        var captionEl = tableEl.Children.FirstOrDefault(c => c.LocalName == "caption");
+        if (captionEl is not null)
+        {
+            var captionText = NormalizeWhitespace(captionEl.TextContent);
+            if (captionText.Length > 0)
+                t.Caption = captionText;
+        }
 
         // 표 배경색.
         var tblStyle = tableEl.GetAttribute("style");
@@ -567,6 +792,25 @@ public sealed class HtmlReader : IDocumentReader
 
     private static void BuildFigure(IElement figEl, IList<PdBlock> target, InlineCtx ctx)
     {
+        // pd-shape: PolyDonky ShapeObject 복원
+        var figCls = figEl.GetAttribute("class") ?? "";
+        if (figCls.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                  .Any(c => c.Equals("pd-shape", StringComparison.OrdinalIgnoreCase)))
+        {
+            var svgEl = figEl.QuerySelector("svg");
+            if (svgEl is not null && TryParseShapeFromSvgElement(svgEl, out var shapeObj))
+            {
+                var captionEl2 = figEl.QuerySelector("figcaption");
+                if (captionEl2 is not null)
+                {
+                    var lbl = captionEl2.TextContent.Trim();
+                    if (lbl.Length > 0) shapeObj!.LabelText = lbl;
+                }
+                target.Add(shapeObj!);
+                return;
+            }
+        }
+
         // figcaption → 가까운 img 의 Description 로 흡수, 또는 별도 단락.
         var caption = figEl.QuerySelector("figcaption");
         var imgEl   = figEl.QuerySelector("img");
@@ -590,8 +834,19 @@ public sealed class HtmlReader : IDocumentReader
         }
         else
         {
-            // img 없는 figure — 자식만 평탄화.
-            ProcessChildren(figEl, target, ctx);
+            // SVG 포함 figure → 도표·다이어그램이므로 ImageBlock 으로 보존.
+            var svgChild = figEl.QuerySelector("svg");
+            if (svgChild is not null)
+            {
+                var captionEl3  = figEl.QuerySelector("figcaption");
+                var captionText = captionEl3?.TextContent.Trim();
+                target.Add(BuildImageFromSvg(svgChild, captionText));
+            }
+            else
+            {
+                // img/svg 없는 figure — 자식만 평탄화.
+                ProcessChildren(figEl, target, ctx);
+            }
         }
     }
 
@@ -639,7 +894,11 @@ public sealed class HtmlReader : IDocumentReader
             {
                 var href  = el.GetAttribute("href");
                 var style = MergeStyle(parentStyle, el);
-                style.Underline = true;
+                // CSS text-decoration: none → 밑줄 제거 (e.g. .toc a { text-decoration: none }).
+                var td = StyleProp(el.GetAttribute("style"), "text-decoration")
+                       ?? StyleProp(el.GetAttribute("style"), "text-decoration-line");
+                if (td is null || !td.Contains("none", StringComparison.OrdinalIgnoreCase))
+                    style.Underline = true;
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, style, href ?? parentUrl);
                 return;
             }
@@ -664,11 +923,132 @@ public sealed class HtmlReader : IDocumentReader
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, supStyle, parentUrl);
                 return;
             }
+
+            case "span":
+            {
+                var cls = el.GetAttribute("class") ?? "";
+
+                // pd-field-* → Run.Field
+                var field = ExtractFieldType(cls);
+                if (field.HasValue)
+                {
+                    p.Runs.Add(new Run { Field = field.Value, Style = Clone(parentStyle) });
+                    return;
+                }
+
+                // pd-emoji → Run.EmojiKey
+                var emojiKey = el.GetAttribute("data-pd-emoji");
+                if (emojiKey is { Length: > 0 })
+                {
+                    p.Runs.Add(new Run { EmojiKey = emojiKey, Style = Clone(parentStyle) });
+                    return;
+                }
+
+                // pd-math → Run.LatexSource
+                if (cls.Contains("pd-math", StringComparison.Ordinal))
+                {
+                    var latex   = el.TextContent;
+                    bool display = false;
+                    if (latex.StartsWith("\\[", StringComparison.Ordinal) && latex.EndsWith("\\]", StringComparison.Ordinal))
+                        { display = true; latex = latex[2..^2].Trim(); }
+                    else if (latex.StartsWith("\\(", StringComparison.Ordinal) && latex.EndsWith("\\)", StringComparison.Ordinal))
+                        latex = latex[2..^2].Trim();
+                    if (latex.Length > 0)
+                    {
+                        p.Runs.Add(new Run { LatexSource = latex, IsDisplayEquation = display, Style = Clone(parentStyle) });
+                        return;
+                    }
+                }
+
+                // 일반 span — 스타일 합산 후 자식 처리.
+                break;
+            }
+
+            case "input":
+            {
+                var iType  = el.GetAttribute("type")?.ToLowerInvariant() ?? "text";
+                var iValue = el.GetAttribute("value") ?? "";
+                var iPh    = el.GetAttribute("placeholder") ?? "";
+                var iLabel = iType switch
+                {
+                    "checkbox" => el.HasAttribute("checked") ? "[☑]" : "[☐]",
+                    "radio"    => el.HasAttribute("checked") ? "[●]" : "[○]",
+                    "submit"   => $"[{(iValue.Length > 0 ? iValue : "제출")}]",
+                    "reset"    => $"[{(iValue.Length > 0 ? iValue : "초기화")}]",
+                    "button"   => $"[{(iValue.Length > 0 ? iValue : "버튼")}]",
+                    _          => iPh.Length > 0 ? $"[{iPh}]" : iValue.Length > 0 ? iValue : "[입력란]",
+                };
+                p.AddText(iLabel, Clone(parentStyle));
+                return;
+            }
+
+            case "button":
+            {
+                var btnTxt = el.TextContent.Trim();
+                p.AddText($"[{(btnTxt.Length > 0 ? btnTxt : "버튼")}]", Clone(parentStyle));
+                return;
+            }
+
+            case "select":
+            {
+                var selOpt = el.QuerySelector("option[selected]")?.TextContent.Trim()
+                          ?? el.QuerySelector("option")?.TextContent.Trim()
+                          ?? "";
+                p.AddText($"[{(selOpt.Length > 0 ? selOpt : "선택...")}]", Clone(parentStyle));
+                return;
+            }
+
+            case "textarea":
+            {
+                var taTxt = el.TextContent.Trim();
+                p.AddText(taTxt.Length > 0 ? taTxt : "[텍스트 영역]", Clone(parentStyle));
+                return;
+            }
+
+            case "math":
+            {
+                // 인라인 MathML — annotation 에서 LaTeX 추출.
+                var inlineAnnot = el.QuerySelector("annotation[encoding='application/x-tex']")
+                               ?? el.QuerySelector("annotation[encoding='text/latex']");
+                if (inlineAnnot is not null)
+                {
+                    var latex = inlineAnnot.TextContent.Trim();
+                    if (latex.Length > 0)
+                    {
+                        p.Runs.Add(new Run { LatexSource = latex, IsDisplayEquation = false, Style = Clone(parentStyle) });
+                        return;
+                    }
+                }
+                var inlineMathTxt = el.TextContent.Trim();
+                if (inlineMathTxt.Length > 0)
+                    p.AddText(inlineMathTxt, Clone(parentStyle));
+                return;
+            }
+
+            case "label":
+            {
+                // form label — 내용을 인라인으로 처리.
+                var ls = MergeStyle(parentStyle, el);
+                foreach (var n in el.ChildNodes) AppendInlineNode(p, n, ls, parentUrl);
+                return;
+            }
         }
 
         var s = MergeStyle(parentStyle, el);
         ApplyTagStyle(el, ref s);
         foreach (var n in el.ChildNodes) AppendInlineNode(p, n, s, parentUrl);
+    }
+
+    private static FieldType? ExtractFieldType(string cls)
+    {
+        if (!cls.Contains("pd-field", StringComparison.Ordinal)) return null;
+        if (cls.Contains("pd-field-page",     StringComparison.Ordinal)) return FieldType.Page;
+        if (cls.Contains("pd-field-numpages", StringComparison.Ordinal)) return FieldType.NumPages;
+        if (cls.Contains("pd-field-date",     StringComparison.Ordinal)) return FieldType.Date;
+        if (cls.Contains("pd-field-time",     StringComparison.Ordinal)) return FieldType.Time;
+        if (cls.Contains("pd-field-author",   StringComparison.Ordinal)) return FieldType.Author;
+        if (cls.Contains("pd-field-title",    StringComparison.Ordinal)) return FieldType.Title;
+        return null;
     }
 
     private static void ApplyTagStyle(IElement el, ref RunStyle s)
@@ -755,6 +1135,26 @@ public sealed class HtmlReader : IDocumentReader
                 case "background-color":
                 case "background":
                     if (TryParseCssColor(val, out var bg)) s.Background = bg;
+                    break;
+                case "letter-spacing":
+                    if (val.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                        && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var lspx))
+                        s.LetterSpacingPx = lspx;
+                    break;
+                case "transform":
+                    // scaleX(v) → WidthPercent. 값이 복합 transform 이어도 scaleX 만 추출.
+                    var txVal = val;
+                    int scIdx = txVal.IndexOf("scaleX(", StringComparison.OrdinalIgnoreCase);
+                    if (scIdx >= 0)
+                    {
+                        int close = txVal.IndexOf(')', scIdx);
+                        if (close > scIdx + 7)
+                        {
+                            var inner = txVal[(scIdx + 7)..close];
+                            if (double.TryParse(inner, NumberStyles.Any, CultureInfo.InvariantCulture, out var scale))
+                                s.WidthPercent = scale * 100;
+                        }
+                    }
                     break;
             }
         }
@@ -957,8 +1357,9 @@ public sealed class HtmlReader : IDocumentReader
         ApplyBlockStyle(p, el);
     }
 
-    /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.</summary>
-    private static void ApplyBlockStyle(Paragraph p, IElement el)
+    /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.
+    /// <paramref name="baseFontSizePt"/>는 em 단위 margin 환산 기준 (기본 11pt = body 기본값).</summary>
+    private static void ApplyBlockStyle(Paragraph p, IElement el, double baseFontSizePt = 11.0)
     {
         var style = el.GetAttribute("style");
         var align = el.GetAttribute("align") ?? StyleProp(style, "text-align");
@@ -973,9 +1374,9 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseLineHeight(StyleProp(style, "line-height"), out var lh))
             p.Style.LineHeightFactor = lh;
 
-        if (TryParseCssPt(StyleProp(style, "margin-top"), out var mt))
+        if (TryParseCssPt(StyleProp(style, "margin-top"), baseFontSizePt, out var mt))
             p.Style.SpaceBeforePt = mt;
-        if (TryParseCssPt(StyleProp(style, "margin-bottom"), out var mb))
+        if (TryParseCssPt(StyleProp(style, "margin-bottom"), baseFontSizePt, out var mb))
             p.Style.SpaceAfterPt = mb;
 
         if (TryParseCssMm(StyleProp(style, "text-indent"), out var ti))
@@ -986,6 +1387,18 @@ public sealed class HtmlReader : IDocumentReader
             p.Style.IndentLeftMm = il;
         if (TryParseCssMm(StyleProp(style, "padding-right") ?? StyleProp(style, "margin-right"), out var ir))
             p.Style.IndentRightMm = ir;
+
+        // border-bottom → ParagraphStyle.BorderBottomPt / BorderBottomColor
+        var bbVal = StyleProp(style, "border-bottom");
+        if (bbVal is not null)
+        {
+            ExtractBorderSizeColor(bbVal, out double bSizePx, out string? bColor);
+            if (bSizePx > 0)
+            {
+                p.Style.BorderBottomPt    = bSizePx * 72.0 / 96.0;
+                p.Style.BorderBottomColor = bColor;
+            }
+        }
 
         // 강제 페이지 나누기: page-break-before:always (CSS2 legacy) 또는 break-before:page (CSS3).
         var pbv = StyleProp(style, "page-break-before") ?? StyleProp(style, "break-before");
@@ -1005,6 +1418,18 @@ public sealed class HtmlReader : IDocumentReader
             if (c <= 0) continue;
             if (decl[..c].Trim().Equals(prop, StringComparison.OrdinalIgnoreCase))
                 return decl[(c + 1)..].Trim();
+        }
+        return null;
+    }
+
+    /// <summary>class 속성에서 <c>pd-{StyleId}</c> 패턴 추출 → Paragraph.StyleId 복원.</summary>
+    private static string? ExtractPdStyleId(string? classAttr)
+    {
+        if (string.IsNullOrEmpty(classAttr)) return null;
+        foreach (var token in classAttr.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.StartsWith("pd-", StringComparison.Ordinal))
+                return token[3..];
         }
         return null;
     }
@@ -1049,6 +1474,37 @@ public sealed class HtmlReader : IDocumentReader
         => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
     /// <summary>CSS 길이값 → mm 변환. 지원 단위: mm/cm/px/pt/in.</summary>
+    /// <summary>HTML list-style-type 값을 ListKind 로 변환한다.</summary>
+    private static ListKind ResolveListKind(bool isOrdered, string? styleType)
+        => ResolveListKindAndCase(isOrdered, styleType).Kind;
+
+    /// <summary>HTML list-style-type 값을 ListKind + UpperCase 정보로 변환한다.
+    /// `<ol type="A"/"a">` 같은 대소문자 정보를 보존한다. UpperCase=null 은 정보 없음(=기본 동작).</summary>
+    private static (ListKind Kind, bool? UpperCase) ResolveListKindAndCase(bool isOrdered, string? styleType)
+    {
+        if (styleType is null)
+            return (isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet, null);
+
+        var raw     = styleType.Trim();
+        var lc      = raw.ToLowerInvariant();
+        return lc switch
+        {
+            "1" or "decimal" or "decimal-leading-zero"
+                => (ListKind.OrderedDecimal, null),
+            "a"                       => (ListKind.OrderedAlpha, raw == "A"),
+            "lower-alpha" or "lower-latin"
+                => (ListKind.OrderedAlpha, false),
+            "upper-alpha" or "upper-latin"
+                => (ListKind.OrderedAlpha, true),
+            "i"                       => (ListKind.OrderedRoman, raw == "I"),
+            "lower-roman"             => (ListKind.OrderedRoman, false),
+            "upper-roman"             => (ListKind.OrderedRoman, true),
+            "disc" or "circle" or "square" or "none"
+                => (ListKind.Bullet, null),
+            _ => (isOrdered ? ListKind.OrderedDecimal : ListKind.Bullet, null),
+        };
+    }
+
     private static bool TryParseCssMm(string? val, out double mm)
     {
         mm = 0;
@@ -1064,10 +1520,18 @@ public sealed class HtmlReader : IDocumentReader
 
     /// <summary>CSS 길이값 → pt 변환. 지원 단위: pt/px/mm/cm/in.</summary>
     private static bool TryParseCssPt(string? val, out double pt)
+        => TryParseCssPt(val, baseFontSizePt: 11.0, out pt);
+
+    /// <summary>CSS 길이값 → pt 변환. em 단위는 <paramref name="baseFontSizePt"/> 기준으로 환산.</summary>
+    private static bool TryParseCssPt(string? val, double baseFontSizePt, out double pt)
     {
         pt = 0;
         if (string.IsNullOrWhiteSpace(val)) return false;
         val = val.Trim().ToLowerInvariant();
+        if (val.EndsWith("em") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var em))
+            { pt = em * baseFontSizePt; return true; }
+        if (val.EndsWith("rem") && double.TryParse(val[..^3], NumberStyles.Any, CultureInfo.InvariantCulture, out var rem))
+            { pt = rem * 11.0; return true; }
         if (val.EndsWith("pt") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) { pt = v; return true; }
         if (val.EndsWith("px") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0 / 96.0; return true; }
         if (val.EndsWith("mm") && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { pt = v * 72.0 / 25.4; return true; }
@@ -1107,5 +1571,928 @@ public sealed class HtmlReader : IDocumentReader
             ".svg"  => "image/svg+xml",
             _       => "application/octet-stream",
         };
+    }
+
+    /// <summary>
+    /// CSS Grid / Flexbox 다단 컨테이너를 간단한 Table 로 근사 변환한다.
+    /// grid-template-columns 또는 flex 속성으로 열 수를 결정하고, 자식 div·section 을 셀로 배치.
+    /// 감지하지 못하거나 단일 열인 경우 false 를 반환해 호출측이 fallback 을 시도하도록 한다.
+    /// </summary>
+    private static bool TryBuildGridAsTable(IElement divEl, IList<PdBlock> target, InlineCtx ctx)
+    {
+        var style = divEl.GetAttribute("style") ?? "";
+        var display = StyleProp(style, "display");
+        if (display is null) return false;
+
+        bool isGrid = display.Equals("grid", StringComparison.OrdinalIgnoreCase)
+                   || display.Equals("inline-grid", StringComparison.OrdinalIgnoreCase);
+        bool isFlex = display.Equals("flex", StringComparison.OrdinalIgnoreCase)
+                   || display.Equals("inline-flex", StringComparison.OrdinalIgnoreCase);
+
+        if (!isGrid && !isFlex) return false;
+
+        // 열 수 결정.
+        int colCount = 1;
+        if (isGrid)
+        {
+            var gtc = StyleProp(style, "grid-template-columns");
+            if (gtc is not null)
+            {
+                // "1fr 1fr" / "50% 50%" / "repeat(3, 1fr)" 등 공백으로 구분된 개수를 열 수로 사용.
+                var m = System.Text.RegularExpressions.Regex.Match(gtc.Trim(), @"^repeat\s*\(\s*(\d+)");
+                if (m.Success) int.TryParse(m.Groups[1].Value, out colCount);
+                else colCount = gtc.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            }
+        }
+        else // flex
+        {
+            // flex-direction: column 이면 세로 배치 → 단일 열처럼 처리.
+            var flexDir = StyleProp(style, "flex-direction");
+            if (flexDir is not null && flexDir.Contains("column", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // 자식에서 flex: 1 / flex-basis 으로 균등 열 수 추정.
+            var flexChildren = divEl.Children.ToList();
+            if (flexChildren.Count >= 2)
+                colCount = flexChildren.Count;
+        }
+
+        if (colCount <= 1) return false; // 단일 열이면 일반 ProcessChildren 이 더 적합.
+
+        // 자식 블록 요소를 셀로 수집 (텍스트 노드 무시).
+        var cells = divEl.Children
+            .Where(c => c.LocalName is "div" or "section" or "article" or "aside" or "main" or "p")
+            .ToList();
+
+        if (cells.Count == 0) return false;
+
+        // gap 에서 셀 간격(mm) 추출.
+        var gapStr = StyleProp(style, "gap") ?? StyleProp(style, "grid-gap");
+        double gapMm = TryParseCssMm(gapStr, out var gv) ? gv : 3.0; // 기본 3mm
+
+        // Table 생성 — 테두리 없음(격자 없는 레이아웃 표).
+        var table = new Table
+        {
+            BorderThicknessPt = 0,
+        };
+
+        // 열 너비: 균등 배분 (0 = 자동, 균등 배분은 렌더러가 처리)
+        for (int c = 0; c < colCount; c++)
+            table.Columns.Add(new TableColumn { WidthMm = 0 });
+
+        int i = 0;
+        while (i < cells.Count)
+        {
+            var row = new TableRow();
+            for (int c = 0; c < colCount && i < cells.Count; c++, i++)
+            {
+                var cell = new TableCell
+                {
+                    BorderThicknessPt = 0,
+                    PaddingRightMm    = c < colCount - 1 ? gapMm : 0,
+                };
+                var cellContent = new List<PdBlock>();
+                ProcessChildren(cells[i], cellContent, ctx);
+                foreach (var b in cellContent) cell.Blocks.Add(b);
+                if (cell.Blocks.Count == 0)
+                    cell.Blocks.Add(new Paragraph());
+                row.Cells.Add(cell);
+            }
+            // 마지막 행의 빈 셀 채우기.
+            while (row.Cells.Count < colCount)
+                row.Cells.Add(new TableCell { BorderThicknessPt = 0, Blocks = { new Paragraph() } });
+            table.Rows.Add(row);
+        }
+
+        target.Add(table);
+        return true;
+    }
+
+    private static void ProcessDefinitionList(IElement dlEl, IList<PdBlock> target, InlineCtx ctx)
+    {
+        foreach (var child in dlEl.ChildNodes)
+        {
+            if (child is not IElement el) continue;
+            switch (el.LocalName)
+            {
+                case "dt":
+                {
+                    var p = new Paragraph();
+                    p.Style.QuoteLevel = ctx.QuoteLevel;
+                    var boldStyle = new RunStyle { Bold = true };
+                    foreach (var n in el.ChildNodes) AppendInlineNode(p, n, boldStyle, null);
+                    if (p.Runs.Count == 0) p.AddText(string.Empty);
+                    target.Add(p);
+                    break;
+                }
+                case "dd":
+                {
+                    var p = new Paragraph();
+                    p.Style.QuoteLevel   = ctx.QuoteLevel;
+                    p.Style.IndentLeftMm = 10.0;
+                    AppendInline(p, el);
+                    if (p.Runs.Count > 0) target.Add(p);
+                    break;
+                }
+                default:
+                    ProcessNode(child, target, ctx);
+                    break;
+            }
+        }
+    }
+
+    private static void ProcessDetails(IElement detailsEl, IList<PdBlock> target, InlineCtx ctx)
+    {
+        var summary = detailsEl.Children.FirstOrDefault(c => c.LocalName == "summary");
+        if (summary is not null)
+        {
+            var p = new Paragraph();
+            p.Style.QuoteLevel = ctx.QuoteLevel;
+            var boldStyle = new RunStyle { Bold = true };
+            foreach (var n in summary.ChildNodes) AppendInlineNode(p, n, boldStyle, null);
+            if (p.Runs.Count == 0) p.AddText(string.Empty);
+            target.Add(p);
+        }
+
+        var inner = new List<PdBlock>();
+        foreach (var child in detailsEl.ChildNodes)
+        {
+            if (child is IElement el && el.LocalName == "summary") continue;
+            ProcessNode(child, inner, ctx);
+        }
+
+        foreach (var block in inner)
+        {
+            if (block is Paragraph bp) bp.Style.IndentLeftMm += 10.0;
+            target.Add(block);
+        }
+    }
+
+    private static TocBlock BuildTocBlock(IElement navEl)
+    {
+        var toc = new TocBlock();
+        foreach (var pEl in navEl.QuerySelectorAll("p"))
+        {
+            var cls   = pEl.GetAttribute("class") ?? "";
+            int level = 1;
+            foreach (var token in cls.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (token.StartsWith("pd-toc-l", StringComparison.Ordinal)
+                    && int.TryParse(token[8..], out var l))
+                { level = l; break; }
+            }
+            var aEl  = pEl.QuerySelector("a[href]");
+            var text = aEl?.TextContent.Trim() ?? pEl.TextContent.Trim();
+            if (text.Length > 0)
+                toc.Entries.Add(new TocEntry { Level = level, Text = text });
+        }
+        return toc;
+    }
+
+    // ── SVG → ShapeObject 파서 ───────────────────────────────────────────
+
+    /// <summary>
+    /// &lt;svg&gt; 요소를 파싱해 <see cref="ShapeObject"/> 로 변환한다.
+    /// 성공하면 true, 인식 불가 구조면 false (호출자가 OpaqueBlock fallback).
+    /// </summary>
+    private static bool TryParseShapeFromSvgElement(IElement svgEl, out ShapeObject? shape)
+    {
+        shape = null;
+        if (!double.TryParse(svgEl.GetAttribute("width"),  NumberStyles.Any, CultureInfo.InvariantCulture, out var wPx) || wPx <= 0) return false;
+        if (!double.TryParse(svgEl.GetAttribute("height"), NumberStyles.Any, CultureInfo.InvariantCulture, out var hPx) || hPx <= 0) return false;
+
+        // 첫 번째 도형 요소를 찾는다 (<defs>, <title>, <desc> 제외).
+        IElement? shapeEl = null;
+        foreach (var child in svgEl.Children)
+        {
+            switch (child.LocalName)
+            {
+                case "rect": case "ellipse": case "circle":
+                case "line": case "polyline": case "polygon": case "path":
+                    shapeEl = child;
+                    break;
+                case "g":
+                    // <g> 래퍼 안까지 1단계 탐색.
+                    foreach (var gc in child.Children)
+                    {
+                        switch (gc.LocalName)
+                        {
+                            case "rect": case "ellipse": case "circle":
+                            case "line": case "polyline": case "polygon": case "path":
+                                shapeEl = gc;
+                                break;
+                        }
+                        if (shapeEl is not null) break;
+                    }
+                    break;
+            }
+            if (shapeEl is not null) break;
+        }
+        if (shapeEl is null) return false;
+
+        var s = new ShapeObject
+        {
+            WidthMm  = wPx * 25.4 / 96.0,
+            HeightMm = hPx * 25.4 / 96.0,
+        };
+        ParseSvgPaintAttrs(shapeEl, s);
+
+        switch (shapeEl.LocalName)
+        {
+            case "rect":
+            {
+                var rxAttr = shapeEl.GetAttribute("rx");
+                if (rxAttr is not null
+                    && double.TryParse(rxAttr, NumberStyles.Any, CultureInfo.InvariantCulture, out var rxPx)
+                    && rxPx > 0)
+                {
+                    s.Kind           = ShapeKind.RoundedRect;
+                    s.CornerRadiusMm = rxPx * 25.4 / 96.0;
+                }
+                else
+                {
+                    s.Kind = ShapeKind.Rectangle;
+                }
+                break;
+            }
+            case "ellipse":
+            case "circle":
+                s.Kind = ShapeKind.Ellipse;
+                break;
+
+            case "line":
+            {
+                s.Kind = ShapeKind.Line;
+                if (double.TryParse(shapeEl.GetAttribute("x1"), NumberStyles.Any, CultureInfo.InvariantCulture, out var x1) &&
+                    double.TryParse(shapeEl.GetAttribute("y1"), NumberStyles.Any, CultureInfo.InvariantCulture, out var y1) &&
+                    double.TryParse(shapeEl.GetAttribute("x2"), NumberStyles.Any, CultureInfo.InvariantCulture, out var x2) &&
+                    double.TryParse(shapeEl.GetAttribute("y2"), NumberStyles.Any, CultureInfo.InvariantCulture, out var y2))
+                {
+                    s.Points.Add(new ShapePoint { X = x1 * 25.4 / 96.0, Y = y1 * 25.4 / 96.0 });
+                    s.Points.Add(new ShapePoint { X = x2 * 25.4 / 96.0, Y = y2 * 25.4 / 96.0 });
+                }
+                break;
+            }
+
+            case "polyline":
+            {
+                s.Kind = ShapeKind.Polyline;
+                ParseSvgPointsList(shapeEl.GetAttribute("points") ?? "", s.Points);
+                if (s.Points.Count < 2) return false;
+                break;
+            }
+
+            case "polygon":
+            {
+                ParseSvgPointsList(shapeEl.GetAttribute("points") ?? "", s.Points);
+                if (s.Points.Count < 3) return false;
+                s.Kind = s.Points.Count == 3 ? ShapeKind.Triangle : ShapeKind.Polygon;
+                break;
+            }
+
+            case "path":
+            {
+                var d      = shapeEl.GetAttribute("d") ?? "";
+                bool closed = ParseSvgPath(d, s.Points);
+                s.Kind = closed ? ShapeKind.ClosedSpline : ShapeKind.Spline;
+                if (s.Points.Count < 2) return false;
+                break;
+            }
+
+            default:
+                return false;
+        }
+
+        shape = s;
+        return true;
+    }
+
+    private static void ParseSvgPaintAttrs(IElement el, ShapeObject s)
+    {
+        var stroke = el.GetAttribute("stroke");
+        if (stroke is { Length: > 0 } && stroke != "none")
+            s.StrokeColor = stroke;
+
+        if (double.TryParse(el.GetAttribute("stroke-width"), NumberStyles.Any, CultureInfo.InvariantCulture, out var sw) && sw >= 0)
+            s.StrokeThicknessPt = sw;
+
+        var fill = el.GetAttribute("fill");
+        s.FillColor = (fill is { Length: > 0 } && fill != "none") ? fill : null;
+
+        var sda = el.GetAttribute("stroke-dasharray");
+        if (sda is { Length: > 0 } && sda != "none")
+            s.StrokeDash = sda.Contains(',') ? StrokeDash.DashDot : StrokeDash.Dashed;
+    }
+
+    private static void ParseSvgPointsList(string pointsStr, IList<ShapePoint> points)
+    {
+        if (string.IsNullOrWhiteSpace(pointsStr)) return;
+        // "x,y x,y ..." または "x y x y ..." 形式 両方対応
+        var tokens = pointsStr.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var token in tokens)
+        {
+            var parts = token.Split(',');
+            if (parts.Length >= 2
+                && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out var x)
+                && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var y))
+            {
+                points.Add(new ShapePoint { X = x * 25.4 / 96.0, Y = y * 25.4 / 96.0 });
+            }
+        }
+    }
+
+    /// <summary>
+    /// SVG path data "M x,y C cp0x,cp0y cp1x,cp1y x,y ... [Z]" 를 파싱해
+    /// <see cref="ShapePoint"/> 목록(제어점 포함)으로 변환한다.
+    /// </summary>
+    /// <returns>Z 로 닫혔으면 true (ClosedSpline), 아니면 false (Spline).</returns>
+    private static bool ParseSvgPath(string d, IList<ShapePoint> points)
+    {
+        if (string.IsNullOrWhiteSpace(d)) return false;
+
+        // 커맨드 문자 앞뒤에 공백 삽입 후 쉼표·공백으로 토큰 분리.
+        var sb = new StringBuilder(d.Length * 2);
+        foreach (char ch in d)
+        {
+            if (ch is 'M' or 'm' or 'C' or 'c' or 'Z' or 'z')
+                sb.Append(' ').Append(ch).Append(' ');
+            else if (ch == ',')
+                sb.Append(' ');
+            else
+                sb.Append(ch);
+        }
+        var tokens = sb.ToString().Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+        bool closed     = false;
+        ShapePoint? cur = null;
+        int i           = 0;
+
+        while (i < tokens.Length)
+        {
+            var cmd = tokens[i++];
+            switch (cmd)
+            {
+                case "M": case "m":
+                {
+                    if (i + 1 >= tokens.Length) break;
+                    if (!TryParseTwo(tokens, i, out var x, out var y)) break;
+                    i += 2;
+                    cur = new ShapePoint { X = x * 25.4 / 96.0, Y = y * 25.4 / 96.0 };
+                    points.Add(cur);
+                    break;
+                }
+                case "C": case "c":
+                {
+                    // 연속된 C 좌표 소비 (6개씩).
+                    while (i + 5 < tokens.Length
+                        && TryParseSix(tokens, i,
+                            out var cp0x, out var cp0y,
+                            out var cp1x, out var cp1y,
+                            out var ex,   out var ey))
+                    {
+                        if (cur is not null)
+                        {
+                            cur.OutCtrlX = cp0x * 25.4 / 96.0;
+                            cur.OutCtrlY = cp0y * 25.4 / 96.0;
+                        }
+                        var end = new ShapePoint
+                        {
+                            X       = ex   * 25.4 / 96.0,
+                            Y       = ey   * 25.4 / 96.0,
+                            InCtrlX = cp1x * 25.4 / 96.0,
+                            InCtrlY = cp1y * 25.4 / 96.0,
+                        };
+                        points.Add(end);
+                        cur  = end;
+                        i   += 6;
+                    }
+                    break;
+                }
+                case "Z": case "z":
+                    closed = true;
+                    break;
+            }
+        }
+        return closed;
+    }
+
+    // ── 편집용지 설정 파싱 ──────────────────────────────────────────────
+
+    // ── CSS 규칙 → 인라인 style 머지 ─────────────────────────────────────────
+
+    /// <summary>
+    /// 문서의 모든 &lt;style&gt; 블록을 파싱해 단순 셀렉터(.class / #id / tag) 만 추출하고,
+    /// 매칭되는 모든 요소의 style 속성에 머지한다 (인라인 style 우선).
+    /// 후속 단계(ApplyBlockStyle, ParseInlineStyle 등) 에서 자동으로 반영된다.
+    ///
+    /// 지원 셀렉터: .class, #id, tag, tag.class — 콤마 분리, 후행 단순 셀렉터 추출.
+    /// 미지원: 자손/자식/형제 결합, [attr] 속성, 가상 클래스(:hover 등).
+    /// </summary>
+    /// <summary>
+    /// CSS 의 상속(inherit)되는 속성(text-align 등)을 부모 → 자식 으로 전파해
+    /// 자식 요소의 inline style 에 직접 적어 둔다. 자식이 자체 값을 가지면 그 값이 우선.
+    /// 호출 시점은 <see cref="InlineCssClassRules"/> 직후 — 클래스 규칙이 inline style 로 머지된 뒤.
+    /// 상속되는 속성: text-align (목록은 향후 확장 가능 — color/font-family 등).
+    /// </summary>
+    private static void PropagateInheritableStyles(IElement el, string? parentTextAlign,
+        string? parentColor, string? parentLineHeight)
+    {
+        var style         = el.GetAttribute("style") ?? "";
+        var ownTa         = StyleProp(style, "text-align");
+        var ownColor      = StyleProp(style, "color");
+        var ownLineHeight = StyleProp(style, "line-height");
+
+        var effTa         = ownTa         ?? parentTextAlign;
+        var effColor      = ownColor      ?? parentColor;
+        var effLineHeight = ownLineHeight ?? parentLineHeight;
+
+        // 자체 값이 없고 부모로부터 상속받은 값이 있으면 inline style 에 추가.
+        var toAdd = new StringBuilder();
+        if (ownTa         is null && parentTextAlign  is not null) toAdd.Append("text-align:").Append(parentTextAlign).Append(';');
+        if (ownColor      is null && parentColor      is not null) toAdd.Append("color:").Append(parentColor).Append(';');
+        if (ownLineHeight is null && parentLineHeight is not null) toAdd.Append("line-height:").Append(parentLineHeight).Append(';');
+
+        if (toAdd.Length > 0)
+        {
+            var sb = new StringBuilder(style);
+            if (sb.Length > 0 && sb[^1] != ';') sb.Append(';');
+            sb.Append(toAdd);
+            el.SetAttribute("style", sb.ToString());
+        }
+
+        foreach (var child in el.Children)
+            PropagateInheritableStyles(child, effTa, effColor, effLineHeight);
+    }
+
+    private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)
+    {
+        // selector → property → value
+        var rules = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var styleEl in doc.QuerySelectorAll("style"))
+            ParseCssText(styleEl.TextContent, rules);
+
+        if (rules.Count == 0) return;
+
+        var docElement = doc.DocumentElement;
+        if (docElement is null) return;
+
+        foreach (var el in docElement.QuerySelectorAll("*"))
+        {
+            var matched = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // 명세 우선순위: tag < .class < #id < inline (마지막 wins).
+            if (rules.TryGetValue(el.LocalName, out var tagDict))
+                foreach (var kv in tagDict) matched[kv.Key] = kv.Value;
+
+            var classAttr = el.GetAttribute("class");
+            if (!string.IsNullOrEmpty(classAttr))
+            {
+                foreach (var cls in classAttr.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (rules.TryGetValue("." + cls, out var classDict))
+                        foreach (var kv in classDict) matched[kv.Key] = kv.Value;
+                    // tag.class 결합
+                    if (rules.TryGetValue(el.LocalName + "." + cls, out var tagClassDict))
+                        foreach (var kv in tagClassDict) matched[kv.Key] = kv.Value;
+                }
+            }
+
+            var idAttr = el.GetAttribute("id");
+            if (!string.IsNullOrEmpty(idAttr) && rules.TryGetValue("#" + idAttr, out var idDict))
+                foreach (var kv in idDict) matched[kv.Key] = kv.Value;
+
+            if (matched.Count == 0) continue;
+
+            // StyleProp 은 첫 매칭을 반환하므로 인라인 style 을 먼저 두고 클래스 규칙을 뒤에 붙인다
+            // → 같은 속성이 양쪽에 있으면 인라인이 먼저 매칭돼 우선 적용된다.
+            var inlineStyle = el.GetAttribute("style") ?? "";
+            var sb = new StringBuilder();
+            sb.Append(inlineStyle);
+            if (sb.Length > 0 && sb[^1] != ';') sb.Append(';');
+            foreach (var kv in matched)
+                sb.Append(kv.Key).Append(':').Append(kv.Value).Append(';');
+            el.SetAttribute("style", sb.ToString());
+        }
+    }
+
+    /// <summary>CSS 텍스트를 단순 파싱해 셀렉터 → 속성 → 값 사전에 채워 넣는다.</summary>
+    private static void ParseCssText(string css, Dictionary<string, Dictionary<string, string>> rules)
+    {
+        if (string.IsNullOrWhiteSpace(css)) return;
+        int pos = 0;
+        while (pos < css.Length)
+        {
+            // 주석 스킵
+            if (pos < css.Length - 1 && css[pos] == '/' && css[pos + 1] == '*')
+            {
+                int end = css.IndexOf("*/", pos + 2, StringComparison.Ordinal);
+                if (end < 0) return;
+                pos = end + 2;
+                continue;
+            }
+            // 블록 시작 찾기
+            int braceOpen = css.IndexOf('{', pos);
+            if (braceOpen < 0) return;
+            int braceClose = css.IndexOf('}', braceOpen);
+            if (braceClose < 0) return;
+
+            var selectorPart = css[pos..braceOpen].Trim();
+            var bodyPart     = css[(braceOpen + 1)..braceClose];
+
+            pos = braceClose + 1;
+
+            // @rule (e.g., @page, @media, @keyframes) 무시 — @page 는 ApplyPageSettings 가 별도 처리.
+            if (selectorPart.StartsWith("@", StringComparison.Ordinal)) continue;
+            if (selectorPart.Length == 0) continue;
+
+            foreach (var rawSelector in selectorPart.Split(','))
+            {
+                var simpleSelector = ExtractSimpleSelector(rawSelector.Trim());
+                if (simpleSelector is null) continue;
+
+                if (!rules.TryGetValue(simpleSelector, out var dict))
+                {
+                    dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    rules[simpleSelector] = dict;
+                }
+                foreach (var decl in bodyPart.Split(';'))
+                {
+                    var c = decl.IndexOf(':');
+                    if (c <= 0) continue;
+                    var prop = decl[..c].Trim();
+                    var val  = decl[(c + 1)..].Trim();
+                    if (prop.Length == 0 || val.Length == 0) continue;
+                    dict[prop] = val;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 복합 셀렉터에서 우측 단순 셀렉터(.class / #id / tag / tag.class) 를 추출한다.
+    /// 예: ".toc ul" → "ul", ".toc > a" → "a", "div.alert" → "div.alert".
+    /// 가상 클래스(:hover) 와 속성 셀렉터([type=...]) 는 제거.
+    /// </summary>
+    private static string? ExtractSimpleSelector(string selector)
+    {
+        if (string.IsNullOrEmpty(selector)) return null;
+        // 자손·자식·형제 결합자 제거 — 가장 우측 단순 셀렉터만 사용.
+        int lastBreak = -1;
+        for (int i = selector.Length - 1; i >= 0; i--)
+        {
+            var ch = selector[i];
+            if (ch is ' ' or '\t' or '>' or '+' or '~') { lastBreak = i; break; }
+        }
+        if (lastBreak >= 0) selector = selector[(lastBreak + 1)..];
+        // 가상 클래스/요소 제거
+        int colon = selector.IndexOf(':');
+        if (colon >= 0) selector = selector[..colon];
+        // 속성 셀렉터 제거
+        int bracket = selector.IndexOf('[');
+        if (bracket >= 0) selector = selector[..bracket];
+        selector = selector.Trim();
+        return selector.Length > 0 ? selector : null;
+    }
+
+    // ── 복합 SVG → ImageBlock 변환 ───────────────────────────────────────────
+
+    /// <summary>
+    /// SVG 를 <see cref="ImageBlock"/> (image/svg+xml) 으로 보존한다.
+    /// 복수 도형·텍스트 레이블이 포함된 외부 다이어그램용.
+    /// </summary>
+    private static ImageBlock BuildImageFromSvg(IElement svgEl, string? caption = null)
+    {
+        var img = new ImageBlock { MediaType = "image/svg+xml" };
+        img.Data = Encoding.UTF8.GetBytes(svgEl.OuterHtml);
+        if (TryAttrDouble(svgEl, "width",  out var wPx) && wPx > 0) img.WidthMm  = wPx * 25.4 / 96.0;
+        if (TryAttrDouble(svgEl, "height", out var hPx) && hPx > 0) img.HeightMm = hPx * 25.4 / 96.0;
+        if (caption is { Length: > 0 })
+        {
+            img.ShowTitle     = true;
+            img.Title         = caption;
+            img.TitlePosition = ImageTitlePosition.Below;
+        }
+        return img;
+    }
+
+    /// <summary>SVG 내 실질 도형 요소 수 (rect/ellipse/circle/line/polyline/polygon/path).</summary>
+    private static int CountSvgShapeElements(IElement svgEl)
+    {
+        int count = 0;
+        foreach (var child in svgEl.Children)
+        {
+            switch (child.LocalName)
+            {
+                case "rect": case "ellipse": case "circle":
+                case "line": case "polyline": case "polygon": case "path":
+                    count++;
+                    break;
+                case "g":
+                    foreach (var gc in child.Children)
+                        switch (gc.LocalName)
+                        {
+                            case "rect": case "ellipse": case "circle":
+                            case "line": case "polyline": case "polygon": case "path":
+                                count++;
+                                break;
+                        }
+                    break;
+            }
+        }
+        return count;
+    }
+
+    /// <summary>SVG 내 &lt;text&gt; 요소 존재 여부 — true 면 레이블이 있는 복합 도면.</summary>
+    private static bool SvgHasTextElements(IElement svgEl)
+        => svgEl.QuerySelector("text") is not null;
+
+    // ── CSS 도형 파서 ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 텍스트·자식이 없고 CSS 만으로 모양을 표현한 div 를 <see cref="ShapeObject"/> 로 변환한다.
+    /// border-trick 삼각형, background+width+height 박스, border-radius, transform:rotate 지원.
+    /// </summary>
+    private static bool TryParseCssShapeFromDiv(IElement divEl, out ShapeObject? shape)
+    {
+        shape = null;
+        if (divEl.ChildElementCount > 0) return false;
+        if (divEl.TextContent.Trim().Length > 0) return false;
+
+        var style = divEl.GetAttribute("style") ?? "";
+        if (style.Length == 0) return false;
+
+        var widthStr  = StyleProp(style, "width");
+        var heightStr = StyleProp(style, "height");
+        if (widthStr is null) return false;
+
+        bool isZeroW = widthStr.Trim()  is "0" or "0px";
+        bool isZeroH = heightStr is null || heightStr.Trim() is "0" or "0px";
+
+        // CSS border-trick 삼각형: width:0; height:0
+        if (isZeroW && isZeroH)
+            return TryParseBorderTrickTriangle(style, out shape);
+
+        // 일반 박스 도형: width + height + background
+        if (!TryParseCssMm(widthStr, out var wMm)) return false;
+        if (heightStr is null || !TryParseCssMm(heightStr, out var hMm)) return false;
+
+        var bgStr = StyleProp(style, "background-color") ?? StyleProp(style, "background");
+        if (bgStr is null) return false;
+        if (!TryParseCssColor(bgStr.Trim().Split(' ')[0], out var bgColor)) return false;
+
+        var s = new ShapeObject
+        {
+            WidthMm           = wMm,
+            HeightMm          = hMm,
+            FillColor         = ColorToHex(bgColor),
+            StrokeThicknessPt = 0,   // CSS pure-color div 는 기본 테두리 없음.
+        };
+
+        var brStr = StyleProp(style, "border-radius");
+        var trStr = StyleProp(style, "transform");
+
+        if (brStr is not null)
+        {
+            var firstTok = brStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            if (firstTok.Equals("50%", StringComparison.Ordinal))
+            {
+                s.Kind = ShapeKind.Ellipse;
+            }
+            else
+            {
+                s.Kind = ShapeKind.RoundedRect;
+                if (TryParseCssMm(firstTok, out var rMm))
+                    s.CornerRadiusMm = rMm;
+                else if (firstTok.EndsWith('%')
+                         && double.TryParse(firstTok.TrimEnd('%'), NumberStyles.Any, CultureInfo.InvariantCulture, out var rPct))
+                    s.CornerRadiusMm = Math.Min(wMm, hMm) * rPct / 100.0;
+            }
+        }
+        else if (trStr is not null && trStr.Contains("rotate(45deg)", StringComparison.OrdinalIgnoreCase))
+        {
+            s.Kind             = ShapeKind.Rectangle;
+            s.RotationAngleDeg = 45;
+        }
+        else
+        {
+            s.Kind = ShapeKind.Rectangle;
+        }
+
+        shape = s;
+        return true;
+    }
+
+    /// <summary>CSS border-trick 삼각형 파싱 (width:0; height:0; border-* solid color).</summary>
+    private static bool TryParseBorderTrickTriangle(string style, out ShapeObject? shape)
+    {
+        shape = null;
+        ExtractBorderSizeColor(StyleProp(style, "border-top"),    out double topSz,    out string? topColor);
+        ExtractBorderSizeColor(StyleProp(style, "border-bottom"), out double bottomSz, out string? bottomColor);
+        ExtractBorderSizeColor(StyleProp(style, "border-left"),   out double leftSz,   out string? leftColor);
+        ExtractBorderSizeColor(StyleProp(style, "border-right"),  out double rightSz,  out string? rightColor);
+
+        double wMm, hMm, rot;
+        string? fill;
+
+        if (bottomColor is not null)
+        { wMm = (leftSz + rightSz) * 25.4 / 96.0; hMm = bottomSz * 25.4 / 96.0; fill = bottomColor; rot = 0; }
+        else if (topColor is not null)
+        { wMm = (leftSz + rightSz) * 25.4 / 96.0; hMm = topSz    * 25.4 / 96.0; fill = topColor;    rot = 180; }
+        else if (rightColor is not null)
+        { wMm = rightSz * 25.4 / 96.0; hMm = (topSz + bottomSz) * 25.4 / 96.0; fill = rightColor;  rot = 90; }
+        else if (leftColor is not null)
+        { wMm = leftSz  * 25.4 / 96.0; hMm = (topSz + bottomSz) * 25.4 / 96.0; fill = leftColor;   rot = 270; }
+        else return false;
+
+        if (fill is null || (wMm <= 0 && hMm <= 0)) return false;
+
+        shape = new ShapeObject
+        {
+            Kind              = ShapeKind.Triangle,
+            WidthMm           = wMm  > 0 ? wMm  : 10,
+            HeightMm          = hMm  > 0 ? hMm  : 10,
+            FillColor         = fill,
+            RotationAngleDeg  = rot,
+            StrokeThicknessPt = 0,
+        };
+        return true;
+    }
+
+    /// <summary>CSS border 단축 속성 값에서 크기(px)와 색상 hex 를 추출. transparent → color = null.</summary>
+    private static void ExtractBorderSizeColor(string? borderValue, out double sizePx, out string? color)
+    {
+        sizePx = 0; color = null;
+        if (borderValue is null) return;
+        foreach (var part in borderValue.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part is "solid" or "dashed" or "dotted" or "none"
+                     or "double" or "groove" or "ridge" or "inset" or "outset") continue;
+            if (part.Equals("transparent", StringComparison.OrdinalIgnoreCase)) continue;
+            if (part.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(part[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var px))
+                sizePx = px;
+            else if (TryParseCssColor(part, out var c))
+                color = ColorToHex(c);
+        }
+    }
+
+    /// <summary>
+    /// 문서 &lt;head&gt; 의 <c>pd-page-*</c> 메타 태그와 <c>@page</c> CSS 규칙을 읽어
+    /// <paramref name="section"/>.Page 에 반영한다.
+    /// 아무 설정도 없으면 기본값(A4 세로, 기본 여백)이 그대로 유지된다.
+    /// </summary>
+    private static void ApplyPageSettings(AngleSharp.Html.Dom.IHtmlDocument doc, Section section)
+    {
+        var head = doc.Head;
+        if (head is null) return;
+
+        var page = section.Page;
+
+        // 1. pd-page-size — PaperSizeKind 열거형 이름 직접 복원.
+        var sizeMeta = head.QuerySelector("meta[name='pd-page-size']")?.GetAttribute("content");
+        if (sizeMeta is not null && Enum.TryParse<PaperSizeKind>(sizeMeta, ignoreCase: true, out var parsedKind))
+            page.ApplySizeKind(parsedKind);
+
+        // 2. Custom 용지일 때 실제 치수.
+        if (page.SizeKind == PaperSizeKind.Custom)
+        {
+            var wMeta = head.QuerySelector("meta[name='pd-page-width']")?.GetAttribute("content");
+            var hMeta = head.QuerySelector("meta[name='pd-page-height']")?.GetAttribute("content");
+            if (TryParseCssMm(wMeta, out var wMm) && wMm > 0) page.WidthMm  = wMm;
+            if (TryParseCssMm(hMeta, out var hMm) && hMm > 0) page.HeightMm = hMm;
+        }
+
+        // 3. 방향.
+        var orientMeta = head.QuerySelector("meta[name='pd-page-orientation']")?.GetAttribute("content");
+        if (orientMeta is not null)
+        {
+            if (orientMeta.Equals("landscape", StringComparison.OrdinalIgnoreCase))
+                page.Orientation = PageOrientation.Landscape;
+            else if (orientMeta.Equals("portrait", StringComparison.OrdinalIgnoreCase))
+                page.Orientation = PageOrientation.Portrait;
+        }
+
+        // 4. @page CSS 규칙 — EffectiveWidth/Height + 여백. meta 보다 낮은 우선순위이므로
+        //    메타로 이미 설정된 크기가 없을 때만 치수를 덮어쓴다.
+        bool hasSizeMeta = sizeMeta is not null;
+        foreach (var styleEl in head.QuerySelectorAll("style"))
+            ParseAtPageRule(styleEl.TextContent, page, applySize: !hasSizeMeta);
+    }
+
+    private static void ParseAtPageRule(string cssText, PageSettings page, bool applySize)
+    {
+        int at = cssText.IndexOf("@page", StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return;
+        int open  = cssText.IndexOf('{', at);
+        if (open < 0) return;
+        int close = cssText.IndexOf('}', open);
+        if (close < 0) return;
+
+        var body = cssText[(open + 1)..close];
+
+        foreach (var declRaw in body.Split(';'))
+        {
+            var decl  = declRaw.Trim();
+            int colon = decl.IndexOf(':');
+            if (colon <= 0) continue;
+            var prop = decl[..colon].Trim().ToLowerInvariant();
+            var val  = decl[(colon + 1)..].Trim().ToLowerInvariant();
+
+            switch (prop)
+            {
+                case "size":
+                {
+                    if (!applySize) break;
+                    // "210mm 297mm" 또는 "297mm 210mm" 또는 "210mm 297mm landscape"
+                    var parts = val.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    double? w = null, h = null;
+                    bool landscape = false;
+                    foreach (var part in parts)
+                    {
+                        if (part == "landscape") { landscape = true; continue; }
+                        if (part == "portrait")  { continue; }
+                        if (TryParseCssMm(part, out var mm) && mm > 0)
+                        {
+                            if (w is null) w = mm;
+                            else           h = mm;
+                        }
+                    }
+                    if (w.HasValue && h.HasValue)
+                    {
+                        // 항상 portrait 순서(작은 쪽=너비)로 보관.
+                        bool isLandscape = landscape || w.Value > h.Value;
+                        page.WidthMm  = isLandscape ? Math.Min(w.Value, h.Value) : w.Value;
+                        page.HeightMm = isLandscape ? Math.Max(w.Value, h.Value) : h.Value;
+                        if (isLandscape) page.Orientation = PageOrientation.Landscape;
+                        // 표준 용지 크기 매칭.
+                        TryMatchStandardPaperSize(page);
+                    }
+                    break;
+                }
+                case "margin":
+                {
+                    var mp = val.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    switch (mp.Length)
+                    {
+                        case 1:
+                            if (TryParseCssMm(mp[0], out var a1))
+                                page.MarginTopMm = page.MarginRightMm = page.MarginBottomMm = page.MarginLeftMm = a1;
+                            break;
+                        case 2:
+                            if (TryParseCssMm(mp[0], out var tb) && TryParseCssMm(mp[1], out var lr))
+                            { page.MarginTopMm = page.MarginBottomMm = tb; page.MarginLeftMm = page.MarginRightMm = lr; }
+                            break;
+                        case 3:
+                            if (TryParseCssMm(mp[0], out var mt3) && TryParseCssMm(mp[1], out var lr3) && TryParseCssMm(mp[2], out var mb3))
+                            { page.MarginTopMm = mt3; page.MarginLeftMm = page.MarginRightMm = lr3; page.MarginBottomMm = mb3; }
+                            break;
+                        case 4:
+                            if (TryParseCssMm(mp[0], out var mt4) && TryParseCssMm(mp[1], out var mr4)
+                             && TryParseCssMm(mp[2], out var mb4) && TryParseCssMm(mp[3], out var ml4))
+                            { page.MarginTopMm = mt4; page.MarginRightMm = mr4; page.MarginBottomMm = mb4; page.MarginLeftMm = ml4; }
+                            break;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void TryMatchStandardPaperSize(PageSettings page)
+    {
+        foreach (PaperSizeKind kind in Enum.GetValues<PaperSizeKind>())
+        {
+            var dim = PageSettings.GetStandardDimensions(kind);
+            if (dim is null) continue;
+            if (Math.Abs(dim.Value.W - page.WidthMm)  < 1.0 &&
+                Math.Abs(dim.Value.H - page.HeightMm) < 1.0)
+            {
+                page.SizeKind = kind;
+                return;
+            }
+        }
+        page.SizeKind = PaperSizeKind.Custom;
+    }
+
+    private static bool TryParseTwo(string[] tokens, int i, out double a, out double b)
+    {
+        a = b = 0;
+        return i + 1 < tokens.Length
+            && double.TryParse(tokens[i],     NumberStyles.Any, CultureInfo.InvariantCulture, out a)
+            && double.TryParse(tokens[i + 1], NumberStyles.Any, CultureInfo.InvariantCulture, out b);
+    }
+
+    private static bool TryParseSix(string[] tokens, int i,
+        out double a, out double b, out double c, out double dd, out double e, out double f)
+    {
+        a = b = c = dd = e = f = 0;
+        return i + 5 < tokens.Length
+            && double.TryParse(tokens[i],     NumberStyles.Any, CultureInfo.InvariantCulture, out a)
+            && double.TryParse(tokens[i + 1], NumberStyles.Any, CultureInfo.InvariantCulture, out b)
+            && double.TryParse(tokens[i + 2], NumberStyles.Any, CultureInfo.InvariantCulture, out c)
+            && double.TryParse(tokens[i + 3], NumberStyles.Any, CultureInfo.InvariantCulture, out dd)
+            && double.TryParse(tokens[i + 4], NumberStyles.Any, CultureInfo.InvariantCulture, out e)
+            && double.TryParse(tokens[i + 5], NumberStyles.Any, CultureInfo.InvariantCulture, out f);
     }
 }

@@ -66,8 +66,7 @@ public class HtmlTests
     public void Reader_HrIsThematicBreak()
     {
         var doc = HtmlReader.FromHtml("<p>before</p><hr><p>after</p>");
-        var ps  = doc.EnumerateParagraphs().ToList();
-        Assert.Contains(ps, p => p.Style.IsThematicBreak);
+        Assert.Contains(doc.Sections[0].Blocks, b => b is ThematicBreakBlock);
     }
 
     [Fact]
@@ -423,7 +422,7 @@ public class HtmlTests
 
         Assert.Equal(OutlineLevel.H1, reread.EnumerateParagraphs().First().Style.Outline);
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.QuoteLevel >= 1);
-        Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.IsThematicBreak);
+        Assert.Contains(reread.Sections[0].Blocks, b => b is ThematicBreakBlock);
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.CodeLanguage == "py");
         Assert.Contains(reread.EnumerateParagraphs(), p => p.Style.ListMarker?.Kind == ListKind.Bullet);
         Assert.Single(reread.Sections[0].Blocks.OfType<PolyDonky.Core.Table>());
@@ -665,6 +664,60 @@ public class HtmlTests
         Assert.Equal(5, cell.PaddingLeftMm,   precision: 1);
     }
 
+    // ── Table.Caption (<caption> 요소) ─────────────────────────────────
+
+    [Fact]
+    public void Reader_TableCaption_Extracted()
+    {
+        const string html = """
+            <table>
+              <caption>표 1: 테스트 표</caption>
+              <tr><td>A</td></tr>
+            </table>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var table = doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Single();
+        Assert.Equal("표 1: 테스트 표", table.Caption);
+    }
+
+    [Fact]
+    public void Reader_TableWithoutCaption_CaptionIsNull()
+    {
+        const string html = "<table><tr><td>A</td></tr></table>";
+        var doc = HtmlReader.FromHtml(html);
+        var table = doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Single();
+        Assert.Null(table.Caption);
+    }
+
+    [Fact]
+    public void Writer_TableCaption_EmitsElement()
+    {
+        var pdDoc = new PolyDonkyument();
+        var sec = new Section(); pdDoc.Sections.Add(sec);
+        var t = new PolyDonky.Core.Table
+        {
+            Caption = "표 2: 샘플",
+        };
+        t.Columns.Add(new TableColumn());
+        var row = new TableRow(); t.Rows.Add(row);
+        row.Cells.Add(new TableCell());
+        row.Cells[0].Blocks.Add(Paragraph.Of("X"));
+        sec.Blocks.Add(t);
+
+        var html = HtmlWriter.ToHtml(pdDoc, fullDocument: false);
+        Assert.Contains("<caption>표 2: 샘플</caption>", html);
+    }
+
+    [Fact]
+    public void Reader_TableCaption_RoundTrip()
+    {
+        // HTML → Model → HTML round-trip 시 caption 이 보존됨.
+        const string html = "<table><caption>제목</caption><tr><td>A</td></tr></table>";
+        var pdDoc = HtmlReader.FromHtml(html);
+        var html2  = HtmlWriter.ToHtml(pdDoc, fullDocument: false);
+        Assert.Contains("<caption>제목</caption>", html2);
+    }
+
     [Fact]
     public void Writer_ForcePageBreakBefore_EmitsCss()
     {
@@ -773,5 +826,1115 @@ public class HtmlTests
         var runs = rt.Sections[0].Blocks.OfType<Paragraph>().First().Runs;
         Assert.Contains(runs, r => r.FootnoteId is not null);
         Assert.Contains(runs, r => r.EndnoteId is not null);
+    }
+
+    // ── SVG → ShapeObject 파서 ─────────────────────────────────────
+
+    [Fact]
+    public void RoundTrip_ShapeRectangle()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle, WidthMm = 40, HeightMm = 30,
+            StrokeColor = "#FF0000", StrokeThicknessPt = 2, FillColor = "#AABBCC",
+        });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Rectangle, shape.Kind);
+        Assert.InRange(shape.WidthMm,  39.5, 40.5);
+        Assert.InRange(shape.HeightMm, 29.5, 30.5);
+        Assert.Equal("#FF0000", shape.StrokeColor);
+        Assert.Equal("#AABBCC", shape.FillColor);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeRoundedRect()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject { Kind = ShapeKind.RoundedRect, WidthMm = 50, HeightMm = 20, CornerRadiusMm = 5 });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.RoundedRect, shape.Kind);
+        Assert.InRange(shape.CornerRadiusMm, 4.5, 5.5);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeEllipse()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject { Kind = ShapeKind.Ellipse, WidthMm = 60, HeightMm = 40 });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Ellipse, shape.Kind);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeLine()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var ln = new ShapeObject { Kind = ShapeKind.Line, WidthMm = 50, HeightMm = 30 };
+        ln.Points.Add(new ShapePoint { X = 0, Y = 0 });
+        ln.Points.Add(new ShapePoint { X = 50, Y = 30 });
+        sec.Blocks.Add(ln);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Line, shape.Kind);
+        Assert.Equal(2, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapePolyline()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var poly = new ShapeObject { Kind = ShapeKind.Polyline, WidthMm = 60, HeightMm = 40 };
+        poly.Points.Add(new ShapePoint { X = 0,  Y = 40 });
+        poly.Points.Add(new ShapePoint { X = 30, Y = 0  });
+        poly.Points.Add(new ShapePoint { X = 60, Y = 40 });
+        sec.Blocks.Add(poly);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Polyline, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapePolygon()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var poly = new ShapeObject { Kind = ShapeKind.Polygon, WidthMm = 50, HeightMm = 50 };
+        for (int i = 0; i < 5; i++)
+        {
+            double a = 2 * Math.PI * i / 5 - Math.PI / 2;
+            poly.Points.Add(new ShapePoint { X = 25 + 25 * Math.Cos(a), Y = 25 + 25 * Math.Sin(a) });
+        }
+        sec.Blocks.Add(poly);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Polygon, shape.Kind);
+        Assert.Equal(5, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeTriangle()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var tri = new ShapeObject { Kind = ShapeKind.Triangle, WidthMm = 40, HeightMm = 35 };
+        tri.Points.Add(new ShapePoint { X = 20, Y = 0  });
+        tri.Points.Add(new ShapePoint { X = 40, Y = 35 });
+        tri.Points.Add(new ShapePoint { X = 0,  Y = 35 });
+        sec.Blocks.Add(tri);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Triangle, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeSpline()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var sp = new ShapeObject { Kind = ShapeKind.Spline, WidthMm = 60, HeightMm = 40 };
+        sp.Points.Add(new ShapePoint { X = 0,  Y = 20 });
+        sp.Points.Add(new ShapePoint { X = 30, Y = 0  });
+        sp.Points.Add(new ShapePoint { X = 60, Y = 20 });
+        sec.Blocks.Add(sp);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Spline, shape.Kind);
+        Assert.Equal(3, shape.Points.Count);
+        // 제어점이 복원돼야 함.
+        Assert.True(shape.Points[0].OutCtrlX.HasValue || shape.Points[1].InCtrlX.HasValue);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeClosedSpline()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        var sp = new ShapeObject { Kind = ShapeKind.ClosedSpline, WidthMm = 50, HeightMm = 50 };
+        sp.Points.Add(new ShapePoint { X = 25, Y = 0  });
+        sp.Points.Add(new ShapePoint { X = 50, Y = 50 });
+        sp.Points.Add(new ShapePoint { X = 0,  Y = 50 });
+        sec.Blocks.Add(sp);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.ClosedSpline, shape.Kind);
+    }
+
+    [Fact]
+    public void RoundTrip_ShapeWithLabel()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section(); doc.Sections.Add(sec);
+        sec.Blocks.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse, WidthMm = 40, HeightMm = 30,
+            LabelText = "타원 레이블",
+        });
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var shape = rt.Sections[0].Blocks.OfType<ShapeObject>().First();
+        Assert.Equal(ShapeKind.Ellipse, shape.Kind);
+        Assert.Equal("타원 레이블", shape.LabelText);
+    }
+
+    // ── 편집용지 설정 ──────────────────────────────────────────────────
+
+    [Fact]
+    public void Writer_EmitsPageMetaAndAtPage_DefaultA4()
+    {
+        var doc = new PolyDonkyument();
+        doc.Sections.Add(new Section()); // 기본값: A4 세로
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("pd-page-size\" content=\"A4\"", html);
+        Assert.Contains("pd-page-orientation\" content=\"portrait\"", html);
+        Assert.Contains("@page", html);
+        Assert.Contains("210", html);  // A4 너비 210mm
+        Assert.Contains("margin:", html);
+    }
+
+    [Fact]
+    public void Writer_EmitsLandscapeOrientation()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        sec.Page.Orientation = PageOrientation.Landscape;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("pd-page-orientation\" content=\"landscape\"", html);
+        // 가로 방향이면 SVG 크기 297mm × 210mm 순서로 출력.
+        Assert.Contains("297", html);
+    }
+
+    [Fact]
+    public void Writer_EmitsCustomPageSize()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.SizeKind = PaperSizeKind.Custom;
+        sec.Page.WidthMm  = 180;
+        sec.Page.HeightMm = 240;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("pd-page-size\" content=\"Custom\"", html);
+        Assert.Contains("pd-page-width\" content=\"180mm\"", html);
+        Assert.Contains("pd-page-height\" content=\"240mm\"", html);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_A4Portrait()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        sec.Page.Orientation    = PageOrientation.Portrait;
+        sec.Page.MarginTopMm    = 30;
+        sec.Page.MarginBottomMm = 25;
+        sec.Page.MarginLeftMm   = 35;
+        sec.Page.MarginRightMm  = 20;
+        doc.Sections.Add(sec);
+
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.A4,            page.SizeKind);
+        Assert.Equal(PageOrientation.Portrait,     page.Orientation);
+        Assert.InRange(page.MarginTopMm,    29.5, 30.5);
+        Assert.InRange(page.MarginBottomMm, 24.5, 25.5);
+        Assert.InRange(page.MarginLeftMm,   34.5, 35.5);
+        Assert.InRange(page.MarginRightMm,  19.5, 20.5);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_A4Landscape()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.ApplySizeKind(PaperSizeKind.A4);
+        sec.Page.Orientation = PageOrientation.Landscape;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        Assert.Equal(PaperSizeKind.A4,          rt.Sections[0].Page.SizeKind);
+        Assert.Equal(PageOrientation.Landscape,  rt.Sections[0].Page.Orientation);
+    }
+
+    [Fact]
+    public void RoundTrip_PageSettings_CustomSize()
+    {
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        sec.Page.SizeKind = PaperSizeKind.Custom;
+        sec.Page.WidthMm  = 170;
+        sec.Page.HeightMm = 235;
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        var rt   = HtmlReader.FromHtml(html);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.Custom, page.SizeKind);
+        Assert.InRange(page.WidthMm,  169, 171);
+        Assert.InRange(page.HeightMm, 234, 236);
+    }
+
+    [Fact]
+    public void Reader_NoPageMeta_DefaultsToA4Portrait()
+    {
+        // 페이지 정보가 없는 단순 HTML → A4 세로 기본 여백이어야 한다.
+        const string html = "<p>테스트</p>";
+        var rt   = HtmlReader.FromHtml(html);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.A4,        page.SizeKind);
+        Assert.Equal(PageOrientation.Portrait, page.Orientation);
+        Assert.InRange(page.WidthMm,  209, 211);
+        Assert.InRange(page.HeightMm, 296, 298);
+    }
+
+    [Fact]
+    public void Reader_ExternalAtPage_ParsedCorrectly()
+    {
+        // 외부 HTML 의 @page CSS 를 읽어 페이지 설정을 복원해야 한다.
+        const string html = """
+            <!DOCTYPE html>
+            <html><head>
+              <style>
+                @page {
+                  size: 215.9mm 279.4mm;
+                  margin: 25mm 20mm 25mm 30mm;
+                }
+              </style>
+            </head><body><p>내용</p></body></html>
+            """;
+        var rt   = HtmlReader.FromHtml(html);
+        var page = rt.Sections[0].Page;
+        Assert.Equal(PaperSizeKind.Letter, page.SizeKind);
+        Assert.InRange(page.MarginTopMm,   24.5, 25.5);
+        Assert.InRange(page.MarginRightMm, 19.5, 20.5);
+        Assert.InRange(page.MarginLeftMm,  29.5, 30.5);
+    }
+
+    [Fact]
+    public void Reader_StandaloneSvgParsedAsShapeObject()
+    {
+        // <svg> 가 <figure> 없이 직접 나타나도 ShapeObject 로 파싱돼야 함.
+        const string html = "<svg width=\"100\" height=\"75\"><rect x=\"0.5\" y=\"0.5\" width=\"99\" height=\"74\" stroke=\"#000\" stroke-width=\"1\" fill=\"none\"></rect></svg>";
+        var rt = HtmlReader.FromHtml(html);
+        Assert.Contains(rt.Sections[0].Blocks, b => b is ShapeObject { Kind: ShapeKind.Rectangle });
+    }
+
+    // ── 복합 SVG → ImageBlock ──────────────────────────────────────────
+
+    [Fact]
+    public void Reader_MultiShapeSvg_BecomesImageBlock()
+    {
+        // 다중 도형 SVG 는 ShapeObject 가 아닌 ImageBlock (image/svg+xml) 으로 보존돼야 한다.
+        const string html = @"<svg width=""600"" height=""160"">
+            <rect x=""20"" y=""30"" width=""100"" height=""80"" fill=""#4A90E2""></rect>
+            <circle cx=""310"" cy=""70"" r=""40"" fill=""#F5A623""></circle>
+        </svg>";
+        var rt = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        var img = Assert.IsType<ImageBlock>(block);
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.True(img.Data.Length > 0);
+        Assert.InRange(img.WidthMm,  155, 160);
+        Assert.InRange(img.HeightMm,  41,  43);
+    }
+
+    [Fact]
+    public void Reader_SvgWithTextLabel_BecomesImageBlock()
+    {
+        // <text> 레이블이 있는 SVG 는 ImageBlock 으로 보존돼야 한다.
+        const string html = @"<svg width=""200"" height=""100"">
+            <rect x=""10"" y=""10"" width=""80"" height=""60"" fill=""blue""></rect>
+            <text x=""50"" y=""50"">레이블</text>
+        </svg>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        Assert.IsType<ImageBlock>(block);
+    }
+
+    [Fact]
+    public void Reader_FigureWithSvg_BecomesImageBlockWithCaption()
+    {
+        // <figure><svg>...</svg><figcaption>캡션</figcaption></figure> → ImageBlock(Title=캡션).
+        const string html = @"<figure>
+            <svg width=""600"" height=""320"">
+                <ellipse cx=""300"" cy=""35"" rx=""60"" ry=""20"" fill=""#A8E6CF""></ellipse>
+                <text x=""300"" y=""40"">시작</text>
+                <rect x=""230"" y=""150"" width=""140"" height=""40"" fill=""#FFAAA5""></rect>
+            </svg>
+            <figcaption>그림 5: 플로우차트</figcaption>
+        </figure>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        var img   = Assert.IsType<ImageBlock>(block);
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.Equal("그림 5: 플로우차트", img.Title);
+        Assert.True(img.ShowTitle);
+    }
+
+    [Fact]
+    public void RoundTrip_SvgImageBlock_PreservesSvgContent()
+    {
+        // ImageBlock(image/svg+xml) → HtmlWriter → HtmlReader → 동일한 ImageBlock.
+        var doc   = new PolyDonkyument();
+        var sec   = new Section();
+        doc.Sections.Add(sec);
+        var svgData = "<svg width=\"200\" height=\"100\"><rect x=\"10\" y=\"10\" width=\"80\" height=\"60\" fill=\"blue\"/><circle cx=\"150\" cy=\"50\" r=\"30\" fill=\"red\"/></svg>";
+        sec.Blocks.Add(new ImageBlock
+        {
+            MediaType = "image/svg+xml",
+            Data      = System.Text.Encoding.UTF8.GetBytes(svgData),
+            WidthMm   = 200 * 25.4 / 96.0,
+            HeightMm  = 100 * 25.4 / 96.0,
+        });
+
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("<svg", html);
+
+        var rt    = HtmlReader.FromHtml(html);
+        var block = Assert.Single(rt.Sections[0].Blocks);
+        var img   = Assert.IsType<ImageBlock>(block);
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.True(img.Data.Length > 0);
+    }
+
+    // ── CSS 도형 → ShapeObject ─────────────────────────────────────────
+
+    [Fact]
+    public void Reader_CssRectangle_BecomesShapeObject()
+    {
+        // 텍스트 없는 색상 div → Rectangle ShapeObject.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #4A90E2\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Rectangle, block.Kind);
+        Assert.Equal("#4A90E2", block.FillColor);
+        Assert.InRange(block.WidthMm,  20, 22);
+        Assert.InRange(block.HeightMm, 20, 22);
+    }
+
+    [Fact]
+    public void Reader_CssEllipse_BecomesShapeObject()
+    {
+        // border-radius:50% → Ellipse ShapeObject.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #7ED321; border-radius: 50%\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Ellipse, block.Kind);
+        Assert.Equal("#7ED321", block.FillColor);
+    }
+
+    [Fact]
+    public void Reader_CssRoundedRect_BecomesShapeObject()
+    {
+        // border-radius:10px → RoundedRect ShapeObject.
+        const string html = "<div style=\"width: 100px; height: 50px; background: #D0021B; border-radius: 10px\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.RoundedRect, block.Kind);
+        Assert.InRange(block.CornerRadiusMm, 2.5, 2.8);
+    }
+
+    [Fact]
+    public void Reader_CssBorderTrickTriangle_BecomesShapeObject()
+    {
+        // CSS border-trick 삼각형 → Triangle ShapeObject.
+        const string html = "<div style=\"width: 0; height: 0; border-left: 40px solid transparent; border-right: 40px solid transparent; border-bottom: 70px solid #F5A623\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Triangle, block.Kind);
+        Assert.Equal("#F5A623", block.FillColor);
+        Assert.InRange(block.WidthMm,  20, 22);   // 80px = 21.2mm
+        Assert.InRange(block.HeightMm, 18, 20);   // 70px = 18.5mm
+    }
+
+    [Fact]
+    public void Reader_CssRotatedRect_BecomesShapeObject()
+    {
+        // transform:rotate(45deg) → Rectangle with RotationAngleDeg=45.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #BD10E0; transform: rotate(45deg)\"></div>";
+        var rt    = HtmlReader.FromHtml(html);
+        var block = rt.Sections[0].Blocks.OfType<ShapeObject>().FirstOrDefault();
+        Assert.NotNull(block);
+        Assert.Equal(ShapeKind.Rectangle, block.Kind);
+        Assert.Equal(45, block.RotationAngleDeg);
+        Assert.Equal("#BD10E0", block.FillColor);
+    }
+
+    [Fact]
+    public void Reader_DivWithChildrenNotTreatedAsCssShape()
+    {
+        // 자식이 있는 div 는 CSS 도형으로 감지하지 않아야 함.
+        const string html = "<div style=\"width: 80px; height: 80px; background: #ccc\"><span>텍스트</span></div>";
+        var rt = HtmlReader.FromHtml(html);
+        Assert.DoesNotContain(rt.Sections[0].Blocks, b => b is ShapeObject);
+    }
+
+    // ── <style> 블록 CSS 클래스 규칙 머지 ──────────────────────────────
+
+    [Fact]
+    public void Reader_CssClassRule_AppliedToParagraph()
+    {
+        // <style> 의 .center 클래스 → text-align:center 가 매칭 단락에 적용돼야 한다.
+        const string html = """
+            <html><head><style>
+              .center { text-align: center; }
+            </style></head><body>
+              <p class="center">중앙</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single(x => x.Runs.Any(r => r.Text == "중앙"));
+        Assert.Equal(Alignment.Center, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_CssTagRule_AppliedToHeading()
+    {
+        // h1 { text-align: center; } → 모든 h1 이 중앙 정렬.
+        const string html = """
+            <html><head><style>
+              h1 { text-align: center; }
+            </style></head><body>
+              <h1>제목</h1>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Center, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_CssIdRule_Applied()
+    {
+        const string html = """
+            <html><head><style>
+              #title { text-align: right; }
+            </style></head><body>
+              <p id="title">우측</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_InlineStyle_OverridesClassRule()
+    {
+        // 인라인 style 이 클래스 규칙보다 우선해야 한다.
+        const string html = """
+            <html><head><style>
+              .x { text-align: left; }
+            </style></head><body>
+              <p class="x" style="text-align: right;">우측</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_CssDescendantSelector_RightmostUsed()
+    {
+        // ".container p" 같은 자손 셀렉터는 우측 단순 셀렉터(p) 만 사용 — 모든 p 에 적용됨.
+        const string html = """
+            <html><head><style>
+              .container p { text-align: right; }
+            </style></head><body>
+              <p>x</p>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+    }
+
+    // ── list-style-type 파싱 ────────────────────────────────────────────
+
+    [Fact]
+    public void Reader_OlTypeA_BecomesOrderedAlpha()
+    {
+        // <ol type="A"> → OrderedAlpha
+        const string html = "<ol type=\"A\"><li>a</li><li>b</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.All(markers, m => Assert.Equal(ListKind.OrderedAlpha, m!.Kind));
+    }
+
+    [Fact]
+    public void Reader_OlStyleUpperRoman_BecomesOrderedRoman()
+    {
+        // <ol style="list-style-type: upper-roman"> → OrderedRoman
+        const string html = "<ol style=\"list-style-type: upper-roman\"><li>i</li><li>ii</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.All(markers, m => Assert.Equal(ListKind.OrderedRoman, m!.Kind));
+    }
+
+    [Fact]
+    public void Reader_OlStyleLowerAlpha_BecomesOrderedAlpha()
+    {
+        // <ol style="list-style-type: lower-alpha"> → OrderedAlpha
+        const string html = "<ol style=\"list-style-type: lower-alpha\"><li>a</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Equal(ListKind.OrderedAlpha, marker.Kind);
+    }
+
+    [Fact]
+    public void Reader_OlDefault_BecomesOrderedDecimal()
+    {
+        // <ol> 기본값 → OrderedDecimal
+        const string html = "<ol><li>1</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Equal(ListKind.OrderedDecimal, marker.Kind);
+    }
+
+    [Fact]
+    public void Reader_LiTypeOverridesOlType()
+    {
+        // <li type="i"> 개별 항목 지정이 부모 <ol> 을 오버라이드함.
+        const string html = "<ol type=\"A\"><li type=\"i\">first</li><li>second</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.Equal(ListKind.OrderedRoman,   markers[0]!.Kind);
+        Assert.Equal(ListKind.OrderedAlpha,   markers[1]!.Kind);
+    }
+
+    // ── ListMarker.UpperCase — type 속성으로 대소문자 보존 ────────────
+
+    [Fact]
+    public void Reader_OlTypeUpperA_PreservesUpperCase()
+    {
+        // <ol type="A"> 가 중첩 레벨에 와도 대문자 알파벳 유지.
+        const string html = "<ol><li>top<ol type=\"A\"><li>nested</li></ol></li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var nested = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker)
+            .FirstOrDefault(m => m?.Kind == ListKind.OrderedAlpha);
+        Assert.NotNull(nested);
+        Assert.True(nested.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlTypeLowerA_PreservesLowerCase()
+    {
+        const string html = "<ol type=\"a\"><li>x</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Equal(ListKind.OrderedAlpha, marker.Kind);
+        Assert.False(marker.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlTypeLowerI_PreservesLowerCase()
+    {
+        // <ol type="i"> 가 중첩 레벨에 와도 소문자 로마자로 명시 보존.
+        const string html = "<ol><li>top<ol type=\"i\"><li>nested</li></ol></li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var nested = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker)
+            .FirstOrDefault(m => m?.Kind == ListKind.OrderedRoman);
+        Assert.NotNull(nested);
+        Assert.False(nested.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlStyleUpperLatin_PreservesUpperCase()
+    {
+        const string html = "<ol style=\"list-style-type: upper-latin\"><li>x</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.True(marker.UpperCase);
+    }
+
+    [Fact]
+    public void Reader_OlDefault_UpperCaseIsNull()
+    {
+        // 일반 <ol> (decimal) 은 대소문자 정보가 없음.
+        const string html = "<ol><li>x</li></ol>";
+        var rt = HtmlReader.FromHtml(html);
+        var marker = rt.EnumerateParagraphs().Single().Style.ListMarker;
+        Assert.NotNull(marker);
+        Assert.Null(marker.UpperCase);
+    }
+
+    // ── CSS-only 체크리스트 (class="checklist", li class="checked") ────
+
+    [Fact]
+    public void Reader_ChecklistClass_DetectsCheckedState()
+    {
+        // <ul class="checklist"><li class="checked">…</li><li>…</li></ul>
+        // 첫째 항목 = Checked=true, 둘째 = Checked=false.
+        const string html = """
+            <ul class="checklist">
+              <li class="checked">완료 항목</li>
+              <li>대기 항목</li>
+            </ul>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.True(markers[0]!.Checked);
+        Assert.False(markers[1]!.Checked);
+    }
+
+    [Fact]
+    public void Reader_ChecklistClass_AlsoDetectsTaskListClass()
+    {
+        // GitHub 의 task-list / contains-task-list 클래스도 동일하게 인식.
+        const string html = """
+            <ul class="task-list">
+              <li class="checked">a</li>
+              <li>b</li>
+            </ul>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.True(markers[0]!.Checked);
+        Assert.False(markers[1]!.Checked);
+    }
+
+    [Fact]
+    public void Reader_NormalUl_DoesNotSetCheckedState()
+    {
+        // 평범한 <ul> 항목은 Checked 가 null 이어야 한다.
+        const string html = "<ul><li>x</li><li>y</li></ul>";
+        var rt = HtmlReader.FromHtml(html);
+        var markers = rt.EnumerateParagraphs()
+            .Select(p => p.Style.ListMarker).Where(m => m is not null).ToList();
+        Assert.Equal(2, markers.Count);
+        Assert.Null(markers[0]!.Checked);
+        Assert.Null(markers[1]!.Checked);
+    }
+
+    [Fact]
+    public void ListMarker_Clone_PreservesUpperCaseAndChecked()
+    {
+        // ListMarker.Clone() 이 새 필드를 모두 복사하는지.
+        var lm = new ListMarker
+        {
+            Kind          = ListKind.OrderedAlpha,
+            Level         = 2,
+            OrderedNumber = 5,
+            Checked       = true,
+            UpperCase     = true,
+        };
+        var clone = lm.Clone();
+        Assert.NotSame(lm, clone);
+        Assert.Equal(lm.Kind,          clone.Kind);
+        Assert.Equal(lm.Level,         clone.Level);
+        Assert.Equal(lm.OrderedNumber, clone.OrderedNumber);
+        Assert.Equal(lm.Checked,       clone.Checked);
+        Assert.Equal(lm.UpperCase,     clone.UpperCase);
+    }
+
+    // ── CSS Grid/Flex → Table 변환 ──────────────────────────────────
+
+    [Fact]
+    public void Reader_CssGrid2Col_BecomesTable()
+    {
+        // display:grid; grid-template-columns: 1fr 1fr → 2-column Table
+        const string html = """
+            <div style="display:grid;grid-template-columns:1fr 1fr">
+              <div><p>Left</p></div>
+              <div><p>Right</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(2, table.Columns.Count);
+        var row = Assert.Single(table.Rows);
+        Assert.Equal(2, row.Cells.Count);
+        Assert.Contains(row.Cells[0].Blocks.OfType<Paragraph>(), p => p.GetPlainText() == "Left");
+        Assert.Contains(row.Cells[1].Blocks.OfType<Paragraph>(), p => p.GetPlainText() == "Right");
+    }
+
+    [Fact]
+    public void Reader_CssGrid3Col_BecomesTable()
+    {
+        // grid-template-columns: repeat(3, 1fr) → 3-column Table
+        const string html = """
+            <div style="display:grid;grid-template-columns:repeat(3,1fr)">
+              <div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(3, table.Columns.Count);
+    }
+
+    [Fact]
+    public void Reader_CssFlex2Col_BecomesTable()
+    {
+        // display:flex with 2 child divs → 2-column Table
+        const string html = """
+            <div style="display:flex">
+              <div><p>Col A</p></div>
+              <div><p>Col B</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(2, table.Columns.Count);
+    }
+
+    [Fact]
+    public void Reader_CssFlexColumnDirection_NotConvertedToTable()
+    {
+        // flex-direction:column → 세로 배치이므로 Table 로 변환하지 않아야 함.
+        const string html = """
+            <div style="display:flex;flex-direction:column">
+              <div><p>A</p></div>
+              <div><p>B</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.Null(table);
+    }
+
+    // ── CSS 상속 (text-align inheritance) ────────────────────────────
+
+    [Fact]
+    public void Reader_TextAlignInheritedFromParent()
+    {
+        // 부모의 text-align 이 자체 값이 없는 자식에게 전파.
+        const string html = """
+            <html><head><style>
+              .center { text-align: center; }
+            </style></head><body>
+              <div class="center">
+                <h1>Title</h1>
+                <p>Subtitle</p>
+              </div>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(2, ps.Count);
+        Assert.Equal(Alignment.Center, ps[0].Style.Alignment); // h1
+        Assert.Equal(Alignment.Center, ps[1].Style.Alignment); // p
+    }
+
+    [Fact]
+    public void Reader_TextAlignChildOverridesInherited()
+    {
+        // 자식의 자체 text-align 이 부모로부터 상속받는 값보다 우선.
+        const string html = """
+            <html><head><style>
+              .center { text-align: center; }
+              .right  { text-align: right; }
+            </style></head><body>
+              <div class="center">
+                <h1>Centered</h1>
+                <div class="right"><p>Right aligned</p></div>
+              </div>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(Alignment.Center, ps[0].Style.Alignment);
+        Assert.Equal(Alignment.Right,  ps[1].Style.Alignment);
+    }
+
+    [Fact]
+    public void Reader_DivWithTextAlignBecomesParagraph()
+    {
+        // 블록 자식 없는 <div>text</div> 가 단락으로 변환되어 div 의 text-align 적용.
+        const string html = "<div style=\"text-align: right\">우측 정렬 텍스트</div>";
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Equal(Alignment.Right, p.Style.Alignment);
+        Assert.Equal("우측 정렬 텍스트", p.GetPlainText());
+    }
+
+    // ── list-style-type: none → 마커 비표시 ─────────────────────────
+
+    [Fact]
+    public void Reader_UlListStyleNone_NoMarker()
+    {
+        const string html = "<ul style=\"list-style-type: none\"><li>A</li><li>B</li></ul>";
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(2, ps.Count);
+        Assert.Null(ps[0].Style.ListMarker);
+        Assert.Null(ps[1].Style.ListMarker);
+    }
+
+    [Fact]
+    public void Reader_UlListStyleNoneViaCssClass_NoMarker()
+    {
+        // <style> 블록의 .toc ul { list-style-type: none } 도 동일 동작.
+        const string html = """
+            <html><head><style>
+              .toc ul { list-style-type: none; }
+            </style></head><body>
+              <div class="toc"><ul><li><a href="#x">link</a></li></ul></div>
+            </body></html>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var p  = rt.EnumerateParagraphs().Single();
+        Assert.Null(p.Style.ListMarker);
+    }
+
+    // ── <a> text-decoration: none → 밑줄 제거 ───────────────────────
+
+    [Fact]
+    public void Reader_AnchorTextDecorationNone_NoUnderline()
+    {
+        // 인라인 컨텍스트(`<p>` 안) 의 `<a>` 가 `text-decoration: none` 을 따라 밑줄 제거.
+        const string html = "<p><a href=\"#x\" style=\"text-decoration: none\">link</a></p>";
+        var rt  = HtmlReader.FromHtml(html);
+        var run = rt.EnumerateParagraphs().Single().Runs.Single();
+        Assert.False(run.Style.Underline);
+        Assert.Equal("#x", run.Url);
+    }
+
+    [Fact]
+    public void Reader_AnchorDefault_HasUnderline()
+    {
+        // 인라인 컨텍스트(`<p>` 안) 의 `<a>` 는 기본으로 밑줄 적용.
+        const string html = "<p><a href=\"#x\">link</a></p>";
+        var rt  = HtmlReader.FromHtml(html);
+        var run = rt.EnumerateParagraphs().Single().Runs.Single();
+        Assert.True(run.Style.Underline);
+    }
+
+    [Fact]
+    public void Reader_AnchorInListItem_TextDecorationNoneViaCssClass()
+    {
+        // .toc a { text-decoration: none } 시나리오 — `<li>` 안 `<a>` 도 동일 동작.
+        const string html = """
+            <html><head><style>
+              .toc a { text-decoration: none; }
+            </style></head><body>
+              <div class="toc"><ul><li><a href="#x">link</a></li></ul></div>
+            </body></html>
+            """;
+        var rt  = HtmlReader.FromHtml(html);
+        var run = rt.EnumerateParagraphs().Single().Runs.Single();
+        Assert.False(run.Style.Underline);
+    }
+
+    [Fact]
+    public void Reader_CssGridOddCells_LastRowPadded()
+    {
+        // 3개 셀을 2열 그리드에 배치 → 2행(2+1), 마지막 행은 빈 셀 패딩
+        const string html = """
+            <div style="display:grid;grid-template-columns:1fr 1fr">
+              <div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>
+            </div>
+            """;
+        var rt    = HtmlReader.FromHtml(html);
+        var table = rt.Sections[0].Blocks.OfType<Table>().FirstOrDefault();
+        Assert.NotNull(table);
+        Assert.Equal(2, table.Rows.Count);
+        Assert.Equal(2, table.Rows[1].Cells.Count);
+    }
+
+    // ── border-bottom / em margins / CSS inheritance ──────────────────────
+
+    [Fact]
+    public void Reader_H1BorderBottom_AppliedFromCss()
+    {
+        // CSS h1 { border-bottom: 1px solid #cccccc } → ParagraphStyle.BorderBottomPt > 0
+        const string html = """
+            <html><head><style>
+              h1 { border-bottom: 1px solid #cccccc }
+            </style></head><body>
+              <h1>Title</h1>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H1, p.Style.Outline);
+        Assert.True(p.Style.BorderBottomPt > 0);
+        Assert.NotNull(p.Style.BorderBottomColor);
+    }
+
+    [Fact]
+    public void Reader_H1BorderBottom_TwoPixels()
+    {
+        // border-bottom: 2px solid #000000 → BorderBottomPt = 2 * 72/96 ≈ 1.5pt
+        const string html = """
+            <html><head><style>
+              h1 { border-bottom: 2px solid #000000 }
+            </style></head><body>
+              <h1>H</h1>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H1, p.Style.Outline);
+        Assert.True(p.Style.BorderBottomPt > 1.4 && p.Style.BorderBottomPt < 1.6);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginTopPt_Resolved()
+    {
+        // h2 { margin-top: 30pt } → SpaceBeforePt ≈ 30pt > 20
+        const string html = """
+            <html><head><style>
+              h2 { margin-top: 30pt }
+            </style></head><body>
+              <h2>Heading</h2>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H2, p.Style.Outline);
+        Assert.True(p.Style.SpaceBeforePt > 20.0);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginTopPx_InlineStyle()
+    {
+        // inline style margin-top:40px → SpaceBeforePt = 40*72/96 = 30pt > 20
+        const string html = """
+            <html><head></head><body>
+              <h2 style="margin-top:40px">Heading</h2>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H2, p.Style.Outline);
+        Assert.True(p.Style.SpaceBeforePt > 20.0);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginTopEm_Resolved()
+    {
+        // h2 inline style margin-top:1.5em — bypasses InlineCssClassRules to isolate em parsing.
+        // h2 기본 font-size = 20pt → 1.5em = 30pt; OR AngleSharp normalizes to px (1.5*16=24px=18pt)
+        // Either way, SpaceBeforePt should be > 0
+        const string html = """
+            <html><head></head><body>
+              <h2 style="margin-top:1.5em">Heading</h2>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H2, p.Style.Outline);
+        Assert.True(p.Style.SpaceBeforePt > 0);
+    }
+
+    [Fact]
+    public void Reader_HeadingMarginBottomEm_Resolved()
+    {
+        // h3 기본 font-size = 17pt. margin-bottom: 0.5em → 8.5pt > 5
+        const string html = """
+            <html><head><style>
+              h3 { margin-bottom: 0.5em }
+            </style></head><body>
+              <h3>H3</h3>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.Equal(OutlineLevel.H3, p.Style.Outline);
+        Assert.True(p.Style.SpaceAfterPt > 5.0);
+    }
+
+    [Fact]
+    public void Reader_BodyLineHeight_PropagatedToParagraph()
+    {
+        // body { line-height: 1.8 } → p 단락의 LineHeightFactor ≈ 1.8
+        const string html = """
+            <html><head><style>
+              body { line-height: 1.8 }
+            </style></head><body>
+              <p>Text</p>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.True(Math.Abs(p.Style.LineHeightFactor - 1.8) < 0.01);
+    }
+
+    [Fact]
+    public void Reader_BodyColor_PropagatedToRuns()
+    {
+        // body { color: #336699 } → p 내 run 의 Foreground 가 해당 색으로 설정됨
+        const string html = """
+            <html><head><style>
+              body { color: #336699 }
+            </style></head><body>
+              <p>Text</p>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.NotEmpty(p.Runs);
+        var fg = p.Runs[0].Style.Foreground;
+        Assert.NotNull(fg);
+        Assert.Equal(0x33, fg!.Value.R);
+        Assert.Equal(0x66, fg!.Value.G);
+        Assert.Equal(0x99, fg!.Value.B);
+    }
+
+    [Fact]
+    public void Reader_ChildColorOverridesBodyColor()
+    {
+        // body { color: #333333 } but h1 { color: #000000 } → h1 text 는 black
+        const string html = """
+            <html><head><style>
+              body { color: #333333 }
+              h1   { color: #000000 }
+            </style></head><body>
+              <h1>H</h1>
+            </body></html>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.Sections[0].Blocks.OfType<Paragraph>().First();
+        Assert.NotEmpty(p.Runs);
+        var fg = p.Runs[0].Style.Foreground;
+        Assert.NotNull(fg);
+        // h1 style 에 명시된 #000000 이 body #333333 보다 우선
+        Assert.Equal(0x00, fg!.Value.R);
+        Assert.Equal(0x00, fg!.Value.G);
+        Assert.Equal(0x00, fg!.Value.B);
     }
 }

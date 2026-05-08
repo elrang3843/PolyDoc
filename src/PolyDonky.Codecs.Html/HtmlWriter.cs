@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Linq;
 using PolyDonky.Core;
 
 namespace PolyDonky.Codecs.Html;
@@ -11,7 +12,7 @@ namespace PolyDonky.Codecs.Html;
 ///   - OutlineLevel.H1~H6   → &lt;h1&gt;~&lt;h6&gt;
 ///   - 일반 단락             → &lt;p&gt;
 ///   - QuoteLevel ≥ 1       → 중첩 &lt;blockquote&gt;
-///   - IsThematicBreak      → &lt;hr&gt;
+///   - ThematicBreakBlock   → &lt;hr&gt;
 ///   - CodeLanguage non-null → &lt;pre&gt;&lt;code class="language-xxx"&gt;...&lt;/code&gt;&lt;/pre&gt;
 ///   - ListMarker (bullet/ordered, nested by Level) → &lt;ul&gt;/&lt;ol&gt; + &lt;li&gt;
 ///   - ListMarker.Checked    → &lt;input type="checkbox" disabled checked?&gt; 접두
@@ -57,6 +58,8 @@ public sealed class HtmlWriter : IDocumentWriter
                 .FirstOrDefault(p => p.Style.Outline == OutlineLevel.H1)?.GetPlainText()
                 ?? "PolyDonky 문서";
 
+            var page = document.Sections.Count > 0 ? document.Sections[0].Page : new PageSettings();
+
             sb.Append("<!DOCTYPE html>\n");
             sb.Append("<html lang=\"ko\">\n");
             sb.Append("<head>\n");
@@ -64,6 +67,19 @@ public sealed class HtmlWriter : IDocumentWriter
             sb.Append("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
             sb.Append("  <meta name=\"generator\" content=\"PolyDonky\">\n");
             sb.Append("  <title>").Append(EscapeHtml(docTitle)).Append("</title>\n");
+            // 편집용지 메타 태그 — HtmlReader 가 Section.Page 로 복원한다.
+            sb.Append("  <meta name=\"pd-page-size\" content=\"").Append(page.SizeKind).Append("\">\n");
+            sb.Append("  <meta name=\"pd-page-orientation\" content=\"")
+              .Append(page.Orientation == PageOrientation.Landscape ? "landscape" : "portrait")
+              .Append("\">\n");
+            if (page.SizeKind == PaperSizeKind.Custom)
+            {
+                sb.Append("  <meta name=\"pd-page-width\" content=\"")
+                  .Append(page.WidthMm.ToString("0.##", CultureInfo.InvariantCulture)).Append("mm\">\n");
+                sb.Append("  <meta name=\"pd-page-height\" content=\"")
+                  .Append(page.HeightMm.ToString("0.##", CultureInfo.InvariantCulture)).Append("mm\">\n");
+            }
+            WriteStyleBlock(sb, document.Styles, page);
             sb.Append("</head>\n");
             sb.Append("<body>\n");
         }
@@ -194,9 +210,27 @@ public sealed class HtmlWriter : IDocumentWriter
 
             switch (b)
             {
-                case Paragraph para: WriteParagraph(sb, para, indent, notes); break;
-                case Table table:    WriteTable(sb, table, indent, notes);     break;
-                case ImageBlock img: WriteImage(sb, img, indent);              break;
+                case ThematicBreakBlock thb:
+                {
+                    var hrStyle = new List<string>();
+                    if (thb.LineColor is not null)
+                        hrStyle.Add($"border-top:1px solid {thb.LineColor}");
+                    if (thb.MarginPt > 0)
+                    {
+                        var marginPx = thb.MarginPt * 96.0 / 72.0;
+                        hrStyle.Add($"margin:{marginPx:F0}px 0");
+                    }
+                    var styleAttr = hrStyle.Count > 0 ? $" style=\"{string.Join(';', hrStyle)}\"" : "";
+                    sb.Append(indent).Append($"<hr{styleAttr}>\n");
+                    break;
+                }
+                case Paragraph para:     WriteParagraph(sb, para, indent, notes); break;
+                case Table table:        WriteTable(sb, table, indent, notes);    break;
+                case ImageBlock img:     WriteImage(sb, img, indent);             break;
+                case TocBlock toc:       WriteToc(sb, toc, indent);               break;
+                case ShapeObject shape:  WriteShape(sb, shape, indent);           break;
+                case TextBoxObject tbox: WriteTextBox(sb, tbox, indent, notes);   break;
+                case OpaqueBlock opq:    WriteOpaque(sb, opq, indent);            break;
             }
             i++;
         }
@@ -223,7 +257,6 @@ public sealed class HtmlWriter : IDocumentWriter
                 ListMarker        = p.Style.ListMarker,
                 QuoteLevel        = Math.Max(0, p.Style.QuoteLevel - 1),
                 CodeLanguage      = p.Style.CodeLanguage,
-                IsThematicBreak   = p.Style.IsThematicBreak,
             },
             Runs    = p.Runs,
         };
@@ -232,40 +265,48 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteParagraph(StringBuilder sb, Paragraph p, string indent, NoteNums? notes = null)
     {
-        if (p.Style.IsThematicBreak)
-        {
-            sb.Append(indent).Append("<hr>\n");
-            return;
-        }
-
         if (p.Style.CodeLanguage is not null)
         {
             var code = EscapeHtml(p.GetPlainText());
+            var preClass = p.Style.ShowLineNumbers ? " class=\"line-numbers\"" : "";
             var langAttr = p.Style.CodeLanguage.Length > 0
                 ? $" class=\"language-{EscapeAttr(p.Style.CodeLanguage)}\""
                 : "";
-            sb.Append(indent).Append("<pre><code").Append(langAttr).Append('>')
-              .Append(code).Append("</code></pre>\n");
+            if (p.Style.ShowLineNumbers)
+            {
+                // 줄 번호 재현을 위해 각 줄을 <span>으로 감싸 출력
+                var lines = code.Split('\n');
+                var spanLines = string.Join("\n", lines.Select(l => $"<span>{l}</span>"));
+                sb.Append(indent).Append("<pre").Append(preClass).Append("><code").Append(langAttr).Append('>')
+                  .Append(spanLines).Append("</code></pre>\n");
+            }
+            else
+            {
+                sb.Append(indent).Append("<pre><code").Append(langAttr).Append('>')
+                  .Append(code).Append("</code></pre>\n");
+            }
             return;
         }
+
+        var classAttr = BuildClassAttr(p.StyleId);
 
         if (p.Style.Outline > OutlineLevel.Body)
         {
             int lvl = (int)p.Style.Outline;
             var styleAttr = ParagraphStyleAttr(p.Style);
-            sb.Append(indent).Append('<').Append('h').Append(lvl).Append(styleAttr).Append('>');
+            sb.Append(indent).Append('<').Append('h').Append(lvl).Append(classAttr).Append(styleAttr).Append('>');
             sb.Append(RenderRuns(p.Runs, notes));
             sb.Append("</h").Append(lvl).Append(">\n");
             return;
         }
 
         var pStyleAttr = ParagraphStyleAttr(p.Style);
-        sb.Append(indent).Append("<p").Append(pStyleAttr).Append('>');
+        sb.Append(indent).Append("<p").Append(classAttr).Append(pStyleAttr).Append('>');
         sb.Append(RenderRuns(p.Runs, notes));
         sb.Append("</p>\n");
     }
 
-    private static string ParagraphStyleAttr(ParagraphStyle s)
+    private static List<string> BuildParagraphCssParts(ParagraphStyle s)
     {
         var parts = new List<string>(6);
 
@@ -296,7 +337,62 @@ public sealed class HtmlWriter : IDocumentWriter
         if (s.ForcePageBreakBefore)
             parts.Add("page-break-before:always");
 
+        return parts;
+    }
+
+    private static string ParagraphStyleAttr(ParagraphStyle s)
+    {
+        var parts = BuildParagraphCssParts(s);
         return parts.Count == 0 ? "" : $" style=\"{string.Join(';', parts)}\"";
+    }
+
+    private static void WriteStyleBlock(StringBuilder sb, StyleSheet styles, PageSettings? page = null)
+    {
+        bool hasStyles = styles.ParagraphStyles.Count > 0;
+        bool hasPage   = page is not null;
+        if (!hasStyles && !hasPage) return;
+
+        sb.Append("  <style>\n");
+
+        // @page 규칙 — 편집용지 크기·여백을 CSS 인쇄 표준으로 직렬화한다.
+        if (page is not null)
+        {
+            var w = page.EffectiveWidthMm.ToString("0.##",  CultureInfo.InvariantCulture);
+            var h = page.EffectiveHeightMm.ToString("0.##", CultureInfo.InvariantCulture);
+            var mt = FmtMm(page.MarginTopMm);
+            var mr = FmtMm(page.MarginRightMm);
+            var mb = FmtMm(page.MarginBottomMm);
+            var ml = FmtMm(page.MarginLeftMm);
+            sb.Append("    @page {\n");
+            sb.Append("      size: ").Append(w).Append("mm ").Append(h).Append("mm;\n");
+            sb.Append("      margin: ").Append(mt).Append(' ').Append(mr).Append(' ').Append(mb).Append(' ').Append(ml).Append(";\n");
+            sb.Append("    }\n");
+        }
+
+        foreach (var (id, ps) in styles.ParagraphStyles)
+        {
+            var parts = BuildParagraphCssParts(ps);
+            if (parts.Count > 0)
+                sb.Append("    .pd-").Append(EscapeCssIdent(id))
+                  .Append(" { ").Append(string.Join("; ", parts)).Append("; }\n");
+        }
+        sb.Append("  </style>\n");
+    }
+
+    private static string BuildClassAttr(string? styleId)
+        => styleId is { Length: > 0 } sid ? $" class=\"pd-{EscapeCssIdent(sid)}\"" : "";
+
+    private static string EscapeCssIdent(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return "x";
+        var sb = new StringBuilder(id.Length + 1);
+        foreach (var ch in id)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '-') sb.Append(ch);
+            else sb.Append('_');
+        }
+        if (char.IsDigit(sb[0])) sb.Insert(0, '_');
+        return sb.ToString();
     }
 
     private static void WriteListGroup(StringBuilder sb, IList<Block> blocks, int from, int to, string indent, NoteNums? notes = null)
@@ -349,6 +445,11 @@ public sealed class HtmlWriter : IDocumentWriter
             : "";
 
         sb.Append(indent).Append("<table").Append(tblStyleAttr).Append(">\n");
+
+        if (!string.IsNullOrEmpty(t.Caption))
+            sb.Append(indent).Append("  <caption>")
+              .Append(EscapeHtml(t.Caption))
+              .Append("</caption>\n");
 
         // <colgroup> — 열 너비가 하나라도 있을 때만 출력.
         if (t.Columns.Any(c => c.WidthMm > 0))
@@ -470,14 +571,32 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteImage(StringBuilder sb, ImageBlock img, string indent)
     {
+        var imgStyle  = BuildImageStyle(img);
+        var styleAttr = imgStyle.Length > 0 ? $" style=\"{imgStyle}\"" : "";
+
+        // SVG ImageBlock → inline <svg> (base64 대신 직접 삽입해 가독성·재임포트 유지).
+        if (img.MediaType == "image/svg+xml" && img.Data.Length > 0)
+        {
+            var svgContent = Encoding.UTF8.GetString(img.Data);
+            if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
+            {
+                sb.Append(indent).Append("<figure").Append(styleAttr).Append(">\n");
+                sb.Append(indent).Append("  ").Append(svgContent).Append('\n');
+                sb.Append(indent).Append("  <figcaption>").Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
+                sb.Append(indent).Append("</figure>\n");
+            }
+            else
+            {
+                sb.Append(indent).Append(svgContent).Append('\n');
+            }
+            return;
+        }
+
         var src      = img.ResourcePath ?? BuildDataUri(img);
         var alt      = EscapeAttr(img.Description ?? "");
         var sizeAttr = new StringBuilder();
         if (img.WidthMm  > 0) sizeAttr.Append(" width=\"")  .Append(MmToPx(img.WidthMm) .ToString("0", CultureInfo.InvariantCulture)).Append('"');
         if (img.HeightMm > 0) sizeAttr.Append(" height=\"") .Append(MmToPx(img.HeightMm).ToString("0", CultureInfo.InvariantCulture)).Append('"');
-
-        var imgStyle = BuildImageStyle(img);
-        var styleAttr = imgStyle.Length > 0 ? $" style=\"{imgStyle}\"" : "";
 
         if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
         {
@@ -523,6 +642,193 @@ public sealed class HtmlWriter : IDocumentWriter
         return string.Join(';', parts);
     }
 
+    private static void WriteToc(StringBuilder sb, TocBlock toc, string indent)
+    {
+        sb.Append(indent).Append("<nav class=\"pd-toc\">\n");
+        sb.Append(indent).Append("  <p class=\"pd-toc-title\"><strong>목차</strong></p>\n");
+        foreach (var entry in toc.Entries)
+        {
+            var lvl = Math.Clamp(entry.Level, 1, 6);
+            var pad = ((lvl - 1) * 4).ToString(CultureInfo.InvariantCulture);
+            sb.Append(indent).Append("  <p class=\"pd-toc-l").Append(lvl)
+              .Append("\" style=\"padding-left:").Append(pad).Append("mm\">");
+            sb.Append(EscapeHtml(entry.Text));
+            if (entry.PageNumber.HasValue)
+                sb.Append("\t<span class=\"pd-toc-page\">").Append(entry.PageNumber.Value).Append("</span>");
+            sb.Append("</p>\n");
+        }
+        sb.Append(indent).Append("</nav>\n");
+    }
+
+    private static void WriteShape(StringBuilder sb, ShapeObject shape, string indent)
+    {
+        var wPx = MmToPx(shape.WidthMm  > 0 ? shape.WidthMm  : 40);
+        var hPx = MmToPx(shape.HeightMm > 0 ? shape.HeightMm : 30);
+
+        var alignStyle = shape.HAlign switch
+        {
+            ImageHAlign.Center => " style=\"display:block;margin-left:auto;margin-right:auto\"",
+            ImageHAlign.Right  => " style=\"display:block;margin-left:auto\"",
+            _                  => "",
+        };
+
+        var svgBody = BuildShapeSvgBody(shape, wPx, hPx, xhtml: false);
+        sb.Append(indent).Append("<figure class=\"pd-shape\"").Append(alignStyle).Append(">\n");
+        sb.Append(indent).Append("  <svg width=\"").Append(wPx.ToString("0.#", CultureInfo.InvariantCulture))
+          .Append("\" height=\"").Append(hPx.ToString("0.#", CultureInfo.InvariantCulture)).Append("\">");
+        sb.Append(svgBody).Append("</svg>\n");
+        if (!string.IsNullOrEmpty(shape.LabelText))
+            sb.Append(indent).Append("  <figcaption>").Append(EscapeHtml(shape.LabelText)).Append("</figcaption>\n");
+        sb.Append(indent).Append("</figure>\n");
+    }
+
+    private static string BuildShapeSvgBody(ShapeObject shape, double wPx, double hPx, bool xhtml)
+    {
+        var stroke = EscapeAttr(shape.StrokeColor);
+        var fill   = shape.FillColor is { Length: > 0 } fc ? EscapeAttr(fc) : "none";
+        var sw     = shape.StrokeThicknessPt.ToString("0.##", CultureInfo.InvariantCulture);
+
+        return shape.Kind switch
+        {
+            ShapeKind.Rectangle =>
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</rect>"),
+
+            ShapeKind.RoundedRect =>
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" rx=\"{MmToPx(shape.CornerRadiusMm):0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</rect>"),
+
+            ShapeKind.Ellipse =>
+                $"<ellipse cx=\"{wPx / 2:0.#}\" cy=\"{hPx / 2:0.#}\" rx=\"{(wPx - 1) / 2:0.#}\" ry=\"{(hPx - 1) / 2:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</ellipse>"),
+
+            ShapeKind.Line when shape.Points.Count >= 2 =>
+                $"<line x1=\"{MmToPx(shape.Points[0].X):0.#}\" y1=\"{MmToPx(shape.Points[0].Y):0.#}\" x2=\"{MmToPx(shape.Points[^1].X):0.#}\" y2=\"{MmToPx(shape.Points[^1].Y):0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"none\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</line>"),
+
+            ShapeKind.Polyline when shape.Points.Count >= 2 =>
+                $"<polyline points=\"{PointsToSvg(shape.Points)}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"none\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</polyline>"),
+
+            ShapeKind.Polygon or ShapeKind.Triangle when shape.Points.Count >= 3 =>
+                $"<polygon points=\"{PointsToSvg(shape.Points)}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</polygon>"),
+
+            ShapeKind.Spline or ShapeKind.ClosedSpline when shape.Points.Count >= 2 =>
+                BuildSplinePath(shape, stroke, fill, sw, xhtml),
+
+            ShapeKind.RegularPolygon =>
+                BuildRegularPolygonSvg(shape, wPx, hPx, stroke, fill, sw, xhtml),
+
+            ShapeKind.Star =>
+                BuildStarSvg(shape, wPx, hPx, stroke, fill, sw, xhtml),
+
+            _ =>
+                $"<rect x=\"0.5\" y=\"0.5\" width=\"{wPx - 1:0.#}\" height=\"{hPx - 1:0.#}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{(xhtml ? "/" : "")}>"
+                + (xhtml ? "" : "</rect>"),
+        };
+    }
+
+    private static string PointsToSvg(IList<ShapePoint> pts)
+        => string.Join(" ", pts.Select(p => $"{MmToPx(p.X):0.#},{MmToPx(p.Y):0.#}"));
+
+    private static string BuildSplinePath(ShapeObject shape, string stroke, string fill, string sw, bool xhtml)
+    {
+        var pts = shape.Points;
+        bool closed = shape.Kind == ShapeKind.ClosedSpline;
+        var sb = new StringBuilder();
+        sb.Append($"<path d=\"M{MmToPx(pts[0].X):0.#},{MmToPx(pts[0].Y):0.#}");
+        int count = closed ? pts.Count : pts.Count - 1;
+        for (int i = 0; i < count; i++)
+        {
+            int j    = (i + 1) % pts.Count;
+            int prev = (i - 1 + pts.Count) % pts.Count;
+            int next = (j + 1) % pts.Count;
+            var p0 = pts[i]; var p1 = pts[j];
+            if (p0.OutCtrlX.HasValue && p1.InCtrlX.HasValue)
+            {
+                sb.Append($" C{MmToPx(p0.OutCtrlX.Value):0.#},{MmToPx(p0.OutCtrlY!.Value):0.#} " +
+                          $"{MmToPx(p1.InCtrlX.Value):0.#},{MmToPx(p1.InCtrlY!.Value):0.#} " +
+                          $"{MmToPx(p1.X):0.#},{MmToPx(p1.Y):0.#}");
+            }
+            else
+            {
+                var cp0x = pts[i].X + (pts[j].X - pts[prev].X) / 6.0;
+                var cp0y = pts[i].Y + (pts[j].Y - pts[prev].Y) / 6.0;
+                var cp1x = pts[j].X - (pts[next].X - pts[i].X) / 6.0;
+                var cp1y = pts[j].Y - (pts[next].Y - pts[i].Y) / 6.0;
+                sb.Append($" C{MmToPx(cp0x):0.#},{MmToPx(cp0y):0.#} " +
+                          $"{MmToPx(cp1x):0.#},{MmToPx(cp1y):0.#} " +
+                          $"{MmToPx(p1.X):0.#},{MmToPx(p1.Y):0.#}");
+            }
+        }
+        if (closed) sb.Append(" Z");
+        var sc = xhtml ? "/" : "";
+        sb.Append($"\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{sc}>");
+        if (!xhtml) sb.Append("</path>");
+        return sb.ToString();
+    }
+
+    private static string BuildRegularPolygonSvg(ShapeObject shape, double wPx, double hPx, string stroke, string fill, string sw, bool xhtml)
+    {
+        int sides = Math.Max(3, shape.SideCount);
+        double cx = wPx / 2, cy = hPx / 2, rx = (wPx - 1) / 2, ry = (hPx - 1) / 2;
+        var pts = string.Join(" ", Enumerable.Range(0, sides).Select(i =>
+        {
+            double a = 2 * Math.PI * i / sides - Math.PI / 2;
+            return $"{(cx + rx * Math.Cos(a)):0.#},{(cy + ry * Math.Sin(a)):0.#}";
+        }));
+        var sc = xhtml ? "/" : "";
+        return $"<polygon points=\"{pts}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{sc}>"
+               + (xhtml ? "" : "</polygon>");
+    }
+
+    private static string BuildStarSvg(ShapeObject shape, double wPx, double hPx, string stroke, string fill, string sw, bool xhtml)
+    {
+        int spikes = Math.Max(3, shape.SideCount);
+        double cx = wPx / 2, cy = hPx / 2;
+        double orx = (wPx - 1) / 2, ory = (hPx - 1) / 2;
+        double irx = orx * shape.InnerRadiusRatio, iry = ory * shape.InnerRadiusRatio;
+        var pts = string.Join(" ", Enumerable.Range(0, spikes * 2).Select(i =>
+        {
+            double a  = Math.PI * i / spikes - Math.PI / 2;
+            double rx = i % 2 == 0 ? orx : irx;
+            double ry = i % 2 == 0 ? ory : iry;
+            return $"{(cx + rx * Math.Cos(a)):0.#},{(cy + ry * Math.Sin(a)):0.#}";
+        }));
+        var sc = xhtml ? "/" : "";
+        return $"<polygon points=\"{pts}\" stroke=\"{stroke}\" stroke-width=\"{sw}\" fill=\"{fill}\"{sc}>"
+               + (xhtml ? "" : "</polygon>");
+    }
+
+    private static void WriteTextBox(StringBuilder sb, TextBoxObject tbox, string indent, NoteNums? notes = null)
+    {
+        var parts = new List<string>(8);
+        if (tbox.WidthMm  > 0) parts.Add($"width:{FmtMm(tbox.WidthMm)}");
+        if (tbox.HeightMm > 0) parts.Add($"min-height:{FmtMm(tbox.HeightMm)}");
+        if (!string.IsNullOrEmpty(tbox.BackgroundColor)) parts.Add($"background-color:{tbox.BackgroundColor}");
+        if (tbox.BorderThicknessPt > 0)
+            parts.Add($"border:{tbox.BorderThicknessPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {(tbox.BorderColor ?? "#888888")}");
+        double pt = tbox.PaddingTopMm, pb = tbox.PaddingBottomMm, pl = tbox.PaddingLeftMm, pr = tbox.PaddingRightMm;
+        if (pt > 0 || pb > 0 || pl > 0 || pr > 0)
+            parts.Add($"padding:{FmtMm(pt)} {FmtMm(pr)} {FmtMm(pb)} {FmtMm(pl)}");
+        if (tbox.RotationAngleDeg != 0)
+            parts.Add($"transform:rotate({tbox.RotationAngleDeg.ToString("0.##", CultureInfo.InvariantCulture)}deg)");
+
+        var styleAttr = parts.Count > 0 ? $" style=\"{string.Join(";", parts)}\"" : "";
+        sb.Append(indent).Append("<div class=\"pd-textbox\"").Append(styleAttr).Append(">\n");
+        WriteBlocks(sb, tbox.Content, indent + "  ", notes);
+        sb.Append(indent).Append("</div>\n");
+    }
+
+    private static void WriteOpaque(StringBuilder sb, OpaqueBlock opq, string indent)
+    {
+        sb.Append(indent)
+          .Append("<div class=\"pd-opaque\" data-pd-format=\"").Append(EscapeAttr(opq.Format)).Append("\">")
+          .Append(EscapeHtml(opq.DisplayLabel))
+          .Append("</div>\n");
+    }
+
     private static string BuildDataUri(ImageBlock img)
     {
         if (img.Data.Length == 0) return "";
@@ -554,9 +860,41 @@ public sealed class HtmlWriter : IDocumentWriter
         {
             return $"<sup id=\"enref-{enNum}\"><a href=\"#en-{enNum}\">{enNum}</a></sup>";
         }
-        // FootnoteId/EndnoteId 가 있지만 notes 맵이 없는 경우 — 참조만 빈 텍스트로 무시.
         if (run.FootnoteId is { Length: > 0 } || run.EndnoteId is { Length: > 0 })
             return string.Empty;
+
+        // LaTeX 수식 — MathJax 호환 \(...\) / \[...\] 구문.
+        if (run.LatexSource is { Length: > 0 } latex)
+        {
+            var escaped = EscapeHtml(latex);
+            return run.IsDisplayEquation
+                ? $"<span class=\"pd-math pd-math-display\">\\[{escaped}\\]</span>"
+                : $"<span class=\"pd-math\">\\({escaped}\\)</span>";
+        }
+
+        // 이모지 — data-pd-emoji 속성으로 키 보존, 표시 이름을 텍스트로.
+        if (run.EmojiKey is { Length: > 0 } emojiKey)
+        {
+            var parts = emojiKey.Split('_', 2);
+            var name  = parts.Length == 2 ? parts[1] : emojiKey;
+            return $"<span class=\"pd-emoji\" data-pd-emoji=\"{EscapeAttr(emojiKey)}\" title=\"{EscapeAttr(name)}\">{EscapeHtml(name)}</span>";
+        }
+
+        // 인라인 필드 — pd-field-{type} 클래스 + 현재 값 placeholder.
+        if (run.Field.HasValue)
+        {
+            var (cls, placeholder) = run.Field.Value switch
+            {
+                FieldType.Page     => ("page",     "1"),
+                FieldType.NumPages => ("numpages", "1"),
+                FieldType.Date     => ("date",     DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                FieldType.Time     => ("time",     DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture)),
+                FieldType.Author   => ("author",   ""),
+                FieldType.Title    => ("title",    ""),
+                _                  => ("field",    ""),
+            };
+            return $"<span class=\"pd-field pd-field-{cls}\">{EscapeHtml(placeholder)}</span>";
+        }
 
         var s    = run.Style;
         var text = EscapeHtml(run.Text).Replace("\n", "<br>");
@@ -599,6 +937,11 @@ public sealed class HtmlWriter : IDocumentWriter
         if (s.Background is { } bg) parts.Add($"background-color:{ColorHex(bg)}");
         // Overline 은 semantic HTML 태그 없음 → CSS로만 표현.
         if (s.Overline) parts.Add("text-decoration:overline");
+        // 한글 조판 — 장평(WidthPercent) / 자간(LetterSpacingPx).
+        if (Math.Abs(s.WidthPercent - 100) > 0.5)
+            parts.Add($"transform:scaleX({(s.WidthPercent / 100.0).ToString("0.###", CultureInfo.InvariantCulture)});display:inline-block");
+        if (Math.Abs(s.LetterSpacingPx) > 0.01)
+            parts.Add($"letter-spacing:{s.LetterSpacingPx.ToString("0.##", CultureInfo.InvariantCulture)}px");
         return string.Join(';', parts);
     }
 

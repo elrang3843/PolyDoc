@@ -46,6 +46,45 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **코드 블록·수식 단락 높이 누락으로 발생하는 페이지/글상자 다단 레이아웃 오류**: `InlineUIContainer` 를 포함하는 `Wpf.Paragraph`(코드 블록 줄 번호, 수식 `FormulaControl`, 이모지)에서 `ContentEnd.GetCharacterRect` = `Rect.Empty` → `blockH=0` → 슬롯 채움 미갱신 → 이후 블록이 모두 같은 페이지에 몰려 단일 페이지 스크롤되는 증상. 동일 패턴이 세 곳에 존재했으며 모두 수정: (1) `FlowDocumentPaginationAdapter.TryGetBottomY` — 폴백 `TryEstimateParaBottomViaInlines` 추가, (2) `FlowDocumentPaginationAdapter.TryGetColumnLocalRect` — `botRect.Empty` 시 동일 추정 폴백 적용, (3) `TextBoxColumnLayout.TryGetBottomY` — 글상자 내 다단 레이아웃에서 코드 블록·수식 높이가 0 으로 측정되던 문제 동일 패턴 수정. 폴백 로직: `InlineUIContainer.Child.ActualHeight` × `LineBreak` 기준 줄 수 + `Padding` + `Margin`.
+
+- **Fixed** — **블록쿼트(인용) 좌측 바가 단락마다 끊겨 보이던 문제**: `FlowDocumentBuilder.AppendBlocks` 가 단락을 `target` 에 추가한 직후 `MergeAdjacentBlockquoteMargins` 후크를 호출 — 직전 블록과 현재 블록이 같은 `QuoteLevel(>0)` 이면 둘 사이의 위/아래 마진을 0 으로 만들어 좌측 회색 바가 끊김 없이 이어지게 한다.
+
+- **Fixed** — **`<span class="cite">` 처럼 CSS `display: block` 적용 인라인 요소가 정렬을 잃던 문제**: `HtmlReader` 의 default 케이스가 단순히 자식을 평탄화해 `text-align:right` 같은 블록 정렬이 사라지던 문제 — 자식이 모두 인라인이고 자체 스타일에 `display: block` / `inline-block` 이 있으면 자체 단락으로 처리해 `ApplyBlockAlignment` 가 정상 적용되도록 수정. 블록쿼트 안 출처 표기(`- 저자명`) 우측 정렬 등이 보존된다.
+
+- **Fixed** — **`<div>` 직접 자식 텍스트노드가 부모 `text-align` 을 못 받던 문제**: `<div style="text-align:center">` 의 직접 자식 raw 텍스트노드(예: `<hr>` 와 `<p>` 사이에 끼인 텍스트 "2") 가 단락이 될 때 부모의 정렬을 무시하던 문제 수정 — `PropagateInheritableStyles` 가 요소(IElement) 만 처리해 텍스트노드는 누락됐었다. `ProcessNode` 의 텍스트 분기에 `txt.ParentElement` 의 `ApplyBlockAlignment` 호출 추가. 표/HR 조합형 분수 표기 등에서 분모가 좌측 정렬돼 보이던 문제 해결.
+
+- **Added** — **코드 블록 줄 번호 표시 (`ShowLineNumbers`)**: `ParagraphStyle.ShowLineNumbers = true` 이면 코드 블록 각 줄 앞에 줄 번호를 `InlineUIContainer(Border > TextBlock)` 으로 렌더링 — WPF 텍스트 선택 범위에 포함되지 않으므로 Ctrl+C 복사 시 줄 번호가 제외됨. `HtmlReader` 가 `<pre class="line-numbers"><code><span>…</span></code></pre>` 패턴을 감지해 자동 설정; `HtmlWriter` 가 역직렬화 시 동일 패턴으로 복원(라운드트립 보장). `FlowDocumentParser` 는 `LineNumberTag` 센티넬로 줄 번호 컨테이너를 건너뜀.
+
+- **Fixed** — **RowSpan 병합 셀이 페이지 경계에서 분리되던 문제**: `TableRowSplitter.AdjustGroupsForRowSpan` 후처리 추가 — 한 그룹 안 행의 셀이 `RowSpan > 1` 로 다음 그룹의 행까지 닿으면, 그 기준 행 이후 모든 행을 다음 그룹 앞쪽으로 이동시켜 병합 셀이 시각적으로 끊기지 않게 보장한다. 체인 형태 스팬도 안정화될 때까지 반복 처리.
+
+- **Fixed** — **수평선(`<hr>`)이 보이지 않던 문제**: 여러 시도(Paragraph.BorderBottom, BlockUIContainer + Rectangle/Grid + HorizontalAlignment.Stretch) 끝에 `BlockUIContainer(Border)` + `Border.Width` 를 ancestor `RichTextBox.Document.PageWidth` 에 RelativeSource 바인딩하는 방식으로 정착. FlowDocument 의 첫 Measure 가 infinite 폭으로 호출되어 Stretch 자식이 폭=0 으로 측정되던 문제를 visual tree 부착 후 PageWidth 값으로 우회. `Build()` 에서 `PageWidth = ComputeContentWidthDip(page)` 로 컬럼 본문 폭이 직접 설정되므로, 바인딩 결과가 정확한 HR 폭이 된다. 파서도 `Wpf.BlockUIContainer.Tag == ThematicBreakTag` 매칭으로 복원.
+
+- **Internal** — **`ThematicBreakBlock` 전용 블록 타입 도입 (모델 정리)**: `ParagraphStyle.IsThematicBreak`/`ThematicBreakColor` 플래그를 `ThematicBreakBlock : Block { LineColor, MarginPt }` 전용 타입으로 대체. `Paragraph` 의미가 명확해지고 렌더·파서·코덱 코드가 단순화됨. `BlockJsonConverter` 에 `"thematicBreak"` discriminator 추가; HTML/XML/Markdown reader·writer, FlowDocumentBuilder/Parser, SmokeTest, xUnit 테스트 전부 업데이트.
+
+- **Added** — **HtmlReader CSS `<style>` 블록 클래스 규칙 머지**: 문서 내 `<style>` 블록에서 단순 셀렉터 (`.class`, `#id`, `tag`, `tag.class`) 규칙을 추출해 매칭되는 모든 요소의 `style` 속성에 머지 — 인라인 style 이 클래스 규칙보다 우선. CSS 자손/자식/형제 결합자(` `, `>`, `+`, `~`)는 우측 단순 셀렉터만 사용. 가상 클래스(`:hover`)·속성 셀렉터(`[type=...]`)·@규칙(`@page`/`@media` 등)은 무시. 클래스 기반 text-align/background/padding/border/color 등이 단락·헤딩·표 등에 정상 반영. xUnit 테스트 5건 추가.
+
+- **Changed** — **FlowDocumentBuilder 중첩 리스트 마커 레벨별 스타일링**: 모든 `<ul>` 이 ● 단일 마커로 그려지던 문제를 브라우저 기본값과 동일한 disc → circle → square 진행으로 변경. `<ol>` 의 OrderedAlpha/OrderedRoman ListKind 도 레벨 0 = 대문자, 레벨 ≥1 = 소문자 진행 적용 (`MarkerStyleForLevel` 헬퍼).
+
+- **Fixed** — **표가 페이지 끝에 가까이 시작할 때 본문 행이 RTB 클립 영역 밖에 그려지던 버그**: 두 가지 근본 원인이 결합. ① `Wpf.Table` 의 `ContentEnd.GetCharacterRect` 가 표 *직후* 캐럿 위치(≈ 표의 top) 만 반환해 표 하단 Y 를 알 수 없었고, 셀 내부 단락도 오프스크린 RTB(비주얼 트리 미포함) 에서 NaN/Empty 를 돌려 재귀 측정도 실패. → `TryGetBottomY(Wpf.Table)` 는 NaN 반환, 호출측 `MapBodyBlocksToPages` 에서 표 다음 블록(주로 캡션 단락) 의 `topY` 를 표 하단 대리값으로 사용. ② `FlowDocumentBuilder.BuildTable` 이 `WidthMm = 0` 인 컬럼을 `GridLength.Auto` 로 두어 셀이 콘텐츠 기준으로 좁게 잡혀 텍스트 줄바꿈이 과도해지고 표 전체 높이가 비정상적으로 커지는 문제. → Auto 대신 `GridLength(1, Star)` 로 가용 폭 균등 분배. ③ 단일 블록 배정 조건 `blockH < bodyH` 가 한 페이지를 넘는 표를 다음 슬롯으로 이동시키지 않아 현재 페이지 끝에 머물러 클립되던 문제. → 표(Wpf.Table) 에 한해 이 조건을 완화해 페이지 높이를 넘어도 다음 슬롯으로 이동(표 분할 미구현 상태에서 "끝이 조금 잘리는" 편이 "헤더만 보이고 본문이 모두 잘리는" 것보다 사용자 경험상 우월).
+
+- **Fixed** — **CSS 도형 ShapeObject 검은 테두리 제거**: HtmlReader `TryParseCssShapeFromDiv` 가 만드는 ShapeObject 가 ShapeObject 기본값 `StrokeThicknessPt=1` 을 따라 검은 1pt 테두리를 그리던 문제 수정 — CSS 순수 색상 div 는 기본 테두리 없으므로 `StrokeThicknessPt=0` 으로 명시.
+
+- **Fixed** — **FlowDocumentBuilder SVG 이미지 로드 예외 수정**: `ImageBlock(MediaType="image/svg+xml")` 을 WPF `BitmapImage` 로 디코딩 시도 시 발생하던 `System.NotSupportedException` 수정 — SVG ImageBlock 은 올바른 크기(WidthMm×HeightMm)의 시각적 placeholder(`[SVG 다이어그램]` 테두리 박스)로 대체 표시.
+
+- **Added** — **HtmlReader/XmlReader 복합 SVG → ImageBlock 변환**: 다중 도형·텍스트 레이블이 포함된 외부 SVG(`<figure>` 포함)를 단일 ShapeObject 대신 `ImageBlock(MediaType="image/svg+xml")`으로 정확히 보존 — 이전에는 첫 번째 도형만 전체 SVG 캔버스 크기로 파싱해 레이아웃 공간이 과도하게 커지는 문제 해결. `HtmlWriter`/`XmlWriter`도 SVG ImageBlock을 base64 `<img>` 대신 인라인 `<svg>`로 출력해 재임포트 시 라운드트립 유지.
+- **Added** — **HtmlReader CSS 도형 → ShapeObject 변환**: `width`+`height`+`background` CSS 를 가진 텍스트·자식 없는 `<div>` 를 ShapeObject 로 변환 — Rectangle, Ellipse(`border-radius:50%`), RoundedRect(`border-radius`), border-trick Triangle(상/하/좌/우 방향), 회전 사각형(`transform:rotate(45deg)`) 지원. xUnit 테스트 10건 추가.
+
+- **Added** — **HTML/XML 코덱 편집용지 설정 직렬화·복원**: `HtmlWriter`/`XmlWriter` 가 `<head>` 에 `<meta name="pd-page-size">` / `<meta name="pd-page-orientation">` (Custom 이면 width/height 도 추가) + `<style>` 의 `@page { size: WIDTHmm HEIGHTmm; margin: … }` 규칙으로 용지 크기·방향·여백을 직렬화. `HtmlReader` 가 이 메타/CSS 를 파싱해 `Section.Page` 로 복원 (외부 HTML 의 `@page` CSS 도 지원, ±1mm 허용 오차로 표준 용지 자동 매핑). 용지 정보가 없으면 모든 코덱이 `PageSettings` 기본값(A4, 세로, 여백 20/20/25/25mm)을 그대로 사용. xUnit 테스트 8건(HTML) + 3건(XML) 추가.
+
+- **Added** — **HtmlReader SVG → ShapeObject 파서**: `<svg>` 를 단순 OpaqueBlock 보존에서 실제 도형 파싱으로 격상. `<rect>`→Rectangle/RoundedRect, `<ellipse>/<circle>`→Ellipse, `<line>`→Line, `<polyline>`→Polyline, `<polygon>`→Polygon/Triangle(3점 시), `<path d="M...C...">`→Spline/ClosedSpline(Z 여부). 제어점(C 커맨드 cp0/cp1) → `ShapePoint.OutCtrlX/Y`, `InCtrlX/Y` 복원. stroke/fill/stroke-width 속성 매핑. `<figure class="pd-shape">` 안 figcaption → `LabelText`. 스탠드얼론 `<svg>`도 동일 경로 처리. 파싱 실패 시 OpaqueBlock fallback 유지. xUnit 라운드트립 테스트 11건(Rectangle/RoundedRect/Ellipse/Line/Polyline/Polygon/Triangle/Spline/ClosedSpline/Label/StandaloneSvg) 추가 — 62건 전수 통과.
+
+- **Added** — **HtmlReader 미처리 HTML 요소 전면 구현**: (1) `<svg>` → `OpaqueBlock(Format="html")` 으로 보존 (SVG 전체 마크업 유지, 라운드트립 손실 없음); (2) `<math>` (MathML) → `<annotation encoding="application/x-tex">` 에서 LaTeX 추출 → `Run.LatexSource`, 없으면 `OpaqueBlock(DisplayLabel="[수식]")`; (3) `<dl>/<dt>/<dd>` → `<dt>` 는 Bold 단락, `<dd>` 는 10mm 들여쓰기 단락으로 매핑; (4) `<details>/<summary>` → `<summary>` 는 Bold 단락, 나머지 내용은 10mm 들여쓰기 단락으로 펼침; (5) 인라인 폼 요소(`<input>`, `<button>`, `<select>`, `<textarea>`) → 타입별 텍스트 레이블(checkbox/radio 기호 포함) 또는 값·플레이스홀더 추출; (6) `<label>` → 인라인 스타일 적용 후 자식 재귀; (7) `<div class="page-break">` / `pagebreak` 클래스 → `ParagraphStyle.ForcePageBreakBefore = true` 단락 삽입; (8) `<nav class="pd-toc">` → `TocBlock` 복원(레벨·텍스트 추출); (9) 인라인 MathML → LaTeX 또는 텍스트 content 추출.
+
+- **Added** — **HTML/XML 코덱 나머지 블록·런 타입 전면 구현**: (1) `TocBlock` → `<nav class="pd-toc">` + 레벨별 들여쓰기 단락; (2) `ShapeObject` → SVG 인라인 (Rectangle/RoundedRect/Ellipse/Line/Polyline/Polygon/Triangle/Spline/ClosedSpline/RegularPolygon/Star 전부 — Spline 은 Catmull-Rom → cubic bezier 변환 또는 명시적 제어점 사용); (3) `TextBoxObject` → `<div class="pd-textbox">` (크기·패딩·테두리·회전 CSS 반영, 내부 블록 재귀 렌더); (4) `OpaqueBlock` → `<div class="pd-opaque" data-pd-format="...">` placeholder; (5) `Run.LatexSource` → `<span class="pd-math">\(...\)</span>` / `\[...\]` (MathJax 호환); (6) `Run.EmojiKey` → `<span class="pd-emoji" data-pd-emoji="...">` (키 보존); (7) `Run.Field` → `<span class="pd-field pd-field-{type}">` (Page/NumPages/Date/Time/Author/Title 현재값 placeholder). `HtmlReader` 역방향 파싱: `pd-field-*` → `Run.Field`, `data-pd-emoji` → `Run.EmojiKey`, `pd-math` → `Run.LatexSource`. `RunStyle.WidthPercent` → CSS `transform:scaleX()`, `LetterSpacingPx` → CSS `letter-spacing` 양방향 구현.
+
+- **Added** — **HTML/XML 코덱 CSS 클래스 지원**: `HtmlWriter`/`XmlWriter` 가 (1) `StyleSheet.ParagraphStyles` 를 `<head>` 의 `<style>` 블록에 `.pd-{StyleId}` CSS 클래스 규칙으로 직렬화하고, (2) `Paragraph.StyleId` 가 있는 단락·헤딩 요소에 `class="pd-{StyleId}"` 속성을 추가. `HtmlReader` 가 `pd-` 접두어 클래스 토큰을 읽어 `Paragraph.StyleId` 로 복원 — HTML/XML 라운드트립 시 단락 스타일 이름 보존. `EscapeCssIdent` 로 임의 문자열 ID 를 CSS 식별자 안전 형태로 변환.
+
 - **Added** — **DOCX 코덱 `w:sectPr` 페이지 설정 읽기**: `DocxReader` 가 `w:sectPr` 의 `w:pgSz`(용지 크기·방향), `w:pgMar`(여백 6면) 를 `PageSettings` 로 변환 — 이전엔 섹션 속성을 읽지 않아 A4/기본 여백으로 고정되던 문제 해결. 단위 변환: twips → mm (`UnitConverter.TwipsToMm`).
 
 - **Added** — **DOCX 코덱 머리말/꼬리말 읽기·쓰기**: `DocxReader` 가 `w:sectPr` 의 `w:headerReference`/`w:footerReference` 를 따라 `HeaderPart`/`FooterPart` 를 파싱해 `HeaderFooterContent`(좌·중·우 3분할 슬롯) 로 복원 — 단락 정렬(left/center/right) 로 슬롯 매핑. `DocxWriter` 가 `HeaderFooterContent` 를 `HeaderPart`/`FooterPart` 로 직렬화하고 `w:sectPr` 에 `w:headerReference`/`w:footerReference` 링크, `w:pgMar headerW`/`footerW` 에 실제 여백값 사용(이전 하드코딩 720 twips 대체).
@@ -73,6 +112,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Added** — **실행 취소 / 다시 실행 (Undo/Redo)**: 편집 메뉴에 `실행 취소(Ctrl+Z)` · `다시 실행(Ctrl+Y / Ctrl+Shift+Z)` 항목 추가. 모델 스냅샷 기반(JSON 직렬화) — 텍스트·오버레이·페이지 나누기·블록 삽입·Z-순서·서식 변경 등 거의 모든 편집을 되돌린다. 텍스트 입력은 1.5초 idle "burst" 단위로 묶어 한 글자마다 스냅샷이 쌓이지 않게 합치며, 비-텍스트 액션은 액션 단위로 한 번씩 스냅샷을 등록. 스택 깊이는 최대 100 (초과 시 가장 오래된 항목부터 폐기) — 메모리 안전. 새 문서·파일 로드 시 스택 자동 비움. 단위 테스트 12종 추가(`UndoRedoManagerTests`).
 
 - **Added** — **스플라인 제어점 삽입·삭제 UI**: 점-기반 도형(Spline/ClosedSpline/Polyline/Polygon) 선택 시 세그먼트 중간에 다이아몬드 모양 핸들 표시 — 클릭하면 곡선 위(스플라인은 t=0.5 De Casteljau 지점) 에 새 앵커 포인트 삽입. 기존 정점 핸들 우클릭으로 포인트 삭제 (최소 2개/3개 유지). `ShapePoint` 에 `OutCtrlX/Y`·`InCtrlX/Y` (nullable) 베지어 제어점 속성 추가. `NormalizeShapeBoundingBox` 가 이동 시 제어점 좌표도 함께 보정.
+
+- **Added** — **표 페이지 분할(행 방향) 및 헤더 행 반복**: `TableRowSplitter` 가 WPF `DynamicDocumentPaginator.GetPageNumber` 를 이용해 각 본문 행이 속한 페이지를 특정, 페이지별 `Core.Table` 조각을 생성. 헤더 행(IsHeader=true)은 조각마다 반복할지 사용자가 선택(`Table.RepeatHeaderRowsOnBreak`). `FlowDocumentPaginationAdapter` 가 `tableFragmentMap` 을 통해 조각별 페이지 슬롯을 배정 — 단일 페이지 표는 분할 없이 그대로 렌더. 표 속성 대화상자에 "페이지 분할" 그룹 추가(헤더 행 반복 체크박스, 헤더 열 수 입력). `Table.HeaderColumnCount` 속성 추가(열 방향 분할 추후 구현 예정).
 
 - **Added** — **DOCX 스플라인 라운드트립 정밀도 개선**: DOCX `cubicBezTo` 읽기 시 c1·c2 제어점을 `ShapePoint.OutCtrl`/`InCtrl` 에 보존, 쓰기 시 명시적 제어점이 있으면 그것을 그대로 사용 (기존엔 항상 Catmull-Rom 재계산). DOCX → PolyDonky → DOCX 라운드트립 시 곡선 형태 유지.
 
@@ -115,6 +156,22 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Added** — **DOCX 표/셀 테두리·배경색 보존**: `DocxReader` 가 `w:tblBorders`(두께·색상)·`w:shd`(배경색)를 `Table.BorderThicknessPt/BorderColor/BackgroundColor`로, 셀의 `w:tcBorders`·`w:shd`를 `TableCell.BorderThicknessPt/BorderColor/BackgroundColor`로 파싱. `DocxWriter` 가 이 값들을 DOCX로 출력. 단위 변환: 1/8pt ↔ pt. 라운드트립 테스트 3건 추가.
 
 - **Added** — **DOCX 도형(ShapeObject) 보존 지원**: `DocxReader` 가 DrawingML `wps:wsp` 도형을 `ShapeObject`로 파싱 (rect/ellipse/triangle/polygon/polyline/line 및 customGeometry), `DocxWriter` 가 `ShapeObject` → `wp:anchor`/`wp:inline` + `wps:wsp` DrawingML 로 출력. EMU ↔ mm 단위 변환·stroke dash·arrow·fill opacity·rotation·BehindText 래핑 지원. `DocxRoundTripTests` 에 라운드트립 테스트 6건 추가.
+
+- **Fixed** — **HtmlReader CSS `text-align` 부모→자식 상속**: 새 `PropagateInheritableStyles` DOM 사전 처리 단계 — `.document-header { text-align: center }` 가 자식 `<h1>`/`<div>` 에도 인라인 style 로 전파되도록 했다. `InlineCssClassRules` 직후 실행되며, 자식이 자체 `text-align` 을 가지면 그 값이 우선. xUnit 테스트 2건 추가 (TextAlignInheritedFromParent / TextAlignChildOverridesInherited).
+
+- **Fixed** — **HtmlReader 블록 자식 없는 `<div>` 를 단락으로 처리**: `<div class="header-sim">text</div>` 처럼 인라인/텍스트만 직접 들어있는 `<div>` 가 `ProcessChildren` 으로 평탄화돼 div 자체의 `text-align`/스타일이 적용되지 않던 문제 수정 — 블록 자식이 하나라도 있으면 기존 평탄화 동작 유지(부모의 inheritable 속성은 PropagateInheritableStyles 가 자식에 이미 전파). xUnit 테스트 1건 추가 (DivWithTextAlignBecomesParagraph).
+
+- **Fixed** — **HtmlReader `list-style-type: none` 마커 비표시**: `<ul style="list-style-type: none">`/`<style>` 블록 클래스 규칙 모두 — `ListMarker` 자체를 생성하지 않아 마커가 보이지 않게 처리 (기존엔 `Bullet` 로 떨어져 disc 가 그대로 표시). 체크박스 작업 목록(`<input type=checkbox>`)은 마커 없는 형태로도 체크 표시 유지. xUnit 테스트 2건 추가.
+
+- **Fixed** — **HtmlReader `<a>` `text-decoration: none` 으로 밑줄 제거**: `.toc a { text-decoration: none }` 같은 클래스 규칙이 인라인 머지 후 적용되도록 — `<a>` 의 inline style 에서 `text-decoration` / `text-decoration-line` 을 읽고 `none` 이면 `Underline` 을 설정하지 않는다 (기존엔 항상 밑줄). xUnit 테스트 3건 추가 (Default / Inline none / List item via class).
+
+- **Added** — **HtmlReader `<ol>/<ul>` 인라인 list-style-type 파싱**: `type="A"/"a"/"I"/"i"/"1"` HTML 속성 및 `style="list-style-type: upper-alpha"` CSS 속성을 읽어 `ListKind.OrderedAlpha`/`OrderedRoman`/`OrderedDecimal` 으로 변환. `<li>` 개별 항목에 지정된 `type`은 부모 `<ol>` 보다 우선 적용. `ResolveListKind` 헬퍼 추가. xUnit 테스트 5건 추가.
+
+- **Added** — **HtmlReader CSS Grid/Flex 다단 레이아웃 → Table 변환 (`TryBuildGridAsTable`)**: `display:grid; grid-template-columns: 1fr 1fr` / `display:flex` 컨테이너 `<div>` 를 테두리 없는 다단 `Table` 로 근사 변환 — 열 수는 `grid-template-columns` 공백 구분 개수 또는 `repeat(N,…)` 구문, Flex 는 자식 div 개수. `flex-direction:column` 은 변환 제외(세로 배치). `gap`/`grid-gap` 을 우측 셀 패딩에 적용. 나머지 셀은 빈 단락으로 패딩. xUnit 테스트 5건 추가.
+
+- **Fixed** — **FlowDocumentBuilder Rectangle/RoundedRect/Ellipse 렌더링 안정화**: WPF `Path` + `RectangleGeometry`/`EllipseGeometry` + `Stretch.None` 조합에서 일부 환경·버전에서 채우기가 보이지 않는 문제. 단순 박스 도형 3종은 `System.Windows.Shapes.Rectangle`/`Ellipse` 전용 컨트롤로 교체 (`Width`/`Height`/`Fill`/`Stroke`/`RadiusX`/`RadiusY` 직접 설정). 나머지 Path 계열 도형(Polyline/Polygon/Spline/Triangle/Star 등)은 기존 `Path` + `BuildShapeGeometry` 경로 유지. `StrokeThickness=0` 일 때 `Stroke` 를 `Transparent` 로 설정해 렌더링 경계 계산 오류 방지.
+
+- **Fixed** — **FlowDocumentPaginationAdapter BlockUIContainer 높이 측정 누락**: `BlockUIContainer` (SVG 다이어그램 placeholder, ShapeObject Inline 블록)의 `ContentEnd.GetCharacterRect` 가 캐럿 높이만 반환해 실제 UIElement 높이를 `blockH = 0` 으로 잘못 측정하던 문제. `TryGetBottomY`/`TryGetColumnLocalRect` 에서 `BlockUIContainer.Child` 가 `FrameworkElement` 이면 `ActualHeight` 를 사용해 `bottomY` 를 계산하도록 수정 — 이미지/도형 블록이 페이지 경계를 차지하는 높이를 올바르게 추적해 페이지 분할 정확도 향상.
 
 ### Docs
 - **Docs** — **HWPX 코덱 구현 참고 자료 출처와 감사 명시**: HWPX 호환성 작업이 그동안 샘플 1개만으로 추측에 의존했음을 인지하고, 사용자께서 알려주신 공식 자료원으로 전환. `README.md` 에 새 섹션 "HWPX / OWPML 구현 참고 자료" 추가, `THIRD_PARTY_NOTICES.md` 에 동일 내용 영문 포함. 참고 자료: (1) **KS X 6101 OWPML 국가표준** (https://standard.go.kr) — 워드프로세서 마크업 언어 표준 본문, (2) **한컴 HWP/OWPML 형식 안내** (https://www.hancom.com/support/downloadCenter/hwpOwpml) — 한컴 공식 형식 정의서, (3) **`hancom-io/hwpx-owpml-model`** Apache-2.0 (https://github.com/hancom-io/hwpx-owpml-model) — 한컴 공식 OWPML C++ 참조 모델 (`CPictureType`/`CRectangleType`/`CLineType` 등 요소·속성·자식 구조와 직렬화 순서 검증), (4) **`ai-screams/HwpForge`** (https://github.com/ai-screams/HwpForge) — Rust HWPX 독립 구현, 직렬화 패턴 비교, (5) **KS X 6101 ↔ 한컴 구현 차이 정리 스프레드시트** (https://docs.google.com/spreadsheets/d/1jqXPUVZv1QYcoruJgek2GKYXkhbyaZ68cDjbb1MeyYk) — 표준 오타·한컴 미구현·표준 외 추가 항목 정리. 위 자료의 코드는 PolyDonky 에 통합·재배포되지 않으며 명세 이해를 위한 참고 문헌으로만 사용. 정보 공개해 주신 모든 분께 감사.

@@ -55,6 +55,10 @@ public partial class TablePropertiesWindow : Window
 
         BorderThicknessBox.Text     = _table.BorderThicknessPt > 0 ? _table.BorderThicknessPt.ToString("F2") : "0";
         BorderColorPicker.ColorText = _table.BorderColor ?? string.Empty;
+
+        // 페이지 분할
+        RepeatHeaderRowsCheck.IsChecked = _table.RepeatHeaderRowsOnBreak;
+        HeaderColumnCountBox.Text       = _table.HeaderColumnCount.ToString();
     }
 
     // ── 배치 모드 전환 ────────────────────────────────────────────────────
@@ -155,8 +159,20 @@ public partial class TablePropertiesWindow : Window
         _table.OuterMarginLeftMm   = oml;
         _table.OuterMarginRightMm  = omr;
 
+        if (!int.TryParse(HeaderColumnCountBox.Text.Trim(), out int headerColCount) || headerColCount < 0)
+        {
+            MessageBox.Show(this, "헤더 열 수는 0 이상의 정수로 입력하세요.", "표 속성",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            HeaderColumnCountBox.Focus();
+            return;
+        }
+
         _table.BorderThicknessPt = borderPt;
         _table.BorderColor       = borderColor.Length > 0 ? borderColor : null;
+
+        // 페이지 분할
+        _table.RepeatHeaderRowsOnBreak = RepeatHeaderRowsCheck.IsChecked == true;
+        _table.HeaderColumnCount       = headerColCount;
 
         DialogResult = true;
         Close();

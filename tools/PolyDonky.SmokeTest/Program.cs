@@ -228,7 +228,7 @@ static void HtmlRoundTrip()
     var ps = doc.EnumerateParagraphs().ToList();
     SmokeHarness.Equal(OutlineLevel.H1, ps[0].Style.Outline, "HTML H1");
     SmokeHarness.True(ps.Any(p => p.Style.QuoteLevel >= 1),       "blockquote level recorded");
-    SmokeHarness.True(ps.Any(p => p.Style.IsThematicBreak),       "hr → thematic break");
+    SmokeHarness.True(doc.Sections[0].Blocks.OfType<ThematicBreakBlock>().Any(), "hr → thematic break");
     SmokeHarness.True(ps.Any(p => p.Style.CodeLanguage == "py"),  "code language preserved");
     SmokeHarness.True(ps.Any(p => p.Style.ListMarker?.Checked == true),  "task list checked");
     SmokeHarness.True(ps.Any(p => p.Style.ListMarker?.Checked == false), "task list unchecked");
@@ -256,7 +256,7 @@ static void XmlRoundTrip()
     p.AddText(" + ");
     p.Runs.Add(new Run { Text = "링크", Style = new RunStyle(), Url = "https://x" });
     doc.Sections[0].Blocks.Add(p);
-    doc.Sections[0].Blocks.Add(new Paragraph { Style = { IsThematicBreak = true } });
+    doc.Sections[0].Blocks.Add(new ThematicBreakBlock());
 
     var xml = PdXmlWriter.ToXml(doc);
     SmokeHarness.True(xml.StartsWith("<?xml "),                       "writer emits XML declaration");
@@ -279,7 +279,7 @@ static void XmlRoundTrip()
     var read = PdXmlReader.FromXml(xml);
     var rps  = read.EnumerateParagraphs().ToList();
     SmokeHarness.Equal(OutlineLevel.H1, rps[0].Style.Outline,        "round-trip H1");
-    SmokeHarness.True(rps.Any(r => r.Style.IsThematicBreak),         "round-trip thematic break");
+    SmokeHarness.True(read.Sections[0].Blocks.OfType<ThematicBreakBlock>().Any(), "round-trip thematic break");
     SmokeHarness.True(rps.SelectMany(rp => rp.Runs).Any(r => r.Url == "https://x"), "round-trip link URL");
 }
 
