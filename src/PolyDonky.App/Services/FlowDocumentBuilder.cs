@@ -548,13 +548,14 @@ public static class FlowDocumentBuilder
             catch { /* 파싱 실패 시 기본 회색 유지 */ }
         }
         double marginV = p.Style.SpaceBeforePt > 0 ? PtToDip(p.Style.SpaceBeforePt) : 6;
-        var rule = new System.Windows.Shapes.Rectangle
+        // Grid 는 HorizontalAlignment.Stretch 가 기본값이며, FlowDocument BlockUIContainer 안에서
+        // 항상 부모 열 너비 전체를 사용하므로 Rectangle 의 Width=0 측정 문제가 없다.
+        var grid = new System.Windows.Controls.Grid
         {
-            Height              = 1,
-            Fill                = new WpfMedia.SolidColorBrush(lineColor),
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Height     = 1,
+            Background = new WpfMedia.SolidColorBrush(lineColor),
         };
-        return new Wpf.BlockUIContainer(rule)
+        return new Wpf.BlockUIContainer(grid)
         {
             Margin = new Thickness(0, marginV, 0, marginV),
             Tag    = ThematicBreakTag,
