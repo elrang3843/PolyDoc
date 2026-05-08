@@ -20,6 +20,14 @@ public partial class TablePropertiesWindow : Window
 
     private void LoadValues()
     {
+        // 면별 편집 컨트롤 라벨 — 디자이너에서 설정하지 않고 코드비하인드에서 한국어 라벨 부여.
+        SideTop.Label    = "위";
+        SideBottom.Label = "아래";
+        SideLeft.Label   = "왼쪽";
+        SideRight.Label  = "오른쪽";
+        SideInnerH.Label = "중앙 가로";
+        SideInnerV.Label = "중앙 세로";
+
         // 배치 모드
         switch (_table.WrapMode)
         {
@@ -56,9 +64,33 @@ public partial class TablePropertiesWindow : Window
         BorderThicknessBox.Text     = _table.BorderThicknessPt > 0 ? _table.BorderThicknessPt.ToString("F2") : "0";
         BorderColorPicker.ColorText = _table.BorderColor ?? string.Empty;
 
+        // 면별 외곽선
+        SideTop.Value    = _table.BorderTop;
+        SideBottom.Value = _table.BorderBottom;
+        SideLeft.Value   = _table.BorderLeft;
+        SideRight.Value  = _table.BorderRight;
+        SideInnerH.Value = _table.InnerBorderHorizontal;
+        SideInnerV.Value = _table.InnerBorderVertical;
+
+        // 면별 설정이 하나라도 있으면 펼친 상태로 시작.
+        bool anyPerSide = _table.BorderTop is not null || _table.BorderBottom is not null
+                       || _table.BorderLeft is not null || _table.BorderRight is not null
+                       || _table.InnerBorderHorizontal is not null
+                       || _table.InnerBorderVertical is not null;
+        PerSideToggle.IsChecked = anyPerSide;
+        PerSidePanel.Visibility = anyPerSide ? Visibility.Visible : Visibility.Collapsed;
+        PerSideToggle.Content   = anyPerSide ? "면별 설정 접기 ▴" : "면별 설정 펼치기 ▾";
+
         // 페이지 분할
         RepeatHeaderRowsCheck.IsChecked = _table.RepeatHeaderRowsOnBreak;
         HeaderColumnCountBox.Text       = _table.HeaderColumnCount.ToString();
+    }
+
+    private void OnPerSideToggleClick(object sender, RoutedEventArgs e)
+    {
+        bool open = PerSideToggle.IsChecked == true;
+        PerSidePanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        PerSideToggle.Content   = open ? "면별 설정 접기 ▴" : "면별 설정 펼치기 ▾";
     }
 
     // ── 배치 모드 전환 ────────────────────────────────────────────────────
@@ -169,6 +201,23 @@ public partial class TablePropertiesWindow : Window
 
         _table.BorderThicknessPt = borderPt;
         _table.BorderColor       = borderColor.Length > 0 ? borderColor : null;
+
+        // 면별 외곽선 — 유효성 검사 후 적용.
+        foreach (var editor in new[] { SideTop, SideBottom, SideLeft, SideRight, SideInnerH, SideInnerV })
+        {
+            if (!editor.TryValidate(out string? sideError))
+            {
+                MessageBox.Show(this, sideError ?? "면별 외곽선 입력이 잘못되었습니다.", "표 속성",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+        }
+        _table.BorderTop             = SideTop.Value;
+        _table.BorderBottom          = SideBottom.Value;
+        _table.BorderLeft            = SideLeft.Value;
+        _table.BorderRight           = SideRight.Value;
+        _table.InnerBorderHorizontal = SideInnerH.Value;
+        _table.InnerBorderVertical   = SideInnerV.Value;
 
         // 페이지 분할
         _table.RepeatHeaderRowsOnBreak = RepeatHeaderRowsCheck.IsChecked == true;

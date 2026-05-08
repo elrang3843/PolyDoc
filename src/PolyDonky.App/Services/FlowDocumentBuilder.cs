@@ -477,28 +477,44 @@ public static class FlowDocumentBuilder
         var headerBrush = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xE8, 0xEA, 0xED));
         headerBrush.Freeze();
 
+        int rowCount = table.Rows.Count;
+        int colCount = Math.Max(table.Columns.Count, table.Rows.Count > 0 ? table.Rows[0].Cells.Count : 0);
+
+        int rowIdx = 0;
         foreach (var row in table.Rows)
         {
             var wrow = new Wpf.TableRow();
             if (row.IsHeader)
                 wrow.Background = headerBrush;
 
+            int colIdx = 0;
             foreach (var cell in row.Cells)
             {
+                int rowSpan = Math.Max(cell.RowSpan, 1);
+                int colSpan = Math.Max(cell.ColumnSpan, 1);
+
                 var wcell = new Wpf.TableCell
                 {
-                    ColumnSpan = Math.Max(cell.ColumnSpan, 1),
-                    RowSpan    = Math.Max(cell.RowSpan, 1),
+                    ColumnSpan = colSpan,
+                    RowSpan    = rowSpan,
                 };
 
-                ApplyCellPropertiesToWpf(wcell, cell, row.IsHeader, table);
+                bool atTop    = rowIdx == 0;
+                bool atBottom = rowIdx + rowSpan - 1 >= rowCount - 1;
+                bool atLeft   = colIdx == 0;
+                bool atRight  = colIdx + colSpan - 1 >= colCount - 1;
+
+                ApplyCellPropertiesToWpf(wcell, cell, row.IsHeader, table,
+                    atTop, atBottom, atLeft, atRight);
                 AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles);
                 if (wcell.Blocks.Count == 0)
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
 
                 wrow.Cells.Add(wcell);
+                colIdx += colSpan;
             }
             rowGroup.Rows.Add(wrow);
+            rowIdx++;
         }
 
         wtable.Tag = table;
@@ -522,33 +538,78 @@ public static class FlowDocumentBuilder
             table.OuterMarginRightMm  > 0 ? MmToDip(table.OuterMarginRightMm)  : 0,
             table.OuterMarginBottomMm > 0 ? MmToDip(table.OuterMarginBottomMm) : 0);
 
-        // 표 외곽선
-        if (table.BorderThicknessPt > 0)
-        {
-            var borderColor = TryParseColor(table.BorderColor)
-                ?? WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8);
-            wtable.BorderBrush     = new WpfMedia.SolidColorBrush(borderColor);
-            wtable.BorderThickness = new Thickness(PtToDip(table.BorderThicknessPt));
-        }
-        else
-        {
-            wtable.BorderBrush     = null;
-            wtable.BorderThickness = new Thickness(0);
-        }
+        // 표 외곽선 — Wpf.Table 자체의 BorderBrush/Thickness 는 셀 외곽선과 겹치므로 0 으로 둔다.
+        // 외곽선은 가장자리 셀이 자기 면(top/bottom/left/right) 으로 직접 그린다 (ApplyCellPropertiesToWpf).
+        wtable.BorderBrush     = null;
+        wtable.BorderThickness = new Thickness(0);
+    }
+
+    /// <summary>표·셀 면별 테두리 cascade — 셀 면 지정 > 표 외곽/안쪽 면 > 셀/표 공통값.</summary>
+    private static CellBorderSide ResolveBorderSide(
+        CellBorderSide? cellSide,
+        bool isTableEdge,
+        CellBorderSide? tableEdge,
+        CellBorderSide? tableInner,
+        TableCell cell,
+        Table? tableDefaults)
+    {
+        if (cellSide.HasValue) return cellSide.Value;
+
+        var edgeOrInner = isTableEdge ? tableEdge : tableInner;
+        if (edgeOrInner.HasValue) return edgeOrInner.Value;
+
+        // 공통값 폴백 — 셀 공통이 없으면 표 공통.
+        double thk = cell.BorderThicknessPt > 0
+            ? cell.BorderThicknessPt
+            : (tableDefaults?.BorderThicknessPt ?? 0);
+        string? clr = !string.IsNullOrEmpty(cell.BorderColor)
+            ? cell.BorderColor
+            : tableDefaults?.BorderColor;
+        return new CellBorderSide(thk, clr);
     }
 
     internal static void ApplyCellPropertiesToWpf(
         Wpf.TableCell wcell,
         TableCell cell,
         bool isHeader,
-        Table? tableDefaults = null)
+        Table? tableDefaults = null,
+        bool atTopEdge    = false,
+        bool atBottomEdge = false,
+        bool atLeftEdge   = false,
+        bool atRightEdge  = false)
     {
-        var borderColor = TryParseColor(cell.BorderColor)
-            ?? WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8);
-        double borderDip = cell.BorderThicknessPt > 0
-            ? PtToDip(cell.BorderThicknessPt) : PtToDip(0.75);
+        // 면별 테두리 cascade — 셀 면 지정 > 표 외곽/안쪽 면 > 공통값.
+        // 안쪽 면(table 내부) 일 때는 InnerBorderHorizontal/Vertical 을 default 로 쓴다.
+        var top    = ResolveBorderSide(cell.BorderTop,    atTopEdge,    tableDefaults?.BorderTop,
+                                       tableDefaults?.InnerBorderHorizontal, cell, tableDefaults);
+        var bottom = ResolveBorderSide(cell.BorderBottom, atBottomEdge, tableDefaults?.BorderBottom,
+                                       tableDefaults?.InnerBorderHorizontal, cell, tableDefaults);
+        var left   = ResolveBorderSide(cell.BorderLeft,   atLeftEdge,   tableDefaults?.BorderLeft,
+                                       tableDefaults?.InnerBorderVertical,   cell, tableDefaults);
+        var right  = ResolveBorderSide(cell.BorderRight,  atRightEdge,  tableDefaults?.BorderRight,
+                                       tableDefaults?.InnerBorderVertical,   cell, tableDefaults);
+
+        // Wpf.TableCell 은 단일 BorderBrush 만 지원 — 면 색상 중 가장 먼저 명시된 것을 채택.
+        // (모든 면이 같은 색이면 자연스러우며, 다른 색이 섞여 있으면 시각적 한계가 있음.)
+        var pickedColor = top.Color ?? bottom.Color ?? left.Color ?? right.Color
+                       ?? cell.BorderColor ?? tableDefaults?.BorderColor;
+        var borderColor = TryParseColor(pickedColor) ?? WpfMedia.Color.FromRgb(0xC8, 0xC8, 0xC8);
+
+        // 두께가 명시되지 않은 면은 셀/표 공통 두께 → 그것도 0 이면 0 (해당 면 미표시).
+        // 단, 공통값이 모두 0 이고 면별도 모두 0 이면 fallback 0.75pt 적용 (기존 동작 호환).
+        double commonThk = cell.BorderThicknessPt > 0
+            ? cell.BorderThicknessPt
+            : (tableDefaults?.BorderThicknessPt ?? 0);
+        double FallbackThk(double sideThk) => sideThk > 0 ? sideThk
+                                            : commonThk > 0 ? commonThk
+                                            : 0.75;
+
         wcell.BorderBrush     = new WpfMedia.SolidColorBrush(borderColor);
-        wcell.BorderThickness = new Thickness(borderDip);
+        wcell.BorderThickness = new Thickness(
+            PtToDip(FallbackThk(left.ThicknessPt)),
+            PtToDip(FallbackThk(top.ThicknessPt)),
+            PtToDip(FallbackThk(right.ThicknessPt)),
+            PtToDip(FallbackThk(bottom.ThicknessPt)));
 
         double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : 1.0;
         double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : 1.0;
