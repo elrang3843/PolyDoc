@@ -667,6 +667,21 @@ public sealed class HtmlReader : IDocumentReader
         if (marginL == "auto" && marginR == "auto")       t.HAlign = TableHAlign.Center;
         else if (marginL == "auto" && marginR != "auto")  t.HAlign = TableHAlign.Right;
 
+        // 표 외곽 여백.
+        if (TryParseCssMm(StyleProp(tblStyle, "margin-top"),    out var tblMt) && tblMt > 0) t.OuterMarginTopMm    = tblMt;
+        if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
+
+        // 표 외곽선 shorthand (border:Npt solid #HHH).
+        if (StyleProp(tblStyle, "border") is { } tblBorderVal)
+        {
+            ExtractBorderSizeColor(tblBorderVal, out double tblBorderPx, out string? tblBorderClr);
+            if (tblBorderPx > 0)
+            {
+                t.BorderThicknessPt = tblBorderPx * 72.0 / 96.0;
+                if (tblBorderClr is not null) t.BorderColor = tblBorderClr;
+            }
+        }
+
         var rows = tableEl.QuerySelectorAll("tr").ToList();
         int maxCols = rows.Count > 0 ? rows.Max(r => r.QuerySelectorAll("td,th").Count(_ => true)) : 0;
         for (int i = 0; i < maxCols; i++) t.Columns.Add(new TableColumn());
@@ -687,6 +702,9 @@ public sealed class HtmlReader : IDocumentReader
             // 헤더 행 — 부모가 <thead> 이거나 모든 셀이 <th> 이면 헤더.
             row.IsHeader = rowEl.ParentElement?.LocalName == "thead" ||
                            rowEl.QuerySelectorAll("td,th").All(c => c.LocalName == "th");
+            // 행 높이.
+            if (TryParseCssMm(StyleProp(rowEl.GetAttribute("style"), "height"), out var rowH) && rowH > 0)
+                row.HeightMm = rowH;
 
             foreach (var cellEl in rowEl.QuerySelectorAll("td,th"))
             {
@@ -717,6 +735,34 @@ public sealed class HtmlReader : IDocumentReader
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding-bottom"), out var pb) && pb > 0) cell.PaddingBottomMm = pb;
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding-left"),   out var pl) && pl > 0) cell.PaddingLeftMm   = pl;
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding-right"),  out var pr) && pr > 0) cell.PaddingRightMm  = pr;
+
+                // 셀 테두리 — shorthand 먼저, 이후 면별 값이 override.
+                if (StyleProp(cellStyleStr, "border") is { } cellBorderAll)
+                {
+                    ExtractBorderSizeColor(cellBorderAll, out double cbaPx, out string? cbaClr);
+                    cell.BorderThicknessPt = cbaPx * 72.0 / 96.0;
+                    if (cbaClr is not null) cell.BorderColor = cbaClr;
+                }
+                if (StyleProp(cellStyleStr, "border-top") is { } cbtStr)
+                {
+                    ExtractBorderSizeColor(cbtStr, out double cbtPx, out string? cbtClr);
+                    cell.BorderTop = new CellBorderSide(cbtPx * 72.0 / 96.0, cbtClr);
+                }
+                if (StyleProp(cellStyleStr, "border-bottom") is { } cbbStr)
+                {
+                    ExtractBorderSizeColor(cbbStr, out double cbbPx, out string? cbbClr);
+                    cell.BorderBottom = new CellBorderSide(cbbPx * 72.0 / 96.0, cbbClr);
+                }
+                if (StyleProp(cellStyleStr, "border-left") is { } cblStr)
+                {
+                    ExtractBorderSizeColor(cblStr, out double cblPx, out string? cblClr);
+                    cell.BorderLeft = new CellBorderSide(cblPx * 72.0 / 96.0, cblClr);
+                }
+                if (StyleProp(cellStyleStr, "border-right") is { } cbrStr)
+                {
+                    ExtractBorderSizeColor(cbrStr, out double cbrPx, out string? cbrClr);
+                    cell.BorderRight = new CellBorderSide(cbrPx * 72.0 / 96.0, cbrClr);
+                }
 
                 // 블록 한도는 부모 ctx 와 공유.
                 ProcessChildren(cellEl, cell.Blocks, new InlineCtx { Shared = ctx.Shared });
@@ -785,6 +831,29 @@ public sealed class HtmlReader : IDocumentReader
             var marginR = StyleProp(imgStyle, "margin-right")?.Trim().ToLowerInvariant();
             if (marginL == "auto" && marginR == "auto") img.HAlign = ImageHAlign.Center;
             else if (marginL == "auto")                 img.HAlign = ImageHAlign.Right;
+        }
+
+        // CSS width/height override HTML attributes.
+        if (StyleProp(imgStyle, "width") is { } wCss && TryParseCssMm(wCss, out var wCssMm) && wCssMm > 0)
+            img.WidthMm = wCssMm;
+        if (StyleProp(imgStyle, "height") is { } hCss && TryParseCssMm(hCss, out var hCssMm) && hCssMm > 0)
+            img.HeightMm = hCssMm;
+
+        // CSS margin-top / margin-bottom.
+        if (TryParseCssMm(StyleProp(imgStyle, "margin-top"), out var imgMt) && imgMt > 0)
+            img.MarginTopMm = imgMt;
+        if (TryParseCssMm(StyleProp(imgStyle, "margin-bottom"), out var imgMb) && imgMb > 0)
+            img.MarginBottomMm = imgMb;
+
+        // CSS border.
+        if (StyleProp(imgStyle, "border") is { } imgBorderVal)
+        {
+            ExtractBorderSizeColor(imgBorderVal, out double imgBorderPx, out string? imgBorderClr);
+            if (imgBorderPx > 0)
+            {
+                img.BorderThicknessPt = imgBorderPx * 72.0 / 96.0;
+                img.BorderColor       = imgBorderClr;
+            }
         }
 
         return img;
@@ -1083,7 +1152,8 @@ public sealed class HtmlReader : IDocumentReader
     private static RunStyle MergeStyle(RunStyle parent, IElement el)
     {
         var s = Clone(parent);
-        var inline = ParseInlineStyle(el.GetAttribute("style"));
+        var styleAttr = el.GetAttribute("style");
+        var inline = ParseInlineStyle(styleAttr);
         if (inline.FontFamily is { Length: > 0 } ff) s.FontFamily = ff;
         if (inline.FontSizePt > 0)                   s.FontSizePt = inline.FontSizePt;
         if (inline.Bold)          s.Bold          = true;
@@ -1091,8 +1161,20 @@ public sealed class HtmlReader : IDocumentReader
         if (inline.Underline)     s.Underline     = true;
         if (inline.Strikethrough) s.Strikethrough = true;
         if (inline.Overline)      s.Overline      = true;
+        if (inline.Subscript)     s.Subscript     = true;
+        if (inline.Superscript)   s.Superscript   = true;
         if (inline.Foreground is { } fg) s.Foreground = fg;
         if (inline.Background is { } bg) s.Background = bg;
+        if (Math.Abs(inline.WidthPercent - 100) > 0.5)  s.WidthPercent    = inline.WidthPercent;
+        if (Math.Abs(inline.LetterSpacingPx) > 0.01)    s.LetterSpacingPx = inline.LetterSpacingPx;
+        // Explicit reset — font-weight:normal / font-style:normal can unset inherited flags.
+        var fwVal = StyleProp(styleAttr, "font-weight");
+        if (fwVal is not null && (fwVal.Equals("normal", StringComparison.OrdinalIgnoreCase)
+            || (int.TryParse(fwVal, out var fwN) && fwN < 600)))
+            s.Bold = false;
+        var fsVal = StyleProp(styleAttr, "font-style");
+        if (fsVal is not null && fsVal.Equals("normal", StringComparison.OrdinalIgnoreCase))
+            s.Italic = false;
         return s;
     }
 
@@ -1140,6 +1222,10 @@ public sealed class HtmlReader : IDocumentReader
                     if (val.EndsWith("px", StringComparison.OrdinalIgnoreCase)
                         && double.TryParse(val[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var lspx))
                         s.LetterSpacingPx = lspx;
+                    break;
+                case "vertical-align":
+                    if (val.Equals("sub",   StringComparison.OrdinalIgnoreCase)) s.Subscript   = true;
+                    if (val.Equals("super", StringComparison.OrdinalIgnoreCase)) s.Superscript = true;
                     break;
                 case "transform":
                     // scaleX(v) → WidthPercent. 값이 복합 transform 이어도 scaleX 만 추출.
@@ -1374,6 +1460,22 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseLineHeight(StyleProp(style, "line-height"), out var lh))
             p.Style.LineHeightFactor = lh;
 
+        // margin/padding shorthands — individual properties below override if present.
+        if (StyleProp(style, "margin") is { } marginAll)
+        {
+            ParseCssBoxShorthand(marginAll, baseFontSizePt, out var mTop, out var mRight, out var mBottom, out var mLeft);
+            if (mTop    > 0) p.Style.SpaceBeforePt  = mTop;
+            if (mBottom > 0) p.Style.SpaceAfterPt   = mBottom;
+            if (mLeft   > 0) p.Style.IndentLeftMm   = mLeft  * 25.4 / 72.0;
+            if (mRight  > 0) p.Style.IndentRightMm  = mRight * 25.4 / 72.0;
+        }
+        if (StyleProp(style, "padding") is { } paddingAll)
+        {
+            ParseCssBoxShorthand(paddingAll, baseFontSizePt, out _, out var pRight, out _, out var pLeft);
+            if (pLeft  > 0) p.Style.IndentLeftMm  = pLeft  * 25.4 / 72.0;
+            if (pRight > 0) p.Style.IndentRightMm = pRight * 25.4 / 72.0;
+        }
+
         if (TryParseCssPt(StyleProp(style, "margin-top"), baseFontSizePt, out var mt))
             p.Style.SpaceBeforePt = mt;
         if (TryParseCssPt(StyleProp(style, "margin-bottom"), baseFontSizePt, out var mb))
@@ -1407,6 +1509,22 @@ public sealed class HtmlReader : IDocumentReader
         {
             p.Style.ForcePageBreakBefore = true;
         }
+    }
+
+    /// <summary>CSS box-model shorthand → 4 sides in pt (top, right, bottom, left).
+    /// Rules: 1 value → all; 2 → top+bottom / left+right; 3 → top / horiz / bottom; 4 → TRBL.</summary>
+    private static void ParseCssBoxShorthand(string val, double baseFontSizePt,
+        out double top, out double right, out double bottom, out double left)
+    {
+        top = right = bottom = left = 0;
+        var parts = val.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return;
+        TryParseCssPt(parts[0], baseFontSizePt, out top);
+        if (parts.Length == 1) { right = bottom = left = top; return; }
+        TryParseCssPt(parts[1], baseFontSizePt, out right); left = right;
+        if (parts.Length == 2) { bottom = top; return; }
+        TryParseCssPt(parts[2], baseFontSizePt, out bottom);
+        if (parts.Length >= 4) TryParseCssPt(parts[3], baseFontSizePt, out left);
     }
 
     private static string? StyleProp(string? style, string prop)

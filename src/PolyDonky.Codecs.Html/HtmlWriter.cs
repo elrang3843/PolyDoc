@@ -337,6 +337,12 @@ public sealed class HtmlWriter : IDocumentWriter
         if (s.ForcePageBreakBefore)
             parts.Add("page-break-before:always");
 
+        if (s.BorderBottomPt > 0)
+        {
+            var bColor = s.BorderBottomColor is { Length: > 0 } ? s.BorderBottomColor : "#CCCCCC";
+            parts.Add($"border-bottom:{s.BorderBottomPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {bColor}");
+        }
+
         return parts;
     }
 
@@ -438,7 +444,13 @@ public sealed class HtmlWriter : IDocumentWriter
             case TableHAlign.Right:  tblStyle.Add("margin-left:auto");                  break;
         }
         if (t.BorderThicknessPt > 0)
-            tblStyle.Add($"border-collapse:collapse");
+        {
+            var bColor = t.BorderColor is { Length: > 0 } ? t.BorderColor : "#C8C8C8";
+            tblStyle.Add($"border:{t.BorderThicknessPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {bColor}");
+            tblStyle.Add("border-collapse:collapse");
+        }
+        if (t.OuterMarginTopMm > 0 || t.OuterMarginBottomMm > 0)
+            tblStyle.Add($"margin:{FmtMm(t.OuterMarginTopMm)} 0 {FmtMm(t.OuterMarginBottomMm)} 0");
 
         var tblStyleAttr = tblStyle.Count > 0
             ? $" style=\"{string.Join(';', tblStyle)}\""
@@ -489,7 +501,8 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteRow(StringBuilder sb, TableRow row, string indent, bool isHeader, NoteNums? notes = null)
     {
-        sb.Append(indent).Append("<tr>\n");
+        var trStyleAttr = row.HeightMm > 0 ? $" style=\"height:{FmtMm(row.HeightMm)}\"" : "";
+        sb.Append(indent).Append("<tr").Append(trStyleAttr).Append(">\n");
         foreach (var cell in row.Cells)
         {
             var tag = isHeader ? "th" : "td";
@@ -638,6 +651,12 @@ public sealed class HtmlWriter : IDocumentWriter
 
         if (img.MarginTopMm    > 0) parts.Add($"margin-top:{FmtMm(img.MarginTopMm)}");
         if (img.MarginBottomMm > 0) parts.Add($"margin-bottom:{FmtMm(img.MarginBottomMm)}");
+
+        if (img.BorderThicknessPt > 0)
+        {
+            var bColor = img.BorderColor is { Length: > 0 } ? img.BorderColor : "#888888";
+            parts.Add($"border:{img.BorderThicknessPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {bColor}");
+        }
 
         return string.Join(';', parts);
     }
