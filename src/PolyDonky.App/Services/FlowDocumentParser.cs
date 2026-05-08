@@ -194,6 +194,12 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
+                // 표 캡션 단락 — Table.Caption 이 다음 렌더에서 재생성하므로 모델에 추가하지 않는다
+                // (추가하면 라이브 페이지네이션마다 캡션이 1개씩 누적됨).
+                case Wpf.Paragraph captionPara when ReferenceEquals(
+                    captionPara.Tag, FlowDocumentBuilder.TableCaptionTag):
+                    break;
+
                 // Fallback: 붙여넣기로 Tag 가 사라진 AsText/WrapLeft/WrapRight 이미지 단락.
                 // WPF XamlPackage 클립보드 포맷은 BitmapSource 를 보존하므로 시각 트리에서 ImageBlock 을 재구성한다.
                 // 반드시 일반 'case Wpf.Paragraph' 보다 먼저 위치해야 한다.

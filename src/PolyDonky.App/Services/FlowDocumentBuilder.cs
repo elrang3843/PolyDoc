@@ -544,10 +544,16 @@ public static class FlowDocumentBuilder
         return new Wpf.BlockUIContainer(line);
     }
 
+    /// <summary>표 캡션 단락 식별용 Tag 센티넬. Parser 가 이 Tag 를 보면 모델에 추가하지 않고 건너뛴다
+    /// (Table.Caption 이 다음 렌더에서 다시 생성). 이 마커가 없으면 매 라이브 페이지네이션마다
+    /// 캡션 단락이 모델에 누적되어 여러 개로 보인다.</summary>
+    internal static readonly object TableCaptionTag = new();
+
     /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>
     private static Wpf.Paragraph BuildTableCaption(string caption)
         => new Wpf.Paragraph(new Wpf.Run(caption))
         {
+            Tag           = TableCaptionTag,
             TextAlignment = TextAlignment.Center,
             FontStyle     = FontStyles.Italic,
             FontSize      = PtToDip(9.5),
