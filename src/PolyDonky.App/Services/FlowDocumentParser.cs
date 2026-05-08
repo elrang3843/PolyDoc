@@ -272,8 +272,10 @@ public static class FlowDocumentParser
                 Status  = original.Status,
                 WrapMode  = original.WrapMode,
                 HAlign    = original.HAlign,
+                AnchorPageIndex = original.AnchorPageIndex,
                 OverlayXMm = original.OverlayXMm,
                 OverlayYMm = original.OverlayYMm,
+                Caption                      = original.Caption,
                 BackgroundColor              = original.BackgroundColor,
                 DefaultCellPaddingTopMm      = original.DefaultCellPaddingTopMm,
                 DefaultCellPaddingBottomMm   = original.DefaultCellPaddingBottomMm,
@@ -285,6 +287,8 @@ public static class FlowDocumentParser
                 OuterMarginRightMm           = original.OuterMarginRightMm,
                 BorderThicknessPt            = original.BorderThicknessPt,
                 BorderColor                  = original.BorderColor,
+                RepeatHeaderRowsOnBreak      = original.RepeatHeaderRowsOnBreak,
+                HeaderColumnCount            = original.HeaderColumnCount,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();
