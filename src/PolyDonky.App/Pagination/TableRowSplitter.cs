@@ -89,7 +89,76 @@ internal static class TableRowSplitter
             catch { }
         }
 
+        AdjustGroupsForRowSpan(result, coreTable);
         return result;
+    }
+
+    /// <summary>
+    /// RowSpan 으로 병합된 셀의 기준 행과 피복 행이 서로 다른 그룹에 속하지 않도록
+    /// 그룹 경계를 재조정한다. 안정될 때까지(더 이상 이동 없을 때까지) 반복한다.
+    /// </summary>
+    private static void AdjustGroupsForRowSpan(
+        List<(int pageNum, List<int> bodyRowIndices)> groups,
+        Table source)
+    {
+        if (groups.Count <= 1) return;
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+
+            for (int gi = 0; gi < groups.Count - 1; gi++)
+            {
+                var curIndices  = groups[gi].bodyRowIndices;
+                var nextIndices = groups[gi + 1].bodyRowIndices;
+                if (curIndices.Count == 0) continue;
+
+                var nextSet = new HashSet<int>(nextIndices);
+                int cutAt = -1;
+
+                for (int k = 0; k < curIndices.Count; k++)
+                {
+                    int srcIdx = curIndices[k];
+                    var row = source.Rows[srcIdx];
+
+                    // 이 행의 셀 중 RowSpan > 1 인 것이 다음 그룹의 행까지 닿는지 확인
+                    int maxReach = srcIdx;
+                    foreach (var cell in row.Cells)
+                    {
+                        if (cell.RowSpan > 1)
+                            maxReach = System.Math.Max(maxReach, srcIdx + cell.RowSpan - 1);
+                    }
+                    if (maxReach <= srcIdx) continue;
+
+                    for (int j = srcIdx + 1; j <= maxReach && j < source.Rows.Count; j++)
+                    {
+                        if (!source.Rows[j].IsHeader && nextSet.Contains(j))
+                        {
+                            // k 번 이후 행들이 다음 그룹의 행과 병합돼 있으므로 k 부터 이동
+                            if (cutAt < 0) cutAt = k;
+                            break;
+                        }
+                    }
+                }
+
+                if (cutAt >= 0)
+                {
+                    int moveCount = curIndices.Count - cutAt;
+                    var toMove = curIndices.GetRange(cutAt, moveCount);
+                    curIndices.RemoveRange(cutAt, moveCount);
+                    nextIndices.InsertRange(0, toMove);
+                    changed = true;
+                }
+            }
+
+            // 이동으로 비어 버린 그룹 제거
+            for (int gi = groups.Count - 2; gi >= 0; gi--)
+            {
+                if (groups[gi].bodyRowIndices.Count == 0)
+                    groups.RemoveAt(gi);
+            }
+        }
     }
 
     /// <summary>
