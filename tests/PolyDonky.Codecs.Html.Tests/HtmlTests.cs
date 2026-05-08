@@ -1361,19 +1361,24 @@ public class HtmlTests
     }
 
     [Fact]
-    public void Reader_CssDescendantSelector_RightmostUsed()
+    public void Reader_CssDescendantSelector_OnlyAppliesToActualDescendants()
     {
-        // ".container p" 같은 자손 셀렉터는 우측 단순 셀렉터(p) 만 사용 — 모든 p 에 적용됨.
+        // ".container p" 자손 셀렉터는 .container 안의 <p> 에만 적용된다 (CSS 표준).
+        // 이전 구현은 우측 단순 셀렉터만 보고 모든 <p> 에 잘못 전파했었다.
         const string html = """
             <html><head><style>
               .container p { text-align: right; }
             </style></head><body>
-              <p>x</p>
+              <p>outside</p>
+              <div class="container"><p>inside</p></div>
             </body></html>
             """;
         var rt = HtmlReader.FromHtml(html);
-        var p  = rt.EnumerateParagraphs().Single();
-        Assert.Equal(Alignment.Right, p.Style.Alignment);
+        var ps = rt.EnumerateParagraphs().ToList();
+        var outside = ps.First(p => p.GetPlainText() == "outside");
+        var inside  = ps.First(p => p.GetPlainText() == "inside");
+        Assert.NotEqual(Alignment.Right, outside.Style.Alignment);
+        Assert.Equal   (Alignment.Right, inside.Style.Alignment);
     }
 
     // ── list-style-type 파싱 ────────────────────────────────────────────
@@ -1694,20 +1699,24 @@ public class HtmlTests
     // ── list-style-type: none → 마커 비표시 ─────────────────────────
 
     [Fact]
-    public void Reader_UlListStyleNone_NoMarker()
+    public void Reader_UlListStyleNone_HideBullet()
     {
+        // list-style-type:none 은 ListMarker 자체를 제거하지 않고 HideBullet=true 로 보존 —
+        // 목차/링크 목록의 구조(들여쓰기·중첩)를 유지하기 위함.
         const string html = "<ul style=\"list-style-type: none\"><li>A</li><li>B</li></ul>";
         var rt = HtmlReader.FromHtml(html);
         var ps = rt.EnumerateParagraphs().ToList();
         Assert.Equal(2, ps.Count);
-        Assert.Null(ps[0].Style.ListMarker);
-        Assert.Null(ps[1].Style.ListMarker);
+        Assert.NotNull(ps[0].Style.ListMarker);
+        Assert.True  (ps[0].Style.ListMarker!.HideBullet);
+        Assert.NotNull(ps[1].Style.ListMarker);
+        Assert.True  (ps[1].Style.ListMarker!.HideBullet);
     }
 
     [Fact]
-    public void Reader_UlListStyleNoneViaCssClass_NoMarker()
+    public void Reader_UlListStyleNoneViaCssClass_HideBullet()
     {
-        // <style> 블록의 .toc ul { list-style-type: none } 도 동일 동작.
+        // <style> 블록의 .toc ul { list-style-type: none } 도 동일하게 HideBullet=true.
         const string html = """
             <html><head><style>
               .toc ul { list-style-type: none; }
@@ -1717,7 +1726,51 @@ public class HtmlTests
             """;
         var rt = HtmlReader.FromHtml(html);
         var p  = rt.EnumerateParagraphs().Single();
-        Assert.Null(p.Style.ListMarker);
+        Assert.NotNull(p.Style.ListMarker);
+        Assert.True  (p.Style.ListMarker!.HideBullet);
+    }
+
+    [Fact]
+    public void RoundTrip_UlHideBullet_PreservesListStyleNone()
+    {
+        // HideBullet=true 인 목록은 라운드트립 시 <ul style="list-style-type:none"> 로 직렬화.
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        for (int i = 0; i < 3; i++)
+        {
+            var p = new Paragraph();
+            p.Style.ListMarker = new ListMarker { Kind = ListKind.Bullet, HideBullet = true };
+            p.AddText($"item {i}");
+            sec.Blocks.Add(p);
+        }
+        doc.Sections.Add(sec);
+        var html = HtmlWriter.ToHtml(doc);
+        Assert.Contains("list-style-type:none", html);
+
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.Sections[0].Blocks.OfType<Paragraph>().ToList();
+        Assert.Equal(3, ps.Count);
+        Assert.All(ps, p => Assert.True(p.Style.ListMarker!.HideBullet));
+    }
+
+    [Fact]
+    public void RoundTrip_TaskListStillShowsCheckboxEvenWithHideBullet()
+    {
+        // 체크리스트는 <ul class="checklist" style="list-style:none"> 패턴으로 입력되더라도
+        // checkbox 가 마커를 대신하므로 HideBullet 은 false 로 (writer 가 list-style-type:none 출력 안 함).
+        const string html = """
+            <ul style="list-style-type: none">
+              <li><input type="checkbox" checked> done</li>
+              <li><input type="checkbox"> not done</li>
+            </ul>
+            """;
+        var rt = HtmlReader.FromHtml(html);
+        var ps = rt.EnumerateParagraphs().ToList();
+        Assert.Equal(2, ps.Count);
+        Assert.Equal(true,  ps[0].Style.ListMarker!.Checked);
+        Assert.Equal(false, ps[1].Style.ListMarker!.Checked);
+        Assert.False(ps[0].Style.ListMarker!.HideBullet);
+        Assert.False(ps[1].Style.ListMarker!.HideBullet);
     }
 
     // ── <a> text-decoration: none → 밑줄 제거 ───────────────────────

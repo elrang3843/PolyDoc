@@ -581,34 +581,26 @@ public sealed class HtmlReader : IDocumentReader
                 : hideMarker;
 
             int order = li.GetAttribute("value") is { } v && int.TryParse(v, out var ov) ? ov : start + counter - 1;
-            // list-style-type:none → ListMarker 자체를 생성하지 않아 마커 비표시.
-            // (체크박스 작업 목록은 예외 — 항상 표시)
-            ListMarker? lm;
-            if (liHide && checkedState is null)
-            {
-                lm = null;
-            }
-            else if (isOrdered)
-            {
-                lm = new ListMarker
+            // list-style-type:none → 마커는 숨기되 ListMarker 는 유지(목차·링크 목록의 구조 보존).
+            // 체크박스 작업 목록은 항상 마커 표시.
+            ListMarker lm = isOrdered
+                ? new ListMarker
                 {
                     Kind          = lmKind,
                     OrderedNumber = order,
                     Level         = ctx.ListLevel,
                     Checked       = checkedState,
                     UpperCase     = lmUpper,
-                };
-            }
-            else
-            {
-                lm = new ListMarker
+                    HideBullet    = liHide && checkedState is null,
+                }
+                : new ListMarker
                 {
-                    Kind      = lmKind,
-                    Level     = ctx.ListLevel,
-                    Checked   = checkedState,
-                    UpperCase = lmUpper,
+                    Kind       = lmKind,
+                    Level      = ctx.ListLevel,
+                    Checked    = checkedState,
+                    UpperCase  = lmUpper,
+                    HideBullet = liHide && checkedState is null,
                 };
-            }
 
             // <li> 내부의 첫 텍스트/인라인은 한 단락으로, 후속 블록(중첩 리스트 등)은 평탄화.
             var firstParagraph = new Paragraph();
@@ -2332,12 +2324,11 @@ public sealed class HtmlReader : IDocumentReader
 
     private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)
     {
-        // selector → property → value
-        var rules = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-
+        // 풀 셀렉터 → 속성 → 값. (selector 그대로 보존 — 자손/자식 결합자 포함)
+        // 같은 셀렉터에 여러 선언이 있으면 마지막이 이김(CSS 규칙).
+        var rules = new List<(string Selector, Dictionary<string, string> Decls)>();
         foreach (var styleEl in doc.QuerySelectorAll("style"))
             ParseCssText(styleEl.TextContent, rules);
-
         if (rules.Count == 0) return;
 
         var docElement = doc.DocumentElement;
@@ -2347,26 +2338,17 @@ public sealed class HtmlReader : IDocumentReader
         {
             var matched = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            // 명세 우선순위: tag < .class < #id < inline (마지막 wins).
-            if (rules.TryGetValue(el.LocalName, out var tagDict))
-                foreach (var kv in tagDict) matched[kv.Key] = kv.Value;
-
-            var classAttr = el.GetAttribute("class");
-            if (!string.IsNullOrEmpty(classAttr))
+            // AngleSharp 의 Matches 로 정확히 매치되는 author 규칙만 적용 — 자손 결합자 (.toc ul),
+            // 자식 결합자 (.toc > ul), 가상 클래스/요소(:nth-child) 등 모두 표준 셀렉터 의미 그대로.
+            // 같은 속성이면 뒤가 이김(선언 순서 — specificity 무시는 단순 근사).
+            foreach (var (selector, decls) in rules)
             {
-                foreach (var cls in classAttr.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    if (rules.TryGetValue("." + cls, out var classDict))
-                        foreach (var kv in classDict) matched[kv.Key] = kv.Value;
-                    // tag.class 결합
-                    if (rules.TryGetValue(el.LocalName + "." + cls, out var tagClassDict))
-                        foreach (var kv in tagClassDict) matched[kv.Key] = kv.Value;
-                }
+                bool isMatch;
+                try { isMatch = el.Matches(selector); }
+                catch { continue; }   // 미지원 셀렉터(::before 등) 는 조용히 무시
+                if (!isMatch) continue;
+                foreach (var kv in decls) matched[kv.Key] = kv.Value;
             }
-
-            var idAttr = el.GetAttribute("id");
-            if (!string.IsNullOrEmpty(idAttr) && rules.TryGetValue("#" + idAttr, out var idDict))
-                foreach (var kv in idDict) matched[kv.Key] = kv.Value;
 
             if (matched.Count == 0) continue;
 
@@ -2382,8 +2364,9 @@ public sealed class HtmlReader : IDocumentReader
         }
     }
 
-    /// <summary>CSS 텍스트를 단순 파싱해 셀렉터 → 속성 → 값 사전에 채워 넣는다.</summary>
-    private static void ParseCssText(string css, Dictionary<string, Dictionary<string, string>> rules)
+    /// <summary>CSS 텍스트를 단순 파싱해 (selector, declarations) 쌍 목록에 추가한다.
+    /// 셀렉터는 그대로 보존하며 매치는 호출 측이 <see cref="IElement.Matches"/> 로 수행한다.</summary>
+    private static void ParseCssText(string css, List<(string Selector, Dictionary<string, string> Decls)> rules)
     {
         if (string.IsNullOrWhiteSpace(css)) return;
         int pos = 0;
@@ -2412,54 +2395,28 @@ public sealed class HtmlReader : IDocumentReader
             if (selectorPart.StartsWith("@", StringComparison.Ordinal)) continue;
             if (selectorPart.Length == 0) continue;
 
+            // 선언부 한 번만 파싱 후 모든 셀렉터에 공유(쉼표로 연결된 다중 셀렉터 처리).
+            var decls = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var decl in bodyPart.Split(';'))
+            {
+                var c = decl.IndexOf(':');
+                if (c <= 0) continue;
+                var prop = decl[..c].Trim();
+                var val  = decl[(c + 1)..].Trim();
+                if (prop.Length == 0 || val.Length == 0) continue;
+                decls[prop] = val;
+            }
+            if (decls.Count == 0) continue;
+
             foreach (var rawSelector in selectorPart.Split(','))
             {
-                var simpleSelector = ExtractSimpleSelector(rawSelector.Trim());
-                if (simpleSelector is null) continue;
-
-                if (!rules.TryGetValue(simpleSelector, out var dict))
-                {
-                    dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    rules[simpleSelector] = dict;
-                }
-                foreach (var decl in bodyPart.Split(';'))
-                {
-                    var c = decl.IndexOf(':');
-                    if (c <= 0) continue;
-                    var prop = decl[..c].Trim();
-                    var val  = decl[(c + 1)..].Trim();
-                    if (prop.Length == 0 || val.Length == 0) continue;
-                    dict[prop] = val;
-                }
+                var sel = rawSelector.Trim();
+                if (sel.Length == 0) continue;
+                rules.Add((sel, decls));
             }
         }
     }
 
-    /// <summary>
-    /// 복합 셀렉터에서 우측 단순 셀렉터(.class / #id / tag / tag.class) 를 추출한다.
-    /// 예: ".toc ul" → "ul", ".toc > a" → "a", "div.alert" → "div.alert".
-    /// 가상 클래스(:hover) 와 속성 셀렉터([type=...]) 는 제거.
-    /// </summary>
-    private static string? ExtractSimpleSelector(string selector)
-    {
-        if (string.IsNullOrEmpty(selector)) return null;
-        // 자손·자식·형제 결합자 제거 — 가장 우측 단순 셀렉터만 사용.
-        int lastBreak = -1;
-        for (int i = selector.Length - 1; i >= 0; i--)
-        {
-            var ch = selector[i];
-            if (ch is ' ' or '\t' or '>' or '+' or '~') { lastBreak = i; break; }
-        }
-        if (lastBreak >= 0) selector = selector[(lastBreak + 1)..];
-        // 가상 클래스/요소 제거
-        int colon = selector.IndexOf(':');
-        if (colon >= 0) selector = selector[..colon];
-        // 속성 셀렉터 제거
-        int bracket = selector.IndexOf('[');
-        if (bracket >= 0) selector = selector[..bracket];
-        selector = selector.Trim();
-        return selector.Length > 0 ? selector : null;
-    }
 
     // ── 복합 SVG → ImageBlock 변환 ───────────────────────────────────────────
 

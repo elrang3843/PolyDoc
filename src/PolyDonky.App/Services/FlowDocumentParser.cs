@@ -221,6 +221,10 @@ public static class FlowDocumentParser
                 case Wpf.List list:
                 {
                     var kind = IsBulletMarker(list.MarkerStyle) ? ListKind.Bullet : ListKind.OrderedDecimal;
+                    // MarkerStyle.None 은 (a) 작업 목록(체크박스) 또는 (b) HideBullet 의 두 가지 의미.
+                    // 작업 목록은 단락 첫머리에 ☐/☑ 텍스트가 있고, ParseParagraph 에서 Checked 를 복원하므로
+                    // 여기선 일단 HideBullet=true 로 두고 ParseParagraph 가 Checked 를 채우면 그걸 우선.
+                    bool hideBullet = list.MarkerStyle == TextMarkerStyle.None;
                     var counter = 0;
                     foreach (var item in list.ListItems)
                     {
@@ -231,12 +235,17 @@ public static class FlowDocumentParser
                             OrderedNumber = kind == ListKind.OrderedDecimal
                                 ? Math.Max(list.StartIndex, 1) + counter - 1
                                 : null,
+                            HideBullet = hideBullet,
                         };
                         foreach (var inner in item.Blocks)
                         {
                             if (inner is Wpf.Paragraph pp)
                             {
-                                target.Add(ParseParagraph(pp, marker));
+                                var parsed = ParseParagraph(pp, marker);
+                                // 작업 목록(Checked != null) 로 판정되면 HideBullet 해제 — 체크박스 자체가 마커.
+                                if (parsed.Style.ListMarker is { Checked: not null } m)
+                                    m.HideBullet = false;
+                                target.Add(parsed);
                             }
                         }
                     }

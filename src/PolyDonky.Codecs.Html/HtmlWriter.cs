@@ -495,7 +495,21 @@ public sealed class HtmlWriter : IDocumentWriter
         if (lm.Kind != ListKind.Bullet && lm.OrderedNumber is { } start && start != 1)
             startAttr = $" start=\"{start}\"";
 
-        sb.Append(indent).Append('<').Append(tag).Append(startAttr).Append(">\n");
+        // 묶음의 모든 항목이 마커를 숨기도록 표시돼 있으면 list-style-type:none 으로 직렬화.
+        // 체크리스트(ListMarker.Checked != null) 는 별도 — input checkbox 로 표현하므로 마커는 항상 표시.
+        bool allHideBullet = true;
+        for (int k = from; k < to; k++)
+        {
+            var lmk = ((Paragraph)blocks[k]).Style.ListMarker;
+            if (lmk is null || !lmk.HideBullet || lmk.Checked is not null)
+            {
+                allHideBullet = false;
+                break;
+            }
+        }
+        string listStyleAttr = allHideBullet ? " style=\"list-style-type:none;padding-left:0\"" : "";
+
+        sb.Append(indent).Append('<').Append(tag).Append(startAttr).Append(listStyleAttr).Append(">\n");
         var inner = indent + "  ";
 
         for (int k = from; k < to; k++)
@@ -600,15 +614,46 @@ public sealed class HtmlWriter : IDocumentWriter
                 attrs.Append(" style=\"").Append(cellStyle).Append('"');
 
             sb.Append(indent).Append("  <").Append(tag).Append(attrs).Append('>');
-            // 셀 안 블록을 인라인적으로 렌더 — 단락은 <br> 로 구분.
-            bool first = true;
+            // 셀 안의 블록을 어떻게 렌더할지 결정:
+            //   - 단순 단락(헤딩/리스트/표 등 구조 없음) 만 있으면 인라인 + <br> 구분 — 가독성·간결성.
+            //   - 그 외(중첩 표, 리스트, 헤딩 등) 는 전체 블록 렌더로 폴백 — 구조 보존.
+            bool needsBlockRender = false;
             foreach (var b in cell.Blocks)
             {
                 if (b is Paragraph p)
                 {
-                    if (!first) sb.Append("<br>");
-                    sb.Append(RenderRuns(p.Runs, notes));
-                    first = false;
+                    if (p.Style.ListMarker is not null
+                        || p.Style.Outline != OutlineLevel.Body
+                        || p.Style.CodeLanguage is { Length: > 0 }
+                        || p.Style.QuoteLevel > 0)
+                    {
+                        needsBlockRender = true; break;
+                    }
+                }
+                else if (b is not null)
+                {
+                    // Table / ImageBlock / ShapeObject / TextBoxObject / etc.
+                    needsBlockRender = true; break;
+                }
+            }
+
+            if (needsBlockRender)
+            {
+                sb.Append('\n');
+                WriteBlocks(sb, cell.Blocks, indent + "    ", notes);
+                sb.Append(indent).Append("  ");
+            }
+            else
+            {
+                bool first = true;
+                foreach (var b in cell.Blocks)
+                {
+                    if (b is Paragraph p)
+                    {
+                        if (!first) sb.Append("<br>");
+                        sb.Append(RenderRuns(p.Runs, notes));
+                        first = false;
+                    }
                 }
             }
             sb.Append("</").Append(tag).Append(">\n");

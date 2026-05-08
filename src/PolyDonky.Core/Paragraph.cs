@@ -120,6 +120,11 @@ public sealed class ListMarker
     /// HTML <c>&lt;ol type="A"/"a"/"I"/"i"&gt;</c> 의 type 속성을 보존한다.</summary>
     public bool? UpperCase { get; set; }
 
+    /// <summary>마커(•/숫자/알파벳/로마자) 표시 여부.
+    /// true 이면 시각적 마커를 숨기고 들여쓰기만 유지 — HTML <c>list-style-type:none</c> 또는
+    /// 디자인적으로 마커를 가린 목차/링크 목록을 표현한다. 체크박스 작업 목록에는 적용하지 않는다.</summary>
+    public bool HideBullet { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본.</summary>
     public ListMarker Clone() => new()
     {
@@ -128,6 +133,7 @@ public sealed class ListMarker
         OrderedNumber = OrderedNumber,
         Checked       = Checked,
         UpperCase     = UpperCase,
+        HideBullet    = HideBullet,
     };
 }
 

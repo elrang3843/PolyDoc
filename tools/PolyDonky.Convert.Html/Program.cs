@@ -478,9 +478,11 @@ static string InlineExternalStylesheets(string html, string baseDir)
 }
 
 /// <summary>
-/// AngleSharp.Css 로 CSS 캐스케이드를 계산한 뒤 모든 요소의 style="" 속성으로 인라이닝.
-/// 문서 CSS 규칙에 등장하는 속성만 처리(UA 기본값 제외).
-/// 기존 인라인 style="" 은 CSS 규칙보다 우선(캐스케이드 규칙 준수).
+/// CSS 캐스케이드를 author 규칙 매칭으로만 계산해 각 요소의 style="" 로 인라이닝.
+/// UA 초기값(list-style-type:disc, display:block 등) 은 명시적으로 매치되지 않은 한 절대 출력하지 않는다 —
+/// 이전 구현(<see cref="IElement.ComputeCurrentStyle"/>) 은 매치 여부와 무관하게 모든 사용 속성에 대해
+/// 초기값/상속값을 반환해 list-style-type:none 등이 잘못 전파되는 부작용이 있었다.
+/// 기존 인라인 style="" 은 author 규칙보다 우선(캐스케이드 규칙 준수).
 /// </summary>
 static string ComputeAndInlineCss(string html)
     => ComputeAndInlineCssAsync(html).GetAwaiter().GetResult();
@@ -491,12 +493,12 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
     var context = BrowsingContext.New(config);
     var document = await context.OpenAsync(req => req.Content(html));
 
-    // 문서 CSS 규칙에서 사용된 속성명 수집 — UA 기본값 제외의 핵심.
-    var usedProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    // 모든 author 스타일 규칙(매체 쿼리 등 grouping 안쪽 포함) 을 (selector, declarations) 쌍으로 평탄화.
+    var rules = new List<(string Selector, ICssStyleDeclaration Decl)>();
     foreach (var sheet in document.StyleSheets.OfType<ICssStyleSheet>())
-        CollectUsedProperties(sheet.Rules, usedProps);
+        CollectStyleRules(sheet.Rules, rules);
 
-    if (usedProps.Count == 0) return html;
+    if (rules.Count == 0) return html;
 
     var skipTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         { "script", "style", "head", "title", "meta", "link", "base", "noscript", "template" };
@@ -505,22 +507,24 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
     {
         if (skipTags.Contains(element.LocalName)) continue;
 
-        ICssStyleDeclaration? computed;
-        try { computed = element.ComputeCurrentStyle(); }
-        catch { continue; }
-        if (computed is null) continue;
-
         var applied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var prop in usedProps)
+
+        // 매치되는 author 규칙만 순서대로(선언 순서) 적용 — 같은 속성이면 뒤가 이김(specificity 무시,
+        // 본 변환은 정확한 캐스케이드 우선순위까지 흉내내지 않음 — 충분히 가까운 근사).
+        foreach (var (selector, decl) in rules)
         {
-            var value = computed.GetPropertyValue(prop);
-            if (!string.IsNullOrEmpty(value))
-                applied[prop] = value;
+            bool matched;
+            try { matched = element.Matches(selector); }
+            catch { continue; }
+            if (!matched) continue;
+            foreach (ICssProperty p in decl)
+            {
+                if (string.IsNullOrEmpty(p.Value)) continue;
+                applied[p.Name] = p.Value;
+            }
         }
 
-        if (applied.Count == 0) continue;
-
-        // 기존 인라인 style="" 이 우선 — 캐스케이드 규칙(inline > author).
+        // 기존 인라인 style="" 이 author 규칙보다 우선.
         var existing = element.GetAttribute("style");
         if (!string.IsNullOrWhiteSpace(existing))
         {
@@ -533,6 +537,7 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
             }
         }
 
+        if (applied.Count == 0) continue;
         element.SetAttribute("style",
             string.Join(";", applied.Select(kv => $"{kv.Key}:{kv.Value}")));
     }
@@ -540,17 +545,14 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
     return document.DocumentElement?.OuterHtml ?? html;
 }
 
-static void CollectUsedProperties(ICssRuleList rules, HashSet<string> result)
+static void CollectStyleRules(ICssRuleList ruleList, List<(string, ICssStyleDeclaration)> result)
 {
-    foreach (var rule in rules)
+    foreach (var rule in ruleList)
     {
         if (rule is ICssStyleRule styleRule)
-        {
-            foreach (ICssProperty prop in styleRule.Style)
-                result.Add(prop.Name);
-        }
+            result.Add((styleRule.SelectorText, styleRule.Style));
         else if (rule is ICssGroupingRule groupRule)
-            CollectUsedProperties(groupRule.Rules, result);
+            CollectStyleRules(groupRule.Rules, result);
     }
 }
 

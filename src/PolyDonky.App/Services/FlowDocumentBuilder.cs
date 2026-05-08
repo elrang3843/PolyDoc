@@ -179,20 +179,24 @@ public static class FlowDocumentBuilder
         // 중첩 리스트 지원: (WPF List, Kind) 스택.
         // 인덱스 0 = 최상위 리스트, 인덱스 n = n 단계 중첩 리스트.
         // 비-리스트 블록이 오면 스택을 비워 리스트 컨텍스트를 종료한다.
-        var listStack = new Stack<(Wpf.List List, ListKind Kind)>();
+        var listStack = new Stack<(Wpf.List List, ListKind Kind, bool Hidden)>();
 
         // 지정 level·kind 의 WPF List 를 반환한다.
         // 스택이 부족하면 새 List 를 생성해 부모 ListItem 에 붙이고 push 한다.
         // 작업 목록(checked != null)은 마커가 ☐/☑ 텍스트로 단락 본문에 prepend 되므로
         // WPF MarkerStyle 은 None — 중복 마커 방지.
-        Wpf.List EnsureList(int level, ListKind kind, int startIndex, bool? upperCase, bool isTaskList)
+        // hideBullet=true 도 같은 방식으로 None 마커.
+        Wpf.List EnsureList(int level, ListKind kind, int startIndex, bool? upperCase, bool isTaskList, bool hideBullet)
         {
             // 초과 레벨 팝
             while (listStack.Count > level + 1)
                 listStack.Pop();
 
-            // 현재 레벨에 같은 Kind 리스트가 있으면 재사용
-            if (listStack.Count == level + 1 && listStack.Peek().Kind == kind)
+            // 현재 레벨에 같은 Kind/HideBullet 리스트가 있으면 재사용 — 두 속성 중 하나라도
+            // 다르면 별개 리스트로 취급해 마커 표시 여부를 정확히 보존.
+            if (listStack.Count == level + 1
+                && listStack.Peek().Kind == kind
+                && listStack.Peek().Hidden == hideBullet)
                 return listStack.Peek().List;
 
             // 현재 레벨에 다른 Kind 리스트가 있으면 교체 준비
@@ -204,19 +208,19 @@ public static class FlowDocumentBuilder
             {
                 var mid = new Wpf.List { MarkerStyle = MarkerStyleForLevel(ListKind.Bullet, listStack.Count) };
                 AppendListToParent(mid);
-                listStack.Push((mid, ListKind.Bullet));
+                listStack.Push((mid, ListKind.Bullet, false));
             }
 
             var newList = new Wpf.List
             {
-                MarkerStyle = isTaskList
+                MarkerStyle = (isTaskList || hideBullet)
                     ? TextMarkerStyle.None
                     : MarkerStyleForLevel(kind, level, upperCase),
             };
             if (kind != ListKind.Bullet && startIndex >= 1)
                 newList.StartIndex = startIndex;
             AppendListToParent(newList);
-            listStack.Push((newList, kind));
+            listStack.Push((newList, kind, hideBullet));
             return newList;
         }
 
@@ -256,7 +260,7 @@ public static class FlowDocumentBuilder
                     int level = Math.Max(0, marker.Level);
                     int start = marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } s && s >= 1 ? s : 1;
                     bool isTaskList = marker.Checked is not null;
-                    var list  = EnsureList(level, marker.Kind, start, marker.UpperCase, isTaskList);
+                    var list  = EnsureList(level, marker.Kind, start, marker.UpperCase, isTaskList, marker.HideBullet);
                     var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums);
                     if (isTaskList)
                     {
