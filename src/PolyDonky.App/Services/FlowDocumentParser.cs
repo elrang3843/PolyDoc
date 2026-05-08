@@ -194,6 +194,16 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
+                // 수평선(HR) 단락 — IsThematicBreak Paragraph 로 복원.
+                case Wpf.Paragraph hrPara when ReferenceEquals(
+                    hrPara.Tag, FlowDocumentBuilder.ThematicBreakTag):
+                {
+                    var hrP = new Paragraph();
+                    hrP.Style.IsThematicBreak = true;
+                    target.Add(hrP);
+                    break;
+                }
+
                 // 표 캡션 단락 — Table.Caption 이 다음 렌더에서 재생성하므로 모델에 추가하지 않는다
                 // (추가하면 라이브 페이지네이션마다 캡션이 1개씩 누적됨).
                 case Wpf.Paragraph captionPara when ReferenceEquals(

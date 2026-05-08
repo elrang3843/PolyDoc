@@ -532,17 +532,20 @@ public static class FlowDocumentBuilder
 
     // ── 오버레이 표 지원 ─────────────────────────────────────────────────
 
-    /// <summary><c>IsThematicBreak</c> 단락(hr)을 1px 수평선 BlockUIContainer 로 렌더링한다.</summary>
-    private static Wpf.BlockUIContainer BuildThematicBreak()
+    /// <summary>
+    /// <c>IsThematicBreak</c> 단락(hr)을 Paragraph 의 BorderBottom 으로 렌더링한다.
+    /// BlockUIContainer 는 FlowDocument 안에서 Stretch 가 동작하지 않아 Paragraph 방식으로 변경.
+    /// Tag = ThematicBreakTag 로 파서가 IsThematicBreak 단락으로 복원한다.
+    /// </summary>
+    private static Wpf.Paragraph BuildThematicBreak()
     {
-        var line = new System.Windows.Controls.Border
+        return new Wpf.Paragraph
         {
-            Height              = 1,
-            Margin              = new Thickness(0, 4, 0, 4),
-            Background          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xCC, 0xCC, 0xCC)),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
+            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xCC, 0xCC, 0xCC)),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Margin          = new Thickness(0, 4, 0, 4),
+            Tag             = ThematicBreakTag,
         };
-        return new Wpf.BlockUIContainer(line);
     }
 
     /// <summary>표 캡션 단락 식별용 Tag 센티넬. Parser 가 이 Tag 를 보면 모델에 추가하지 않고 건너뛴다
@@ -552,6 +555,9 @@ public static class FlowDocumentBuilder
 
     /// <summary>줄 번호 InlineUIContainer 를 구분하는 센티넬 — 파서가 복사 대상에서 제외한다.</summary>
     internal static readonly object LineNumberTag = new();
+
+    /// <summary>수평선(HR/IsThematicBreak) Paragraph 를 구분하는 센티넬 — 파서가 IsThematicBreak 로 복원한다.</summary>
+    internal static readonly object ThematicBreakTag = new();
 
     /// <summary>표 캡션을 가운데 정렬 이탤릭 단락으로 빌드한다 (HTML &lt;caption&gt;, DOCX table title).</summary>
     private static Wpf.Paragraph BuildTableCaption(string caption)
