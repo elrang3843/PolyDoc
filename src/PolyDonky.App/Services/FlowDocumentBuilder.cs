@@ -1517,6 +1517,8 @@ public static class FlowDocumentBuilder
         double wDip = MmToDip(shape.WidthMm);
         double hDip = MmToDip(shape.HeightMm);
         var visual  = BuildShapeVisual(shape, wDip, hDip);
+        // 인라인 도형: LayoutTransform 으로 회전해야 WPF 레이아웃이 회전된 경계 박스를 확보.
+        ApplyShapeRotation(visual, shape.RotationAngleDeg, useLayoutTransform: true);
 
         var marginTopDip    = MmToDip(shape.MarginTopMm);
         var marginBottomDip = MmToDip(shape.MarginBottomMm);
@@ -1583,7 +1585,10 @@ public static class FlowDocumentBuilder
     {
         double wDip = MmToDip(shape.WidthMm);
         double hDip = MmToDip(shape.HeightMm);
-        return BuildShapeVisual(shape, wDip, hDip);
+        var canvas  = BuildShapeVisual(shape, wDip, hDip);
+        // 오버레이 도형: 절대 위치 배치이므로 RenderTransform 으로 회전.
+        ApplyShapeRotation(canvas, shape.RotationAngleDeg, useLayoutTransform: false);
+        return canvas;
     }
 
     private static System.Windows.Controls.Canvas BuildShapeVisual(ShapeObject shape, double wDip, double hDip)
@@ -1693,14 +1698,29 @@ public static class FlowDocumentBuilder
             canvas.Children.Add(label);
         }
 
-        // 회전 — canvas 전체에 적용해 path·끝모양·레이블이 함께 회전한다.
-        if (Math.Abs(shape.RotationAngleDeg) > 0.01)
-        {
-            canvas.RenderTransformOrigin = new Point(0.5, 0.5);
-            canvas.RenderTransform = new WpfMedia.RotateTransform(shape.RotationAngleDeg);
-        }
-
         return canvas;
+    }
+
+    // 회전 적용 — 인라인(레이아웃 공간 확보 필요)과 오버레이(절대 위치) 를 달리 처리.
+    private static void ApplyShapeRotation(
+        System.Windows.Controls.Canvas canvas, double angleDeg, bool useLayoutTransform)
+    {
+        if (Math.Abs(angleDeg) < 0.01) return;
+
+        if (useLayoutTransform)
+        {
+            // LayoutTransform: WPF 레이아웃 패스가 회전된 경계 박스 크기를 확보 → 클리핑 없음.
+            canvas.LayoutTransform = new WpfMedia.RotateTransform(
+                angleDeg,
+                canvas.Width  / 2.0,
+                canvas.Height / 2.0);
+        }
+        else
+        {
+            // RenderTransform: 오버레이(절대 좌표) 에서는 레이아웃 공간이 불필요.
+            canvas.RenderTransformOrigin = new Point(0.5, 0.5);
+            canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
+        }
     }
 
     private static WpfMedia.DoubleCollection? BuildDashArray(StrokeDash dash, double strokeDip)
@@ -1953,7 +1973,7 @@ public static class FlowDocumentBuilder
                     size:           new Size(wDip / 2.0, hDip),
                     rotationAngle:  0,
                     isLargeArc:     false,
-                    sweepDirection: WpfMedia.SweepDirection.Counterclockwise,
+                    sweepDirection: WpfMedia.SweepDirection.Clockwise,
                     isStroked:      true));
                 var pg = new WpfMedia.PathGeometry();
                 pg.Figures.Add(fig);
