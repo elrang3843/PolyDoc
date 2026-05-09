@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **flex/grid 컨테이너 박스 스타일(배경·테두리·패딩) 보존**: HTML `<div style="display:flex; background:#fafafa; border:1px solid #ddd; padding:20px">` 같은 flex/grid 컨테이너를 다단 Table 로 근사 변환할 때 컨테이너 자체의 시각 박스 속성을 모두 잃던 문제. `TryBuildGridAsTable` 가 박스 스타일이 있으면 생성된 Table 을 `ContainerBlock` 으로 감싸 배경·4면 테두리·padding·margin·class·`SpaceBefore/After` → margin 변환을 모두 보존하도록 수정. CSS 도형 그룹 등 flex 컨테이너의 회색 배경·테두리가 라운드트립에서 정확히 표시됨.
+
 - **반원(`HalfCircle`) 렌더링 방향 반전**: `BuildShapeGeometry` 의 `ArcSegment` 가 `SweepDirection.Counterclockwise` 로 설정돼 CSS `border-radius: R R 0 0` (위쪽이 둥근 반원) 과 반대 방향(아래쪽 호) 으로 그려지던 문제. `Clockwise` 로 수정해 WPF Y-down 좌표계에서 호가 위로 볼록하게 렌더링됨.
 
 - **인라인 도형 `RotationAngleDeg` 클리핑**: 인라인 ShapeObject 에 `RotationAngleDeg ≠ 0` 인 경우 (예: CSS `transform:rotate(45deg)` 마름모) WPF `RenderTransform` 이 레이아웃 측정 후 적용돼 회전된 시각 영역이 레이아웃 박스 밖으로 삐져나와 잘리던 문제. 인라인 경로에서는 `LayoutTransform = RotateTransform(angle, cx, cy)` 으로 변경해 WPF 레이아웃이 회전된 경계 박스를 확보하도록 수정 (`ApplyShapeRotation(useLayoutTransform: true)`). 오버레이(절대 위치) 도형은 기존 `RenderTransform` 유지.

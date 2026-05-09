@@ -2162,7 +2162,47 @@ public sealed class HtmlReader : IDocumentReader
             table.Rows.Add(row);
         }
 
-        target.Add(table);
+        // flex/grid 컨테이너 자체의 박스 스타일(배경·테두리·패딩) 보존:
+        // 박스 스타일이 있으면 Table 을 ContainerBlock 으로 감싼다.
+        var probe = new Paragraph();
+        ApplyBlockStyle(probe, divEl);
+        var ps = probe.Style;
+        bool hasBox = ps.BorderTopPt > 0 || ps.BorderBottomPt > 0 ||
+                      ps.BorderLeftPt > 0 || ps.BorderRightPt > 0 ||
+                      !string.IsNullOrEmpty(ps.BackgroundColor) ||
+                      ps.PaddingTopMm > 0 || ps.PaddingBottomMm > 0 ||
+                      ps.IndentLeftMm > 0 || ps.IndentRightMm > 0;
+
+        if (hasBox)
+        {
+            var classNames = divEl.GetAttribute("class") ?? "";
+            var box = new ContainerBlock
+            {
+                Children          = new List<PdBlock> { table },
+                BorderTopPt       = ps.BorderTopPt,
+                BorderTopColor    = ps.BorderTopColor,
+                BorderRightPt     = ps.BorderRightPt,
+                BorderRightColor = ps.BorderRightColor,
+                BorderBottomPt    = ps.BorderBottomPt,
+                BorderBottomColor = ps.BorderBottomColor,
+                BorderLeftPt      = ps.BorderLeftPt,
+                BorderLeftColor   = ps.BorderLeftColor,
+                BackgroundColor   = ps.BackgroundColor,
+                PaddingTopMm      = ps.PaddingTopMm,
+                PaddingBottomMm   = ps.PaddingBottomMm,
+                PaddingLeftMm     = ps.IndentLeftMm,
+                PaddingRightMm    = ps.IndentRightMm,
+                MarginTopMm       = ps.SpaceBeforePt > 0 ? ps.SpaceBeforePt * 25.4 / 72.0 : 0,
+                MarginBottomMm    = ps.SpaceAfterPt  > 0 ? ps.SpaceAfterPt  * 25.4 / 72.0 : 0,
+                ClassNames        = string.IsNullOrWhiteSpace(classNames) ? null : classNames.Trim(),
+                Role              = ContainerRole.Generic,
+            };
+            target.Add(box);
+        }
+        else
+        {
+            target.Add(table);
+        }
         return true;
     }
 
