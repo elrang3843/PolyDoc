@@ -9,7 +9,9 @@ using PolyDonky.Core;
 using MarkdigTable     = Markdig.Extensions.Tables.Table;
 using MarkdigTableRow  = Markdig.Extensions.Tables.TableRow;
 using MarkdigTableCell = Markdig.Extensions.Tables.TableCell;
+using MarkdigContainer = Markdig.Syntax.ContainerBlock;
 using PdBlock          = PolyDonky.Core.Block;
+using PdThematicBreak  = PolyDonky.Core.ThematicBreakBlock;
 using PdTable          = PolyDonky.Core.Table;
 using PdTableRow       = PolyDonky.Core.TableRow;
 using PdTableCell      = PolyDonky.Core.TableCell;
@@ -66,7 +68,7 @@ public sealed class MarkdownReader : IDocumentReader
     // ── 블록 처리 ─────────────────────────────────────────────────────────
 
     private static void ProcessContainer(
-        ContainerBlock container,
+        MarkdigContainer container,
         IList<PdBlock>   target,
         ListMarker?    marker,
         int            quoteLevel,
@@ -144,13 +146,9 @@ public sealed class MarkdownReader : IDocumentReader
                     break;
                 }
 
-                case ThematicBreakBlock:
+                case Markdig.Syntax.ThematicBreakBlock:
                 {
-                    var hr = new Paragraph();
-                    hr.Style.IsThematicBreak = true;
-                    hr.Style.QuoteLevel      = quoteLevel;
-                    hr.Style.ListMarker      = CloneMarker(marker);
-                    target.Add(hr);
+                    target.Add(new PdThematicBreak());
                     break;
                 }
 
@@ -173,7 +171,7 @@ public sealed class MarkdownReader : IDocumentReader
                 }
 
                 // 정의 리스트, 각주 그룹, 사용자 정의 컨테이너 — 자식 블록을 평탄화.
-                case ContainerBlock cb:
+                case MarkdigContainer cb:
                 {
                     ProcessContainer(cb, target, marker, quoteLevel, listLevel);
                     break;

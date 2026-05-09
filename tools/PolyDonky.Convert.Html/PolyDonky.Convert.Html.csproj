@@ -15,6 +15,10 @@
     <ProjectReference Include="..\..\src\PolyDonky.Codecs.Html\PolyDonky.Codecs.Html.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="AngleSharp.Css" />
+  </ItemGroup>
+
   <!-- .NET 10 부터 CodePagesEncodingProvider 가 BCL 에 포함 — 별도 PackageReference 불필요. -->
 
 

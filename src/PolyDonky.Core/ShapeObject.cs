@@ -155,6 +155,20 @@ public sealed class ShapeObject : Block, IOverlayAnchored
     /// <summary>도형 회전각 (도, 시계 방향). 바운딩 박스 중심 기준.</summary>
     public double RotationAngleDeg { get; set; }
 
+    // ── 그리는 순서 ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 그리는 순서(z-order). 같은 페이지에서 여러 도형이 겹쳐 있을 때 어느 것이 위에 그려질지를 결정한다.
+    /// <list type="bullet">
+    ///   <item><c>0</c> (기본) — 자동: 같은 그룹 내에서 한 도형이 다른 도형을 완전히 포함하면
+    ///   안쪽(작은) 도형이 위에 그려진다. 그 외에는 문서 순서를 유지.</item>
+    ///   <item>음수 — 항상 자동 그룹보다 뒤. 더 작을수록 더 뒤에 그려진다.</item>
+    ///   <item>양수 — 항상 자동 그룹보다 앞. 더 클수록 더 앞에 그려진다.</item>
+    /// </list>
+    /// 같은 ZOrder 값을 가진 도형들 사이에서는 문서 순서를 그대로 유지한다(stable sort).
+    /// </summary>
+    public int ZOrder { get; set; }
+
     // ── 레이블 ───────────────────────────────────────────────────────────────
 
     /// <summary>도형 위에 표시할 레이블 텍스트. null / 빈 문자열이면 레이블 없음.</summary>

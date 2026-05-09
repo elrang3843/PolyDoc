@@ -91,8 +91,10 @@ public sealed class PerPageEditorHost : Canvas
                     Padding       = new Thickness(geo.PadLeftDip, geo.PadTopDip,
                                                   geo.PadRightDip,
                                                   Math.Max(0, geo.PadBottomDip - ClipRenderingTolerance)),
-                    VerticalScrollBarVisibility   = ScrollBarVisibility.Hidden,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                    // Disabled 로 두어야 RTB 내부 스크롤이 발생하지 않는다(Hidden 은 바만 숨길 뿐 스크롤은 살아있어
+                    // 페이지 영역을 넘는 콘텐츠가 있을 때 사용자가 키보드/휠로 페이지 안을 스크롤할 수 있게 됨).
+                    VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     AcceptsReturn     = true,
                     AcceptsTab        = true,
                     Background        = Brushes.Transparent,
