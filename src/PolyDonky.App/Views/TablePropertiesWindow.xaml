@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ctrl="clr-namespace:PolyDonky.App.Controls"
         Title="표 속성"
-        Width="430" SizeToContent="Height"
-        MinWidth="390"
+        Width="500" SizeToContent="Height"
+        MinWidth="460"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
@@ -149,33 +149,69 @@
             </Grid>
         </GroupBox>
 
-        <!-- ── 표 외곽선 ──────────────────────────────────────────────── -->
+        <!-- ── 표 외곽선 — 공통 + 면별 ───────────────────────────────────── -->
         <GroupBox Grid.Row="12" Header="표 외곽선" Padding="8,4,8,8">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="6" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="64" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <StackPanel>
+                <!-- 공통값 — 면별 미지정 시 적용 -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="6" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="공통 두께:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox   Grid.Row="0" Grid.Column="1" x:Name="BorderThicknessBox"
+                               Text="0" TextAlignment="Right" VerticalContentAlignment="Center"
+                               ToolTip="0이면 외곽선 없음 — 면별 설정이 없을 때 사용" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text=" pt" VerticalAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="공통 색상:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ctrl:ColorPickerBox x:Name="BorderColorPicker"
+                                         Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                                         AllowEmpty="True" />
+                </Grid>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="두께:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="BorderThicknessBox"
-                           Text="0" TextAlignment="Right" VerticalContentAlignment="Center"
-                           ToolTip="0이면 외곽선 없음" />
-                <TextBlock Grid.Row="0" Grid.Column="2" Text=" pt" VerticalAlignment="Center"
-                           Foreground="{DynamicResource OnSurfaceMuted}" />
+                <!-- 면별 설정 토글 -->
+                <ToggleButton x:Name="PerSideToggle" Margin="0,8,0,0"
+                              HorizontalAlignment="Left"
+                              Click="OnPerSideToggleClick"
+                              Content="면별 설정 펼치기 ▾" />
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="색상:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <ctrl:ColorPickerBox x:Name="BorderColorPicker"
-                                     Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
-                                     Margin="36,0,0,0"
-                                     AllowEmpty="True" />
-            </Grid>
+                <!-- 면별 편집 — 6면 (외곽 4 + 안쪽 가로/세로) -->
+                <StackPanel x:Name="PerSidePanel" Visibility="Collapsed" Margin="0,8,0,0">
+                    <ctrl:BorderSideEditor x:Name="SideTop"    Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideBottom" Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideLeft"   Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideRight"  Margin="0,2" />
+                    <Separator Margin="0,4" />
+                    <ctrl:BorderSideEditor x:Name="SideInnerH" Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideInnerV" Margin="0,2" />
+                </StackPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- ── 페이지 분할 옵션 ───────────────────────────────────────────── -->
+        <GroupBox Grid.Row="13" Header="페이지 분할" Padding="8,4,8,8" Margin="0,10,0,0">
+            <StackPanel>
+                <CheckBox x:Name="RepeatHeaderRowsCheck"
+                          Content="헤더 행 반복 — 페이지를 넘을 때 헤더 행을 각 조각 상단에 표시(_R)"
+                          IsChecked="True"
+                          Margin="0,0,0,6" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="헤더 열 수(_H):" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox x:Name="HeaderColumnCountBox"
+                             Width="48" Text="0"
+                             TextAlignment="Right" VerticalContentAlignment="Center"
+                             ToolTip="열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음, 열 분할은 추후 지원)" />
+                    <TextBlock Text=" 열" VerticalAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                </StackPanel>
+            </StackPanel>
         </GroupBox>
 
         <!-- ── 버튼 ─────────────────────────────────────────────────────── -->

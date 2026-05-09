@@ -36,13 +36,23 @@ public sealed class PolyDonkyument
     public IEnumerable<Paragraph> EnumerateParagraphs()
     {
         foreach (var section in Sections)
+        foreach (var p in EnumerateParagraphsIn(section.Blocks))
+            yield return p;
+    }
+
+    private static IEnumerable<Paragraph> EnumerateParagraphsIn(IEnumerable<Block> blocks)
+    {
+        foreach (var b in blocks)
         {
-            foreach (var block in section.Blocks)
+            switch (b)
             {
-                if (block is Paragraph p)
-                {
+                case Paragraph p:
                     yield return p;
-                }
+                    break;
+                case ContainerBlock cb:
+                    foreach (var nested in EnumerateParagraphsIn(cb.Children)) yield return nested;
+                    break;
+                // 표 / 텍스트박스 안의 단락은 의도적으로 제외 — 검색·문자수 통계 등 본문 흐름과는 별도.
             }
         }
     }

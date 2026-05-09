@@ -194,6 +194,22 @@ public static class FlowDocumentParser
                     target.Add(wrappedTable);
                     break;
 
+                // 수평선(ThematicBreakBlock) — Solid 는 Wpf.Paragraph 로, 그 외(Dashed/Dotted/Double 등)는
+                // Wpf.BlockUIContainer 로 렌더된다. Tag = Core ThematicBreakBlock 인스턴스이므로 그대로 회수.
+                case Wpf.Paragraph { Tag: ThematicBreakBlock thbPara }:
+                    target.Add(thbPara);
+                    break;
+
+                case Wpf.BlockUIContainer { Tag: ThematicBreakBlock thbBuc }:
+                    target.Add(thbBuc);
+                    break;
+
+                // 표 캡션 단락 — Table.Caption 이 다음 렌더에서 재생성하므로 모델에 추가하지 않는다
+                // (추가하면 라이브 페이지네이션마다 캡션이 1개씩 누적됨).
+                case Wpf.Paragraph captionPara when ReferenceEquals(
+                    captionPara.Tag, FlowDocumentBuilder.TableCaptionTag):
+                    break;
+
                 // Fallback: 붙여넣기로 Tag 가 사라진 AsText/WrapLeft/WrapRight 이미지 단락.
                 // WPF XamlPackage 클립보드 포맷은 BitmapSource 를 보존하므로 시각 트리에서 ImageBlock 을 재구성한다.
                 // 반드시 일반 'case Wpf.Paragraph' 보다 먼저 위치해야 한다.
@@ -209,6 +225,10 @@ public static class FlowDocumentParser
                 case Wpf.List list:
                 {
                     var kind = IsBulletMarker(list.MarkerStyle) ? ListKind.Bullet : ListKind.OrderedDecimal;
+                    // MarkerStyle.None 은 (a) 작업 목록(체크박스) 또는 (b) HideBullet 의 두 가지 의미.
+                    // 작업 목록은 단락 첫머리에 ☐/☑ 텍스트가 있고, ParseParagraph 에서 Checked 를 복원하므로
+                    // 여기선 일단 HideBullet=true 로 두고 ParseParagraph 가 Checked 를 채우면 그걸 우선.
+                    bool hideBullet = list.MarkerStyle == TextMarkerStyle.None;
                     var counter = 0;
                     foreach (var item in list.ListItems)
                     {
@@ -219,12 +239,17 @@ public static class FlowDocumentParser
                             OrderedNumber = kind == ListKind.OrderedDecimal
                                 ? Math.Max(list.StartIndex, 1) + counter - 1
                                 : null,
+                            HideBullet = hideBullet,
                         };
                         foreach (var inner in item.Blocks)
                         {
                             if (inner is Wpf.Paragraph pp)
                             {
-                                target.Add(ParseParagraph(pp, marker));
+                                var parsed = ParseParagraph(pp, marker);
+                                // 작업 목록(Checked != null) 로 판정되면 HideBullet 해제 — 체크박스 자체가 마커.
+                                if (parsed.Style.ListMarker is { Checked: not null } m)
+                                    m.HideBullet = false;
+                                target.Add(parsed);
                             }
                         }
                     }
@@ -254,6 +279,28 @@ public static class FlowDocumentParser
                     target.Add(pastedInlineImg!);
                     break;
 
+                case Wpf.Section { Tag: ContainerBlock boxOriginal } boxSec:
+                {
+                    // 박스 스타일은 원본 ContainerBlock 인스턴스에서 그대로 가져오고,
+                    // 자식만 현재 시각 트리에서 다시 추출 — 사용자가 안에서 텍스트를 편집해도 보존.
+                    var rebuilt = new ContainerBlock
+                    {
+                        BorderTopPt       = boxOriginal.BorderTopPt,       BorderTopColor    = boxOriginal.BorderTopColor,
+                        BorderRightPt     = boxOriginal.BorderRightPt,     BorderRightColor  = boxOriginal.BorderRightColor,
+                        BorderBottomPt    = boxOriginal.BorderBottomPt,    BorderBottomColor = boxOriginal.BorderBottomColor,
+                        BorderLeftPt      = boxOriginal.BorderLeftPt,      BorderLeftColor   = boxOriginal.BorderLeftColor,
+                        BackgroundColor   = boxOriginal.BackgroundColor,
+                        PaddingTopMm      = boxOriginal.PaddingTopMm,      PaddingRightMm = boxOriginal.PaddingRightMm,
+                        PaddingBottomMm   = boxOriginal.PaddingBottomMm,   PaddingLeftMm  = boxOriginal.PaddingLeftMm,
+                        MarginTopMm       = boxOriginal.MarginTopMm,       MarginBottomMm = boxOriginal.MarginBottomMm,
+                        WidthMm           = boxOriginal.WidthMm,           HAlign         = boxOriginal.HAlign,
+                        ClassNames        = boxOriginal.ClassNames,        Role           = boxOriginal.Role,
+                    };
+                    ParseInto(rebuilt.Children, boxSec.Blocks);
+                    target.Add(rebuilt);
+                    break;
+                }
+
                 case Wpf.Section nested:
                     ParseInto(target, nested.Blocks);
                     break;
@@ -272,8 +319,10 @@ public static class FlowDocumentParser
                 Status  = original.Status,
                 WrapMode  = original.WrapMode,
                 HAlign    = original.HAlign,
+                AnchorPageIndex = original.AnchorPageIndex,
                 OverlayXMm = original.OverlayXMm,
                 OverlayYMm = original.OverlayYMm,
+                Caption                      = original.Caption,
                 BackgroundColor              = original.BackgroundColor,
                 DefaultCellPaddingTopMm      = original.DefaultCellPaddingTopMm,
                 DefaultCellPaddingBottomMm   = original.DefaultCellPaddingBottomMm,
@@ -285,6 +334,8 @@ public static class FlowDocumentParser
                 OuterMarginRightMm           = original.OuterMarginRightMm,
                 BorderThicknessPt            = original.BorderThicknessPt,
                 BorderColor                  = original.BorderColor,
+                RepeatHeaderRowsOnBreak      = original.RepeatHeaderRowsOnBreak,
+                HeaderColumnCount            = original.HeaderColumnCount,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();
@@ -427,6 +478,9 @@ public static class FlowDocumentParser
             }
             case Wpf.InlineUIContainer iuc:
             {
+                // 줄 번호 컨테이너 — 시각 전용, 텍스트 모델에서 제외.
+                if (ReferenceEquals(iuc.Tag, FlowDocumentBuilder.LineNumberTag)) break;
+
                 // FlowDocumentBuilder 가 만든 컨테이너.
                 // Tag 에 원본 PolyDonky Run 이 있으면 직접 회수. 없으면 시각 트리에서 추출.
                 if (iuc.Tag is Run origRun)

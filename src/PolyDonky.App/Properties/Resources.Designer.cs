@@ -38,6 +38,8 @@ namespace PolyDonky.App.Properties
 
         // ── 메뉴: 편집 ─────────────────────────────────────────────
         internal static string MenuEdit              => Get(nameof(MenuEdit));
+        internal static string MenuEditUndo          => Get(nameof(MenuEditUndo));
+        internal static string MenuEditRedo          => Get(nameof(MenuEditRedo));
         internal static string MenuEditCopy          => Get(nameof(MenuEditCopy));
         internal static string MenuEditCut           => Get(nameof(MenuEditCut));
         internal static string MenuEditPaste         => Get(nameof(MenuEditPaste));
@@ -132,8 +134,6 @@ namespace PolyDonky.App.Properties
         internal static string DlgConvertOverwritePrompt => Get(nameof(DlgConvertOverwritePrompt));
         internal static string DlgUnsupportedVersionTitle  => Get(nameof(DlgUnsupportedVersionTitle));
         internal static string DlgUnsupportedVersionPrompt => Get(nameof(DlgUnsupportedVersionPrompt));
-        internal static string DlgHtmlTruncatedTitle => Get(nameof(DlgHtmlTruncatedTitle));
-        internal static string DlgHtmlTruncatedPrompt => Get(nameof(DlgHtmlTruncatedPrompt));
         internal static string StatusInsert          => Get(nameof(StatusInsert));
         internal static string StatusOverwrite       => Get(nameof(StatusOverwrite));
         internal static string StatusDocClosed       => Get(nameof(StatusDocClosed));

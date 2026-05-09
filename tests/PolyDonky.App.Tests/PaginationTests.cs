@@ -417,6 +417,150 @@ public class FlowDocumentPaginationAdapterTests
         });
     }
 
+    // ── 강제 페이지 나누기 (ForcePageBreakBefore) ─────────────────────────────
+
+    [Fact]
+    public void Paginate_ForcePageBreakBefore_PutsParagraphOnNextPage()
+    {
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            var p1 = new Paragraph(); p1.AddText("첫 단락");
+            section.Blocks.Add(p1);
+
+            var p2 = new Paragraph();
+            p2.Style.ForcePageBreakBefore = true;
+            p2.AddText("강제 페이지 나누기 후 단락");
+            section.Blocks.Add(p2);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            // p1 은 페이지 0, p2 는 페이지 1 이상에 있어야 한다.
+            int p1Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p1)).PageIndex;
+            int p2Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p2)).PageIndex;
+
+            Assert.Equal(0, p1Page);
+            Assert.True(p2Page > p1Page,
+                $"강제 페이지 나누기 단락은 직전 단락보다 뒤 페이지에 있어야 함: p1={p1Page}, p2={p2Page}");
+            Assert.True(result.PageCount >= 2);
+        });
+    }
+
+    [Fact]
+    public void Paginate_ForcePageBreakBefore_OnFirstParagraph_StaysOnFirstPage()
+    {
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            // 첫 블록에 ForcePageBreakBefore — 직전 블록이 없으므로 페이지 0 유지.
+            var p = new Paragraph();
+            p.Style.ForcePageBreakBefore = true;
+            p.AddText("페이지 0 유지");
+            section.Blocks.Add(p);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            int pPage = result.Pages.SelectMany(b => b.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p)).PageIndex;
+            Assert.Equal(0, pPage);
+        });
+    }
+
+    [Fact]
+    public void Paginate_MultipleForcePageBreaks_EachStartsNewPage()
+    {
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            var p1 = new Paragraph(); p1.AddText("페이지 1 단락");
+            section.Blocks.Add(p1);
+
+            var p2 = new Paragraph();
+            p2.Style.ForcePageBreakBefore = true;
+            p2.AddText("페이지 2 단락");
+            section.Blocks.Add(p2);
+
+            var p3 = new Paragraph();
+            p3.Style.ForcePageBreakBefore = true;
+            p3.AddText("페이지 3 단락");
+            section.Blocks.Add(p3);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            int p1Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p1)).PageIndex;
+            int p2Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p2)).PageIndex;
+            int p3Page = result.Pages.SelectMany(p => p.BodyBlocks)
+                .First(b => ReferenceEquals(b.Source, p3)).PageIndex;
+
+            Assert.True(p2Page > p1Page);
+            Assert.True(p3Page > p2Page);
+            Assert.True(result.PageCount >= 3);
+        });
+    }
+
+    [Fact]
+    public void Paginate_ForcePageBreakBefore_SubsequentParagraphsAlsoOnNewPage()
+    {
+        // 페이지 나누기 단락 *이후*의 단락들도 새 페이지에 배정되어야 한다.
+        // 버그 재현: 모든 콘텐츠가 한 페이지 높이 안에 들어갈 때, ForcePageBreakBefore
+        // 단락만 페이지 1로 가고 그 뒤의 단락들이 페이지 0에 남는 문제.
+        RunOnSta(() =>
+        {
+            var doc     = new PolyDonkyument();
+            var section = new Section();
+
+            // 페이지 나누기 앞 콘텐츠
+            var before1 = new Paragraph(); before1.AddText("나누기 앞 단락 1");
+            var before2 = new Paragraph(); before2.AddText("독도는 우리땅");
+            section.Blocks.Add(before1);
+            section.Blocks.Add(before2);
+
+            // 페이지 나누기 단락 (Ctrl+Enter 로 삽입되는 빈 단락 — ForcePageBreakBefore=true)
+            var pageBreakPara = new Paragraph();
+            pageBreakPara.Style.ForcePageBreakBefore = true;
+            section.Blocks.Add(pageBreakPara);
+
+            // 페이지 나누기 뒤 콘텐츠 — 이것들도 새 페이지에 있어야 한다
+            var after1 = new Paragraph(); after1.AddText("나누기 뒤 단락 1");
+            var after2 = new Paragraph(); after2.AddText("나누기 뒤 단락 2");
+            section.Blocks.Add(after1);
+            section.Blocks.Add(after2);
+
+            doc.Sections.Add(section);
+
+            var result = FlowDocumentPaginationAdapter.Paginate(doc);
+
+            var allBlocks = result.Pages.SelectMany(p => p.BodyBlocks).ToList();
+            int beforePage = allBlocks.First(b => ReferenceEquals(b.Source, before2)).PageIndex;
+            int breakPage  = allBlocks.First(b => ReferenceEquals(b.Source, pageBreakPara)).PageIndex;
+            int after1Page = allBlocks.First(b => ReferenceEquals(b.Source, after1)).PageIndex;
+            int after2Page = allBlocks.First(b => ReferenceEquals(b.Source, after2)).PageIndex;
+
+            Assert.True(breakPage > beforePage,
+                $"페이지 나누기 단락({breakPage})은 앞 단락({beforePage})보다 뒤 페이지여야 함");
+            Assert.True(after1Page >= breakPage,
+                $"나누기 뒤 단락1({after1Page})은 페이지 나누기({breakPage}) 이상 페이지여야 함");
+            Assert.True(after2Page >= breakPage,
+                $"나누기 뒤 단락2({after2Page})은 페이지 나누기({breakPage}) 이상 페이지여야 함");
+        });
+    }
+
     // ── 헬퍼 ─────────────────────────────────────────────────────────────
 
     private static PolyDonkyument WrapInDocument(params Block[] blocks)
