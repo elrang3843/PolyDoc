@@ -578,7 +578,11 @@ public static class FlowDocumentPaginationAdapter
             {
                 double topY = TryGetTopY(block);
                 if (!double.IsNaN(topY))
-                    return topY + fe.ActualHeight + block.Margin.Top + block.Margin.Bottom;
+                {
+                    // topY 는 ContentStart 기준이므로 Margin.Top 은 이미 포함된 위치.
+                    // Margin.Bottom 만 추가해 블록 하단 여백까지 포함한 bottomY 를 반환.
+                    return topY + fe.ActualHeight + block.Margin.Bottom;
+                }
             }
 
             // Wpf.Table 은 ContentEnd.GetCharacterRect 가 표 직후 캐럿 위치(≈ 표의 top) 만

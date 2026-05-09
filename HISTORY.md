@@ -46,7 +46,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
-- **figcaption(그림 캡션) 미표시 문제**: `WrapImageWithTitle` 의 Above/Below 배치 코드가 WPF FlowDocument `BlockUIContainer` 안에서 레이아웃이 완료되지 않는 multi-row Grid 를 사용해 캡션 TextBlock 이 보이지 않았다. Grid 를 `StackPanel` 으로 교체(위/아래 방향 그대로, Overlay 케이스는 Grid 유지). 아울러 `IwpfWriter.Walk` / `IwpfReader.Walk` 가 `ContainerBlock` 내부 이미지를 순회하지 않아 컨테이너 안 이미지가 ZIP 분리 저장·복원되지 않던 잠재 버그도 함께 수정. (`FlowDocumentBuilder.cs`, `IwpfWriter.cs`, `IwpfReader.cs`)
+- **figcaption(그림 캡션) 미표시 및 이미지 블록 페이지 클리핑 문제**: `WrapImageWithTitle` 이 오프스크린 측정 RTB 에서 multi-row Grid 의 캡션 행 높이를 0 으로 계산해 (1) 캡션 TextBlock 이 안 보이고 (2) pagination 이 `blockH` 를 과소 평가해 블록을 페이지 말단에 배정 → 실제 렌더링 시 캡션이 페이지를 초과해 클리핑되던 문제. Grid 를 `StackPanel` 으로 교체 — StackPanel 은 단일 레이아웃 패스에서도 높이가 정확히 합산됨 (Overlay 케이스는 동일 셀 겹침이 필요하므로 Grid 유지). 아울러 `TryGetBottomY` 에서 `block.Margin.Top` 을 중복 산정하던 버그 수정 (`ContentStart.GetCharacterRect().Y` 는 이미 마진 후 위치이므로 `Margin.Bottom` 만 추가해야 함). `IwpfWriter.Walk` / `IwpfReader.Walk` 가 `ContainerBlock` 내부 이미지를 순회하지 않아 컨테이너 안 이미지가 ZIP 분리 저장·복원되지 않던 잠재 버그도 함께 수정. (`FlowDocumentBuilder.cs`, `FlowDocumentPaginationAdapter.cs`, `IwpfWriter.cs`, `IwpfReader.cs`)
 
 ### Added
 
