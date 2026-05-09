@@ -243,7 +243,7 @@ public static class FlowDocumentPaginationAdapter
             if (IsOverlayMode(coreBlock)) continue;
 
             double topY    = TryGetTopY(wpfBlock);
-            double bottomY = TryGetBottomY(wpfBlock);
+            double bottomY = TryGetBottomY(wpfBlock, colWidth);
 
             // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
@@ -569,21 +569,21 @@ public static class FlowDocumentPaginationAdapter
         }
     }
 
-    private static double TryGetBottomY(WpfDocs.Block block)
+    private static double TryGetBottomY(WpfDocs.Block block, double colWidth)
     {
         try
         {
-            // BlockUIContainer 는 GetCharacterRect 가 캐럿 높이만 반환하는 경우가 있어
-            // 내부 UIElement 의 ActualHeight 를 직접 읽어 bottomY 를 계산한다.
-            if (block is WpfDocs.BlockUIContainer buc && buc.Child is FrameworkElement fe
-                && !double.IsNaN(fe.ActualHeight) && fe.ActualHeight > 0)
+            // BlockUIContainer: ContentEnd.GetCharacterRect 는 캐럿 높이만 반환하므로
+            // 자식 UIElement 의 높이를 직접 측정한다.
+            if (block is WpfDocs.BlockUIContainer buc && buc.Child is FrameworkElement fe)
             {
                 double topY = TryGetTopY(block);
                 if (!double.IsNaN(topY))
                 {
-                    // topY 는 ContentStart 기준이므로 Margin.Top 은 이미 포함된 위치.
-                    // Margin.Bottom 만 추가해 블록 하단 여백까지 포함한 bottomY 를 반환.
-                    return topY + fe.ActualHeight + block.Margin.Bottom;
+                    double h = ResolveFEHeight(fe, colWidth);
+                    if (h > 0)
+                        // topY = ContentStart 기준 → Margin.Top 이미 포함 → Margin.Bottom 만 추가.
+                        return topY + h + block.Margin.Bottom;
                 }
             }
 
@@ -610,6 +610,36 @@ public static class FlowDocumentPaginationAdapter
         {
             return double.NaN;
         }
+    }
+
+    /// <summary>
+    /// <c>FrameworkElement</c> 의 높이를 반환한다. <c>ActualHeight</c> 우선, 0 이면
+    /// 명시적 <c>Height</c> → <c>Measure(colWidth, ∞)</c> → <c>DesiredSize.Height</c> 순으로 폴백.
+    /// 오프스크린 RTB 에서 <c>BlockUIContainer</c> 자식 UIElement 가 레이아웃 미완료로
+    /// <c>ActualHeight=0</c> 을 반환하는 경우에도 올바른 높이를 얻기 위한 보완 측정이다.
+    /// </summary>
+    private static double ResolveFEHeight(FrameworkElement fe, double colWidth)
+    {
+        if (!double.IsNaN(fe.ActualHeight) && fe.ActualHeight > 0)
+            return fe.ActualHeight;
+
+        // 명시적 Height 프로퍼티 (Image.Height, Border.Height 등)
+        if (!double.IsNaN(fe.Height) && fe.Height > 0)
+            return fe.Height;
+
+        // 강제 측정 — 오프스크린 RTB UpdateLayout 이후에도 UIElement 가 layout-pass 를
+        // 받지 못한 경우(FlowDocument 내 BlockUIContainer 에서 흔함)에 대한 보완.
+        // 폭은 단 폭을 상한으로, 명시적 Width 가 있으면 그 값이 우선된다.
+        try
+        {
+            double availW = (!double.IsNaN(fe.Width) && fe.Width > 0) ? fe.Width : colWidth;
+            fe.Measure(new Size(availW, double.PositiveInfinity));
+            if (fe.DesiredSize.Height > 0)
+                return fe.DesiredSize.Height;
+        }
+        catch { /* 측정 실패 시 0 반환 */ }
+
+        return 0;
     }
 
     /// <summary>
@@ -672,28 +702,31 @@ public static class FlowDocumentPaginationAdapter
             double globalTop    = topRect.Y;
 
             // BlockUIContainer 는 ContentEnd.GetCharacterRect 가 캐럿 높이만 반환할 수 있어
-            // 내부 UIElement.ActualHeight 로 globalBottom 을 계산한다.
-            double globalBottom;
-            if (block is WpfDocs.BlockUIContainer buc2 && buc2.Child is FrameworkElement fe2
-                && !double.IsNaN(fe2.ActualHeight) && fe2.ActualHeight > 0)
+            // 내부 UIElement 높이로 globalBottom 을 계산한다.
+            // globalTop = ContentStart.Y 는 이미 Margin.Top 이후 위치 → Margin.Bottom 만 추가.
+            double globalBottom = double.NaN;
+            if (block is WpfDocs.BlockUIContainer buc2 && buc2.Child is FrameworkElement fe2)
             {
-                globalBottom = globalTop + fe2.ActualHeight + block.Margin.Top + block.Margin.Bottom;
+                double feH2 = ResolveFEHeight(fe2, colWidth);
+                if (feH2 > 0) globalBottom = globalTop + feH2 + block.Margin.Bottom;
             }
-            else if (botRect != Rect.Empty
-                     && !double.IsNaN(botRect.Bottom)
-                     && !double.IsInfinity(botRect.Bottom))
+            if (double.IsNaN(globalBottom))
             {
-                globalBottom = botRect.Bottom;
-            }
-            else
-            {
-                // Paragraph 에 InlineUIContainer(코드 블록 줄 번호, 수식 등)가 있으면
-                // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환할 수 있다.
-                // TryEstimateParaBottomViaInlines 로 추정값을 구하되, 실패 시 globalTop 사용.
-                double estimated = block is WpfDocs.Paragraph para2
-                    ? TryEstimateParaBottomViaInlines(para2)
-                    : double.NaN;
-                globalBottom = !double.IsNaN(estimated) ? estimated : globalTop;
+                if (botRect != Rect.Empty
+                    && !double.IsNaN(botRect.Bottom)
+                    && !double.IsInfinity(botRect.Bottom))
+                {
+                    globalBottom = botRect.Bottom;
+                }
+                else
+                {
+                    // Paragraph 에 InlineUIContainer(코드 블록 줄 번호, 수식 등)가 있으면
+                    // ContentEnd.GetCharacterRect 가 Rect.Empty 를 반환할 수 있다.
+                    double estimated = block is WpfDocs.Paragraph para2
+                        ? TryEstimateParaBottomViaInlines(para2)
+                        : double.NaN;
+                    globalBottom = !double.IsNaN(estimated) ? estimated : globalTop;
+                }
             }
 
             // 단 슬롯 인덱스 (다단에서 페이지·단을 통합 순서로 열거)
