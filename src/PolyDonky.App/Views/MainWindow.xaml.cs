@@ -2088,6 +2088,33 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (label, topY + 2);
             PageBackgroundCanvas.Children.Add(label);
 
+            // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 (육안 검증용).
+            // 좌측 하단 여백 안쪽. 페이지네이션 측정값과 실제 렌더 높이를 비교해
+            // 클리핑·공백 원인을 추적할 때 사용.
+            double dbgBodyH      = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
+            double dbgPageHmm    = FlowDocumentBuilder.DipToMm(pg.PageHeightDip);
+            double dbgBodyHmm    = FlowDocumentBuilder.DipToMm(dbgBodyH);
+            double dbgPadTopMm   = FlowDocumentBuilder.DipToMm(pg.PadTopDip);
+            double dbgPadBottomMm= FlowDocumentBuilder.DipToMm(pg.PadBottomDip);
+            var debugLabel = new System.Windows.Controls.TextBlock
+            {
+                Text =
+                    $"page H: {pg.PageHeightDip:F1} DIP ({dbgPageHmm:F1} mm)\n" +
+                    $"body H: {dbgBodyH:F1} DIP ({dbgBodyHmm:F1} mm)\n" +
+                    $"pad ↑: {pg.PadTopDip:F1} DIP ({dbgPadTopMm:F1} mm)\n" +
+                    $"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)",
+                FontSize         = 9,
+                FontFamily       = new WpfMedia.FontFamily("Consolas, Cascadia Mono, monospace"),
+                Foreground       = new SolidColorBrush(WpfMedia.Color.FromArgb(0xE0, 0xB4, 0x40, 0x40)),
+                Background       = new SolidColorBrush(WpfMedia.Color.FromArgb(0x60, 0xFF, 0xFF, 0x80)),
+                Padding          = new Thickness(3, 1, 3, 1),
+                IsHitTestVisible = false,
+            };
+            // 좌측 하단 여백 안쪽 — 페이지 번호(좌상단) 와 충돌하지 않음.
+            System.Windows.Controls.Canvas.SetLeft(debugLabel, 6);
+            System.Windows.Controls.Canvas.SetTop (debugLabel,
+                topY + pg.PageHeightDip - pg.PadBottomDip + 4);
+            PageBackgroundCanvas.Children.Add(debugLabel);
         }
 
         RenderWatermark(pg, pageCount);
