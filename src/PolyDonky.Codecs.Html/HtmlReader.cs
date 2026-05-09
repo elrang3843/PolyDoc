@@ -957,9 +957,10 @@ public sealed class HtmlReader : IDocumentReader
             var img = BuildImage(imgEl);
             if (caption is not null)
             {
-                img.ShowTitle = true;
-                img.Title     = caption.TextContent.Trim();
+                img.ShowTitle     = true;
+                img.Title         = caption.TextContent.Trim();
                 img.TitlePosition = ImageTitlePosition.Below;
+                ApplyImageCaptionStyle(caption, img);
             }
             target.Add(img);
 
@@ -978,13 +979,63 @@ public sealed class HtmlReader : IDocumentReader
             {
                 var captionEl3  = figEl.QuerySelector("figcaption");
                 var captionText = captionEl3?.TextContent.Trim();
-                target.Add(BuildImageFromSvg(svgChild, captionText));
+                var svgImg = BuildImageFromSvg(svgChild, captionText);
+                if (captionEl3 is not null && !string.IsNullOrEmpty(captionText))
+                    ApplyImageCaptionStyle(captionEl3, svgImg);
+                target.Add(svgImg);
             }
             else
             {
                 // img/svg 없는 figure — 자식만 평탄화.
                 ProcessChildren(figEl, target, ctx);
             }
+        }
+    }
+
+    /// <summary>&lt;figcaption&gt; 의 인라인 style 을 <see cref="ImageBlock.TitleStyle"/> + <see cref="ImageBlock.TitleHAlign"/> 로 반영.
+    /// CLI 의 <c>ComputeAndInlineCss</c> 가 figcaption 규칙(예: <c>figcaption { font-size:0.9em; color:#666; }</c>) 을 이미 인라인화해
+    /// 두기 때문에, 여기서는 그 결과 인라인 style 을 모델에 풀어 담기만 하면 된다.</summary>
+    private static void ApplyImageCaptionStyle(IElement capEl, ImageBlock img)
+    {
+        var style = capEl.GetAttribute("style");
+        if (string.IsNullOrEmpty(style)) return;
+
+        var s = img.TitleStyle;
+        if (StyleProp(style, "font-family") is { } ff)
+            s.FontFamily = ff.Trim().Trim('"', '\'');
+        if (StyleProp(style, "font-size") is { } fs && TryParseCssPt(fs, baseFontSizePt: 11, out var fsPt) && fsPt > 0)
+            s.FontSizePt = fsPt;
+        var fw = StyleProp(style, "font-weight");
+        if (fw is not null && (fw.Equals("bold", StringComparison.OrdinalIgnoreCase) ||
+                               (int.TryParse(fw, out var fwn) && fwn >= 600)))
+            s.Bold = true;
+        var fst = StyleProp(style, "font-style");
+        if (fst is not null && fst.Equals("italic", StringComparison.OrdinalIgnoreCase))
+            s.Italic = true;
+        var deco = StyleProp(style, "text-decoration") ?? StyleProp(style, "text-decoration-line");
+        if (deco is not null)
+        {
+            if (deco.Contains("underline",     StringComparison.OrdinalIgnoreCase)) s.Underline     = true;
+            if (deco.Contains("line-through",  StringComparison.OrdinalIgnoreCase)) s.Strikethrough = true;
+            if (deco.Contains("overline",      StringComparison.OrdinalIgnoreCase)) s.Overline      = true;
+        }
+        if (StyleProp(style, "color") is { } c && TryParseCssColor(c, out var fg))
+            s.Foreground = fg;
+        if (StyleProp(style, "background-color") is { } bg && TryParseCssColor(bg, out var bgC))
+            s.Background = bgC;
+
+        // 캡션 정렬. figcaption 자체의 text-align 이 명시돼 있으면 그쪽이 우선; 아니면 부모 figure 의 인라인 style 폴백.
+        var ta = StyleProp(style, "text-align");
+        if (ta is null)
+        {
+            var figStyle = capEl.ParentElement?.GetAttribute("style");
+            if (!string.IsNullOrEmpty(figStyle)) ta = StyleProp(figStyle, "text-align");
+        }
+        if (ta is not null)
+        {
+            if (ta.Equals("left",   StringComparison.OrdinalIgnoreCase)) img.TitleHAlign = ImageHAlign.Left;
+            if (ta.Equals("center", StringComparison.OrdinalIgnoreCase)) img.TitleHAlign = ImageHAlign.Center;
+            if (ta.Equals("right",  StringComparison.OrdinalIgnoreCase)) img.TitleHAlign = ImageHAlign.Right;
         }
     }
 

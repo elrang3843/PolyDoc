@@ -742,9 +742,12 @@ public sealed class HtmlWriter : IDocumentWriter
             var svgContent = Encoding.UTF8.GetString(img.Data);
             if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
             {
+                var capStyle = BuildImageCaptionStyle(img);
+                var capStyleAttr = capStyle.Length > 0 ? $" style=\"{capStyle}\"" : "";
                 sb.Append(indent).Append("<figure").Append(styleAttr).Append(">\n");
                 sb.Append(indent).Append("  ").Append(svgContent).Append('\n');
-                sb.Append(indent).Append("  <figcaption>").Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
+                sb.Append(indent).Append("  <figcaption").Append(capStyleAttr).Append('>')
+                                  .Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
                 sb.Append(indent).Append("</figure>\n");
             }
             else
@@ -762,10 +765,13 @@ public sealed class HtmlWriter : IDocumentWriter
 
         if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
         {
+            var capStyle = BuildImageCaptionStyle(img);
+            var capStyleAttr = capStyle.Length > 0 ? $" style=\"{capStyle}\"" : "";
             sb.Append(indent).Append("<figure").Append(styleAttr).Append(">\n");
             sb.Append(indent).Append("  <img src=\"").Append(EscapeAttr(src)).Append("\" alt=\"")
               .Append(alt).Append('"').Append(sizeAttr).Append(">\n");
-            sb.Append(indent).Append("  <figcaption>").Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
+            sb.Append(indent).Append("  <figcaption").Append(capStyleAttr).Append('>')
+                              .Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
             sb.Append(indent).Append("</figure>\n");
         }
         else
@@ -774,6 +780,42 @@ public sealed class HtmlWriter : IDocumentWriter
               .Append(alt).Append('"').Append(sizeAttr).Append(styleAttr).Append(">\n");
         }
     }
+
+    /// <summary><see cref="ImageBlock.TitleStyle"/> + <see cref="ImageBlock.TitleHAlign"/> 을
+    /// figcaption 인라인 style 로 직렬화. 기본값(검정/11pt/Center) 은 생략.</summary>
+    private static string BuildImageCaptionStyle(ImageBlock img)
+    {
+        var s = img.TitleStyle;
+        var p = new List<string>(8);
+        if (s.FontFamily is { Length: > 0 } ff) p.Add($"font-family:{EscapeAttr(ff)}");
+        if (s.FontSizePt > 0 && Math.Abs(s.FontSizePt - 11) > 0.01)
+            p.Add($"font-size:{FmtNum(s.FontSizePt)}pt");
+        if (s.Bold)          p.Add("font-weight:bold");
+        if (s.Italic)        p.Add("font-style:italic");
+        if (s.Underline || s.Strikethrough || s.Overline)
+        {
+            var decos = new List<string>(3);
+            if (s.Underline)     decos.Add("underline");
+            if (s.Strikethrough) decos.Add("line-through");
+            if (s.Overline)      decos.Add("overline");
+            p.Add($"text-decoration:{string.Join(' ', decos)}");
+        }
+        if (s.Foreground is { } fg) p.Add($"color:{ToHex(fg)}");
+        if (s.Background is { } bg) p.Add($"background-color:{ToHex(bg)}");
+        var ta = img.TitleHAlign switch
+        {
+            ImageHAlign.Left  => "left",
+            ImageHAlign.Right => "right",
+            _ => null,            // Center 는 figcaption 의 text-align 기본 가정 (figure 가 center) → 생략
+        };
+        if (ta is not null) p.Add($"text-align:{ta}");
+        return string.Join(";", p);
+    }
+
+    private static string ToHex(PolyDonky.Core.Color c)
+        => c.A == 255
+            ? $"#{c.R:X2}{c.G:X2}{c.B:X2}"
+            : $"rgba({c.R},{c.G},{c.B},{(c.A / 255.0).ToString("0.##", CultureInfo.InvariantCulture)})";
 
     private static string BuildImageStyle(ImageBlock img)
     {

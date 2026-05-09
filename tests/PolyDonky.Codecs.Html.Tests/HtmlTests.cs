@@ -356,6 +356,58 @@ public class HtmlTests
         Assert.Contains("<figcaption>캡션</figcaption>", html);
     }
 
+    [Fact]
+    public void RoundTrip_Figcaption_InlineStyleAppliedToTitleStyle()
+    {
+        // figcaption 의 인라인 style (CLI 가 .figcaption { font-size:0.9em; color:#666; } 같은
+        // 클래스 규칙을 인라인화한 결과를 흉내) 이 ImageBlock.TitleStyle 로 반영돼야 한다.
+        var html = """
+            <figure>
+              <img src="data:image/png;base64,iVBORw0KGgo=" alt="alt">
+              <figcaption style="font-size:9pt;color:#666;font-style:italic;text-align:right">그림 1</figcaption>
+            </figure>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var img = doc.Sections.SelectMany(s => s.Blocks).OfType<ImageBlock>().Single();
+
+        Assert.True(img.ShowTitle);
+        Assert.Equal("그림 1", img.Title);
+        Assert.Equal(9, img.TitleStyle.FontSizePt);
+        Assert.True(img.TitleStyle.Italic);
+        Assert.NotNull(img.TitleStyle.Foreground);
+        Assert.Equal(0x66, img.TitleStyle.Foreground!.Value.R);
+        Assert.Equal(ImageHAlign.Right, img.TitleHAlign);
+
+        // round-trip: 다시 HTML 로 직렬화해도 figcaption 에 style 이 살아 있어야 함.
+        var html2 = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("<figcaption", html2);
+        Assert.Matches(@"<figcaption style=""[^""]*font-size:9pt", html2);
+        Assert.Matches(@"<figcaption style=""[^""]*font-style:italic", html2);
+        Assert.Matches(@"<figcaption style=""[^""]*color:#666666",   html2);
+        Assert.Matches(@"<figcaption style=""[^""]*text-align:right", html2);
+    }
+
+    [Fact]
+    public void RoundTrip_Figcaption_OnSvg_StyleAppliedToTitleStyle()
+    {
+        var html = """
+            <figure>
+              <svg width="60" height="40" xmlns="http://www.w3.org/2000/svg">
+                <rect x="0" y="0" width="60" height="40" fill="#abc"/>
+                <rect x="10" y="10" width="40" height="20" fill="#def"/>
+                <circle cx="30" cy="20" r="5" fill="#000"/>
+              </svg>
+              <figcaption style="font-size:8pt;font-weight:bold">도해</figcaption>
+            </figure>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var img = doc.Sections.SelectMany(s => s.Blocks).OfType<ImageBlock>().Single();
+        Assert.Equal("image/svg+xml", img.MediaType);
+        Assert.Equal("도해", img.Title);
+        Assert.Equal(8, img.TitleStyle.FontSizePt);
+        Assert.True(img.TitleStyle.Bold);
+    }
+
     // ── 안전 한도 (대용량 HTML) ─────────────────────────────────────
 
     [Fact]
