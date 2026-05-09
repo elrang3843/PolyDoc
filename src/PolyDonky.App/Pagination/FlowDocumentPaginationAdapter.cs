@@ -98,7 +98,7 @@ public static class FlowDocumentPaginationAdapter
         // 전체 용지 폭으로 두면 줄바꿈이 적게 일어나 Y 좌표가 실제 단 RTB 와 달라진다.
         fd.PageWidth   = geo.ColWidthDip;
         fd.PagePadding = new Thickness(0);
-        var (bodyAssignments, slotFill) = MapBodyBlocksToPages(fd, geo, pageCount, tableFragmentMap);
+        var (bodyAssignments, slotFill, blockMeasurements) = MapBodyBlocksToPages(fd, geo, pageCount, tableFragmentMap);
 
         // 본문 블록의 실제 배치 결과로 pageCount 보정.
         // DocumentPaginator(풀 페이지+여백) 와 오프스크린 RTB(단 폭·단 슬롯 높이) 측정이
@@ -125,10 +125,11 @@ public static class FlowDocumentPaginationAdapter
 
         return new PaginatedDocument
         {
-            Source              = document,
-            PageSettings        = page,
-            Pages               = pages,
-            SlotMeasuredFillDip = slotFill,
+            Source                  = document,
+            PageSettings            = page,
+            Pages                   = pages,
+            SlotMeasuredFillDip     = slotFill,
+            DebugBlockMeasurements  = blockMeasurements,
         };
     }
 
@@ -166,14 +167,16 @@ public static class FlowDocumentPaginationAdapter
     // ── 본문 블록 → 페이지·단 매핑 ──────────────────────────────────────────
 
     private static (List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)> assignments,
-                    System.Collections.Generic.Dictionary<int, double> slotFillOut)
+                    System.Collections.Generic.Dictionary<int, double> slotFillOut,
+                    List<BlockMeasurementEntry> measurements)
         MapBodyBlocksToPages(
             WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount,
             System.Collections.Generic.Dictionary<
                 WpfDocs.Table,
                 System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>? tableFragmentMap = null)
     {
-        var result = new List<(int, int, Block, Rect)>();
+        var result       = new List<(int, int, Block, Rect)>();
+        var measurements = new List<BlockMeasurementEntry>();
 
         // 연속 스크롤 공간에서 "단 슬롯 높이" = pageHeight - padTop - padBottom
         double bodyH = geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip;
@@ -197,7 +200,7 @@ public static class FlowDocumentPaginationAdapter
                 if (IsOverlayMode(coreBlock)) continue;
                 result.Add((0, 0, coreBlock, Rect.Empty));
             }
-            return (result, new System.Collections.Generic.Dictionary<int, double>());
+            return (result, new System.Collections.Generic.Dictionary<int, double>(), measurements);
         }
 
         // 오프스크린 RichTextBox — 측정 폭은 단 폭(colWidth).
@@ -408,13 +411,68 @@ public static class FlowDocumentPaginationAdapter
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
+
+            // 진단: 블록 측정값 기록 (디버그 오버레이에 표시됨)
+            measurements.Add(new BlockMeasurementEntry
+            {
+                SlotIdx = slotTop,
+                Label   = MakeMeasurementLabel(coreBlock, wpfBlock),
+                TopY    = topY,
+                BottomY = bottomY,
+                BlockH  = blockH,
+                Gap     = gap,
+            });
+
             prevSlot = slotTop;
             if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
         rtb.Document = new WpfDocs.FlowDocument();
-        return (result, slotFill);
+        return (result, slotFill, measurements);
+    }
+
+    /// <summary>
+    /// 진단 레이블 생성 — 블록 타입과 내용 일부를 최대 32자로 압축.
+    /// </summary>
+    private static string MakeMeasurementLabel(Block coreBlock, WpfDocs.Block wpfBlock)
+    {
+        string typeName;
+        string extra = "";
+        if (coreBlock is Paragraph corePara3 && corePara3.Style is not null)
+        {
+            if (corePara3.Style.CodeLanguage is not null)
+            {
+                string lang = corePara3.Style.CodeLanguage is "" ? "?" : corePara3.Style.CodeLanguage;
+                typeName = $"Code({lang})";
+            }
+            else
+            {
+                typeName = "Para";
+            }
+            var text = string.Concat(corePara3.Runs.Select(r => r.Text));
+            extra = text.Length > 20 ? ":" + text[..20] : ":" + text;
+        }
+        else
+        {
+            typeName = coreBlock switch
+            {
+                ImageBlock   => "Img",
+                ShapeObject  => "Shape",
+                Table        => "Table",
+                ContainerBlock     => "Container",
+                ThematicBreakBlock => "HR",
+                TocBlock     => "TOC",
+                _            => coreBlock.GetType().Name,
+            };
+        }
+
+        // WPF 블록 타입 힌트 (BlockUIContainer 여부 구분)
+        string wpfHint = wpfBlock is WpfDocs.BlockUIContainer
+            ? "(BUC)"
+            : wpfBlock is WpfDocs.Paragraph ? "" : $"({wpfBlock.GetType().Name})";
+
+        return $"{typeName}{wpfHint}{extra}";
     }
 
     // ── 줄 단위 분할 헬퍼 ────────────────────────────────────────────────────────

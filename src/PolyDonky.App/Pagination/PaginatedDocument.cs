@@ -66,4 +66,23 @@ public sealed class PaginatedDocument
     /// </summary>
     public IReadOnlyDictionary<int, double> SlotMeasuredFillDip { get; init; }
         = new Dictionary<int, double>();
+
+    /// <summary>
+    /// 블록별 측정 진단 정보 (디버그 전용).
+    /// slotIdx = pageIdx × ColumnCount + colIdx.
+    /// label = 블록 타입과 식별 정보, topY/blockH = 연속 RTB 측정값.
+    /// </summary>
+    public IReadOnlyList<BlockMeasurementEntry> DebugBlockMeasurements { get; init; }
+        = Array.Empty<BlockMeasurementEntry>();
+}
+
+/// <summary>블록 측정 진단 항목.</summary>
+public sealed class BlockMeasurementEntry
+{
+    public int    SlotIdx { get; init; }
+    public string Label   { get; init; } = "";
+    public double TopY    { get; init; }
+    public double BottomY { get; init; }
+    public double BlockH  { get; init; }
+    public double Gap     { get; init; }
 }

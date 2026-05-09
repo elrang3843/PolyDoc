@@ -2099,35 +2099,57 @@ public partial class MainWindow : Window
             double dbgPadTopMm   = FlowDocumentBuilder.DipToMm(pg.PadTopDip);
             double dbgPadBottomMm= FlowDocumentBuilder.DipToMm(pg.PadBottomDip);
 
-            string measuredFillText;
-            if (_currentPaginatedDoc is { } paginated && paginated.SlotMeasuredFillDip.Count > 0)
+            var dbgSb = new System.Text.StringBuilder();
+            dbgSb.AppendLine($"page H: {pg.PageHeightDip:F1} DIP ({dbgPageHmm:F1} mm)");
+            dbgSb.AppendLine($"body H: {dbgBodyH:F1} DIP ({dbgBodyHmm:F1} mm)");
+            dbgSb.AppendLine($"pad ↑: {pg.PadTopDip:F1} DIP ({dbgPadTopMm:F1} mm)");
+            dbgSb.AppendLine($"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)");
+
+            if (_currentPaginatedDoc is { } paginated2 && paginated2.SlotMeasuredFillDip.Count > 0)
             {
-                int colCount = Math.Max(1, pg.ColumnCount);
-                var sb = new System.Text.StringBuilder();
-                for (int c = 0; c < colCount; c++)
+                int colCount2 = Math.Max(1, pg.ColumnCount);
+                var fillSb = new System.Text.StringBuilder();
+                for (int c = 0; c < colCount2; c++)
                 {
-                    int slotIdx = i * colCount + c;
-                    if (sb.Length > 0) sb.Append(" / ");
-                    if (paginated.SlotMeasuredFillDip.TryGetValue(slotIdx, out var fill))
-                        sb.Append($"{fill:F1}");
-                    else
-                        sb.Append("·");
+                    int slotIdx = i * colCount2 + c;
+                    if (fillSb.Length > 0) fillSb.Append(" / ");
+                    fillSb.Append(paginated2.SlotMeasuredFillDip.TryGetValue(slotIdx, out var fill)
+                        ? $"{fill:F1}" : "·");
                 }
-                measuredFillText = colCount > 1 ? $"fill[col]: {sb}" : $"fill: {sb} DIP";
+                dbgSb.AppendLine(colCount2 > 1 ? $"fill[col]: {fillSb} DIP" : $"fill: {fillSb} DIP");
             }
             else
             {
-                measuredFillText = "fill: (fast-path/N/A)";
+                dbgSb.AppendLine("fill: (fast-path/N/A)");
+            }
+
+            // 블록별 측정 진단: 이 페이지에 배정된 블록의 topY / blockH / gap 표시
+            // blockH=0 인 항목은 과소평가 의심 → '!' 마킹
+            if (_currentPaginatedDoc is { } paginated3 && paginated3.DebugBlockMeasurements.Count > 0)
+            {
+                int colCount3 = Math.Max(1, pg.ColumnCount);
+                var pageEntries = paginated3.DebugBlockMeasurements
+                    .Where(e => e.SlotIdx / colCount3 == i)
+                    .ToList();
+                if (pageEntries.Count > 0)
+                {
+                    dbgSb.AppendLine("── blocks ──");
+                    foreach (var e in pageEntries)
+                    {
+                        string flag = e.BlockH < 1.0 ? "!" : " ";
+                        string gapStr = e.Gap > 0.5 ? $" g+{e.Gap:F0}" : "";
+                        string topStr = double.IsNaN(e.TopY) ? "Y=?" : $"Y={e.TopY:F0}";
+                        string hStr   = double.IsNaN(e.BlockH) ? "h=?" : $"h={e.BlockH:F0}";
+                        // 레이블은 30자 이내로 자름
+                        string lbl = e.Label.Length > 28 ? e.Label[..28] : e.Label;
+                        dbgSb.AppendLine($"{flag}{lbl} {topStr} {hStr}{gapStr}");
+                    }
+                }
             }
 
             var debugLabel = new System.Windows.Controls.TextBlock
             {
-                Text =
-                    $"page H: {pg.PageHeightDip:F1} DIP ({dbgPageHmm:F1} mm)\n" +
-                    $"body H: {dbgBodyH:F1} DIP ({dbgBodyHmm:F1} mm)\n" +
-                    $"pad ↑: {pg.PadTopDip:F1} DIP ({dbgPadTopMm:F1} mm)\n" +
-                    $"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)\n" +
-                    measuredFillText,
+                Text             = dbgSb.ToString().TrimEnd(),
                 FontSize         = 9,
                 FontFamily       = new WpfMedia.FontFamily("Consolas, Cascadia Mono, monospace"),
                 Foreground       = new SolidColorBrush(WpfMedia.Color.FromArgb(0xE0, 0xB4, 0x40, 0x40)),
