@@ -98,7 +98,7 @@ public static class FlowDocumentPaginationAdapter
         // 전체 용지 폭으로 두면 줄바꿈이 적게 일어나 Y 좌표가 실제 단 RTB 와 달라진다.
         fd.PageWidth   = geo.ColWidthDip;
         fd.PagePadding = new Thickness(0);
-        var bodyAssignments = MapBodyBlocksToPages(fd, geo, pageCount, tableFragmentMap);
+        var (bodyAssignments, slotFill) = MapBodyBlocksToPages(fd, geo, pageCount, tableFragmentMap);
 
         // 본문 블록의 실제 배치 결과로 pageCount 보정.
         // DocumentPaginator(풀 페이지+여백) 와 오프스크린 RTB(단 폭·단 슬롯 높이) 측정이
@@ -125,9 +125,10 @@ public static class FlowDocumentPaginationAdapter
 
         return new PaginatedDocument
         {
-            Source       = document,
-            PageSettings = page,
-            Pages        = pages,
+            Source              = document,
+            PageSettings        = page,
+            Pages               = pages,
+            SlotMeasuredFillDip = slotFill,
         };
     }
 
@@ -164,7 +165,8 @@ public static class FlowDocumentPaginationAdapter
 
     // ── 본문 블록 → 페이지·단 매핑 ──────────────────────────────────────────
 
-    private static List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)>
+    private static (List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)> assignments,
+                    System.Collections.Generic.Dictionary<int, double> slotFillOut)
         MapBodyBlocksToPages(
             WpfDocs.FlowDocument fd, PageGeometry geo, int pageCount,
             System.Collections.Generic.Dictionary<
@@ -195,7 +197,7 @@ public static class FlowDocumentPaginationAdapter
                 if (IsOverlayMode(coreBlock)) continue;
                 result.Add((0, 0, coreBlock, Rect.Empty));
             }
-            return result;
+            return (result, new System.Collections.Generic.Dictionary<int, double>());
         }
 
         // 오프스크린 RichTextBox — 측정 폭은 단 폭(colWidth).
@@ -383,7 +385,7 @@ public static class FlowDocumentPaginationAdapter
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
         rtb.Document = new WpfDocs.FlowDocument();
-        return result;
+        return (result, slotFill);
     }
 
     // ── 줄 단위 분할 헬퍼 ────────────────────────────────────────────────────────

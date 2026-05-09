@@ -2088,21 +2088,46 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (label, topY + 2);
             PageBackgroundCanvas.Children.Add(label);
 
-            // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 (육안 검증용).
+            // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 + 페이지네이션 측정 fill (육안 검증용).
             // 좌측 하단 여백 안쪽. 페이지네이션 측정값과 실제 렌더 높이를 비교해
             // 클리핑·공백 원인을 추적할 때 사용.
+            // measured fill = MapBodyBlocksToPages 에서 이 슬롯에 누적된 블록 높이 합 — 이 값이
+            // body H 를 초과(혹은 근접) 하면 페이지가 꽉 찼다고 판단해 다음 페이지로 넘긴다.
             double dbgBodyH      = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
             double dbgPageHmm    = FlowDocumentBuilder.DipToMm(pg.PageHeightDip);
             double dbgBodyHmm    = FlowDocumentBuilder.DipToMm(dbgBodyH);
             double dbgPadTopMm   = FlowDocumentBuilder.DipToMm(pg.PadTopDip);
             double dbgPadBottomMm= FlowDocumentBuilder.DipToMm(pg.PadBottomDip);
+
+            string measuredFillText;
+            if (_currentPaginatedDoc is { } paginated && paginated.SlotMeasuredFillDip.Count > 0)
+            {
+                int colCount = Math.Max(1, pg.ColumnCount);
+                var sb = new System.Text.StringBuilder();
+                for (int c = 0; c < colCount; c++)
+                {
+                    int slotIdx = i * colCount + c;
+                    if (sb.Length > 0) sb.Append(" / ");
+                    if (paginated.SlotMeasuredFillDip.TryGetValue(slotIdx, out var fill))
+                        sb.Append($"{fill:F1}");
+                    else
+                        sb.Append("·");
+                }
+                measuredFillText = colCount > 1 ? $"fill[col]: {sb}" : $"fill: {sb} DIP";
+            }
+            else
+            {
+                measuredFillText = "fill: (fast-path/N/A)";
+            }
+
             var debugLabel = new System.Windows.Controls.TextBlock
             {
                 Text =
                     $"page H: {pg.PageHeightDip:F1} DIP ({dbgPageHmm:F1} mm)\n" +
                     $"body H: {dbgBodyH:F1} DIP ({dbgBodyHmm:F1} mm)\n" +
                     $"pad ↑: {pg.PadTopDip:F1} DIP ({dbgPadTopMm:F1} mm)\n" +
-                    $"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)",
+                    $"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)\n" +
+                    measuredFillText,
                 FontSize         = 9,
                 FontFamily       = new WpfMedia.FontFamily("Consolas, Cascadia Mono, monospace"),
                 Foreground       = new SolidColorBrush(WpfMedia.Color.FromArgb(0xE0, 0xB4, 0x40, 0x40)),
