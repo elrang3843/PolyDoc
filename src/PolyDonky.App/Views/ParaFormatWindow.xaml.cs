@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using PolyDonky.App.Services;
 using PolyDonky.Core;
+using SR = PolyDonky.App.Properties.Resources;
 using Wpf = System.Windows.Documents;
 
 namespace PolyDonky.App.Views;
@@ -45,9 +46,8 @@ public partial class ParaFormatWindow : Window
 
     private void PopulateOutlineLevels()
     {
-        var loc = LocalizedStrings.Instance;
         // 본문 + H1~H6
-        CboOutline.Items.Add(new ComboBoxItem { Content = loc.FormatParaOutlineBody, Tag = OutlineLevel.Body });
+        CboOutline.Items.Add(new ComboBoxItem { Content = SR.FormatParaOutlineBody, Tag = OutlineLevel.Body });
         for (int i = 1; i <= 6; i++)
         {
             CboOutline.Items.Add(new ComboBoxItem { Content = $"H{i}", Tag = (OutlineLevel)i });
@@ -219,18 +219,7 @@ public partial class ParaFormatWindow : Window
         if (CboOutline.SelectedItem is ComboBoxItem ci && ci.Tag is OutlineLevel ol) s.Outline = ol;
     }
 
-    private static ParagraphStyle CloneParagraphStyle(ParagraphStyle s) => new()
-    {
-        Alignment        = s.Alignment,
-        LineHeightFactor = s.LineHeightFactor,
-        SpaceBeforePt    = s.SpaceBeforePt,
-        SpaceAfterPt     = s.SpaceAfterPt,
-        IndentFirstLineMm = s.IndentFirstLineMm,
-        IndentLeftMm     = s.IndentLeftMm,
-        IndentRightMm    = s.IndentRightMm,
-        Outline          = s.Outline,
-        ListMarker       = s.ListMarker,
-    };
+    private static ParagraphStyle CloneParagraphStyle(ParagraphStyle s) => s.Clone();
 
     // ── 선택 영역 단락에 적용 (RichTextBox 모드) ────────────────
 

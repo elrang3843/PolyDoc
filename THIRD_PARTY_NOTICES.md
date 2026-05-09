@@ -159,4 +159,50 @@ They are **not** bundled with or distributed as part of the PolyDonky executable
 
 ---
 
-*This file is generated and maintained manually. Last updated: 2026-04-27.*
+*This file is generated and maintained manually. Last updated: 2026-05-06.*
+
+---
+
+## HWPX / OWPML Specification References (Documentation Only)
+
+PolyDonky 의 HWPX 코덱(`PolyDonky.Codecs.Hwpx`)은 다음 공개 자료를
+참고해 자체 구현했습니다. 아래 자료의 **코드는 PolyDonky 에 직접
+포함되거나 재배포되지 않으며**, 명세 이해를 위한 참고 문헌으로만
+사용했습니다. HWPX 의 한컴 호환 동작을 정확히 맞출 수 있도록
+정보를 공개해 주신 분들께 감사드립니다.
+
+### Specifications
+
+- **한국산업표준 KS X 6101 — OWPML (Open Word-processor Markup Language)**
+  - Standardized by KATS (Korean Agency for Technology and Standards) — Korean Government
+  - https://standard.go.kr/KSCI/api/std/viewMachine.do?reformNo=03&tmprKsNo=KSX6101&formType=STD
+  - National standard for the OWPML document format. HWPX is the file format
+    implementation of this standard.
+
+- **HWP/OWPML Format Documentation by Hancom Inc. (한글과컴퓨터)**
+  - https://www.hancom.com/support/downloadCenter/hwpOwpml
+  - Vendor-published format specification documents and notes.
+
+### Reference Implementations (Documentation Only)
+
+- **`hancom-io/hwpx-owpml-model`** — Apache License 2.0
+  - Copyright © 2022 Hancom Inc.
+  - https://github.com/hancom-io/hwpx-owpml-model
+  - Official OWPML C++ reference model. Used to verify element/attribute
+    definitions, child structures, and serialization order for `CPictureType`,
+    `CRectangleType`, `CLineType`, `CTableType`, and related shape classes.
+  - **No code from this repository is included in or distributed with PolyDonky.**
+
+- **`ai-screams/HwpForge`** — License per repository
+  - https://github.com/ai-screams/HwpForge
+  - Independent Rust implementation of HWPX read/write. Used as a cross-reference
+    for serialization patterns and edge cases.
+  - **No code from this repository is included in or distributed with PolyDonky.**
+
+### Community Resources
+
+- **KS X 6101 ↔ Hancom 구현 차이 정리 스프레드시트**
+  - https://docs.google.com/spreadsheets/d/1jqXPUVZv1QYcoruJgek2GKYXkhbyaZ68cDjbb1MeyYk/edit
+  - Community-maintained document tracking errata in the KS X 6101 standard
+    and points where Hancom Office's actual HWPX implementation diverges
+    from the standard.

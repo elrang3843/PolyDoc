@@ -22,7 +22,8 @@
             </Grid.ColumnDefinitions>
 
             <!-- ── 탭 패널 ── -->
-            <TabControl Grid.Column="0"
+            <TabControl x:Name="MainTabControl"
+                        Grid.Column="0"
                         Background="{DynamicResource Surface}"
                         BorderBrush="{DynamicResource Divider}">
 
@@ -235,16 +236,26 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="6" />
+                            <ColumnDefinition Width="36" />
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0"
                                    Text="{Binding PageFormatColumns, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TxtColumns"
+                        <TextBox   Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtColumns"
                                    Padding="4,3"
                                    Background="{DynamicResource SurfaceAlt}"
                                    Foreground="{DynamicResource OnSurface}"
@@ -254,7 +265,7 @@
                         <TextBlock Grid.Row="2" Grid.Column="0"
                                    Text="{Binding PageFormatColumnGap, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" x:Name="TxtColumnGap"
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtColumnGap"
                                    Padding="4,3"
                                    Background="{DynamicResource SurfaceAlt}"
                                    Foreground="{DynamicResource OnSurface}"
@@ -264,13 +275,293 @@
                         <TextBlock Grid.Row="4" Grid.Column="0"
                                    Text="{Binding PageFormatPageNumberStart, Source={x:Static svc:LocalizedStrings.Instance}}"
                                    VerticalAlignment="Center" />
-                        <TextBox   Grid.Row="4" Grid.Column="1" x:Name="TxtPageNumberStart"
+                        <TextBox   Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtPageNumberStart"
                                    Padding="4,3"
                                    Background="{DynamicResource SurfaceAlt}"
                                    Foreground="{DynamicResource OnSurface}"
                                    BorderBrush="{DynamicResource Divider}"
                                    TextChanged="OnLayoutChanged" />
+
+                        <!-- ── 단 구분선 ── -->
+                        <CheckBox Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4"
+                                  x:Name="ChkColumnDividerVisible"
+                                  Content="{Binding PageFormatColumnDividerVisible, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                  Checked="OnDividerVisibleChanged"
+                                  Unchecked="OnDividerVisibleChanged" />
+
+                        <TextBlock Grid.Row="8" Grid.Column="0"
+                                   Text="{Binding PageFormatColumnDividerColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="8" Grid.Column="1" x:Name="TxtColumnDividerColor"
+                                   Padding="4,3"
+                                   Background="{DynamicResource SurfaceAlt}"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   BorderBrush="{DynamicResource Divider}"
+                                   TextChanged="OnDividerColorChanged" />
+                        <Button x:Name="BtnColumnDividerColorPick"
+                                Grid.Row="8" Grid.Column="3"
+                                Height="26"
+                                BorderBrush="{DynamicResource Divider}"
+                                BorderThickness="1"
+                                Click="OnDividerColorPickClick"
+                                Padding="0">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}" />
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <TextBlock Grid.Row="10" Grid.Column="0"
+                                   Text="{Binding PageFormatColumnDividerThickness, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" />
+                        <TextBox   Grid.Row="10" Grid.Column="1" Grid.ColumnSpan="3" x:Name="TxtColumnDividerThickness"
+                                   Padding="4,3"
+                                   Background="{DynamicResource SurfaceAlt}"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   BorderBrush="{DynamicResource Divider}"
+                                   TextChanged="OnLayoutChanged" />
+
+                        <TextBlock Grid.Row="12" Grid.Column="0"
+                                   Text="{Binding PageFormatColumnDividerStyle, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox  Grid.Row="12" Grid.Column="1" Grid.ColumnSpan="3" x:Name="CboColumnDividerStyle"
+                                   Background="{DynamicResource SurfaceAlt}"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   BorderBrush="{DynamicResource Divider}"
+                                   SelectionChanged="OnDividerStyleChanged">
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleNone,   Source={x:Static svc:LocalizedStrings.Instance}}" />
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleSolid,  Source={x:Static svc:LocalizedStrings.Instance}}" />
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleDashed, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                            <ComboBoxItem Content="{Binding ColumnDividerStyleDotted, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                        </ComboBox>
                     </Grid>
+                </TabItem>
+
+                <!-- ── 머리말/꼬리말 탭 ── -->
+                <TabItem x:Name="TabHeaderFooter"
+                         Header="{Binding PageFormatHeaderFooterTab, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <DockPanel Margin="10,8" LastChildFill="True">
+
+                        <!-- 서식 툴바 -->
+                        <Border DockPanel.Dock="Top"
+                                Background="{DynamicResource SurfaceVariant}"
+                                BorderBrush="{DynamicResource Divider}"
+                                BorderThickness="1"
+                                Margin="0,0,0,8"
+                                Padding="4,3">
+                            <WrapPanel Orientation="Horizontal">
+                                <ComboBox x:Name="CboHFFontFamily"
+                                          Width="130" Height="22" Margin="1,0"
+                                          IsEditable="True"
+                                          ToolTip="{Binding PageFormatHFToolbarFontFamily, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                          SelectionChanged="OnHFFontFamilyChanged"
+                                          LostFocus="OnHFFontFamilyLostFocus"/>
+                                <Separator Margin="4,1"/>
+                                <ToggleButton x:Name="BtnHFBold"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarBold, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFBold">
+                                    <TextBlock Text="B" FontWeight="Bold"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFItalic"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarItalic, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFItalic">
+                                    <TextBlock Text="I" FontStyle="Italic"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFUnderline"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarUnderline, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFUnderline">
+                                    <TextBlock Text="U" TextDecorations="Underline"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFStrike"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarStrike, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFStrikethrough">
+                                    <TextBlock Text="S" TextDecorations="Strikethrough"/>
+                                </ToggleButton>
+                                <Separator Margin="4,1"/>
+                                <ComboBox x:Name="CboHFFontSize"
+                                          Width="54" Height="22" Margin="1,0"
+                                          IsEditable="True"
+                                          ToolTip="{Binding PageFormatHFToolbarFontSize, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                          SelectionChanged="OnHFFontSizeChanged"
+                                          LostFocus="OnHFFontSizeLostFocus"/>
+                                <Separator Margin="4,1"/>
+                                <Button x:Name="BtnHFFontColor"
+                                        Width="26" Height="22" Margin="1,0"
+                                        ToolTip="{Binding PageFormatHFToolbarColor, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                        Click="OnHFFontColor">
+                                    <Grid Width="16" Height="14">
+                                        <TextBlock Text="A" FontWeight="Bold" FontSize="10"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Top"
+                                                   Margin="0,0,0,3"/>
+                                        <Rectangle x:Name="HFColorBar" Height="3"
+                                                   VerticalAlignment="Bottom"
+                                                   Fill="Black"/>
+                                    </Grid>
+                                </Button>
+                                <Separator Margin="4,1"/>
+                                <ToggleButton x:Name="BtnHFAlignLeft"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignLeft, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignLeft">
+                                    <TextBlock Text="≡" FontSize="11" HorizontalAlignment="Left"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFAlignCenter"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignCenter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignCenter">
+                                    <TextBlock Text="≡" FontSize="11" HorizontalAlignment="Center"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFAlignRight"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignRight, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignRight">
+                                    <TextBlock Text="≡" FontSize="11" HorizontalAlignment="Right"/>
+                                </ToggleButton>
+                                <ToggleButton x:Name="BtnHFAlignJustify"
+                                              Width="24" Height="22" Margin="1,0"
+                                              ToolTip="{Binding PageFormatHFToolbarAlignJustify, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                              Click="OnHFAlignJustify">
+                                    <TextBlock Text="≡" FontSize="11"/>
+                                </ToggleButton>
+                                <Separator Margin="4,1"/>
+                                <ComboBox x:Name="CboHFToken"
+                                          Width="136" Height="22" Margin="1,0"/>
+                                <Button Content="{Binding PageFormatHFTokenInsert, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                        Width="46" Height="22" Margin="2,0,0,0"
+                                        Click="OnInsertToken"/>
+                            </WrapPanel>
+                        </Border>
+
+                        <!-- 스크롤 가능 콘텐츠 -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+
+                                <!-- 머리말 섹션 -->
+                                <TextBlock Text="{Binding PageFormatHeaderGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                           FontWeight="SemiBold" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"
+                                           Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding PageFormatHFLeft, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                                   FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Margin="0,0,0,2"/>
+                                        <RichTextBox x:Name="RtbHeaderLeft" Height="56"
+                                                     FontSize="12" AcceptsReturn="True"
+                                                     SpellCheck.IsEnabled="False"
+                                                     Background="{DynamicResource SurfaceAlt}"
+                                                     Foreground="{DynamicResource OnSurface}"
+                                                     BorderBrush="{DynamicResource Divider}"
+                                                     GotFocus="OnRtbGotFocus"
+                                                     SelectionChanged="OnRtbSelectionChanged"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="{Binding PageFormatHFCenter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                                   FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Margin="0,0,0,2"/>
+                                        <RichTextBox x:Name="RtbHeaderCenter" Height="56"
+                                                     FontSize="12" AcceptsReturn="True"
+                                                     SpellCheck.IsEnabled="False"
+                                                     Background="{DynamicResource SurfaceAlt}"
+                                                     Foreground="{DynamicResource OnSurface}"
+                                                     BorderBrush="{DynamicResource Divider}"
+                                                     GotFocus="OnRtbGotFocus"
+                                                     SelectionChanged="OnRtbSelectionChanged"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="4">
+                                        <TextBlock Text="{Binding PageFormatHFRight, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                                   FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Margin="0,0,0,2"/>
+                                        <RichTextBox x:Name="RtbHeaderRight" Height="56"
+                                                     FontSize="12" AcceptsReturn="True"
+                                                     SpellCheck.IsEnabled="False"
+                                                     Background="{DynamicResource SurfaceAlt}"
+                                                     Foreground="{DynamicResource OnSurface}"
+                                                     BorderBrush="{DynamicResource Divider}"
+                                                     GotFocus="OnRtbGotFocus"
+                                                     SelectionChanged="OnRtbSelectionChanged"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Separator Margin="0,12,0,12" Background="{DynamicResource Divider}"/>
+
+                                <!-- 꼬리말 섹션 -->
+                                <TextBlock Text="{Binding PageFormatFooterGroup, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                           FontWeight="SemiBold" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"
+                                           Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding PageFormatHFLeft, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                                   FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Margin="0,0,0,2"/>
+                                        <RichTextBox x:Name="RtbFooterLeft" Height="56"
+                                                     FontSize="12" AcceptsReturn="True"
+                                                     SpellCheck.IsEnabled="False"
+                                                     Background="{DynamicResource SurfaceAlt}"
+                                                     Foreground="{DynamicResource OnSurface}"
+                                                     BorderBrush="{DynamicResource Divider}"
+                                                     GotFocus="OnRtbGotFocus"
+                                                     SelectionChanged="OnRtbSelectionChanged"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="{Binding PageFormatHFCenter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                                   FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Margin="0,0,0,2"/>
+                                        <RichTextBox x:Name="RtbFooterCenter" Height="56"
+                                                     FontSize="12" AcceptsReturn="True"
+                                                     SpellCheck.IsEnabled="False"
+                                                     Background="{DynamicResource SurfaceAlt}"
+                                                     Foreground="{DynamicResource OnSurface}"
+                                                     BorderBrush="{DynamicResource Divider}"
+                                                     GotFocus="OnRtbGotFocus"
+                                                     SelectionChanged="OnRtbSelectionChanged"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="4">
+                                        <TextBlock Text="{Binding PageFormatHFRight, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                                   FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Margin="0,0,0,2"/>
+                                        <RichTextBox x:Name="RtbFooterRight" Height="56"
+                                                     FontSize="12" AcceptsReturn="True"
+                                                     SpellCheck.IsEnabled="False"
+                                                     Background="{DynamicResource SurfaceAlt}"
+                                                     Foreground="{DynamicResource OnSurface}"
+                                                     BorderBrush="{DynamicResource Divider}"
+                                                     GotFocus="OnRtbGotFocus"
+                                                     SelectionChanged="OnRtbSelectionChanged"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 토큰 힌트 -->
+                                <TextBlock Text="{Binding PageFormatHFTokenHint, Source={x:Static svc:LocalizedStrings.Instance}}"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource OnSurfaceMuted}"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
                 </TabItem>
 
             </TabControl>

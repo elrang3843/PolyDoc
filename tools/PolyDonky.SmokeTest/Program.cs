@@ -1,10 +1,13 @@
 using System.Text;
 using PolyDonky.Codecs.Docx;
+using PolyDonky.Codecs.Html;
 using PolyDonky.Codecs.Hwpx;
 using PolyDonky.Codecs.Markdown;
 using PolyDonky.Codecs.Text;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
+using PdXmlReader = PolyDonky.Codecs.Xml.XmlReader;
+using PdXmlWriter = PolyDonky.Codecs.Xml.XmlWriter;
 
 // PolyDonky.SmokeTest — BCL 만으로 동작하는 자체 스모크 러너.
 // xUnit/NuGet 차단 환경에서도 핵심 라운드트립을 검증하기 위한 임시 도구.
@@ -18,6 +21,8 @@ harness.Run("IWPF round-trip (manifest + integrity)", IwpfRoundTrip);
 harness.Run("IWPF tampering detection", IwpfTamperingDetection);
 harness.Run("DOCX round-trip (headings + emphasis)", DocxRoundTrip);
 harness.Run("HWPX round-trip (KS X 6101 self interop)", HwpxRoundTrip);
+harness.Run("HTML round-trip (HTML5 + tables + links)", HtmlRoundTrip);
+harness.Run("XML/XHTML round-trip (well-formed XHTML5)", XmlRoundTrip);
 
 return harness.Finish();
 
@@ -201,6 +206,81 @@ static void HwpxRoundTrip()
     SmokeHarness.Equal(OutlineLevel.H2, paragraphs[0].Style.Outline, "HWPX heading outline");
     SmokeHarness.Equal(Alignment.Center, paragraphs[1].Style.Alignment, "HWPX center alignment");
     SmokeHarness.True(paragraphs[1].Runs.Any(r => r.Style.Bold && r.Text == "굵게"), "HWPX bold run preserved");
+}
+
+static void HtmlRoundTrip()
+{
+    const string source =
+        "<!DOCTYPE html><html><body>" +
+        "<h1>HTML 스모크</h1>" +
+        "<p>본문 <strong>굵게</strong> + <a href=\"https://x\">링크</a></p>" +
+        "<ul><li><input type=\"checkbox\" checked> 한 일</li>" +
+        "<li><input type=\"checkbox\"> 할 일</li></ul>" +
+        "<blockquote><p>인용</p></blockquote>" +
+        "<pre><code class=\"language-py\">print(1)</code></pre>" +
+        "<hr>" +
+        "<table><thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td>1</td><td style=\"text-align:right\">2</td></tr></tbody></table>" +
+        "</body></html>";
+
+    var doc = HtmlReader.FromHtml(source);
+
+    var ps = doc.EnumerateParagraphs().ToList();
+    SmokeHarness.Equal(OutlineLevel.H1, ps[0].Style.Outline, "HTML H1");
+    SmokeHarness.True(ps.Any(p => p.Style.QuoteLevel >= 1),       "blockquote level recorded");
+    SmokeHarness.True(doc.Sections[0].Blocks.OfType<ThematicBreakBlock>().Any(), "hr → thematic break");
+    SmokeHarness.True(ps.Any(p => p.Style.CodeLanguage == "py"),  "code language preserved");
+    SmokeHarness.True(ps.Any(p => p.Style.ListMarker?.Checked == true),  "task list checked");
+    SmokeHarness.True(ps.Any(p => p.Style.ListMarker?.Checked == false), "task list unchecked");
+    SmokeHarness.Equal(1, doc.Sections[0].Blocks.OfType<PolyDonky.Core.Table>().Count(), "table count");
+
+    var rendered = HtmlWriter.ToHtml(doc, fullDocument: false);
+    SmokeHarness.True(rendered.Contains("<h1>"),                  "writer emits h1");
+    SmokeHarness.True(rendered.Contains("<a href=\"https://x\">"), "writer emits anchor");
+    SmokeHarness.True(rendered.Contains("language-py"),           "writer emits code language");
+    SmokeHarness.True(rendered.Contains("<input type=\"checkbox\""), "writer emits task checkbox");
+    SmokeHarness.True(rendered.Contains("<thead>"),               "writer emits thead");
+
+    var reread = HtmlReader.FromHtml(rendered);
+    SmokeHarness.Equal(OutlineLevel.H1, reread.EnumerateParagraphs().First().Style.Outline, "round-trip H1");
+}
+
+static void XmlRoundTrip()
+{
+    var doc = new PolyDonkyument();
+    doc.Sections.Add(new Section());
+    var h = new Paragraph { Style = { Outline = OutlineLevel.H1 } }; h.AddText("XML 스모크");
+    doc.Sections[0].Blocks.Add(h);
+    var p = new Paragraph(); p.AddText("본문 ");
+    p.AddText("굵게", new RunStyle { Bold = true });
+    p.AddText(" + ");
+    p.Runs.Add(new Run { Text = "링크", Style = new RunStyle(), Url = "https://x" });
+    doc.Sections[0].Blocks.Add(p);
+    doc.Sections[0].Blocks.Add(new ThematicBreakBlock());
+
+    var xml = PdXmlWriter.ToXml(doc);
+    SmokeHarness.True(xml.StartsWith("<?xml "),                       "writer emits XML declaration");
+    SmokeHarness.True(xml.Contains("xmlns=\"http://www.w3.org/1999/xhtml\""), "writer emits xhtml namespace");
+    SmokeHarness.True(xml.Contains("<hr/>"),                          "writer self-closes hr");
+    SmokeHarness.True(xml.Contains("<meta charset=\"utf-8\"/>"),      "writer self-closes meta");
+
+    // System.Xml 로 well-formed 확인.
+    var settings = new System.Xml.XmlReaderSettings
+    {
+        DtdProcessing = System.Xml.DtdProcessing.Parse,
+        XmlResolver   = null,
+    };
+    using (var sr = new StringReader(xml))
+    using (var xr = System.Xml.XmlReader.Create(sr, settings))
+    {
+        while (xr.Read()) { }  // 형식 오류 시 예외.
+    }
+
+    var read = PdXmlReader.FromXml(xml);
+    var rps  = read.EnumerateParagraphs().ToList();
+    SmokeHarness.Equal(OutlineLevel.H1, rps[0].Style.Outline,        "round-trip H1");
+    SmokeHarness.True(read.Sections[0].Blocks.OfType<ThematicBreakBlock>().Any(), "round-trip thematic break");
+    SmokeHarness.True(rps.SelectMany(rp => rp.Runs).Any(r => r.Url == "https://x"), "round-trip link URL");
 }
 
 static byte[] TamperDocumentJson(byte[] original)

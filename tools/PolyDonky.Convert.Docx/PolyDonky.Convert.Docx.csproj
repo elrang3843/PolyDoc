@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PolyDonky.Convert.Docx</RootNamespace>
+    <AssemblyName>PolyDonky.Convert.Docx</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PolyDonky.Core\PolyDonky.Core.csproj" />
+    <ProjectReference Include="..\..\src\PolyDonky.Iwpf\PolyDonky.Iwpf.csproj" />
+    <ProjectReference Include="..\..\src\PolyDonky.Codecs.Docx\PolyDonky.Codecs.Docx.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -408,6 +408,24 @@ Licensed under the Apache License, Version 2.0
 
 ---
 
+## HWPX / OWPML 구현 참고 자료
+
+PolyDonky 의 HWPX 코덱(`PolyDonky.Codecs.Hwpx`)은 다음 공개 자료를 참고해 구현했습니다.
+HWPX 의 한컴 호환 동작을 정확히 맞출 수 있도록 자료를 공개해 주신 분들께 감사드립니다.
+
+| 자료 | 공개 주체 | 활용 내용 |
+|------|----------|----------|
+| [한컴 HWP/OWPML 형식 안내](https://www.hancom.com/support/downloadCenter/hwpOwpml) — 한컴 다운로드 센터 | 한글과컴퓨터 (Hancom Inc.) | HWPX 파일 형식 공개 안내, 정의서 다운로드 |
+| [`hancom-io/hwpx-owpml-model`](https://github.com/hancom-io/hwpx-owpml-model) (Apache-2.0) | 한글과컴퓨터 (Hancom Inc.) | 공식 OWPML C++ 참조 모델 — `CPictureType`/`CRectangleType`/`CLineType` 등 요소·속성·자식 구조와 직렬화 순서 검증 |
+| [KS X 6101 OWPML 표준](https://standard.go.kr/KSCI/api/std/viewMachine.do?reformNo=03&tmprKsNo=KSX6101&formType=STD) — 국가표준 | 한국산업표준 (KATS) | 워드프로세서 마크업 언어 국가표준 본문·부속서 |
+| [KS X 6101 ↔ 한컴 구현 차이 정리](https://docs.google.com/spreadsheets/d/1jqXPUVZv1QYcoruJgek2GKYXkhbyaZ68cDjbb1MeyYk/edit) | 커뮤니티 정리 (제3자) | 표준의 오타·불일치, 한컴 오피스가 표준과 다르게 구현하거나 표준 외 추가한 항목 정리 |
+| [`ai-screams/HwpForge`](https://github.com/ai-screams/HwpForge) | Rust 커뮤니티 구현 | HWPX read/write 검증 케이스 — 요소 직렬화 패턴 비교 참고 |
+
+라이선스가 표시된 외부 코드(예: `hwpx-owpml-model` 의 Apache-2.0)는 PolyDonky 에 직접 통합·재배포되지 않습니다.
+PolyDonky 는 위 자료들을 **명세 이해를 위한 참고 문헌**으로만 사용하며, 모든 코드는 PolyDonky 가 자체 작성합니다.
+
+---
+
 <p align="center">
   <sub>PolyDonky — 한국어 문서 생태계와 글로벌 워드프로세서 포맷을 한 자리에서.</sub><br/>
   <sub>© 2026 HANDTECH (핸텍) · Noh JinMoon (노진문)</sub>

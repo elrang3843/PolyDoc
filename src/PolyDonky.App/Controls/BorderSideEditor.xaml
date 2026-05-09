@@ -1,0 +1,49 @@
+<UserControl x:Class="PolyDonky.App.Controls.BorderSideEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:PolyDonky.App.Controls"
+             FontFamily="{DynamicResource UiFont}"
+             Foreground="{DynamicResource OnSurface}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="64" /><!-- 라벨 -->
+            <ColumnDefinition Width="80" /><!-- 사용 여부 체크 -->
+            <ColumnDefinition Width="48" /><!-- 두께 -->
+            <ColumnDefinition Width="22" /><!-- pt -->
+            <ColumnDefinition Width="*"  /><!-- 색상 -->
+            <ColumnDefinition Width="6"  />
+            <ColumnDefinition Width="80" /><!-- 선 종류 -->
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Column="0" x:Name="LabelText"
+                   Text="면" VerticalAlignment="Center"
+                   Margin="0,0,4,0" />
+
+        <CheckBox  Grid.Column="1" x:Name="EnableCheck"
+                   Content="설정"
+                   VerticalAlignment="Center"
+                   Checked="OnEnableChanged"
+                   Unchecked="OnEnableChanged" />
+
+        <TextBox   Grid.Column="2" x:Name="ThicknessBox"
+                   Text="0.75" TextAlignment="Right"
+                   VerticalContentAlignment="Center" />
+
+        <TextBlock Grid.Column="3" Text=" pt"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource OnSurfaceMuted}" />
+
+        <ctrl:ColorPickerBox Grid.Column="4" x:Name="ColorPicker"
+                             AllowEmpty="True" />
+
+        <ComboBox  Grid.Column="6" x:Name="StyleCombo"
+                   VerticalAlignment="Center"
+                   SelectedIndex="0">
+            <ComboBoxItem Content="실선"   Tag="Solid"   />
+            <ComboBoxItem Content="파선"   Tag="Dashed"  />
+            <ComboBoxItem Content="점선"   Tag="Dotted"  />
+            <ComboBoxItem Content="이중선" Tag="Double"  />
+            <ComboBoxItem Content="일점쇄" Tag="DashDot" />
+        </ComboBox>
+    </Grid>
+</UserControl>

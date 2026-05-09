@@ -1,5 +1,32 @@
 namespace PolyDonky.Core;
 
+using System.Text.Json.Serialization;
+
+/// <summary>표·셀 테두리·HR 등에 공통으로 쓰는 선 종류.</summary>
+public enum BorderLineStyle
+{
+    Solid = 0,
+    Dashed,
+    Dotted,
+    Double,
+    DashDot,
+}
+
+/// <summary>셀/표 테두리 한 면의 스타일 — 두께·색상·선 종류.</summary>
+public readonly struct CellBorderSide
+{
+    public double          ThicknessPt { get; init; }
+    public string?         Color       { get; init; }
+    public BorderLineStyle LineStyle   { get; init; }
+
+    public CellBorderSide(double thicknessPt, string? color = null, BorderLineStyle lineStyle = BorderLineStyle.Solid)
+    {
+        ThicknessPt = thicknessPt;
+        Color       = color;
+        LineStyle   = lineStyle;
+    }
+}
+
 /// <summary>표 수평 정렬 (페이지 기준).</summary>
 public enum TableHAlign { Left, Center, Right }
 
@@ -47,6 +74,21 @@ public sealed class Table : Block, IOverlayAnchored
     /// <summary>표 전체 배경색 hex. null 이면 투명.</summary>
     public string? BackgroundColor { get; set; }
 
+    /// <summary>표 캡션 텍스트 (HTML <c>&lt;caption&gt;</c>, DOCX table title 에 대응).
+    /// null 이면 캡션 없음. 렌더러는 표 위에 가운데 정렬 작은 단락으로 표시한다.</summary>
+    public string? Caption { get; set; }
+
+    // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
+    /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
+    public bool RepeatHeaderRowsOnBreak { get; set; } = true;
+    /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
+    public int HeaderColumnCount { get; set; }
+
+    /// <summary>인접 셀 보더가 단일 선으로 합쳐지는지(true) 또는 셀별로 별도 보더를 갖는지(false).
+    /// CSS <c>border-collapse:collapse</c> 에 대응. 기본 true — 워드프로세서 도메인의 일반적인 표 외형.
+    /// false (separate) 이면 각 셀이 자기 4면 보더를 모두 그려 셀 사이에 doubled 라인이 생긴다.</summary>
+    public bool BorderCollapse { get; set; } = true;
+
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }
@@ -59,11 +101,32 @@ public sealed class Table : Block, IOverlayAnchored
     public double OuterMarginLeftMm   { get; set; }
     public double OuterMarginRightMm  { get; set; }
 
-    // ── 표 외곽선 ────────────────────────────────────────────────────────
-    /// <summary>표 외곽선 두께 (pt). 0 이하면 외곽선 없음.</summary>
+    // ── 표 외곽선 — 공통값 (면별 미지정 시 사용) ────────────────────────
+    /// <summary>표 외곽선 두께 공통값 (pt). 0 이하면 외곽선 없음.</summary>
     public double BorderThicknessPt { get; set; }
-    /// <summary>표 외곽선 색상 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8).</summary>
+    /// <summary>표 외곽선 색상 공통값 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8).</summary>
     public string? BorderColor { get; set; }
+
+    // ── 표 외곽선 — 면별 (없으면 공통값 사용) ────────────────────────────
+    /// <summary>표 윗쪽 외곽선. null 이면 공통 BorderThicknessPt/Color 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderTop { get; set; }
+    /// <summary>표 아래쪽 외곽선. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderBottom { get; set; }
+    /// <summary>표 왼쪽 외곽선. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderLeft { get; set; }
+    /// <summary>표 오른쪽 외곽선. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderRight { get; set; }
+
+    /// <summary>표 안쪽 가로선(행 사이) 공통 스타일. null 이면 인접 셀 테두리 합성으로 표시.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? InnerBorderHorizontal { get; set; }
+    /// <summary>표 안쪽 세로선(열 사이) 공통 스타일. null 이면 인접 셀 테두리 합성으로 표시.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? InnerBorderVertical { get; set; }
 }
 
 public sealed class TableColumn
@@ -99,10 +162,23 @@ public sealed class TableCell
     public double PaddingRightMm  { get; set; }
 
     // ── 테두리 ───────────────────────────────────────────────────────────
-    /// <summary>테두리 두께 (pt). 0 이하면 렌더러 기본값 (0.75pt) 사용.</summary>
+    /// <summary>테두리 두께 (pt). 0 이하면 렌더러 기본값 (0.75pt) 사용. 면별 지정이 없을 때 공통값.</summary>
     public double BorderThicknessPt { get; set; }
-    /// <summary>테두리 색상 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8).</summary>
+    /// <summary>테두리 색상 hex. null / 빈 문자열이면 기본 연회색 (#C8C8C8). 면별 지정이 없을 때 공통값.</summary>
     public string? BorderColor { get; set; }
+
+    /// <summary>위쪽 테두리. null 이면 BorderThicknessPt/BorderColor 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderTop { get; set; }
+    /// <summary>아래쪽 테두리. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderBottom { get; set; }
+    /// <summary>왼쪽 테두리. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderLeft { get; set; }
+    /// <summary>오른쪽 테두리. null 이면 공통값 사용.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorderSide? BorderRight { get; set; }
 
     // ── 배경색 ───────────────────────────────────────────────────────────
     /// <summary>셀 배경색 hex. null / 빈 문자열이면 투명 (배경 없음).</summary>

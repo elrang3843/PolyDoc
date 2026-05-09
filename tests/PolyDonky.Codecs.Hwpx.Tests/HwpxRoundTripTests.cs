@@ -302,35 +302,31 @@ public class HwpxRoundTripTests
     }
 
     [Fact]
-    public void RoundTrip_PreservesHwpxOpaqueShape()
+    public void RoundTrip_HwpxShapeRoundTripsAsShapeObject()
     {
-        // hp:rect 모양의 최소 XML — 실제 한컴 hwpx 도형 구조 시뮬레이션.
-        const string rectXml = "<hp:rect xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" " +
-                                "width=\"5000\" height=\"3000\" />";
-
+        // ShapeObject → HWPX → 다시 읽으면 ShapeObject 로 복원되는지 확인.
         var doc = new PolyDonkyument();
         var section = new Section();
         doc.Sections.Add(section);
         section.Blocks.Add(Paragraph.Of("앞"));
-        section.Blocks.Add(new OpaqueBlock
+        section.Blocks.Add(new ShapeObject
         {
-            Format = "hwpx",
-            Kind = "rect",
-            Xml = rectXml,
-            DisplayLabel = "[사각형]",
+            Kind = ShapeKind.Rectangle,
+            WidthMm = 50,
+            HeightMm = 30,
+            WrapMode = ImageWrapMode.InFrontOfText,
+            StrokeColor = "#000000",
         });
         section.Blocks.Add(Paragraph.Of("뒤"));
 
         var roundTripped = WriteThenRead(doc);
         var blocks = roundTripped.Sections[0].Blocks;
 
-        // OpaqueBlock 이 보존되어 중간에 살아남아야 한다.
-        var opaque = blocks.OfType<OpaqueBlock>().SingleOrDefault();
-        Assert.NotNull(opaque);
-        Assert.Equal("hwpx", opaque.Format);
-        Assert.Equal("rect", opaque.Kind);
-        Assert.NotNull(opaque.Xml);
-        Assert.Contains("rect", opaque.Xml, StringComparison.Ordinal);
+        var shape = blocks.OfType<ShapeObject>().SingleOrDefault();
+        Assert.NotNull(shape);
+        Assert.Equal(ShapeKind.Rectangle, shape.Kind);
+        Assert.Equal(50, shape.WidthMm, 0.5);
+        Assert.Equal(30, shape.HeightMm, 0.5);
     }
 
     [Fact]
@@ -350,6 +346,136 @@ public class HwpxRoundTripTests
         // docx 포맷 OpaqueBlock 은 HWPX 에 placeholder 단락으로 변환된다 — 예외 없이 완료돼야 한다.
         var roundTripped = WriteThenRead(doc);
         Assert.NotEmpty(roundTripped.EnumerateParagraphs());
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesTableBorderColorAndThickness()
+    {
+        var t = new Table {
+            BorderColor = "#FF0000",
+            BorderThicknessPt = 2.0,
+        };
+        t.Columns.Add(new TableColumn { WidthMm = 30 });
+        t.Rows.Add(new TableRow { Cells = { new TableCell { Blocks = { Paragraph.Of("A") } } } });
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        section.Blocks.Add(t);
+        doc.Sections.Add(section);
+
+        var rt = WriteThenRead(doc);
+        var rtTable = rt.Sections[0].Blocks.OfType<Table>().Single();
+
+        Assert.Equal("#FF0000", rtTable.BorderColor);
+        // 2pt → 표준 0.7mm 로 snap 후 reader 가 mm → pt 환산 — 2pt 근처값.
+        Assert.InRange(rtTable.BorderThicknessPt, 1.9, 2.1);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesTableBackgroundColor()
+    {
+        var t = new Table {
+            BorderColor = "#000000",
+            BorderThicknessPt = 0.5,
+            BackgroundColor = "#EEEEEE",
+        };
+        t.Columns.Add(new TableColumn { WidthMm = 30 });
+        t.Rows.Add(new TableRow { Cells = { new TableCell { Blocks = { Paragraph.Of("A") } } } });
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        section.Blocks.Add(t);
+        doc.Sections.Add(section);
+
+        var rt = WriteThenRead(doc);
+        var rtTable = rt.Sections[0].Blocks.OfType<Table>().Single();
+
+        Assert.Equal("#EEEEEE", rtTable.BackgroundColor);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesTableCellBorderColorAndThickness()
+    {
+        // 2x2 표 — 좌상 셀의 inner side(bottom/right) 가 cell BorderColor 를 보존.
+        // 1x1 표는 모든 면이 외곽 = 표 BorderColor 라서 cell 색이 인코딩에 안 들어감.
+        // 2pt → 0.7mm 정확 매핑 → reader 가 다시 ~1.98pt 회수 (snap 오차 < 1%).
+        // 다른 값은 표준 너비에 매핑되며 round-trip 오차가 클 수 있음.
+        TableCell MakeCell(string color) => new()
+        {
+            Blocks = { Paragraph.Of("X") },
+            BorderColor = color,
+            BorderThicknessPt = 2.0,
+        };
+        var t = new Table { BorderColor = "#000000", BorderThicknessPt = 0.5 };
+        t.Columns.Add(new TableColumn { WidthMm = 30 });
+        t.Columns.Add(new TableColumn { WidthMm = 30 });
+        t.Rows.Add(new TableRow { Cells = { MakeCell("#0000FF"), MakeCell("#0000FF") } });
+        t.Rows.Add(new TableRow { Cells = { MakeCell("#0000FF"), MakeCell("#0000FF") } });
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        section.Blocks.Add(t);
+        doc.Sections.Add(section);
+
+        var rt = WriteThenRead(doc);
+        var rtCell = rt.Sections[0].Blocks.OfType<Table>().Single().Rows[0].Cells[0];
+
+        Assert.Equal("#0000FF", rtCell.BorderColor);
+        Assert.InRange(rtCell.BorderThicknessPt, 1.9, 2.1);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesForcePageBreakBefore()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        section.Blocks.Add(Paragraph.Of("첫 번째 단락"));
+        var p2 = Paragraph.Of("두 번째 단락 — 강제 페이지 나누기");
+        p2.Style.ForcePageBreakBefore = true;
+        section.Blocks.Add(p2);
+        section.Blocks.Add(Paragraph.Of("세 번째 단락"));
+
+        var rt = WriteThenRead(doc);
+        var paragraphs = rt.Sections[0].Blocks.OfType<Paragraph>().ToList();
+
+        Assert.Equal(3, paragraphs.Count);
+        Assert.False(paragraphs[0].Style.ForcePageBreakBefore);
+        Assert.True(paragraphs[1].Style.ForcePageBreakBefore);
+        Assert.False(paragraphs[2].Style.ForcePageBreakBefore);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesFootnotesAndEndnotes()
+    {
+        var doc = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        var fn = new FootnoteEntry { Id = "fn01" };
+        fn.Blocks.Add(Paragraph.Of("각주 내용 A"));
+        doc.Footnotes.Add(fn);
+
+        var en = new FootnoteEntry { Id = "en01" };
+        en.Blocks.Add(Paragraph.Of("미주 내용 B"));
+        doc.Endnotes.Add(en);
+
+        var p = new Paragraph();
+        p.AddText("본문");
+        p.Runs.Add(new Run { FootnoteId = "fn01" });
+        p.AddText(" 텍스트");
+        p.Runs.Add(new Run { EndnoteId = "en01" });
+        section.Blocks.Add(p);
+
+        var rt = WriteThenRead(doc);
+
+        Assert.Single(rt.Footnotes);
+        Assert.Equal("각주 내용 A", rt.Footnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        Assert.Single(rt.Endnotes);
+        Assert.Equal("미주 내용 B", rt.Endnotes[0].Blocks.OfType<Paragraph>().First().GetPlainText());
+
+        var runs = rt.Sections[0].Blocks.OfType<Paragraph>().First().Runs;
+        Assert.Contains(runs, r => r.FootnoteId is not null);
+        Assert.Contains(runs, r => r.EndnoteId is not null);
     }
 
     private static byte[] WriteToBytes(PolyDonkyument doc)

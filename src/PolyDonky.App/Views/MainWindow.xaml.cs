@@ -200,7 +200,7 @@ public partial class MainWindow : Window
             if (onBorder != _tableColResizeHovering)
             {
                 _tableColResizeHovering = onBorder;
-                Mouse.OverrideCursor    = onBorder ? Cursors.SizeWE : null;
+                Mouse.OverrideCursor    = (onBorder || _colDivHovering) ? Cursors.SizeWE : null;
             }
         }
     }
@@ -299,6 +299,9 @@ public partial class MainWindow : Window
     // ── 페이지 구분선 ────────────────────────────────────────────────
     private double _pageHeightDip;  // 한 페이지 높이(DIP). 0이면 표시 안 함.
 
+    // ── 조판부호 보기 ────────────────────────────────────────────────
+    private bool _showTypesettingMarks;
+
     // ── BodyEditor 호환 심(shim) ─────────────────────────────────────
     // 활성 페이지 RTB 를 단일 편집기처럼 다루기 위한 프로퍼티.
     // Selection·CaretPosition·Document.Blocks 등 단일-RTB API 가 필요한 곳에서 사용한다.
@@ -323,6 +326,15 @@ public partial class MainWindow : Window
         PageEditorHost.PageTextChanged += OnEditorTextChanged;
         // 상태 표시줄 Insert/CapsLock/NumLock 갱신을 위해 윈도우 레벨 키 입력 가로채기.
         PreviewKeyDown += OnPreviewKeyDown;
+
+        // IME(한글 등) 조합 중에는 RTB 재구성을 미룬다 — 조합 도중 SetupPageEditors 가
+        // RTB 를 새로 만들면 IME 조합 상태(ㅈ + ㅏ → 자)가 끊겨 한 글자가 둘로 갈라진다.
+        AddHandler(System.Windows.Input.TextCompositionManager.PreviewTextInputStartEvent,
+            new System.Windows.Input.TextCompositionEventHandler(OnImeCompositionStart),
+            handledEventsToo: true);
+        AddHandler(System.Windows.Input.TextCompositionManager.PreviewTextInputEvent,
+            new System.Windows.Input.TextCompositionEventHandler(OnImeCompositionEnd),
+            handledEventsToo: true);
     }
 
     /// <summary>가장 최근에 키보드 포커스를 가졌던 RichTextBox.</summary>
@@ -345,10 +357,29 @@ public partial class MainWindow : Window
             vm.InsertShapeRequested   += OnInsertShapeRequested;
             vm.RefreshSystemKeys();
             vm.RefreshMemoryUsage();
+
+            // 각주/미주 패널 — 문서 바인딩 + 이벤트 연결
+            FootnotePanel.BindToDocument(vm.Document);
+            FootnotePanel.EntryDeleted        += OnFootnoteEntryDeleted;
+            FootnotePanel.EntryFocusRequested += OnFootnoteEntryFocusRequested;
+            FootnotePanel.CloseRequested      += (_, _) => SetFootnotePanelVisible(false);
         }
 
         // 각 페이지 RTB 에 대한 이벤트 구독·속성 설정은 ConfigurePageRtb 콜백에서 수행.
         // SetupPageEditors → PageEditorHost.SetupPages 호출 시 RTB 마다 ConfigurePageRtb 가 적용된다.
+
+        // OnLoaded 시점에는 WPF 첫 렌더링이 아직 완료되지 않아 오프스크린 RTB 의
+        // GetCharacterRect 가 Y=0 을 반환할 수 있다. Background 우선순위로 지연해
+        // 첫 렌더링 완료 후 올바른 측정값으로 재-페이지네이션한다.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            if (_viewModel?.Document is not null && _pageGeometry is not null)
+            {
+                UpdatePaginatedDoc();
+                SetupPageEditors();
+                RebuildOverlays();
+            }
+        });
 
         _statusTimer = new DispatcherTimer
         {
@@ -356,6 +387,9 @@ public partial class MainWindow : Window
         };
         _statusTimer.Tick += OnStatusTimerTick;
         _statusTimer.Start();
+
+        _showTypesettingMarks = LanguageService.ShowTypesettingMarks;
+        MiTypesettingMarks.IsChecked = _showTypesettingMarks;
     }
 
     /// <summary>
@@ -383,8 +417,10 @@ public partial class MainWindow : Window
 
     // ── 본문 RichTextBox 멀티-블록 클립보드 (Tag 완전 보존) ─────────────────
 
-    /// <summary>본문 RichTextBox 가 다루는 multi-block 선택의 Core JSON 직렬화 포맷.</summary>
-    private const string FlowSelectionClipboardFormat = "PolyDonky.FlowSelection.v1";
+    /// <summary>본문 RichTextBox 가 다루는 multi-block 선택 + 가져오기/내보내기 공통 포맷.</summary>
+    private const string IwpfFragmentClipboardFormat = "PolyDonky.IwpfFragment.v1";
+    /// <summary>이전 버전 클립보드 포맷 — 붙여넣기 폴백용.</summary>
+    private const string LegacyFlowSelectionFormat   = "PolyDonky.FlowSelection.v1";
 
     private void OnBodyEditorPreviewExecuted(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
     {
@@ -406,6 +442,10 @@ public partial class MainWindow : Window
     /// <summary>본문 선택 영역을 Core.Block 리스트로 추출해 PolyDonky.FlowSelection.v1 포맷으로 클립보드에 저장.</summary>
     private bool TryCopyFlowSelection(bool cut)
     {
+        // 단 교차 선택: 각 RTB 의 선택 텍스트를 순서대로 결합해 클립보드에 넣는다.
+        if (_crossSelActive)
+            return TryCopyCrossColumnSelection(cut);
+
         var sel = BodyEditor.Selection;
         if (sel.IsEmpty) return false;
 
@@ -417,11 +457,12 @@ public partial class MainWindow : Window
 
         try
         {
+            var fragment = new PolyDonky.Core.IwpfFragment { Blocks = coreBlocks };
             var json = System.Text.Json.JsonSerializer.Serialize(
-                coreBlocks, PolyDonky.Core.JsonDefaults.Options);
+                fragment, PolyDonky.Core.JsonDefaults.Options);
 
             var dataObj = new System.Windows.DataObject();
-            dataObj.SetData(FlowSelectionClipboardFormat, json);
+            dataObj.SetData(IwpfFragmentClipboardFormat, json);
             dataObj.SetText(sel.Text);  // 다른 앱에서 plain text 로 받을 수 있도록
 
             // XamlPackage / RTF 도 함께 — 외부 앱 호환용 (우리 앱에서는 우선 FlowSelection 사용).
@@ -463,25 +504,80 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// PolyDonky.FlowSelection.v1 클립보드 데이터를 캐럿 위치에 붙여넣는다.</summary>
+    /// 단 교차 선택(여러 RTB)이 활성일 때의 복사/잘라내기.
+    /// 각 RTB 의 선택 텍스트를 순서대로 결합해 클립보드에 넣는다.
+    /// </summary>
+    private bool TryCopyCrossColumnSelection(bool cut)
+    {
+        var selected = PageEditorHost.PageEditors
+            .Where(r => !r.Selection.IsEmpty)
+            .ToList();
+        if (selected.Count == 0) return false;
+
+        var text = string.Concat(selected.Select(r => r.Selection.Text));
+        try { System.Windows.Clipboard.SetText(text); }
+        catch { return false; }
+
+        if (cut)
+        {
+            foreach (var r in selected)
+                r.Selection.Text = string.Empty;
+            ClearCrossColumnSelection();
+            _viewModel?.MarkDirty();
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// IwpfFragment 클립보드 데이터를 캐럿 위치에 붙여넣는다.
+    /// 신규 포맷(<see cref="IwpfFragmentClipboardFormat"/>) 우선, 없으면 레거시 포맷으로 폴백.
+    /// </summary>
     private bool TryPasteFlowSelection()
     {
-        if (!System.Windows.Clipboard.ContainsData(FlowSelectionClipboardFormat)) return false;
-        if (System.Windows.Clipboard.GetData(FlowSelectionClipboardFormat) is not string json
-            || string.IsNullOrEmpty(json)) return false;
+        var cb = System.Windows.Clipboard.GetDataObject();
+        if (cb is null) return false;
 
-        List<PolyDonky.Core.Block>? blocks;
+        string? json = null;
+        if (cb.GetDataPresent(IwpfFragmentClipboardFormat))
+            json = cb.GetData(IwpfFragmentClipboardFormat) as string;
+        else if (cb.GetDataPresent(LegacyFlowSelectionFormat))
+            json = cb.GetData(LegacyFlowSelectionFormat) as string;
+
+        if (string.IsNullOrEmpty(json)) return false;
+
+        List<PolyDonky.Core.Block>? blocks = null;
         try
         {
-            blocks = System.Text.Json.JsonSerializer.Deserialize<List<PolyDonky.Core.Block>>(
+            // 신규: IwpfFragment 래퍼
+            var frag = System.Text.Json.JsonSerializer.Deserialize<PolyDonky.Core.IwpfFragment>(
                 json, PolyDonky.Core.JsonDefaults.Options);
+            blocks = frag?.Blocks;
         }
-        catch { return false; }
+        catch { }
+        if (blocks is null || blocks.Count == 0)
+        {
+            try
+            {
+                // 레거시: List<Block> 배열 직렬화
+                blocks = System.Text.Json.JsonSerializer.Deserialize<List<PolyDonky.Core.Block>>(
+                    json, PolyDonky.Core.JsonDefaults.Options);
+            }
+            catch { return false; }
+        }
         if (blocks is null || blocks.Count == 0) return false;
 
         foreach (var b in blocks) ResetCoreBlockId(b);
 
         if (!BodyEditor.Selection.IsEmpty) BodyEditor.Selection.Text = string.Empty;
+        InsertCoreBlocksAtCaret(blocks);
+        return true;
+    }
+
+    /// <summary>Core 블록 목록을 현재 캐럿 위치에 삽입한다 (붙여넣기·가져오기 공통 경로).</summary>
+    private void InsertCoreBlocksAtCaret(List<PolyDonky.Core.Block> blocks)
+    {
+        // 임의 블록 삽입(붙여넣기·표·이미지·TOC 등)은 한 번의 undo 단위로 묶는다.
+        BeginUndoableAction();
         var caret = BodyEditor.CaretPosition;
 
         // 단일 단락 콘텐츠 → 캐럿 위치에 인라인 삽입 (새 단락 블록 생성 않음)
@@ -490,7 +586,7 @@ public partial class MainWindow : Window
             var newCaret = InsertParagraphInline(singlePara, caret);
             if (newCaret != null) try { BodyEditor.CaretPosition = newCaret; } catch { }
             _viewModel?.MarkDirty();
-            return true;
+            return;
         }
 
         // 셀 안에 단락만 붙여넣을 때 — 셀의 Blocks 컬렉션에 직접 단락을 삽입한다.
@@ -499,7 +595,7 @@ public partial class MainWindow : Window
         {
             InsertParagraphsIntoCell(blocks.Cast<PolyDonky.Core.Paragraph>().ToList(), caret);
             _viewModel?.MarkDirty();
-            return true;
+            return;
         }
 
         // 복수 블록 또는 표·이미지·도형 — 앵커 뒤에 새 Block 으로 삽입
@@ -591,7 +687,6 @@ public partial class MainWindow : Window
             BodyEditor.Focus();
         }
         _viewModel?.MarkDirty();
-        return true;
     }
 
     /// <summary>
@@ -819,6 +914,8 @@ public partial class MainWindow : Window
                 => PolyDonky.App.Services.FlowDocumentBuilder.BuildShape(sh),
             PolyDonky.Core.Paragraph p
                 => PolyDonky.App.Services.FlowDocumentBuilder.BuildParagraph(p),
+            PolyDonky.Core.TocBlock toc
+                => PolyDonky.App.Services.FlowDocumentBuilder.BuildTocBlock(toc),
             _ => null,
         };
     }
@@ -861,6 +958,14 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F8
+            && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            ToggleTypesettingMarks();
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Insert:
@@ -901,7 +1006,7 @@ public partial class MainWindow : Window
                     // 1단계: 안쪽 본문 편집 중이면 chrome 만 선택 상태로 전환 (포커스를 overlay 로 이동).
                     //        이후 Ctrl+C 가 글상자 자체를 복사하도록 해주는 진입점.
                     // 2단계: chrome 만 선택된 상태에서 다시 누르면 완전 해제.
-                    if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin)
+                    if (_selectedOverlay.IsEditorFocusWithin)
                     {
                         _selectedOverlay.Focus();
                         Keyboard.Focus(_selectedOverlay);
@@ -922,7 +1027,7 @@ public partial class MainWindow : Window
             case Key.A when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
                 // Ctrl+A — 본문 텍스트 + 모든 오버레이(이미지/도형/표/글상자) 통합 선택.
                 // 본문 InnerEditor(글상자 안쪽) 포커스 중이면 양보 (글상자 안쪽 텍스트만 SelectAll).
-                if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true) break;
+                if (_selectedOverlay?.IsEditorFocusWithin == true) break;
                 SelectAllIncludingOverlays();
                 e.Handled = true;
                 break;
@@ -956,6 +1061,11 @@ public partial class MainWindow : Window
                 if (TryPasteSelectedObject()) e.Handled = true;
                 break;
 
+            case Key.K when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
+                OnInsertHyperlink(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
             case Key.L when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
                 OnFormatChar(this, new RoutedEventArgs());
                 e.Handled = true;
@@ -980,6 +1090,7 @@ public partial class MainWindow : Window
         {
             ApplyFlowDocument(_viewModel.FlowDocument);
             _viewModel.RefreshMemoryUsage();
+            FootnotePanel.BindToDocument(_viewModel.Document);
         }
         else if (e.PropertyName == nameof(MainViewModel.IsWriteProtected))
         {
@@ -1061,6 +1172,10 @@ public partial class MainWindow : Window
         rtb.IsReadOnly            = _viewModel?.IsWriteProtected ?? false;
         rtb.SpellCheck.IsEnabled  = false;
         rtb.Foreground            = (WpfMedia.Brush)FindResource("OnSurface");
+        // 비활성(포커스 없는) RTB 에서도 선택 영역이 시각적으로 유지되도록.
+        // 단 경계 교차 선택 시 이전 단의 선택을 표시하기 위해 필요.
+        rtb.IsInactiveSelectionHighlightEnabled = true;
+        rtb.GotKeyboardFocus += OnPageRtbGotFocusClearCrossSel;
 
         rtb.PreviewKeyDown    += OnEditorPreviewKeyDown;
         rtb.PreviewTextInput  += OnEditorPreviewTextInput;
@@ -1078,7 +1193,11 @@ public partial class MainWindow : Window
 
         rtb.MouseLeave += (_, _) =>
         {
-            if (!_tableColResizeActive) { _tableColResizeHovering = false; Mouse.OverrideCursor = null; }
+            if (!_tableColResizeActive)
+            {
+                _tableColResizeHovering = false;
+                Mouse.OverrideCursor = _colDivHovering ? Cursors.SizeWE : null;
+            }
         };
 
         // _lastTextEditor 갱신 — 마지막으로 포커스를 가진 RTB 를 추적한다.
@@ -1129,13 +1248,18 @@ public partial class MainWindow : Window
         freshDoc.Sections.Add(section);
 
         // 각 페이지 RTB 를 파싱해 본문 블록 수집 (오버레이는 제외 — per-page RTB 에는 없다)
+        var rawBlocks = new System.Collections.Generic.List<PolyDonky.Core.Block>();
         foreach (var rtb in PageEditorHost.PageEditors)
         {
             var pageDoc = PolyDonky.App.Services.FlowDocumentParser.Parse(rtb.Document);
             if (pageDoc.Sections.FirstOrDefault() is { } ps)
                 foreach (var b in ps.Blocks)
-                    section.Blocks.Add(b);
+                    rawBlocks.Add(b);
         }
+        // 줄 단위 분할로 생성된 조각 단락(§f0/§f1 접미사)을 원본 단락으로 재결합하고,
+        // TableRowSplitter 가 만든 표 조각(같은 Id 공유)도 하나의 표로 합친다.
+        foreach (var b in MergeTableFragments(MergeColumnFragments(rawBlocks)))
+            section.Blocks.Add(b);
 
         // 오버레이 블록 (_viewModel.Document 가 stable source) — 글상자는 RTB 에 앵커가 없고,
         // 오버레이 모드 표/그림/도형의 앵커 단락은 PerPageDocumentSplitter 가 BodyBlocks 에서 제외하므로
@@ -1156,7 +1280,162 @@ public partial class MainWindow : Window
         return freshDoc;
     }
 
+    /// <summary>
+    /// MapBodyBlocksToPages 의 줄 단위 분할이 생성한 조각 단락들을 재결합한다.
+    /// 조각 단락은 Id 에 "§f0" / "§f1" 접미사를 포함한다.
+    /// 첫 조각(§f0)을 결과에 추가하고, 이어지는 조각(§f1, §f2 …)의 텍스트 런을 거기에 병합한다.
+    /// </summary>
+    private static System.Collections.Generic.IEnumerable<PolyDonky.Core.Block>
+        MergeColumnFragments(System.Collections.Generic.IList<PolyDonky.Core.Block> blocks)
+    {
+        const string FragSep   = "§f";
+        const string GenPrefix = "§g";
+
+        var result      = new System.Collections.Generic.List<PolyDonky.Core.Block>();
+        var openFrags   = new System.Collections.Generic.Dictionary<string, PolyDonky.Core.Paragraph>();
+        var seenFragIdx = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.HashSet<string>>();
+
+        foreach (var block in blocks)
+        {
+            if (block is PolyDonky.Core.Paragraph p && p.Id is { } id)
+            {
+                int sepIdx = id.LastIndexOf(FragSep, StringComparison.Ordinal);
+                if (sepIdx >= 0)
+                {
+                    string groupId     = id[..sepIdx];
+                    string fragIdxStr  = id[(sepIdx + FragSep.Length)..];
+
+                    // 같은 group 의 같은 fragIdx 가 두 번째 등장이면 — WPF 엔터 분할로 인해 같은
+                    // §f Id 를 공유하게 된 두 반쪽 중 둘째. 사용자가 새로 만든 단락이므로
+                    // §f 머지 대상에서 빼고 그대로 추가한다(엔터가 시각적으로 사라지는 버그 방지).
+                    if (!seenFragIdx.TryGetValue(groupId, out var seen))
+                    {
+                        seen = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+                        seenFragIdx[groupId] = seen;
+                    }
+                    if (!seen.Add(fragIdxStr))
+                    {
+                        p.Id = null;
+                        result.Add(p);
+                        continue;
+                    }
+
+                    bool isFirst = fragIdxStr == "0";
+                    if (isFirst)
+                    {
+                        // Id 를 원본으로 복원 (임시 생성 Id 이면 null)
+                        p.Id = groupId.StartsWith(GenPrefix, StringComparison.Ordinal) ? null : groupId;
+                        result.Add(p);
+                        openFrags[groupId] = p;
+                    }
+                    else
+                    {
+                        if (openFrags.TryGetValue(groupId, out var target))
+                            foreach (var run in p.Runs) target.Runs.Add(run);
+                        else
+                        {
+                            // 짝 없는 이어지는 조각 — 단독으로 추가
+                            p.Id = groupId.StartsWith(GenPrefix, StringComparison.Ordinal) ? null : groupId;
+                            result.Add(p);
+                        }
+                    }
+                    continue;
+                }
+            }
+            result.Add(block);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Del 키가 표 셀 끝에서 눌렸을 때 기본 WPF 동작(다음 셀 내용을 현재 셀에 병합)을 차단.
+    /// caret 이 TableCell 안에 있고 Del 로 이동할 다음 위치가 다른 셀/셀 밖이면 e.Handled=true 반환.
+    /// </summary>
+    private static bool BlockDeleteAtTableCellBoundary(RichTextBox rtb, KeyEventArgs e)
+    {
+        var caret = rtb.CaretPosition;
+        var ownerCell = GetOwnerTableCell(caret);
+        if (ownerCell is null) return false;
+
+        var next = caret.GetNextInsertionPosition(System.Windows.Documents.LogicalDirection.Forward);
+        if (next is null) return false; // RTB 끝 — TryDeleteAcrossPageBoundary 가 처리
+
+        // 다음 삽입 위치가 같은 셀 안이면 정상 Del 허용
+        if (GetOwnerTableCell(next) == ownerCell) return false;
+
+        // 다른 셀 또는 셀 밖 → 차단 (셀 내용 경계 보호)
+        e.Handled = true;
+        return true;
+    }
+
+    private static System.Windows.Documents.TableCell? GetOwnerTableCell(
+        System.Windows.Documents.TextPointer tp)
+    {
+        System.Windows.DependencyObject? cur = tp.Parent;
+        while (cur is System.Windows.FrameworkContentElement fce)
+        {
+            if (cur is System.Windows.Documents.TableCell cell) return cell;
+            cur = fce.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// TableRowSplitter 가 만든 표 조각들을 원본 한 개로 재결합한다.
+    /// 모든 조각은 source.Id 를 공유하므로 동일 Id 를 가진 연속 표는 같은 원본의 조각으로 간주.
+    /// 첫 조각은 그대로 두고, 후속 조각은 splitter 가 prepend 한 선두 IsHeader 행(원본 헤더의 클론)을
+    /// 건너뛴 뒤 본문/꼬리 행을 첫 조각에 이어 붙인다.
+    /// </summary>
+    private static System.Collections.Generic.IEnumerable<PolyDonky.Core.Block>
+        MergeTableFragments(System.Collections.Generic.IEnumerable<PolyDonky.Core.Block> blocks)
+    {
+        var result  = new System.Collections.Generic.List<PolyDonky.Core.Block>();
+        var firstById = new System.Collections.Generic.Dictionary<string, PolyDonky.Core.Table>();
+
+        foreach (var block in blocks)
+        {
+            if (block is PolyDonky.Core.Table tbl
+                && tbl.Id is { Length: > 0 } id
+                && firstById.TryGetValue(id, out var first))
+            {
+                bool pastLeadingHeaders = false;
+                foreach (var row in tbl.Rows)
+                {
+                    if (!pastLeadingHeaders && row.IsHeader) continue;
+                    pastLeadingHeaders = true;
+                    first.Rows.Add(row);
+                }
+                continue;
+            }
+
+            if (block is PolyDonky.Core.Table newTbl && newTbl.Id is { Length: > 0 } newId)
+                firstById[newId] = newTbl;
+            result.Add(block);
+        }
+
+        return result;
+    }
+
     private bool _liveRefreshQueued;
+    private bool _isImeComposing;
+    private bool _pendingLiveRefresh;
+
+    private void OnImeCompositionStart(object sender, System.Windows.Input.TextCompositionEventArgs e)
+    {
+        _isImeComposing = true;
+    }
+
+    private void OnImeCompositionEnd(object sender, System.Windows.Input.TextCompositionEventArgs e)
+    {
+        _isImeComposing = false;
+        // 조합 중에 보류된 재페이지네이션 요청이 있으면 지금 처리.
+        if (_pendingLiveRefresh)
+        {
+            _pendingLiveRefresh = false;
+            ScheduleLivePaginationRefresh();
+        }
+    }
 
     /// <summary>
     /// 라이브 FlowDocument 를 Parse → Paginate 해서 _currentPaginatedDoc 캐시를 최신화한다.
@@ -1175,6 +1454,16 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
         {
             _liveRefreshQueued = false;
+
+            // IME 조합 중에는 재구성을 보류 — RTB 재생성이 IME 조합 상태를 깨뜨려
+            // 한글 한 글자(ㅈ + ㅏ)가 두 글자로 분리되는 문제를 방지.
+            // 조합이 끝나면 OnImeCompositionEnd 가 다시 호출한다.
+            if (_isImeComposing)
+            {
+                _pendingLiveRefresh = true;
+                return;
+            }
+
             try
             {
                 // 모든 페이지 RTB 를 파싱해 결합된 PolyDonkyument 를 만들고 재페이지네이트.
@@ -1207,6 +1496,8 @@ public partial class MainWindow : Window
     /// 새로 계산된 <see cref="_currentPaginatedDoc"/> 의 페이지별 블록 분배가
     /// 현재 페이지 RTB 들과 다르면 true.
     /// 블록 수뿐 아니라 블록 ID 시퀀스까지 비교해 "개수는 같지만 다른 블록으로 채워진" 경우도 검출한다.
+    /// 다단의 경우: 페이지당 단 수 × 페이지 수 = 총 RTB 수이므로 각 페이지의 모든 단 RTB 에서
+    /// 블록 ID 를 수집해 페이지 전체 블록 목록과 비교한다.
     /// </summary>
     private bool NeedsPageRebuild()
     {
@@ -1216,22 +1507,53 @@ public partial class MainWindow : Window
         int oldPageCount = PageEditorHost.PageCount;
         if (newPageCount != oldPageCount) return true;
 
-        var rtbs = PageEditorHost.PageEditors;
+        int colCount = _pageGeometry?.ColumnCount ?? 1;
+        var rtbs     = PageEditorHost.PageEditors;
+
         for (int i = 0; i < newPageCount; i++)
         {
             var newPage = _currentPaginatedDoc.Pages[i];
-            var oldIds  = CollectBodyBlockIds(rtbs[i].Document.Blocks);
 
-            if (newPage.BodyBlocks.Count != oldIds.Count) return true;
-
-            for (int j = 0; j < newPage.BodyBlocks.Count; j++)
+            if (colCount <= 1)
             {
-                var newId = newPage.BodyBlocks[j].Source.Id;
-                var oldId = oldIds[j];
-                // 둘 다 ID 가 있으면 직접 비교. 하나라도 null 이면 신규 단락(Enter/붙여넣기)이므로
-                // ID 로 판단 불가 — 이 위치는 카운트 일치로만 체크한다.
-                if (newId != null && oldId != null && newId != oldId)
-                    return true;
+                // 단일 단: RTB 인덱스 == 페이지 인덱스
+                if (i >= rtbs.Count) return true;
+                var oldIds = CollectBodyBlockIds(rtbs[i].Document.Blocks);
+
+                if (newPage.BodyBlocks.Count != oldIds.Count) return true;
+
+                for (int j = 0; j < newPage.BodyBlocks.Count; j++)
+                {
+                    var newId = newPage.BodyBlocks[j].Source.Id;
+                    var oldId = oldIds[j];
+                    // 둘 다 ID 가 있으면 직접 비교. 하나라도 null 이면 신규 단락이므로 카운트만 체크.
+                    if (newId != null && oldId != null && newId != oldId)
+                        return true;
+                }
+            }
+            else
+            {
+                // 다단: 페이지 내 단별 RTB 의 블록 분배를 새 결과와 비교한다.
+                // 페이지 합계만 비교하면 "단끼리 재분배되었지만 합은 같은" 경우(긴 단락이
+                // col 0 에서 col 1 로 넘어가야 하는 케이스) 를 놓쳐 RTB 가 stale 상태로 남는다.
+                for (int col = 0; col < colCount; col++)
+                {
+                    int rtbIdx = i * colCount + col;
+                    if (rtbIdx >= rtbs.Count) return true;
+
+                    var oldIds = CollectBodyBlockIds(rtbs[rtbIdx].Document.Blocks);
+                    var newColBlocks = newPage.BodyBlocks.Where(b => b.ColumnIndex == col).ToList();
+
+                    if (newColBlocks.Count != oldIds.Count) return true;
+
+                    for (int j = 0; j < newColBlocks.Count; j++)
+                    {
+                        var newId = newColBlocks[j].Source.Id;
+                        var oldId = oldIds[j];
+                        if (newId != null && oldId != null && newId != oldId)
+                            return true;
+                    }
+                }
             }
         }
         return false;
@@ -1256,7 +1578,7 @@ public partial class MainWindow : Window
         return ids;
     }
 
-    private record CaretState(int PageIndex, int Offset);
+    private record CaretState(int PageIndex, int Offset, int VirtualDocOffset = -1);
 
     /// <summary>
     /// 현재 포커스된 페이지 RTB 와 캐럿 오프셋을 저장한다.
@@ -1271,9 +1593,20 @@ public partial class MainWindow : Window
             if (!rtb.IsKeyboardFocusWithin && !rtb.IsFocused) continue;
             try
             {
-                int offset = rtb.Document.ContentStart
+                int rtbOffset = rtb.Document.ContentStart
                     .GetOffsetToPosition(rtb.CaretPosition);
-                return new CaretState(i, offset);
+
+                // 가상 문서 위치(VDP) = 이전 RTB 들의 콘텐츠 합산 + 이 RTB 내 오프셋.
+                // 단 간 블록 재분배 후에도 전체 VDP 합은 보존되므로 복원 시
+                // 어느 RTB 로 블록이 이동했는지 자동으로 추적된다.
+                int vdp = rtbOffset;
+                for (int j = 0; j < i; j++)
+                {
+                    vdp += rtbs[j].Document.ContentStart
+                        .GetOffsetToPosition(rtbs[j].Document.ContentEnd);
+                }
+
+                return new CaretState(i, rtbOffset, vdp);
             }
             catch { break; }
         }
@@ -1282,7 +1615,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// <see cref="SaveCaretState"/> 로 저장한 위치로 커서를 복원한다.
-    /// 재구성으로 페이지 수나 내용이 바뀌었으면 최대한 근사한 위치로 이동한다.
+    /// VDP 방식을 우선 시도하고, 실패하면 RTB 인덱스·오프셋으로 폴백한다.
     /// </summary>
     private void RestoreCaretState(CaretState? saved)
     {
@@ -1291,6 +1624,12 @@ public partial class MainWindow : Window
 
         if (saved is not null)
         {
+            // 1순위: 가상 문서 위치로 복원
+            // — 블록이 다른 단 RTB 로 이동했을 때도 올바른 위치를 찾는다.
+            if (saved.VirtualDocOffset >= 0 && TryRestoreByVdp(rtbs, saved.VirtualDocOffset))
+                return;
+
+            // 2순위: 원래 RTB 인덱스 + 오프셋 (폴백)
             int pageIdx = Math.Min(saved.PageIndex, rtbs.Count - 1);
             var rtb = rtbs[pageIdx];
             try
@@ -1312,6 +1651,39 @@ public partial class MainWindow : Window
         }
 
         RestoreCaretToLastEditor();
+    }
+
+    private bool TryRestoreByVdp(System.Collections.Generic.IReadOnlyList<System.Windows.Controls.RichTextBox> rtbs, int vdp)
+    {
+        int remaining = vdp;
+        for (int i = 0; i < rtbs.Count; i++)
+        {
+            var rtb    = rtbs[i];
+            int rtbLen = rtb.Document.ContentStart
+                             .GetOffsetToPosition(rtb.Document.ContentEnd);
+
+            bool isLast = i == rtbs.Count - 1;
+            if (remaining <= rtbLen || isLast)
+            {
+                try
+                {
+                    int target = Math.Clamp(remaining, 0, rtbLen);
+                    var pos = rtb.Document.ContentStart.GetPositionAtOffset(
+                        target, System.Windows.Documents.LogicalDirection.Forward);
+                    if (pos != null)
+                    {
+                        rtb.CaretPosition = pos;
+                        rtb.Focus();
+                        Keyboard.Focus(rtb);
+                        return true;
+                    }
+                }
+                catch { }
+                return false;
+            }
+            remaining -= rtbLen;
+        }
+        return false;
     }
 
     /// <summary>
@@ -1402,6 +1774,22 @@ public partial class MainWindow : Window
     private double _colRszInitLeft;
     private double _colRszInitRight;
     private double _colRszStartX;
+
+    // ── 단(column) 너비 드래그 리사이즈 상태 ──────────────────────────
+    private const double ColDivHitDip    = 8.0;
+    private const double ColDivMinWidthDip = 20.0;
+    private bool     _colDivDragging;
+    private bool     _colDivHovering;
+    private int      _colDivDragLeftIdx;
+    private double   _colDivDragStartX;
+    private double[] _colDivDragStartWidths = Array.Empty<double>();
+    private readonly List<WpfShapes.Line> _columnDividerLines = new();
+
+    // ── 단 경계 교차 텍스트 선택 상태 ────────────────────────────────────
+    // Shift+방향키로 단 경계를 넘을 때 비활성 RTB 의 선택을 유지(IsInactiveSelectionHighlightEnabled)
+    // 하고, _crossSelActive 플래그로 복사/편집 명령이 여러 RTB 의 선택을 하나로 처리하도록 한다.
+    private bool _crossSelActive;
+    private bool _inCrossSelNavigation;  // 프로그래매틱 포커스 이동 중 GotKeyboardFocus 무시 플래그
 
     private void OnOverlayImageMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -1509,6 +1897,32 @@ public partial class MainWindow : Window
             _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
             SetupPageEditors();
             RebuildOverlays();
+
+            // 첫 Paginate 의 오프스크린 RTB 측정이 GetCharacterRect=NaN 으로 실패해
+            // 모든 본문 블록이 page 0 으로 몰릴 수 있다(시각 트리 밖에서 fresh FlowDocument
+            // 의 텍스트 레이아웃이 확정되지 않는 케이스). RTB 가 시각 트리에 부착된 직후
+            // Render 우선순위로 한 번 더 재페이지네이트해 정확한 분배를 강제한다.
+            // 두 번째 측정은 PageEditorHost 자식 RTB 들이 이미 layout pass 를 거친 뒤이므로
+            // GetCharacterRect 가 안정된 Y 를 반환한다.
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
+            {
+                if (_pageGeometry is null) return;
+                var redoFresh = ParseAllPageEditors();
+                if (redoFresh.Sections.FirstOrDefault() is { } rs) rs.Page = page;
+                var redoPaginated = FlowDocumentPaginationAdapter.Paginate(redoFresh);
+                _currentPaginatedDoc = redoPaginated;
+                if (NeedsPageRebuild())
+                {
+                    var savedCaret = SaveCaretState();
+                    SetupPageEditors();
+                    RestoreCaretState(savedCaret);
+                    RebuildOverlays();
+                }
+                else
+                {
+                    RebuildPageFrames();
+                }
+            });
         }
         else
         {
@@ -1541,6 +1955,7 @@ public partial class MainWindow : Window
     private void RebuildPageFramesCore()
     {
         var pg = _pageGeometry!;
+        _columnDividerLines.Clear();
 
         // 페이지 수 계산.
         // 1순위: WPF DocumentPaginator 로 산출한 정확값 (_currentPaginatedDoc).
@@ -1567,6 +1982,7 @@ public partial class MainWindow : Window
         OverlayTableCanvas.Clip  = overlayClip;
         UnderlayTableCanvas.Clip = overlayClip;
         FloatingCanvas.Clip      = overlayClip;
+        HeaderFooterCanvas.Clip  = overlayClip;
 
         // PageBackgroundCanvas 클리어 후 페이지마다 다시 그리기.
         PageBackgroundCanvas.Children.Clear();
@@ -1574,6 +1990,9 @@ public partial class MainWindow : Window
         var page = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
         bool showGuides = page?.ShowMarginGuides ?? true;
         WpfMedia.Brush pageBg = ResolvePaperBackground(page);
+
+        // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 클리어한 뒤 마지막에 올린다.
+        var pendingDebugLabels = new List<(System.Windows.Controls.TextBlock label, double left, double top)>();
 
         for (int i = 0; i < pageCount; i++)
         {
@@ -1619,6 +2038,47 @@ public partial class MainWindow : Window
                 PageBackgroundCanvas.Children.Add(guide);
             }
 
+            // 단 구분선 — 다단인 경우 단 사이 갭 중앙에 세로선.
+            // 표시 여부/색/두께/스타일은 PageSettings.ColumnDivider* 로 사용자 설정.
+            // ShowMarginGuides 와는 독립적이며, 인쇄에는 출력되지 않는 편집창 전용 가이드.
+            if (pg.ColumnCount > 1
+                && page is not null
+                && page.ColumnDividerVisible
+                && page.ColumnDividerStyle != ColumnDividerStyle.None)
+            {
+                double bodyTop    = topY + pg.PadTopDip;
+                double bodyHeight = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
+                var dividerBrush  = ParseColumnDividerBrush(page.ColumnDividerColor);
+                double dividerThk = page.ColumnDividerThicknessPt * (96.0 / 72.0);
+                System.Windows.Media.DoubleCollection? dividerDash = page.ColumnDividerStyle switch
+                {
+                    ColumnDividerStyle.Dashed => new System.Windows.Media.DoubleCollection { 4, 3 },
+                    ColumnDividerStyle.Dotted => new System.Windows.Media.DoubleCollection { 1, 2 },
+                    _                         => null,
+                };
+
+                for (int c = 0; c < pg.ColumnCount - 1; c++)
+                {
+                    double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
+                    double divX = pg.PadLeftDip
+                                + pg.ColumnXOffsetDip(c)
+                                + colW
+                                + pg.ColGapDip / 2.0;
+                    var divider = new WpfShapes.Line
+                    {
+                        X1 = divX, X2 = divX,
+                        Y1 = bodyTop, Y2 = bodyTop + bodyHeight,
+                        Stroke = dividerBrush,
+                        StrokeThickness = dividerThk,
+                        IsHitTestVisible = false,
+                        Tag = c,
+                    };
+                    if (dividerDash is not null) divider.StrokeDashArray = dividerDash;
+                    _columnDividerLines.Add(divider);
+                    PageBackgroundCanvas.Children.Add(divider);
+                }
+            }
+
             // 페이지 번호 라벨 (좌상단)
             var label = new System.Windows.Controls.TextBlock
             {
@@ -1631,9 +2091,249 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (label, topY + 2);
             PageBackgroundCanvas.Children.Add(label);
 
+            // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 + 페이지네이션 측정 fill (육안 검증용).
+            // 좌측 하단 여백 안쪽. 페이지네이션 측정값과 실제 렌더 높이를 비교해
+            // 클리핑·공백 원인을 추적할 때 사용.
+            // measured fill = MapBodyBlocksToPages 에서 이 슬롯에 누적된 블록 높이 합 — 이 값이
+            // body H 를 초과(혹은 근접) 하면 페이지가 꽉 찼다고 판단해 다음 페이지로 넘긴다.
+            double dbgBodyH      = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
+            double dbgPageHmm    = FlowDocumentBuilder.DipToMm(pg.PageHeightDip);
+            double dbgBodyHmm    = FlowDocumentBuilder.DipToMm(dbgBodyH);
+            double dbgPadTopMm   = FlowDocumentBuilder.DipToMm(pg.PadTopDip);
+            double dbgPadBottomMm= FlowDocumentBuilder.DipToMm(pg.PadBottomDip);
+
+            var dbgSb = new System.Text.StringBuilder();
+            dbgSb.AppendLine($"page H: {pg.PageHeightDip:F1} DIP ({dbgPageHmm:F1} mm)");
+            dbgSb.AppendLine($"body H: {dbgBodyH:F1} DIP ({dbgBodyHmm:F1} mm)");
+            dbgSb.AppendLine($"pad ↑: {pg.PadTopDip:F1} DIP ({dbgPadTopMm:F1} mm)");
+            dbgSb.AppendLine($"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)");
+
+            if (_currentPaginatedDoc is { } paginated2 && paginated2.SlotMeasuredFillDip.Count > 0)
+            {
+                int colCount2 = Math.Max(1, pg.ColumnCount);
+                var fillSb = new System.Text.StringBuilder();
+                for (int c = 0; c < colCount2; c++)
+                {
+                    int slotIdx = i * colCount2 + c;
+                    if (fillSb.Length > 0) fillSb.Append(" / ");
+                    fillSb.Append(paginated2.SlotMeasuredFillDip.TryGetValue(slotIdx, out var fill)
+                        ? $"{fill:F1}" : "·");
+                }
+                dbgSb.AppendLine(colCount2 > 1 ? $"fill[col]: {fillSb} DIP" : $"fill: {fillSb} DIP");
+            }
+            else
+            {
+                dbgSb.AppendLine("fill: (fast-path/N/A)");
+            }
+
+            // 블록별 측정 진단: 이 페이지에 배정된 블록의 topY / blockH / gap 표시
+            // blockH=0 인 항목은 과소평가 의심 → '!' 마킹
+            if (_currentPaginatedDoc is { } paginated3 && paginated3.DebugBlockMeasurements.Count > 0)
+            {
+                int colCount3 = Math.Max(1, pg.ColumnCount);
+                var pageEntries = paginated3.DebugBlockMeasurements
+                    .Where(e => e.SlotIdx / colCount3 == i)
+                    .ToList();
+                if (pageEntries.Count > 0)
+                {
+                    dbgSb.AppendLine("── blocks ──");
+                    foreach (var e in pageEntries)
+                    {
+                        string flag = e.BlockH < 1.0 ? "!" : " ";
+                        string gapStr = e.Gap > 0.5 ? $" g+{e.Gap:F0}" : "";
+                        string topStr = double.IsNaN(e.TopY) ? "Y=?" : $"Y={e.TopY:F0}";
+                        string hStr   = double.IsNaN(e.BlockH) ? "h=?" : $"h={e.BlockH:F0}";
+                        // 레이블은 30자 이내로 자름
+                        string lbl = e.Label.Length > 28 ? e.Label[..28] : e.Label;
+                        dbgSb.AppendLine($"{flag}{lbl} {topStr} {hStr}{gapStr}");
+                    }
+                }
+            }
+
+            var debugLabel = new System.Windows.Controls.TextBlock
+            {
+                Text             = dbgSb.ToString().TrimEnd(),
+                FontSize         = 9,
+                FontFamily       = new WpfMedia.FontFamily("Consolas, Cascadia Mono, monospace"),
+                Foreground       = new SolidColorBrush(WpfMedia.Color.FromArgb(0xE0, 0xB4, 0x40, 0x40)),
+                Background       = new SolidColorBrush(WpfMedia.Color.FromArgb(0x60, 0xFF, 0xFF, 0x80)),
+                Padding          = new Thickness(3, 1, 3, 1),
+                IsHitTestVisible = false,
+            };
+            // 페이지 오른쪽 바깥 여백에 배치 — 본문과 겹치지 않도록.
+            pendingDebugLabels.Add((debugLabel, pg.PageWidthDip + 8, topY + 4));
         }
 
         RenderWatermark(pg, pageCount);
+        RebuildHeaderFooterLayer(pg, pageCount, page);
+        RebuildTypesettingMarks();
+
+        // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 비운 뒤 한꺼번에 올린다.
+        foreach (var (label, left, top) in pendingDebugLabels)
+        {
+            System.Windows.Controls.Canvas.SetLeft(label, left);
+            System.Windows.Controls.Canvas.SetTop (label, top);
+            TypesettingMarksCanvas.Children.Add(label);
+        }
+    }
+
+    private void RebuildHeaderFooterLayer(
+        PolyDonky.App.Services.PageGeometry pg,
+        int pageCount,
+        PolyDonky.Core.PageSettings? page)
+    {
+        if (page is null)
+        {
+            HeaderFooterCanvas.Children.Clear();
+            return;
+        }
+        string? fileName = string.IsNullOrEmpty(_viewModel?.CurrentFilePath)
+            ? null
+            : System.IO.Path.GetFileNameWithoutExtension(_viewModel.CurrentFilePath);
+        PageViewBuilder.BuildHeaderFooterLayer(
+            HeaderFooterCanvas, page, pg, pageCount,
+            metadata: _viewModel?.Document?.Metadata,
+            fileNameWithoutExt: fileName);
+    }
+
+    // ── 조판부호 보기 ───────────────────────────────────────────────────────
+
+    private void OnTypesettingMarksToggle(object sender, RoutedEventArgs e)
+        => ToggleTypesettingMarks();
+
+    private void ToggleTypesettingMarks()
+    {
+        _showTypesettingMarks = !_showTypesettingMarks;
+        MiTypesettingMarks.IsChecked = _showTypesettingMarks;
+        LanguageService.SetShowTypesettingMarks(_showTypesettingMarks);
+        RebuildTypesettingMarks();
+    }
+
+    private void RebuildTypesettingMarks()
+    {
+        TypesettingMarksCanvas.Children.Clear();
+        if (!_showTypesettingMarks || _pageGeometry is null) return;
+
+        var pg        = _pageGeometry;
+        int pageCount = _currentPageCount < 1 ? 1 : _currentPageCount;
+        var page      = _viewModel?.Document.Sections.FirstOrDefault()?.Page;
+
+        double headerBandH = page is not null
+            ? Services.FlowDocumentBuilder.MmToDip(Math.Max(0.0, page.MarginTopMm - page.MarginHeaderMm))
+            : 0.0;
+        double footerBandH = page is not null
+            ? Services.FlowDocumentBuilder.MmToDip(Math.Max(0.0, page.MarginBottomMm - page.MarginFooterMm))
+            : 0.0;
+        double headerOffsetDip = page is not null
+            ? Services.FlowDocumentBuilder.MmToDip(page.MarginHeaderMm)
+            : 0.0;
+
+        var headerFill  = new SolidColorBrush(WpfMedia.Color.FromArgb(0x28, 0x00, 0x78, 0xD4));
+        var footerFill  = new SolidColorBrush(WpfMedia.Color.FromArgb(0x28, 0xFF, 0x80, 0x00));
+        var headerFg    = new SolidColorBrush(WpfMedia.Color.FromArgb(0xCC, 0x00, 0x4C, 0xAA));
+        var footerFg    = new SolidColorBrush(WpfMedia.Color.FromArgb(0xCC, 0xB8, 0x50, 0x00));
+
+        for (int i = 0; i < pageCount; i++)
+        {
+            double topY = i * pg.PageStrideDip;
+
+            if (headerBandH > 1.0)
+            {
+                var band = new WpfShapes.Rectangle
+                {
+                    Width  = pg.PageWidthDip,
+                    Height = headerBandH,
+                    Fill   = headerFill,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(band, 0);
+                System.Windows.Controls.Canvas.SetTop (band, topY + headerOffsetDip);
+                TypesettingMarksCanvas.Children.Add(band);
+
+                var lbl = new System.Windows.Controls.TextBlock
+                {
+                    Text       = SR.TyposettingMarkHeader,
+                    FontSize   = 9,
+                    Foreground = headerFg,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(lbl, pg.PadLeftDip);
+                System.Windows.Controls.Canvas.SetTop (lbl, topY + headerOffsetDip + 1);
+                TypesettingMarksCanvas.Children.Add(lbl);
+            }
+
+            if (footerBandH > 1.0)
+            {
+                double footerTopDip = topY + pg.PageHeightDip - pg.PadBottomDip;
+                var band = new WpfShapes.Rectangle
+                {
+                    Width  = pg.PageWidthDip,
+                    Height = footerBandH,
+                    Fill   = footerFill,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(band, 0);
+                System.Windows.Controls.Canvas.SetTop (band, footerTopDip);
+                TypesettingMarksCanvas.Children.Add(band);
+
+                var lbl = new System.Windows.Controls.TextBlock
+                {
+                    Text       = SR.TyposettingMarkFooter,
+                    FontSize   = 9,
+                    Foreground = footerFg,
+                    IsHitTestVisible = false,
+                };
+                System.Windows.Controls.Canvas.SetLeft(lbl, pg.PadLeftDip);
+                System.Windows.Controls.Canvas.SetTop (lbl, footerTopDip + 1);
+                TypesettingMarksCanvas.Children.Add(lbl);
+            }
+        }
+
+        AddOverlayAnchorBadges();
+    }
+
+    private void AddOverlayAnchorBadges()
+    {
+        void AddBadge(double left, double top, string icon, string tip)
+        {
+            var border = new Border
+            {
+                Background    = new SolidColorBrush(WpfMedia.Color.FromArgb(0xCC, 0x00, 0x50, 0xC0)),
+                CornerRadius  = new CornerRadius(3),
+                Padding       = new Thickness(3, 1, 3, 1),
+                IsHitTestVisible = false,
+                ToolTip       = tip,
+                Child = new System.Windows.Controls.TextBlock
+                {
+                    Text       = icon,
+                    FontSize   = 9,
+                    Foreground = WpfMedia.Brushes.White,
+                    IsHitTestVisible = false,
+                },
+            };
+            System.Windows.Controls.Canvas.SetLeft(border, left);
+            System.Windows.Controls.Canvas.SetTop (border, top);
+            TypesettingMarksCanvas.Children.Add(border);
+        }
+
+        void ScanCanvas(System.Windows.Controls.Canvas canvas, string icon, string tipKey)
+        {
+            foreach (System.Windows.FrameworkElement child in canvas.Children)
+            {
+                double l = System.Windows.Controls.Canvas.GetLeft(child);
+                double t = System.Windows.Controls.Canvas.GetTop(child);
+                if (!double.IsNaN(l) && !double.IsNaN(t))
+                    AddBadge(l, t, icon, tipKey);
+            }
+        }
+
+        ScanCanvas(OverlayImageCanvas,   "🖼", SR.TyposettingMarkImage);
+        ScanCanvas(UnderlayImageCanvas,  "🖼", SR.TyposettingMarkImageBehind);
+        ScanCanvas(OverlayShapeCanvas,   "△", SR.TyposettingMarkShape);
+        ScanCanvas(UnderlayShapeCanvas,  "△", SR.TyposettingMarkShapeBehind);
+        ScanCanvas(OverlayTableCanvas,   "⊞", SR.TyposettingMarkTable);
+        ScanCanvas(UnderlayTableCanvas,  "⊞", SR.TyposettingMarkTableBehind);
+        ScanCanvas(FloatingCanvas,       "▤", SR.TyposettingMarkTextBox);
     }
 
     private void RenderWatermark(PageGeometry pg, int pageCount)
@@ -1699,12 +2399,271 @@ public partial class MainWindow : Window
         return (WpfMedia.Brush)FindResource("Surface");
     }
 
+    private static WpfMedia.Brush ParseColumnDividerBrush(string? hex)
+    {
+        if (!string.IsNullOrWhiteSpace(hex))
+        {
+            try
+            {
+                var s = hex.Trim();
+                if (!s.StartsWith('#')) s = '#' + s;
+                var c = (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(s)!;
+                return new SolidColorBrush(c);
+            }
+            catch { /* 폴백 */ }
+        }
+        return new SolidColorBrush(WpfMedia.Color.FromArgb(0x66, 0x88, 0x88, 0x88));
+    }
+
+    // ── 가져오기 / 내보내기 ─────────────────────────────────────────────
+
+    private static readonly System.Collections.Generic.HashSet<string> _imageExts =
+        new(System.StringComparer.OrdinalIgnoreCase)
+        { "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "svg" };
+
+    private static string GetImageMediaType(string ext) => ext.ToLowerInvariant() switch
+    {
+        "png"          => "image/png",
+        "jpg" or "jpeg" => "image/jpeg",
+        "gif"          => "image/gif",
+        "bmp"          => "image/bmp",
+        "tiff" or "tif" => "image/tiff",
+        "webp"         => "image/webp",
+        "svg"          => "image/svg+xml",
+        _              => "application/octet-stream",
+    };
+
+    private void OnEditImport(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title     = "가져오기",
+            Filter    = "PolyDonky 문서 (*.iwpf)|*.iwpf|" +
+                        "그림 (*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.tiff;*.webp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.tiff;*.webp|" +
+                        "텍스트 (*.txt)|*.txt|" +
+                        "마크다운 (*.md;*.markdown)|*.md;*.markdown|" +
+                        "모든 파일 (*.*)|*.*",
+            Multiselect = false,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+
+        var path = dlg.FileName;
+        var ext  = System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+
+        List<PolyDonky.Core.Block> blocks;
+
+        if (_imageExts.Contains(ext))
+        {
+            try
+            {
+                var data = System.IO.File.ReadAllBytes(path);
+                blocks = new List<PolyDonky.Core.Block>
+                {
+                    new PolyDonky.Core.ImageBlock
+                    {
+                        Data      = data,
+                        MediaType = GetImageMediaType(ext),
+                        WrapMode  = PolyDonky.Core.ImageWrapMode.Inline,
+                        Status    = PolyDonky.Core.NodeStatus.Modified,
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this,
+                    $"이미지를 읽을 수 없습니다:\n{ex.Message}", "가져오기",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+        }
+        else
+        {
+            var reader = PolyDonky.App.Services.KnownFormats.PickReader(path);
+            if (reader is null)
+            {
+                System.Windows.MessageBox.Show(this,
+                    "지원하지 않는 파일 형식입니다.", "가져오기",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+            PolyDonky.Core.PolyDonkyument doc;
+            try { doc = reader.ReadFile(path); }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this,
+                    $"파일을 읽을 수 없습니다:\n{ex.Message}", "가져오기",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+            blocks = doc.Sections.SelectMany(s => s.Blocks).ToList();
+        }
+
+        if (blocks.Count == 0) return;
+        foreach (var b in blocks) ResetCoreBlockId(b);
+
+        if (!BodyEditor.Selection.IsEmpty) BodyEditor.Selection.Text = string.Empty;
+        InsertCoreBlocksAtCaret(blocks);
+    }
+
+    private void OnEditExport(object sender, RoutedEventArgs e)
+    {
+        var blocks = ExtractCoreSelection();
+        if (blocks.Count == 0)
+        {
+            System.Windows.MessageBox.Show(this,
+                "내보낼 내용을 선택하세요.", "내보내기",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title        = "내보내기",
+            Filter       = "PolyDonky 문서 (*.iwpf)|*.iwpf",
+            DefaultExt   = "iwpf",
+            AddExtension = true,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+
+        var doc = new PolyDonky.Core.PolyDonkyument
+        {
+            Sections = { new PolyDonky.Core.Section { Blocks = blocks } }
+        };
+        try
+        {
+            using var fs = System.IO.File.Create(dlg.FileName);
+            new PolyDonky.Iwpf.IwpfWriter().Write(doc, fs);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this,
+                $"저장에 실패했습니다:\n{ex.Message}", "내보내기",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
     private void OnEditorTextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged) return;
+        // 텍스트 입력 burst 가 시작되는 시점에 pre-edit 스냅샷을 저장 (이미 burst 중이면 타이머만 갱신).
+        BeginTextEditUndoBurst();
         _viewModel?.MarkDirty();
         // 본문이 변경되면 페이지 수가 달라질 수 있으므로 라이브 페이지네이션 갱신 디바운스.
         ScheduleLivePaginationRefresh();
+    }
+
+    // ── Undo / Redo ─────────────────────────────────────────────────────────────────
+    //
+    // 모델 스냅샷 기반 Undo/Redo. 텍스트 입력은 "burst" 단위로 묶어 1.5초 idle 마다 새 burst 로 분리.
+    //   ① OnEditorTextChanged 가 fire 되면 — 첫 화 keypress 일 경우 (_textEditUndoBurstActive=false)
+    //      _viewModel.Document (현재 RTB 가 아직 model 에 동기화되지 않은 pre-edit 상태) 를 PushUndo.
+    //   ② idle 타이머가 만료되면 EndTextEditUndoBurst — ParseAllPageEditors 결과를 _document 에 동기화.
+    //   ③ 비-텍스트 액션(오버레이 드래그·Ctrl+Enter 페이지 나누기·서식 변경 등) 은 BeginUndoableAction()
+    //      을 직접 호출 — burst 종료 후 현재 _document 를 PushUndo.
+    //   ④ Undo/Redo 실행 시: settle (parse → _document 갱신) → UndoRedoManager 가 swap → ApplyFlowDocument.
+
+    private System.Windows.Threading.DispatcherTimer? _textEditUndoIdleTimer;
+    private bool                                      _textEditUndoBurstActive;
+
+    /// <summary>텍스트 입력 burst idle 임계 (이 시간 동안 입력이 없으면 burst 가 종료된다).</summary>
+    private static readonly TimeSpan TextEditBurstIdle = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
+    /// 텍스트 입력 burst 가 시작되는 시점에 한 번만 pre-edit 스냅샷을 저장한다.
+    /// 이후 같은 burst 의 입력은 timer 만 재시작해 합쳐진다.
+    /// </summary>
+    private void BeginTextEditUndoBurst()
+    {
+        if (_viewModel is null) return;
+
+        if (!_textEditUndoBurstActive)
+        {
+            // 이 시점의 _viewModel.Document 는 사용자가 입력하기 전 모델 상태.
+            // (RTB FlowDocument 만 변경됐고 ParseAllPageEditors 는 아직 호출되지 않았다.)
+            _viewModel.UndoRedo.PushUndo(_viewModel.Document);
+            _textEditUndoBurstActive = true;
+        }
+
+        if (_textEditUndoIdleTimer is null)
+        {
+            _textEditUndoIdleTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TextEditBurstIdle,
+            };
+            _textEditUndoIdleTimer.Tick += OnTextEditUndoIdle;
+        }
+        _textEditUndoIdleTimer.Stop();
+        _textEditUndoIdleTimer.Start();
+    }
+
+    private void OnTextEditUndoIdle(object? sender, EventArgs e)
+        => EndTextEditUndoBurst();
+
+    /// <summary>
+    /// 텍스트 입력 burst 를 즉시 종료. 현재 RTB 의 라이브 상태를 파싱해 <c>_viewModel.Document</c> 에
+    /// 동기화한다 — 다음 액션(또는 Undo) 가 올바른 "post-text" 상태를 기준으로 작동.
+    /// </summary>
+    private void EndTextEditUndoBurst()
+    {
+        if (!_textEditUndoBurstActive) return;
+        _textEditUndoBurstActive = false;
+        _textEditUndoIdleTimer?.Stop();
+
+        if (_viewModel is null) return;
+        if (PageEditorHost.PageCount == 0) return;
+        try
+        {
+            var live = ParseAllPageEditors();
+            _viewModel.SyncDocumentFromLive(live);
+        }
+        catch
+        {
+            // 파싱 실패해도 burst 만 종료하고 계속 (다음 BeginTextEditUndoBurst 가 새 스냅샷을 만든다).
+        }
+    }
+
+    /// <summary>
+    /// 비-텍스트 액션(오버레이 변경·페이지 나누기·서식 변경 등) 직전에 호출.
+    /// 현재까지의 텍스트 burst 를 종료해 _document 를 최신화한 뒤, 그 상태를 undo 스택에 push.
+    /// 이후 호출자는 _viewModel.Document 를 자유롭게 변형 + MarkDirty 만 하면 된다.
+    /// </summary>
+    private void BeginUndoableAction()
+    {
+        if (_viewModel is null) return;
+        EndTextEditUndoBurst();
+        _viewModel.UndoRedo.PushUndo(_viewModel.Document);
+    }
+
+    private void OnEditUndo(object sender, RoutedEventArgs e) => PerformUndo();
+    private void OnEditRedo(object sender, RoutedEventArgs e) => PerformRedo();
+
+    private void PerformUndo()
+    {
+        if (_viewModel is null) return;
+        // settle: 라이브 RTB 상태를 _document 에 반영해 사용자가 친 마지막 burst 도 redo 에 보존.
+        EndTextEditUndoBurst();
+
+        var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+        if (prev is null) return;
+
+        _viewModel.ReplaceDocumentForUndo(prev);
+        _viewModel.MarkDirty();
+        ApplyFlowDocument(_viewModel.FlowDocument);
+    }
+
+    private void PerformRedo()
+    {
+        if (_viewModel is null) return;
+        EndTextEditUndoBurst();
+
+        var next = _viewModel.UndoRedo.Redo(_viewModel.Document);
+        if (next is null) return;
+
+        _viewModel.ReplaceDocumentForUndo(next);
+        _viewModel.MarkDirty();
+        ApplyFlowDocument(_viewModel.FlowDocument);
     }
 
     private void OnFindReplaceRequested(object? sender, EventArgs e)
@@ -1793,8 +2752,8 @@ public partial class MainWindow : Window
 
     private void OnFormatChar(object sender, RoutedEventArgs e)
     {
+        // 글자 속성: 선택이 있으면 그 영역만, 없으면 caret 위치(이후 입력에 적용) — SelectAll 강제 안 함.
         var editor = GetActiveTextEditor();
-        EnsureInnerSelectionForDialog(editor, _selectedOverlay);
         var dlg = new CharFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
@@ -1805,8 +2764,9 @@ public partial class MainWindow : Window
 
     private void OnFormatPara(object sender, RoutedEventArgs e)
     {
+        // 문단 속성은 selection 이 비어있어도 caret 단락에만 적용 — EnsureInnerSelectionForDialog
+        // (= SelectAll) 호출하지 않음. ParaFormatWindow.CollectParagraphs 가 caret 단락 1개 반환.
         var editor = GetActiveTextEditor();
-        EnsureInnerSelectionForDialog(editor, _selectedOverlay);
         var dlg = new ParaFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
@@ -1816,10 +2776,16 @@ public partial class MainWindow : Window
     }
 
     private void OnFormatPage(object sender, RoutedEventArgs e)
+        => OpenPageFormatDialog(initialTab: 0);
+
+    private void OnFormatHeaderFooter(object sender, RoutedEventArgs e)
+        => OpenPageFormatDialog(initialTab: 3);
+
+    private void OpenPageFormatDialog(int initialTab)
     {
         var current = _viewModel?.Document.Sections.FirstOrDefault()?.Page
                       ?? new PolyDonky.Core.PageSettings();
-        var dlg = new PageFormatWindow(current) { Owner = this };
+        var dlg = new PageFormatWindow(current, initialTab) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             if (_viewModel?.Document.Sections.FirstOrDefault() is { } section)
@@ -1917,6 +2883,602 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnInsertHyperlink(object sender, RoutedEventArgs e)
+    {
+        var editor = GetActiveTextEditor();
+
+        // 기존 하이퍼링크 탐지 (캐럿이 링크 안에 있는지)
+        var existingHl  = FindHyperlinkAtCaret(editor);
+        var existingUrl = (existingHl?.Tag as PolyDonky.Core.Run)?.Url
+                          ?? existingHl?.NavigateUri?.ToString()
+                          ?? string.Empty;
+
+        // 선택 텍스트를 표시 텍스트 초기값으로
+        var selectedText = editor.Selection.IsEmpty ? string.Empty : editor.Selection.Text;
+
+        var dlg = new HyperlinkDialog(existingUrl, selectedText, canRemove: existingHl is not null)
+        {
+            Owner = this,
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        if (dlg.ResultUrl is null)
+            RemoveHyperlinkAt(editor, existingHl);
+        else
+            InsertOrUpdateHyperlink(editor, existingHl, dlg.ResultUrl, dlg.ResultDisplayText);
+
+        _viewModel?.MarkDirty();
+        editor.Focus();
+    }
+
+    // ── 하이퍼링크 유틸리티 ───────────────────────────────────────────────
+
+    /// <summary>캐럿이 속한 WPF Hyperlink 요소를 찾는다. 없으면 null.</summary>
+    private static WpfDocs.Hyperlink? FindHyperlinkAtCaret(RichTextBox editor)
+    {
+        var el = editor.CaretPosition.Parent as WpfDocs.TextElement;
+        while (el is not null)
+        {
+            if (el is WpfDocs.Hyperlink hl) return hl;
+            el = el.Parent as WpfDocs.TextElement;
+        }
+        return null;
+    }
+
+    /// <summary>하이퍼링크를 삽입하거나(existingHl==null) 기존 링크의 URL·텍스트를 갱신한다.</summary>
+    private static void InsertOrUpdateHyperlink(
+        RichTextBox editor,
+        WpfDocs.Hyperlink? existingHl,
+        string url,
+        string? displayText)
+    {
+        // ── 기존 링크 갱신 ────────────────────────────────────────────────
+        if (existingHl is not null)
+        {
+            // NavigateUri 갱신
+            try { existingHl.NavigateUri = new Uri(url, UriKind.RelativeOrAbsolute); }
+            catch { existingHl.NavigateUri = null; }
+
+            // Tag(원본 Core Run) URL 갱신
+            if (existingHl.Tag is PolyDonky.Core.Run coreRun)
+                coreRun.Url = url;
+            else
+                existingHl.Tag = new PolyDonky.Core.Run { Url = url };
+
+            // 표시 텍스트 변경이 요청된 경우에만 교체
+            if (displayText is { Length: > 0 })
+            {
+                var innerRange = new WpfDocs.TextRange(existingHl.ContentStart, existingHl.ContentEnd);
+                innerRange.Text = displayText;
+            }
+            return;
+        }
+
+        // ── 새 링크 삽입 ─────────────────────────────────────────────────
+        // 삽입 전 서식 캡처 — 하이퍼링크 삽입 후 이전 서식으로 복원할 때 사용한다.
+        object prevFg  = editor.Selection.GetPropertyValue(WpfDocs.TextElement.ForegroundProperty);
+        object prevTd  = editor.Selection.GetPropertyValue(WpfDocs.Inline.TextDecorationsProperty);
+        object prevFw  = editor.Selection.GetPropertyValue(WpfDocs.TextElement.FontWeightProperty);
+        object prevFs  = editor.Selection.GetPropertyValue(WpfDocs.TextElement.FontStyleProperty);
+        object prevFf  = editor.Selection.GetPropertyValue(WpfDocs.TextElement.FontFamilyProperty);
+        object prevFsz = editor.Selection.GetPropertyValue(WpfDocs.TextElement.FontSizeProperty);
+
+        var text = displayText is { Length: > 0 } t ? t
+                   : !editor.Selection.IsEmpty       ? editor.Selection.Text
+                   : url;
+
+        // 선택 영역 삭제
+        if (!editor.Selection.IsEmpty)
+            editor.Selection.Text = string.Empty;
+
+        var insertPos = editor.CaretPosition
+                               .GetInsertionPosition(System.Windows.Documents.LogicalDirection.Forward)
+                               ?? editor.CaretPosition;
+
+        var modelRun = new PolyDonky.Core.Run
+        {
+            Text  = text,
+            Url   = url,
+            Style = new PolyDonky.Core.RunStyle { Underline = true },
+        };
+
+        var wpfRun = new WpfDocs.Run(text);
+        var hl = new WpfDocs.Hyperlink(wpfRun, insertPos);
+        try { hl.NavigateUri = new Uri(url, UriKind.RelativeOrAbsolute); }
+        catch { /* 잘못된 URI */ }
+        hl.Tag = modelRun;
+
+        // 하이퍼링크 직후에 "서식 탈출 Run" 을 삽입한다.
+        // Hyperlink 는 Span 의 서브클래스라, ElementEnd 에서 타이핑하면
+        // WPF 가 링크 스타일(파란색·밑줄)을 이어붙이는 경우가 있다.
+        // hl.ElementEnd 위치에 빈 Run 을 하나 더 삽입해 커서를 하이퍼링크
+        // 컨텍스트 밖으로 빼내고, 삽입 전 서식을 해당 Run 에 적용한다.
+        try
+        {
+            var escapeRun = new WpfDocs.Run("", hl.ElementEnd);
+            if (prevFg  != DependencyProperty.UnsetValue) escapeRun.SetValue(WpfDocs.TextElement.ForegroundProperty, prevFg);
+            if (prevFw  != DependencyProperty.UnsetValue) escapeRun.SetValue(WpfDocs.TextElement.FontWeightProperty,  prevFw);
+            if (prevFs  != DependencyProperty.UnsetValue) escapeRun.SetValue(WpfDocs.TextElement.FontStyleProperty,   prevFs);
+            if (prevFf  != DependencyProperty.UnsetValue) escapeRun.SetValue(WpfDocs.TextElement.FontFamilyProperty,  prevFf);
+            if (prevFsz != DependencyProperty.UnsetValue) escapeRun.SetValue(WpfDocs.TextElement.FontSizeProperty,    prevFsz);
+            // TextDecorations: 하이퍼링크 밑줄을 명시적으로 제거한다.
+            escapeRun.TextDecorations = prevTd is System.Windows.TextDecorationCollection tdc ? tdc : null;
+            editor.CaretPosition = escapeRun.ContentEnd;
+        }
+        catch
+        {
+            try { editor.CaretPosition = hl.ElementEnd; }
+            catch { /* 포지션 이동 실패 무시 */ }
+        }
+    }
+
+    /// <summary>기존 하이퍼링크를 일반 텍스트로 교체(링크 제거).</summary>
+    private static void RemoveHyperlinkAt(RichTextBox editor, WpfDocs.Hyperlink? hl)
+    {
+        if (hl is null) return;
+        var text = new WpfDocs.TextRange(hl.ContentStart, hl.ContentEnd).Text;
+        // ElementStart~ElementEnd 범위에 Text 를 대입하면 Hyperlink 구조가 평탄화된다.
+        new WpfDocs.TextRange(hl.ElementStart, hl.ElementEnd).Text = text;
+    }
+
+    // ── 페이지 나누기 ───────────────────────────────────────────────────────
+
+    private void OnInsertPageBreak(object sender, RoutedEventArgs e)
+        => InsertPageBreakAtCaret();
+
+    private void InsertPageBreakAtCaret()
+    {
+        if (_viewModel is null) return;
+        var editor = GetActiveTextEditor();
+        var caret  = editor.CaretPosition;
+
+        if (IsCaretInTableCell(caret))
+        {
+            System.Windows.MessageBox.Show(
+                SR.MsgPageBreakInTableCell,
+                SR.MenuInsertPageBreak,
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        // 모델 스냅샷 기반 Undo 등록 — 페이지 나누기 자체가 한 번의 액션 단위.
+        BeginUndoableAction();
+
+        // 캐럿 위치에서 단락 분할 — 새 단락이 생기며 포인터는 그 안으로 이동
+        var newPtr  = caret.InsertParagraphBreak();
+        var newPara = newPtr?.Paragraph;
+        if (newPara is not null)
+        {
+            newPara.BreakPageBefore = true;
+            try { editor.CaretPosition = newPara.ContentStart; } catch { }
+        }
+
+        _viewModel.MarkDirty();
+    }
+
+    // ── 각주 / 미주 ─────────────────────────────────────────────────────────
+
+    private void OnInsertFootnote(object sender, RoutedEventArgs e)
+        => InsertNoteAtCaret(isEndnote: false);
+
+    private void OnInsertEndnote(object sender, RoutedEventArgs e)
+        => InsertNoteAtCaret(isEndnote: true);
+
+    // ── 자동 목차 삽입 / 새로고침 ─────────────────────────────────────────
+
+    private void OnInsertToc(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var editor = GetActiveTextEditor();
+        var toc    = new PolyDonky.Core.TocBlock();
+        toc.Entries = CollectTocEntries(editor.Document);
+        InsertCoreBlocksAtCaret(new System.Collections.Generic.List<PolyDonky.Core.Block> { toc });
+    }
+
+    private void OnRefreshAllToc(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var editor     = GetActiveTextEditor();
+        var doc        = editor.Document;
+        var newEntries = CollectTocEntries(doc);
+
+        var toRefresh = new System.Collections.Generic.List<(System.Windows.Documents.Block wpfBlock, PolyDonky.Core.TocBlock toc)>();
+        foreach (var block in doc.Blocks)
+        {
+            if (block is System.Windows.Documents.BlockUIContainer { Tag: PolyDonky.Core.TocBlock toc })
+                toRefresh.Add((block, toc));
+        }
+
+        if (toRefresh.Count == 0)
+        {
+            System.Windows.MessageBox.Show(
+                PolyDonky.App.Properties.Resources.MsgNoTocToRefresh ?? "문서에 목차 블록이 없습니다.",
+                "목차",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        foreach (var (oldBlock, toc) in toRefresh)
+        {
+            toc.Entries = new System.Collections.Generic.List<PolyDonky.Core.TocEntry>(newEntries);
+            var newBlock = PolyDonky.App.Services.FlowDocumentBuilder.BuildTocBlock(toc);
+            doc.Blocks.InsertBefore(oldBlock, newBlock);
+            doc.Blocks.Remove(oldBlock);
+        }
+
+        _viewModel.MarkDirty();
+    }
+
+    private static System.Collections.Generic.IList<PolyDonky.Core.TocEntry> CollectTocEntries(
+        System.Windows.Documents.FlowDocument fd)
+    {
+        var entries = new System.Collections.Generic.List<PolyDonky.Core.TocEntry>();
+        CollectEntriesFromBlocks(fd.Blocks, entries);
+        return entries;
+    }
+
+    private static void CollectEntriesFromBlocks(
+        System.Windows.Documents.BlockCollection blocks,
+        System.Collections.Generic.List<PolyDonky.Core.TocEntry> entries)
+    {
+        foreach (var block in blocks)
+        {
+            if (block is System.Windows.Documents.Paragraph { Tag: PolyDonky.Core.Paragraph coreP }
+                && coreP.Style.Outline > PolyDonky.Core.OutlineLevel.Body)
+            {
+                entries.Add(new PolyDonky.Core.TocEntry
+                {
+                    Level = (int)coreP.Style.Outline,
+                    Text  = coreP.GetPlainText(),
+                });
+            }
+            else if (block is System.Windows.Documents.List list)
+            {
+                foreach (var item in list.ListItems)
+                    CollectEntriesFromBlocks(item.Blocks, entries);
+            }
+            else if (block is System.Windows.Documents.Section nested)
+            {
+                CollectEntriesFromBlocks(nested.Blocks, entries);
+            }
+        }
+    }
+
+    // ── 필드 삽입 ────────────────────────────────────────────────────────
+
+    private void OnInsertField(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if (sender is not System.Windows.FrameworkElement { Tag: string fieldTypeStr }) return;
+        if (!Enum.TryParse<PolyDonky.Core.FieldType>(fieldTypeStr, out var fieldType)) return;
+
+        var editor = GetActiveTextEditor();
+        if (!editor.Selection.IsEmpty) editor.Selection.Text = string.Empty;
+
+        var insertPos = editor.CaretPosition
+            .GetInsertionPosition(System.Windows.Documents.LogicalDirection.Forward)
+            ?? editor.CaretPosition;
+
+        var fieldText = fieldType switch
+        {
+            PolyDonky.Core.FieldType.Date     => System.DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.Time     => System.DateTime.Now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.Page     => "‹페이지›",
+            PolyDonky.Core.FieldType.NumPages => "‹총페이지›",
+            PolyDonky.Core.FieldType.Author   => _viewModel.Document.Metadata.Author is { Length: > 0 } a ? a : "‹작성자›",
+            PolyDonky.Core.FieldType.Title    => _viewModel.Document.Metadata.Title  is { Length: > 0 } t ? t : "‹제목›",
+            _                                 => $"‹{fieldType}›",
+        };
+
+        var coreRun = new PolyDonky.Core.Run { Text = fieldText, Field = fieldType };
+        var wpfRun  = new System.Windows.Documents.Run(fieldText, insertPos)
+        {
+            Tag        = coreRun,
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(45, 0, 102, 204)),
+        };
+
+        try { editor.CaretPosition = wpfRun.ElementEnd; } catch { }
+        _viewModel.MarkDirty();
+    }
+
+    private void OnToggleFootnotePanel(object sender, RoutedEventArgs e)
+        => SetFootnotePanelVisible(MiFootnotePanel.IsChecked);
+
+    private void SetFootnotePanelVisible(bool visible)
+    {
+        FootnotePanelHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        MiFootnotePanel.IsChecked    = visible;
+        if (visible && _viewModel is not null)
+        {
+            FootnotePanel.BindToDocument(_viewModel.Document);
+        }
+    }
+
+    /// <summary>현재 캐럿 위치(또는 선택 끝)에 새 각주/미주 참조를 삽입한다.
+    /// <para>
+    /// 동작:
+    /// <list type="number">
+    /// <item>새 <see cref="PolyDonky.Core.FootnoteEntry"/> 생성 후 문서에 추가.</item>
+    /// <item>위첨자 WPF Run 을 캐럿 위치에 삽입(번호 = list.Count). Tag 에 Core Run 보관.</item>
+    /// <item>패널을 표시·갱신하고 새 항목 TextBox 에 포커스.</item>
+    /// </list>
+    /// </para></summary>
+    private void InsertNoteAtCaret(bool isEndnote)
+    {
+        if (_viewModel is null) return;
+        var editor = GetActiveTextEditor();
+
+        // 선택이 있으면 캐럿을 선택 끝으로 옮긴다 — 일반적으로 footnote 는 선택의 직후에 배치.
+        if (!editor.Selection.IsEmpty)
+        {
+            try { editor.CaretPosition = editor.Selection.End; } catch { }
+        }
+
+        var caret     = editor.CaretPosition;
+        var insertPos = caret.GetInsertionPosition(System.Windows.Documents.LogicalDirection.Forward) ?? caret;
+
+        // 1. 모델에 새 항목 추가
+        var list = isEndnote ? _viewModel.Document.Endnotes : _viewModel.Document.Footnotes;
+        var prefix = isEndnote ? "en-" : "fn-";
+        var id = prefix + Guid.NewGuid().ToString("N").Substring(0, 8);
+        var entry = new PolyDonky.Core.FootnoteEntry
+        {
+            Id     = id,
+            Blocks = new List<PolyDonky.Core.Block> { PolyDonky.Core.Paragraph.Of(string.Empty) },
+        };
+        list.Add(entry);
+
+        // 2. 본문에 위첨자 참조 런 삽입
+        var displayNum = list.Count;
+        var coreRun = new PolyDonky.Core.Run { Text = displayNum.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        if (isEndnote) coreRun.EndnoteId = id;
+        else            coreRun.FootnoteId = id;
+
+        // FlowDocumentBuilder 와 동일한 시각 속성 — Run(string,TextPointer) 생성자로 즉시 삽입.
+        WpfDocs.Run? wpfRun = null;
+        try
+        {
+            wpfRun = new WpfDocs.Run(coreRun.Text, insertPos)
+            {
+                BaselineAlignment = BaselineAlignment.Superscript,
+                FontSize          = 8.0 * 96.0 / 72.0,  // 8pt → DIP
+                Tag               = coreRun,
+            };
+        }
+        catch { /* 삽입 위치가 부적합한 경우 무시 — 모델만 추가됨 */ }
+
+        if (wpfRun is not null)
+        {
+            try { editor.CaretPosition = wpfRun.ElementEnd; } catch { }
+        }
+
+        // 3. 본문 측 위첨자들 번호 동기화 (이전 항목들 번호는 그대로지만 안전 차원에서 재계산)
+        RenumberNoteRefs(isEndnote);
+
+        // 4. 패널 표시 + 새 항목 포커스
+        SetFootnotePanelVisible(true);
+        FootnotePanel.Refresh();
+        var kind = isEndnote
+            ? FootnoteEditorPanel.NoteKind.Endnote
+            : FootnoteEditorPanel.NoteKind.Footnote;
+        FootnotePanel.FocusEntry(kind, id);
+
+        _viewModel.MarkDirty();
+    }
+
+    /// <summary>모든 페이지 RTB 의 본문을 순회하며, 각주/미주 참조 위첨자 Run 의
+    /// 텍스트(표시 번호)를 현재 list 인덱스+1 로 재설정한다.</summary>
+    private void RenumberNoteRefs(bool endnotes)
+    {
+        if (_viewModel is null) return;
+        var list = endnotes ? _viewModel.Document.Endnotes : _viewModel.Document.Footnotes;
+        var idToNum = list
+            .Select((entry, idx) => (entry.Id, num: idx + 1))
+            .ToDictionary(x => x.Id, x => x.num);
+
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            foreach (var block in rtb.Document.Blocks)
+                RenumberInBlock(block, idToNum, endnotes);
+        }
+    }
+
+    private static void RenumberInBlock(
+        WpfDocs.Block block,
+        IReadOnlyDictionary<string, int> idToNum,
+        bool endnotes)
+    {
+        switch (block)
+        {
+            case WpfDocs.Paragraph para:
+                RenumberInInlines(para.Inlines, idToNum, endnotes);
+                break;
+            case WpfDocs.Section section:
+                foreach (var b in section.Blocks)
+                    RenumberInBlock(b, idToNum, endnotes);
+                break;
+            case WpfDocs.Table table:
+                foreach (var rg in table.RowGroups)
+                    foreach (var row in rg.Rows)
+                        foreach (var cell in row.Cells)
+                            foreach (var b in cell.Blocks)
+                                RenumberInBlock(b, idToNum, endnotes);
+                break;
+        }
+    }
+
+    private static void RenumberInInlines(
+        WpfDocs.InlineCollection inlines,
+        IReadOnlyDictionary<string, int> idToNum,
+        bool endnotes)
+    {
+        foreach (var inl in inlines)
+        {
+            if (inl is WpfDocs.Run wpfRun
+                && wpfRun.Tag is PolyDonky.Core.Run core)
+            {
+                var refId = endnotes ? core.EndnoteId : core.FootnoteId;
+                if (refId is { Length: > 0 } && idToNum.TryGetValue(refId, out var num))
+                {
+                    var s = num.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (wpfRun.Text != s)
+                    {
+                        wpfRun.Text = s;
+                        core.Text   = s;
+                    }
+                }
+            }
+            else if (inl is WpfDocs.Span span)
+            {
+                RenumberInInlines(span.Inlines, idToNum, endnotes);
+            }
+        }
+    }
+
+    /// <summary>패널에서 항목 삭제 요청을 받았을 때:
+    /// 모델에서 항목을 제거하고, 본문에서 해당 ID 를 가진 위첨자 Run 들을 모두 제거한 뒤,
+    /// 남은 항목 번호들을 재동기화한다.</summary>
+    private void OnFootnoteEntryDeleted(object? sender, (FootnoteEditorPanel.NoteKind Kind, string Id) e)
+    {
+        if (_viewModel is null) return;
+        var endnotes = e.Kind == FootnoteEditorPanel.NoteKind.Endnote;
+        var list = endnotes ? _viewModel.Document.Endnotes : _viewModel.Document.Footnotes;
+
+        // 1. 모델에서 항목 제거
+        var idx = -1;
+        for (int i = 0; i < list.Count; i++)
+            if (list[i].Id == e.Id) { idx = i; break; }
+        if (idx < 0) return;
+        list.RemoveAt(idx);
+
+        // 2. 본문에서 해당 ID 의 위첨자 Run 들 제거
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            foreach (var block in rtb.Document.Blocks.ToList())
+                RemoveNoteRefsInBlock(block, e.Id, endnotes);
+        }
+
+        // 3. 남은 항목들 번호 재동기화
+        RenumberNoteRefs(endnotes);
+
+        // 4. 패널 갱신
+        FootnotePanel.Refresh();
+        _viewModel.MarkDirty();
+    }
+
+    private static void RemoveNoteRefsInBlock(WpfDocs.Block block, string id, bool endnotes)
+    {
+        switch (block)
+        {
+            case WpfDocs.Paragraph para:
+                RemoveNoteRefsInInlines(para.Inlines, id, endnotes);
+                break;
+            case WpfDocs.Section section:
+                foreach (var b in section.Blocks.ToList())
+                    RemoveNoteRefsInBlock(b, id, endnotes);
+                break;
+            case WpfDocs.Table table:
+                foreach (var rg in table.RowGroups)
+                    foreach (var row in rg.Rows)
+                        foreach (var cell in row.Cells)
+                            foreach (var b in cell.Blocks.ToList())
+                                RemoveNoteRefsInBlock(b, id, endnotes);
+                break;
+        }
+    }
+
+    private static void RemoveNoteRefsInInlines(WpfDocs.InlineCollection inlines, string id, bool endnotes)
+    {
+        var toRemove = new List<WpfDocs.Inline>();
+        foreach (var inl in inlines)
+        {
+            if (inl is WpfDocs.Run wpfRun
+                && wpfRun.Tag is PolyDonky.Core.Run core)
+            {
+                var refId = endnotes ? core.EndnoteId : core.FootnoteId;
+                if (refId == id) toRemove.Add(wpfRun);
+            }
+            else if (inl is WpfDocs.Span span)
+            {
+                RemoveNoteRefsInInlines(span.Inlines, id, endnotes);
+            }
+        }
+        foreach (var r in toRemove) inlines.Remove(r);
+    }
+
+    /// <summary>패널에서 "본문 참조로 이동" 버튼 클릭 시:
+    /// 해당 ID 의 첫 위첨자 Run 을 찾아 캐럿을 그 위치로 옮긴다.</summary>
+    private void OnFootnoteEntryFocusRequested(object? sender, (FootnoteEditorPanel.NoteKind Kind, string Id) e)
+    {
+        var endnotes = e.Kind == FootnoteEditorPanel.NoteKind.Endnote;
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            if (TryFindAndFocusNoteRef(rtb, e.Id, endnotes))
+            {
+                rtb.Focus();
+                return;
+            }
+        }
+    }
+
+    private static bool TryFindAndFocusNoteRef(RichTextBox rtb, string id, bool endnotes)
+    {
+        foreach (var block in rtb.Document.Blocks)
+        {
+            if (TryFindAndFocusNoteRefInBlock(rtb, block, id, endnotes)) return true;
+        }
+        return false;
+    }
+
+    private static bool TryFindAndFocusNoteRefInBlock(
+        RichTextBox rtb, WpfDocs.Block block, string id, bool endnotes)
+    {
+        switch (block)
+        {
+            case WpfDocs.Paragraph para:
+                foreach (var inl in para.Inlines)
+                {
+                    if (inl is WpfDocs.Run wr
+                        && wr.Tag is PolyDonky.Core.Run core
+                        && (endnotes ? core.EndnoteId : core.FootnoteId) == id)
+                    {
+                        try { rtb.CaretPosition = wr.ContentEnd; }
+                        catch { }
+                        return true;
+                    }
+                }
+                break;
+            case WpfDocs.Section section:
+                foreach (var b in section.Blocks)
+                    if (TryFindAndFocusNoteRefInBlock(rtb, b, id, endnotes)) return true;
+                break;
+            case WpfDocs.Table table:
+                foreach (var rg in table.RowGroups)
+                    foreach (var row in rg.Rows)
+                        foreach (var cell in row.Cells)
+                            foreach (var b in cell.Blocks)
+                                if (TryFindAndFocusNoteRefInBlock(rtb, b, id, endnotes)) return true;
+                break;
+        }
+        return false;
+    }
+
+    /// <summary>캐럿이 속한 각주/미주 참조 Run 을 찾는다.
+    /// 컨텍스트 메뉴에서 "각주 편집" 항목 표시 여부 결정에 사용.</summary>
+    private static (string? Id, bool IsEndnote) FindNoteRefAtCaret(RichTextBox editor)
+    {
+        if (editor.CaretPosition.Parent is WpfDocs.Run wr
+            && wr.Tag is PolyDonky.Core.Run core)
+        {
+            if (core.FootnoteId is { Length: > 0 } fnId) return (fnId, false);
+            if (core.EndnoteId  is { Length: > 0 } enId) return (enId, true);
+        }
+        return (null, false);
+    }
+
     // ── 표 열 너비 드래그 리사이즈 ────────────────────────────────────────────
 
     private bool TryHitTableColumnBorder(Point pt,
@@ -1927,60 +3489,71 @@ public partial class MainWindow : Window
     {
         wpfTable = null; coreTable = null; leftColIdx = -1; borderX = 0;
 
-        var tp = BodyEditor.GetPositionFromPoint(pt, true);
-        if (tp == null) return false;
-
-        // Walk up to TableCell
-        System.Windows.Documents.TableCell? cell = null;
-        DependencyObject? cur = tp.Parent;
-        while (cur is System.Windows.FrameworkContentElement fce)
+        // FlowDocument 레이아웃이 검증되지 않은 상태(예: 행 삽입 직후 재빌드 중)
+        // 에서는 GetPositionFromPoint / GetCharacterRect 가
+        // InvalidOperationException("TextView 의 레이아웃 정보가 잘못되었습니다") 을 던진다.
+        // hit-test 실패로 처리하면 다음 마우스 이벤트에서 정상 동작.
+        try
         {
-            if (cur is System.Windows.Documents.TableCell tc) { cell = tc; break; }
-            cur = fce.Parent;
-        }
-        if (cell == null) return false;
-        if (cell.ColumnSpan > 1) return false;
+            var tp = BodyEditor.GetPositionFromPoint(pt, true);
+            if (tp == null) return false;
 
-        var row      = cell.Parent as System.Windows.Documents.TableRow;
-        var rowGroup = row?.Parent as System.Windows.Documents.TableRowGroup;
-        var wTable   = rowGroup?.Parent as System.Windows.Documents.Table;
-        if (wTable is null) return false;
-        // 붙여넣기 표는 Tag 가 null 이므로 즉석 부착
-        var cTable = EnsureCoreTable(wTable);
-
-        int cellIdx  = row!.Cells.IndexOf(cell);
-        int colCount = wTable.Columns.Count;
-        if (cellIdx < 0) return false;
-
-        var firstRow = rowGroup!.Rows[0];
-
-        // 이 셀의 오른쪽 경계선 = 다음 셀 콘텐츠 시작 X
-        if (cellIdx < colCount - 1 && cellIdx + 1 < firstRow.Cells.Count)
-        {
-            var nextRect = firstRow.Cells[cellIdx + 1].ContentStart
-                                .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
-            if (!nextRect.IsEmpty && Math.Abs(pt.X - nextRect.Left) <= TableColResizeHitDip)
+            // Walk up to TableCell
+            System.Windows.Documents.TableCell? cell = null;
+            DependencyObject? cur = tp.Parent;
+            while (cur is System.Windows.FrameworkContentElement fce)
             {
-                wpfTable = wTable; coreTable = cTable;
-                leftColIdx = cellIdx; borderX = nextRect.Left;
-                return true;
+                if (cur is System.Windows.Documents.TableCell tc) { cell = tc; break; }
+                cur = fce.Parent;
             }
-        }
+            if (cell == null) return false;
+            if (cell.ColumnSpan > 1) return false;
 
-        // 이 셀의 왼쪽 경계선 = 이 셀 콘텐츠 시작 X (이전 셀의 오른쪽 경계)
-        if (cellIdx > 0 && cellIdx < firstRow.Cells.Count)
-        {
-            var thisRect = firstRow.Cells[cellIdx].ContentStart
-                                .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
-            if (!thisRect.IsEmpty && Math.Abs(pt.X - thisRect.Left) <= TableColResizeHitDip)
+            var row      = cell.Parent as System.Windows.Documents.TableRow;
+            var rowGroup = row?.Parent as System.Windows.Documents.TableRowGroup;
+            var wTable   = rowGroup?.Parent as System.Windows.Documents.Table;
+            if (wTable is null) return false;
+            // 붙여넣기 표는 Tag 가 null 이므로 즉석 부착
+            var cTable = EnsureCoreTable(wTable);
+
+            int cellIdx  = row!.Cells.IndexOf(cell);
+            int colCount = wTable.Columns.Count;
+            if (cellIdx < 0) return false;
+
+            var firstRow = rowGroup!.Rows[0];
+
+            // 이 셀의 오른쪽 경계선 = 다음 셀 콘텐츠 시작 X
+            if (cellIdx < colCount - 1 && cellIdx + 1 < firstRow.Cells.Count)
             {
-                wpfTable = wTable; coreTable = cTable;
-                leftColIdx = cellIdx - 1; borderX = thisRect.Left;
-                return true;
+                var nextRect = firstRow.Cells[cellIdx + 1].ContentStart
+                                    .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                if (!nextRect.IsEmpty && Math.Abs(pt.X - nextRect.Left) <= TableColResizeHitDip)
+                {
+                    wpfTable = wTable; coreTable = cTable;
+                    leftColIdx = cellIdx; borderX = nextRect.Left;
+                    return true;
+                }
             }
-        }
 
-        return false;
+            // 이 셀의 왼쪽 경계선 = 이 셀 콘텐츠 시작 X (이전 셀의 오른쪽 경계)
+            if (cellIdx > 0 && cellIdx < firstRow.Cells.Count)
+            {
+                var thisRect = firstRow.Cells[cellIdx].ContentStart
+                                    .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                if (!thisRect.IsEmpty && Math.Abs(pt.X - thisRect.Left) <= TableColResizeHitDip)
+                {
+                    wpfTable = wTable; coreTable = cTable;
+                    leftColIdx = cellIdx - 1; borderX = thisRect.Left;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (System.InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private void StartTableColumnResize(
@@ -2056,6 +3629,193 @@ public partial class MainWindow : Window
         _viewModel?.MarkDirty();
     }
 
+    // ── 단 너비 드래그 리사이즈 헬퍼 ────────────────────────────────────────
+
+    /// <summary>
+    /// PaperHost 기준 좌표 <paramref name="ptInPaper"/> 가 단 구분선 Hit 영역 안에 있으면 true.
+    /// <paramref name="leftColIdx"/> 는 경계 왼쪽 단 인덱스 (0-based).
+    /// </summary>
+    private bool TryHitColumnDivider(Point ptInPaper, out int leftColIdx)
+    {
+        leftColIdx = -1;
+        var pg = _pageGeometry;
+        if (pg is null || pg.ColumnCount <= 1) return false;
+
+        // Y 가 어느 한 페이지의 본문 영역 안이어야 한다 (페이지 사이 갭·머리글/바닥글 영역은 제외).
+        double stride    = pg.PageStrideDip;
+        double yInPage   = stride > 0 ? ptInPaper.Y % stride : ptInPaper.Y;
+        if (yInPage < pg.PadTopDip || yInPage > pg.PageHeightDip - pg.PadBottomDip)
+            return false;
+
+        for (int c = 0; c < pg.ColumnCount - 1; c++)
+        {
+            double colW = c < pg.ColWidthsDip.Length ? pg.ColWidthsDip[c] : pg.ColWidthDip;
+            double divX = pg.PadLeftDip + pg.ColumnXOffsetDip(c) + colW + pg.ColGapDip / 2.0;
+            if (Math.Abs(ptInPaper.X - divX) <= ColDivHitDip)
+            {
+                leftColIdx = c;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>단 너비 드래그 중 마우스 이동 — 구분선 위치를 실시간으로 업데이트한다.</summary>
+    private void HandleColDivDragMove(MouseEventArgs e)
+    {
+        var pg = _pageGeometry;
+        if (pg is null) return;
+
+        var pos   = e.GetPosition(PaperHost);
+        double delta = pos.X - _colDivDragStartX;
+        int l = _colDivDragLeftIdx, r = l + 1;
+        if (r >= _colDivDragStartWidths.Length) return;
+
+        double total = _colDivDragStartWidths[l] + _colDivDragStartWidths[r];
+        double newL  = Math.Clamp(_colDivDragStartWidths[l] + delta, ColDivMinWidthDip, total - ColDivMinWidthDip);
+
+        // 드래그된 경계의 새 X = padLeft + (변경되지 않은 이전 단들의 X 합) + newL + gap/2
+        double newDivX = pg.PadLeftDip + pg.ColumnXOffsetDip(l) + newL + pg.ColGapDip / 2.0;
+
+        foreach (var line in _columnDividerLines)
+        {
+            if (line.Tag is int idx && idx == l)
+            {
+                line.X1 = newDivX;
+                line.X2 = newDivX;
+            }
+        }
+    }
+
+    /// <summary>단 너비 드래그 완료 — 모델 갱신 후 페이지 재구성.</summary>
+    private void FinishColDivDrag(MouseButtonEventArgs e)
+    {
+        _colDivDragging = false;
+        _colDivHovering = false;
+        if (PaperHost.IsMouseCaptured) PaperHost.ReleaseMouseCapture();
+        Mouse.OverrideCursor = null;
+
+        var pos   = e.GetPosition(PaperHost);
+        double delta = pos.X - _colDivDragStartX;
+        int l = _colDivDragLeftIdx, r = l + 1;
+        if (r >= _colDivDragStartWidths.Length || _pageGeometry is null) { e.Handled = true; return; }
+
+        double total = _colDivDragStartWidths[l] + _colDivDragStartWidths[r];
+        double newL  = Math.Clamp(_colDivDragStartWidths[l] + delta, ColDivMinWidthDip, total - ColDivMinWidthDip);
+        double newR  = total - newL;
+
+        var sec = _viewModel?.Document.Sections.FirstOrDefault();
+        if (sec is null) { e.Handled = true; return; }
+
+        var newWidths = (double[])_pageGeometry.ColWidthsDip.Clone();
+        newWidths[l] = newL;
+        newWidths[r] = newR;
+        sec.Page.ColumnWidthsMm = newWidths.Select(w => Services.FlowDocumentBuilder.DipToMm(w)).ToList();
+
+        ApplyPageSettings(sec.Page);
+        _viewModel?.MarkDirty();
+        e.Handled = true;
+    }
+
+    // ── 단 경계 교차 텍스트 선택 헬퍼 ────────────────────────────────────────
+
+    /// <summary>
+    /// RTB 포커스 변경 시 — 비-Shift 원인(클릭 등)이면 단 교차 선택을 모두 해제한다.
+    /// _inCrossSelNavigation 플래그가 설정된 프로그래매틱 이동은 무시.
+    /// </summary>
+    private void OnPageRtbGotFocusClearCrossSel(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (_inCrossSelNavigation) return;
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) return;
+        ClearCrossColumnSelection();
+    }
+
+    /// <summary>
+    /// 모든 비활성 RTB 의 선택을 해제하고 교차 선택 상태를 초기화한다.
+    /// </summary>
+    private void ClearCrossColumnSelection()
+    {
+        if (!_crossSelActive) return;
+        _crossSelActive = false;
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            if (rtb.IsKeyboardFocusWithin) continue;
+            if (!rtb.Selection.IsEmpty)
+            {
+                var cp = rtb.CaretPosition ?? rtb.Document.ContentStart;
+                rtb.Selection.Select(cp, cp);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shift+방향키가 RTB 경계에 도달했을 때 현재 RTB 선택을 경계까지 확장하고
+    /// 인접 RTB 로 캐럿을 이동한다.
+    /// </summary>
+    private bool TryExtendCrossColumnSelection(
+        RichTextBox rtb, WpfDocs.TextPointer caret, int idx, KeyEventArgs e)
+    {
+        // 방향 판단: 경계 조건이 아닌 키는 WPF 기본 처리에 양보
+        bool? fwd = e.Key switch
+        {
+            Key.Right when caret.GetNextInsertionPosition(WpfDocs.LogicalDirection.Forward)  is null => true,
+            Key.Down  when caret.GetLineStartPosition(1)   is null => true,
+            Key.Left  when caret.GetNextInsertionPosition(WpfDocs.LogicalDirection.Backward) is null => false,
+            Key.Up    when caret.GetLineStartPosition(-1)  is null => false,
+            _ => (bool?)null,
+        };
+        if (fwd is null) return false;
+
+        var pages = PageEditorHost.PageEditors;
+        int targetIdx = fwd.Value ? idx + 1 : idx - 1;
+        if (targetIdx < 0 || targetIdx >= pages.Count) return false;
+
+        // 현재 RTB 의 선택 고정점(anchor):
+        //   선택 없음 → 캐럿 그대로
+        //   앞으로 확장 중 → 선택 시작(Start)이 고정점
+        //   뒤로 확장 중  → 선택 끝(End)이 고정점
+        var sel    = rtb.Selection;
+        var anchor = sel.IsEmpty ? caret
+            : fwd.Value ? sel.Start : sel.End;
+
+        // 현재 RTB 선택을 경계까지 확장
+        if (fwd.Value)
+        {
+            var endPos = rtb.Document.ContentEnd
+                .GetInsertionPosition(WpfDocs.LogicalDirection.Backward) ?? rtb.Document.ContentEnd;
+            rtb.Selection.Select(anchor, endPos);
+        }
+        else
+        {
+            var startPos = rtb.Document.ContentStart
+                .GetInsertionPosition(WpfDocs.LogicalDirection.Forward) ?? rtb.Document.ContentStart;
+            rtb.Selection.Select(startPos, anchor);
+        }
+
+        _crossSelActive = true;
+
+        // 인접 RTB 로 캐럿 이동 (선택 없이, GotKeyboardFocus 는 무시)
+        _inCrossSelNavigation = true;
+        try
+        {
+            var target    = pages[targetIdx];
+            target.Focus();
+            var newCaret  = fwd.Value
+                ? target.Document.ContentStart
+                    .GetInsertionPosition(WpfDocs.LogicalDirection.Forward) ?? target.Document.ContentStart
+                : target.Document.ContentEnd
+                    .GetInsertionPosition(WpfDocs.LogicalDirection.Backward) ?? target.Document.ContentEnd;
+            target.CaretPosition = newCaret;
+        }
+        finally
+        {
+            _inCrossSelNavigation = false;
+        }
+
+        e.Handled = true;
+        return true;
+    }
+
     // ── BodyEditor 우클릭 통합 핸들러 ──────────────────────────────────────
     //
     // BodyEditor 본문 영역의 우클릭 메뉴는 모두 이 한 곳에서 빌드한다.
@@ -2093,12 +3853,91 @@ public partial class MainWindow : Window
         miFormatChar.Click += OnFormatChar;
         menu.Items.Add(miFormatChar);
 
+        // 하이퍼링크 컨텍스트 — 캐럿이 링크 안에 있을 때만 편집/열기 표시
+        var hlAtCaret = FindHyperlinkAtCaret(BodyEditor);
+        if (hlAtCaret is not null)
+        {
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            var miHlEdit = new System.Windows.Controls.MenuItem
+            {
+                Header = "하이퍼링크 편집(_K)...", InputGestureText = "Ctrl+K"
+            };
+            miHlEdit.Click += OnInsertHyperlink;
+            menu.Items.Add(miHlEdit);
+
+            var miHlOpen = new System.Windows.Controls.MenuItem
+            {
+                Header = "링크 열기(_O)"
+            };
+            var hlUri = (hlAtCaret.Tag as PolyDonky.Core.Run)?.Url
+                        ?? hlAtCaret.NavigateUri?.ToString();
+            miHlOpen.Tag = hlUri;
+            miHlOpen.Click += (_, _) =>
+            {
+                if (miHlOpen.Tag is string uriStr && !string.IsNullOrEmpty(uriStr))
+                {
+                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uriStr) { UseShellExecute = true }); }
+                    catch { /* 열기 실패 무시 */ }
+                }
+            };
+            menu.Items.Add(miHlOpen);
+        }
+        else
+        {
+            var miHlInsert = new System.Windows.Controls.MenuItem
+            {
+                Header = "하이퍼링크 삽입(_K)...", InputGestureText = "Ctrl+K"
+            };
+            miHlInsert.Click += OnInsertHyperlink;
+            menu.Items.Add(miHlInsert);
+        }
+
+        // 각주/미주 컨텍스트 — 캐럿이 참조 안에 있으면 "편집", 아니면 "삽입"
+        var (noteId, isEndnote) = FindNoteRefAtCaret(BodyEditor);
+        if (noteId is not null)
+        {
+            var miNoteEdit = new System.Windows.Controls.MenuItem
+            {
+                Header = isEndnote ? "미주 편집(_N)" : "각주 편집(_F)",
+                Tag    = (noteId, isEndnote),
+            };
+            miNoteEdit.Click += (_, _) =>
+            {
+                SetFootnotePanelVisible(true);
+                FootnotePanel.Refresh();
+                FootnotePanel.FocusEntry(
+                    isEndnote ? FootnoteEditorPanel.NoteKind.Endnote
+                              : FootnoteEditorPanel.NoteKind.Footnote,
+                    noteId);
+            };
+            menu.Items.Add(miNoteEdit);
+        }
+        else
+        {
+            var miFnInsert = new System.Windows.Controls.MenuItem { Header = "각주 삽입(_F)" };
+            miFnInsert.Click += OnInsertFootnote;
+            menu.Items.Add(miFnInsert);
+
+            var miEnInsert = new System.Windows.Controls.MenuItem { Header = "미주 삽입(_N)" };
+            miEnInsert.Click += OnInsertEndnote;
+            menu.Items.Add(miEnInsert);
+        }
+
         var miFormatPara = new System.Windows.Controls.MenuItem
         {
             Header = "문단 서식(_T)...", InputGestureText = "Ctrl+T"
         };
         miFormatPara.Click += OnFormatPara;
         menu.Items.Add(miFormatPara);
+
+        var miPageBreak = new System.Windows.Controls.MenuItem
+        {
+            Header = SR.MenuInsertPageBreak,
+            InputGestureText = "Ctrl+Enter",
+            IsEnabled = !IsCaretInTableCell(BodyEditor.CaretPosition),
+        };
+        miPageBreak.Click += OnInsertPageBreak;
+        menu.Items.Add(miPageBreak);
 
         // ② 표 컨텍스트 — 멀티 셀 선택이 우선, 없으면 캐럿 위치 셀
         if (FindSelectedTableCells() is { Count: > 1 } multiCells)
@@ -2898,6 +4737,9 @@ public partial class MainWindow : Window
     // 검증 성공 시 ViewModel 이 IsWriteProtected=false 로 풀고, 다음 키부터 바로 편집된다.
     private void OnEditorPreviewTextInput(object sender, TextCompositionEventArgs e)
     {
+        // 텍스트 입력은 활성 RTB 에만 적용 — 비활성 RTB 의 교차 선택을 해제한다.
+        if (_crossSelActive) ClearCrossColumnSelection();
+
         if (_viewModel?.IsWriteProtected != true) return;
         e.Handled = true;
         _viewModel.TryUnlockForEditing();
@@ -2914,6 +4756,43 @@ public partial class MainWindow : Window
             _viewModel.TryUnlockForEditing();
             return;
         }
+
+        // Shift 없는 탐색키 → 단 교차 선택 해제 (경계 내 이동 포함).
+        // TryHandlePageBoundaryNavigation 의 비-Shift 경계 분기도 ClearCrossColumnSelection
+        // 을 직접 호출하므로 중복 호출이 되지만 이중 호출은 무해하다.
+        if (_crossSelActive && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        {
+            if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down
+                      or Key.Home or Key.End or Key.PageDown or Key.PageUp)
+                ClearCrossColumnSelection();
+        }
+
+        // Ctrl+Enter → 페이지 나누기 삽입
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            InsertPageBreakAtCaret();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Z → Undo, Ctrl+Y / Ctrl+Shift+Z → Redo.
+        // RichTextBox 자체 Undo 는 페이지별 RTB 단위로만 작동해 오버레이·페이지 분포 변경 등을
+        // 되돌리지 못하므로 모델 스냅샷 기반 Undo 를 사용한다.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
+            if (e.Key == Key.Z && !shift) { PerformUndo(); e.Handled = true; return; }
+            if (e.Key == Key.Y)           { PerformRedo(); e.Handled = true; return; }
+            if (e.Key == Key.Z &&  shift) { PerformRedo(); e.Handled = true; return; }
+        }
+
+        // Del 키: 표 셀 끝에서 기본 WPF 동작(다음 셀 내용 끌어오기)을 차단.
+        // TryHandlePageBoundaryNavigation 이전에 검사해야 한다 — boundary 판정 전에
+        // e.Handled 를 세워야 WPF 기본 Delete 처리가 실행되지 않는다.
+        if (e.Key == Key.Delete
+            && (Keyboard.Modifiers & ModifierKeys.Control) == 0
+            && BlockDeleteAtTableCellBoundary(rtb, e))
+            return;
 
         // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동을 직접 처리.
         TryHandlePageBoundaryNavigation(rtb, e);
@@ -2942,21 +4821,38 @@ public partial class MainWindow : Window
         bool shift  = (mods & ModifierKeys.Shift)   == ModifierKeys.Shift;
         bool ctrl   = (mods & ModifierKeys.Control) == ModifierKeys.Control;
 
-        // Shift+이동키는 selection 확장 — 페이지 경계 점프는 일단 미지원(향후 보강 가능).
-        if (shift) return false;
+        // Shift+방향키: 단 경계에서 선택 확장 (경계가 아닌 경우 WPF 기본 동작에 양보)
+        if (shift)
+            return TryExtendCrossColumnSelection(rtb, caret, idx, e);
+
+        // 비-Shift 경계 이동 시 기존 단 교차 선택을 해제한다.
+        ClearCrossColumnSelection();
+
+        // 다단 모드에서 한 페이지가 여러 RTB(=단)로 쪼개져 있으므로 PgUp/PgDn 은
+        // 인접 단이 아니라 인접 *물리 페이지* 의 첫 단으로 점프해야 한다.
+        int colCount  = Math.Max(1, _pageGeometry?.ColumnCount ?? 1);
+        int curPage   = idx / colCount;
 
         switch (e.Key)
         {
             case Key.PageDown:
-                return MoveCaretToPage(idx + 1, atTop: true, e);
+                return MoveCaretToPage((curPage + 1) * colCount, atTop: true, e);
 
             case Key.PageUp:
-                return MoveCaretToPage(idx - 1, atTop: false, e);
+                return MoveCaretToPage((curPage - 1) * colCount, atTop: false, e);
 
             case Key.Down when caret.GetLineStartPosition(1) is null:
                 return MoveCaretToPage(idx + 1, atTop: true, e);
 
             case Key.Up when caret.GetLineStartPosition(-1) is null:
+                return MoveCaretToPage(idx - 1, atTop: false, e);
+
+            // 좌우 화살표: 현재 RTB 의 첫/마지막 삽입 위치에서 인접 RTB(다음/이전 단 또는 페이지)로 이동.
+            // 다단 모드에서 단 사이 캐럿 이동을 처리한다 — 단 1 끝에서 →, 단 2 시작에서 ←.
+            case Key.Right when caret.GetNextInsertionPosition(WpfDocs.LogicalDirection.Forward) is null:
+                return MoveCaretToPage(idx + 1, atTop: true, e);
+
+            case Key.Left when caret.GetNextInsertionPosition(WpfDocs.LogicalDirection.Backward) is null:
                 return MoveCaretToPage(idx - 1, atTop: false, e);
 
             case Key.Home when ctrl:
@@ -3337,6 +5233,23 @@ public partial class MainWindow : Window
                 ClearMultiSelect();
         }
 
+        // ── 단 너비 드래그 시작 ──────────────────────────────────────────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active && _colDivHovering)
+        {
+            var ptPaper = e.GetPosition(PaperHost);
+            if (TryHitColumnDivider(ptPaper, out int divLeftIdx))
+            {
+                _colDivDragging       = true;
+                _colDivDragLeftIdx    = divLeftIdx;
+                _colDivDragStartX     = ptPaper.X;
+                _colDivDragStartWidths = (double[])_pageGeometry!.ColWidthsDip.Clone();
+                PaperHost.CaptureMouse();
+                Mouse.OverrideCursor = Cursors.SizeWE;
+                e.Handled = true;
+                return;
+            }
+        }
+
         // ── 마퀴(범위 드래그) 시작 — 그리기 모드 아닐 때 ──────────────────────────
         // 마퀴가 시작되는 조건:
         //   A) 용지 여백(Padding) 안쪽이고 오버레이 개체가 없을 때 (무수정자 클릭)
@@ -3411,6 +5324,9 @@ public partial class MainWindow : Window
 
     private void OnPaperPreviewMouseMove(object sender, MouseEventArgs e)
     {
+        // ── 단 너비 드래그 중 ─────────────────────────────────────────────────
+        if (_colDivDragging) { HandleColDivDragMove(e); return; }
+
         if (_drawingPolyline_active && _drawingPolyline_points.Count > 0)
         {
             var pos = e.GetPosition(PaperHost);
@@ -3439,6 +5355,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ── 단 구분선 hover 감지 ─────────────────────────────────────────────
+        if (!_drawingInProgress && !_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active
+            && e.LeftButton != MouseButtonState.Pressed && !_tableColResizeActive)
+        {
+            bool onDiv = TryHitColumnDivider(pos2, out _);
+            if (onDiv != _colDivHovering)
+            {
+                _colDivHovering = onDiv;
+                if (!_tableColResizeHovering)
+                    Mouse.OverrideCursor = onDiv ? Cursors.SizeWE : null;
+            }
+        }
+
         if (!_drawingInProgress || (!_drawingTextBox && !_drawingShape_active)) return;
 
         Canvas.SetLeft(DrawPreviewRect, x2);
@@ -3449,6 +5378,9 @@ public partial class MainWindow : Window
 
     private void OnPaperPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        // ── 단 너비 드래그 완료 ───────────────────────────────────────────────
+        if (_colDivDragging) { FinishColDivDrag(e); return; }
+
         // ── 마퀴 드래그 완료: 사각형 안의 모든 개체 선택 ──
         if (_marqueeSelecting)
         {
@@ -3534,6 +5466,16 @@ public partial class MainWindow : Window
         }
 
         var pt = e.GetPosition(PageEditorHost); // 오버레이 Canvas 와 동일 좌표계
+
+        // ①-b 도형 편집 핸들 (정점 핸들 / 세그먼트 핸들)
+        //      도형 히트 테스트보다 먼저 실행해야 핸들이 도형 메뉴에 가려지지 않는다.
+        if (e.OriginalSource is System.Windows.Shapes.Rectangle hitHandle
+            && _shapeEditHandles.Contains(hitHandle))
+        {
+            OnShapeEditHandleRightClicked(hitHandle);
+            e.Handled = true;
+            return;
+        }
 
         // ② 오버레이 도형 (InFrontOfText 우선, BehindText 차선)
         var hitShape = (FindCanvasChildAt(OverlayShapeCanvas, pt)
@@ -3784,12 +5726,32 @@ public partial class MainWindow : Window
         // 활성 페이지 RTB 가 바뀌면 다른 페이지에 있던 도형이 안 보이는 문제가 있었다.
         var section = _viewModel?.Document.Sections.FirstOrDefault();
         if (section is null) return;
+
+        // 캔버스별로 도형을 모은 후 ShapeOrdering 정책으로 정렬 — 같은 캔버스 안에서 안쪽(작은) 도형이
+        // 외곽 도형에 가려지지 않도록 자동 보정한다. ZOrder 명시값도 같은 흐름에서 처리.
+        // BehindText / InFrontOfText 는 별개 캔버스(별개 stacking context) 이므로 각자 정렬한다.
+        var behind = new List<PolyDonky.Core.ShapeObject>();
+        var front  = new List<PolyDonky.Core.ShapeObject>();
         foreach (var coreBlock in section.Blocks)
         {
             if (coreBlock is not PolyDonky.Core.ShapeObject shape) continue;
-            if (shape.WrapMode is not (PolyDonky.Core.ImageWrapMode.InFrontOfText
-                                    or PolyDonky.Core.ImageWrapMode.BehindText)) continue;
+            switch (shape.WrapMode)
+            {
+                case PolyDonky.Core.ImageWrapMode.BehindText:     behind.Add(shape); break;
+                case PolyDonky.Core.ImageWrapMode.InFrontOfText:  front.Add(shape);  break;
+            }
+        }
 
+        PlaceOverlayShapes(behind, UnderlayShapeCanvas);
+        PlaceOverlayShapes(front,  OverlayShapeCanvas);
+    }
+
+    private void PlaceOverlayShapes(IList<PolyDonky.Core.ShapeObject> shapes, System.Windows.Controls.Canvas canvas)
+    {
+        var ordered = PolyDonky.Core.ShapeOrdering.OrderForRendering(shapes);
+        var zMap    = PolyDonky.Core.ShapeOrdering.ComputeZIndexMap(shapes);
+        foreach (var shape in ordered)
+        {
             var ctrl = Services.FlowDocumentBuilder.BuildOverlayShapeControl(shape);
             ctrl.Tag = shape;
             PlaceOverlay(ctrl, shape);
@@ -3798,9 +5760,9 @@ public partial class MainWindow : Window
             // 우클릭은 PaperHost.PreviewMouseRightButtonDown 통합 핸들러가 처리 — 개별 ContextMenu 불필요.
             ctrl.MouseLeftButtonDown += OnOverlayShapeMouseDown;
 
-            var canvas = shape.WrapMode == PolyDonky.Core.ImageWrapMode.BehindText
-                ? UnderlayShapeCanvas
-                : OverlayShapeCanvas;
+            // 명시적 Canvas.ZIndex 설정 — 삽입 순서뿐 아니라 z-index 값으로도 같은 레이어링을 보장.
+            // 다른 콘트롤이 동적으로 끼어들거나 재배치되어도 의도한 순서 유지.
+            System.Windows.Controls.Canvas.SetZIndex(ctrl, zMap[shape]);
             canvas.Children.Add(ctrl);
         }
     }
@@ -4022,6 +5984,8 @@ public partial class MainWindow : Window
         if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5) _overlayShapeDragMoved = true;
         Canvas.SetLeft(fe, _overlayShapeDragStartLeft + dx);
         Canvas.SetTop (fe, _overlayShapeDragStartTop  + dy);
+        if (ReferenceEquals(_selectedShapeCtrl, fe))
+            RefreshShapeEditHandlePositions();
     }
 
     private void OnOverlayShapeDragUp(object sender, MouseButtonEventArgs e)
@@ -4056,14 +6020,13 @@ public partial class MainWindow : Window
     private bool TryCopySelectedFloatingObject()
     {
         if (_selectedOverlay is null) return false;
-        if (_selectedOverlay.InnerEditor.IsKeyboardFocusWithin
-            && !_selectedOverlay.InnerEditor.Selection.IsEmpty)
+        if (_selectedOverlay.IsEditorFocusWithin && _selectedOverlay.HasEditorTextSelection)
             return false;
 
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            new List<Block> { _selectedOverlay.Model }, JsonDefaults.Options);
+        var fragment = new PolyDonky.Core.IwpfFragment { Blocks = new List<Block> { _selectedOverlay.Model } };
+        var json = System.Text.Json.JsonSerializer.Serialize(fragment, JsonDefaults.Options);
         var dataObj = new System.Windows.DataObject();
-        dataObj.SetData(FlowSelectionClipboardFormat, json);
+        dataObj.SetData(IwpfFragmentClipboardFormat, json);
         // Plain-text 폴백 — 다른 앱으로 붙여넣기 시 안쪽 텍스트만 가도록.
         dataObj.SetText(_selectedOverlay.Model.GetPlainText());
         Clipboard.SetDataObject(dataObj, copy: true);
@@ -4115,6 +6078,7 @@ public partial class MainWindow : Window
             int idx = FloatingCanvas.Children.IndexOf(overlay);
             if (idx < FloatingCanvas.Children.Count - 1)
             {
+                BeginUndoableAction();
                 FloatingCanvas.Children.RemoveAt(idx);
                 FloatingCanvas.Children.Insert(idx + 1, overlay);
                 model.ZOrder++;
@@ -4127,6 +6091,7 @@ public partial class MainWindow : Window
             int idx = FloatingCanvas.Children.IndexOf(overlay);
             if (idx > 0)
             {
+                BeginUndoableAction();
                 FloatingCanvas.Children.RemoveAt(idx);
                 FloatingCanvas.Children.Insert(idx - 1, overlay);
                 model.ZOrder--;
@@ -4134,10 +6099,16 @@ public partial class MainWindow : Window
             }
         };
 
-        overlay.AppearanceChangedCommitted += (_, _) => _viewModel?.NotifyOverlayChanged();
+        overlay.AppearanceChangedCommitted += (_, _) =>
+        {
+            BeginUndoableAction();
+            _viewModel?.NotifyOverlayChanged();
+        };
 
         overlay.GeometryChangedCommitted += (_, _) =>
         {
+            // 핸들러 진입 시점엔 model 위치/크기가 아직 변경되지 않았다 — pre-edit 스냅샷 등록.
+            BeginUndoableAction();
             // Canvas 절대 DIP → (페이지 인덱스, 페이지 로컬 mm) 변환.
             double left = Canvas.GetLeft(overlay); if (double.IsNaN(left)) left = 0;
             double top  = Canvas.GetTop(overlay);  if (double.IsNaN(top))  top  = 0;
@@ -4148,10 +6119,15 @@ public partial class MainWindow : Window
             _viewModel?.NotifyOverlayChanged();
         };
 
-        overlay.ContentChangedCommitted += (_, _) => _viewModel?.NotifyOverlayChanged();
+        overlay.ContentChangedCommitted += (_, _) =>
+        {
+            BeginUndoableAction();
+            _viewModel?.NotifyOverlayChanged();
+        };
 
         overlay.DeleteRequested += (_, _) =>
         {
+            BeginUndoableAction();
             FloatingCanvas.Children.Remove(overlay);
             _viewModel?.RemoveOverlayBlock(model);
             if (ReferenceEquals(_selectedOverlay, overlay)) _selectedOverlay = null;
@@ -4204,6 +6180,7 @@ public partial class MainWindow : Window
             BlurRadius  = 14,
             Opacity     = 0.9,
         };
+        ShowShapeEditHandles(ctrl, shape);
         // 윈도우로 키보드 포커스 — Delete/Ctrl+C 가 BodyEditor 가 아닌 윈도우에서 처리되도록.
         Focus();
         Keyboard.Focus(this);
@@ -4211,6 +6188,7 @@ public partial class MainWindow : Window
 
     private void DeselectShape()
     {
+        HideShapeEditHandles();
         if (_selectedShapeCtrl is not null)
             _selectedShapeCtrl.Effect = null;
         _selectedShape     = null;
@@ -4234,8 +6212,10 @@ public partial class MainWindow : Window
         }
         if (_selectedOverlay is { } overlay)
         {
-            // 안쪽 본문에 텍스트 selection 이 있으면 일반 텍스트 삭제에 양보.
-            if (overlay.InnerEditor.IsKeyboardFocusWithin && !overlay.InnerEditor.Selection.IsEmpty)
+            // 안쪽 편집기(단일 InnerEditor 또는 다단 column RTB)에 포커스가 있으면 — selection 유무
+            // 와 무관하게 — Del 키를 RTB 가 텍스트 삭제로 처리하도록 양보. 그렇지 않으면 글상자에서
+            // 텍스트 편집 중 Del 을 누를 때마다 글상자 자체가 통째로 삭제되는 버그 발생.
+            if (overlay.IsEditorFocusWithin)
                 return false;
             FloatingCanvas.Children.Remove(overlay);
             _viewModel?.RemoveOverlayBlock(overlay.Model);
@@ -4276,12 +6256,12 @@ public partial class MainWindow : Window
     /// <summary>붙여넣기는 클립보드 포맷에 따라 자동 분기.</summary>
     private bool TryPasteSelectedObject()
     {
-        // 글상자 InnerEditor 편집 중이면 RichTextBox 기본 붙여넣기에 양보
-        if (_selectedOverlay?.InnerEditor.IsKeyboardFocusWithin == true)
+        // 글상자 InnerEditor(또는 다단 column RTB) 편집 중이면 RichTextBox 기본 붙여넣기에 양보
+        if (_selectedOverlay?.IsEditorFocusWithin == true)
             return false;
 
         // 통합 멀티-선택 포맷 — 모든 부유 개체(글상자 포함)가 단일 Block 리스트로 직렬화됨
-        if (Clipboard.ContainsData(FlowSelectionClipboardFormat))
+        if (Clipboard.ContainsData(IwpfFragmentClipboardFormat) || Clipboard.ContainsData(LegacyFlowSelectionFormat))
             return TryPasteFlowSelection();
         if (Clipboard.ContainsData(BlockClipboardFormat))
             return TryPasteBlockFromClipboard();
@@ -4630,9 +6610,10 @@ public partial class MainWindow : Window
 
         if (blocks.Count == 0) return false;
 
-        var json = System.Text.Json.JsonSerializer.Serialize(blocks, PolyDonky.Core.JsonDefaults.Options);
+        var fragment = new PolyDonky.Core.IwpfFragment { Blocks = blocks };
+        var json = System.Text.Json.JsonSerializer.Serialize(fragment, PolyDonky.Core.JsonDefaults.Options);
         var dataObj = new DataObject();
-        dataObj.SetData(FlowSelectionClipboardFormat, json);
+        dataObj.SetData(IwpfFragmentClipboardFormat, json);
 
         // plain-text 폴백 — 단락 + 글상자 텍스트
         var plainParts = blocks.Select(b => b switch

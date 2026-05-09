@@ -3,6 +3,21 @@ namespace PolyDonky.Core;
 /// <summary>블록 단위 이미지 정렬.</summary>
 public enum ImageHAlign { Left, Center, Right }
 
+/// <summary>그림 제목(캡션)의 위치.</summary>
+public enum ImageTitlePosition
+{
+    /// <summary>그림 위쪽(외부) — 별도 행으로 그림 위에 표시.</summary>
+    Above,
+    /// <summary>그림 아래쪽(외부) — 별도 행으로 그림 아래에 표시.</summary>
+    Below,
+    /// <summary>그림 위에 겹침 — 상단.</summary>
+    OverlayTop,
+    /// <summary>그림 위에 겹침 — 가운데.</summary>
+    OverlayMiddle,
+    /// <summary>그림 위에 겹침 — 하단.</summary>
+    OverlayBottom,
+}
+
 /// <summary>그림과 본문 텍스트의 배치 관계.</summary>
 public enum ImageWrapMode
 {
@@ -71,4 +86,28 @@ public sealed class ImageBlock : Block, IOverlayAnchored
 
     /// <summary>오버레이 모드(InFrontOfText/BehindText) Y 위치 (mm, **해당 페이지 좌상단 기준**).</summary>
     public double OverlayYMm { get; set; }
+
+    // ── 그림 제목(캡션) ──────────────────────────────────────────────────────
+
+    /// <summary>그림 제목 표시 여부. 기본 false.</summary>
+    public bool ShowTitle { get; set; }
+
+    /// <summary>그림 제목 텍스트.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>제목 글자 서식 (글꼴·크기·굵게·기울임·글자색·배경색·밑줄·자간 등).
+    /// 서식 메뉴의 문자서식 다이얼로그(CharFormatWindow)와 동일한 모델을 공유한다.</summary>
+    public RunStyle TitleStyle { get; set; } = new();
+
+    /// <summary>제목 배치 위치. 기본 Below.</summary>
+    public ImageTitlePosition TitlePosition { get; set; } = ImageTitlePosition.Below;
+
+    /// <summary>제목 가로 정렬. 기본 Center.</summary>
+    public ImageHAlign TitleHAlign { get; set; } = ImageHAlign.Center;
+
+    /// <summary>제목 가로 위치 오프셋 (mm). 양수=오른쪽, 음수=왼쪽.</summary>
+    public double TitleOffsetXMm { get; set; }
+
+    /// <summary>제목 세로 위치 오프셋 (mm). 양수=아래, 음수=위.</summary>
+    public double TitleOffsetYMm { get; set; }
 }

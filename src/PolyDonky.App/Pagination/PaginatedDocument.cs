@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows;
 using PolyDonky.Core;
 
@@ -8,11 +9,13 @@ namespace PolyDonky.App.Pagination;
 /// </summary>
 public sealed class BlockOnPage
 {
-    public required Block Source    { get; init; }
-    public int            PageIndex { get; init; }
+    public required Block Source      { get; init; }
+    public int            PageIndex   { get; init; }
+    /// <summary>다단 문서에서의 단 인덱스 (0-based). 단일 단이면 항상 0.</summary>
+    public int            ColumnIndex { get; init; }
 
     /// <summary>
-    /// 페이지 본문 영역(padding 제외) 기준 경계 상자 (DIP).
+    /// 단 본문 영역(padding·단 간격 제외) 기준 경계 상자 (DIP).
     /// 오프스크린 RichTextBox 연속 스크롤 공간 기준이므로 FlowDocument 실제 페이지 좌표와
     /// 미묘하게 다를 수 있다. 측정 실패 시 <see cref="Rect.Empty"/>.
     /// </summary>
@@ -54,4 +57,32 @@ public sealed class PaginatedDocument
     public required PageSettings        PageSettings { get; init; }
     public IReadOnlyList<PaginatedPage> Pages        { get; init; } = Array.Empty<PaginatedPage>();
     public int                          PageCount    => Pages.Count;
+
+    /// <summary>
+    /// 페이지·단 슬롯별로 페이지네이션 측정 단계에서 누적된 콘텐츠 높이 (DIP).
+    /// 키 = pageIdx × ColumnCount + colIdx. 값 = 슬롯에 배정된 블록 높이 합.
+    /// 페이지 경계 결정에 사용된 핵심 길이로, 페이지 본문 슬롯 높이(bodyH) 와 비교해
+    /// 클리핑/오버플로 원인 디버깅에 사용한다. Fast-path 진입 시 비어 있을 수 있다.
+    /// </summary>
+    public IReadOnlyDictionary<int, double> SlotMeasuredFillDip { get; init; }
+        = new Dictionary<int, double>();
+
+    /// <summary>
+    /// 블록별 측정 진단 정보 (디버그 전용).
+    /// slotIdx = pageIdx × ColumnCount + colIdx.
+    /// label = 블록 타입과 식별 정보, topY/blockH = 연속 RTB 측정값.
+    /// </summary>
+    public IReadOnlyList<BlockMeasurementEntry> DebugBlockMeasurements { get; init; }
+        = Array.Empty<BlockMeasurementEntry>();
+}
+
+/// <summary>블록 측정 진단 항목.</summary>
+public sealed class BlockMeasurementEntry
+{
+    public int    SlotIdx { get; init; }
+    public string Label   { get; init; } = "";
+    public double TopY    { get; init; }
+    public double BottomY { get; init; }
+    public double BlockH  { get; init; }
+    public double Gap     { get; init; }
 }

@@ -1,0 +1,111 @@
+<UserControl x:Class="PolyDonky.App.Views.FootnoteEditorPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:svc="clr-namespace:PolyDonky.App.Services"
+             FontFamily="{DynamicResource UiFont}"
+             Background="{DynamicResource SurfaceAlt}"
+             Foreground="{DynamicResource OnSurface}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 헤더: 탭(각주/미주) + 닫기 버튼 -->
+        <DockPanel Grid.Row="0" LastChildFill="False"
+                   Background="{DynamicResource Surface}">
+            <RadioButton x:Name="TabFn"
+                         GroupName="FootnoteTab"
+                         Content="{Binding FootnotePanelTabFn, Source={x:Static svc:LocalizedStrings.Instance}}"
+                         IsChecked="True"
+                         Margin="8,4,4,4" Padding="10,3"
+                         Checked="OnTabChanged" />
+            <RadioButton x:Name="TabEn"
+                         GroupName="FootnoteTab"
+                         Content="{Binding FootnotePanelTabEn, Source={x:Static svc:LocalizedStrings.Instance}}"
+                         Margin="0,4,8,4" Padding="10,3"
+                         Checked="OnTabChanged" />
+            <Button DockPanel.Dock="Right"
+                    Content="✕"
+                    ToolTip="{Binding FootnotePanelClose, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Width="24" Height="22"
+                    Margin="0,4,8,4"
+                    Click="OnCloseClick" />
+        </DockPanel>
+
+        <!-- 항목 목록 -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Background="{DynamicResource SurfaceAlt}">
+            <Grid>
+                <!-- 비어있을 때 안내 메시지 -->
+                <TextBlock x:Name="EmptyHint"
+                           Text="{Binding FootnotePanelEmpty, Source={x:Static svc:LocalizedStrings.Instance}}"
+                           Foreground="{DynamicResource OnSurfaceMuted}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextWrapping="Wrap" Margin="16"
+                           Visibility="Visible" />
+
+                <!-- 실제 항목 -->
+                <ItemsControl x:Name="EntriesList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="{DynamicResource Divider}"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="6,4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="40" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding NumberLabel}"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Top"
+                                               Margin="0,4,8,0"
+                                               TextAlignment="Right" />
+
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding Content, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             MinHeight="24"
+                                             MaxHeight="120"
+                                             VerticalScrollBarVisibility="Auto"
+                                             Background="{DynamicResource Surface}"
+                                             Foreground="{DynamicResource OnSurface}"
+                                             CaretBrush="{DynamicResource OnSurface}"
+                                             BorderBrush="{DynamicResource Divider}"
+                                             Padding="4,2" />
+
+                                    <Button Grid.Column="2"
+                                            Content="↩"
+                                            ToolTip="{Binding Source={x:Static svc:LocalizedStrings.Instance}, Path=FootnotePanelGotoRef, Mode=OneWay}"
+                                            Width="24" Height="22"
+                                            Margin="6,0,0,0"
+                                            VerticalAlignment="Top"
+                                            Tag="{Binding Id}"
+                                            Click="OnGotoRefClick" />
+
+                                    <Button Grid.Column="3"
+                                            Content="🗑"
+                                            ToolTip="{Binding Source={x:Static svc:LocalizedStrings.Instance}, Path=FootnotePanelDelete, Mode=OneWay}"
+                                            Width="24" Height="22"
+                                            Margin="4,0,0,0"
+                                            VerticalAlignment="Top"
+                                            Tag="{Binding Id}"
+                                            Click="OnDeleteClick" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

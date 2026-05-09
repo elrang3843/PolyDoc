@@ -11,6 +11,7 @@ public enum ShapeKind
     Rectangle,
     RoundedRect,
     Ellipse,
+    HalfCircle,
     Triangle,
     RegularPolygon,
     Star,
@@ -27,7 +28,7 @@ public enum StrokeDash
     DashDot,
 }
 
-/// <summary>화살촉 종류 (선·폴리곤선·스플라인 선의 시작/끝에 적용).</summary>
+/// <summary>끝모양 종류 (선·폴리곤선·스플라인 선의 시작/끝에 적용).</summary>
 public enum ShapeArrow
 {
     None,
@@ -37,11 +38,31 @@ public enum ShapeArrow
     Circle,
 }
 
-/// <summary>도형 꼭짓점 또는 제어점. 좌표는 도형 바운딩 박스 좌상단 기준, 단위 mm.</summary>
+/// <summary>도형 레이블 텍스트의 가로 정렬.</summary>
+public enum ShapeLabelHAlign { Left, Center, Right }
+
+/// <summary>도형 레이블 텍스트의 세로 정렬.</summary>
+public enum ShapeLabelVAlign { Top, Middle, Bottom }
+
+/// <summary>도형 앵커 포인트. 좌표는 도형 바운딩 박스 좌상단 기준, 단위 mm.</summary>
 public sealed class ShapePoint
 {
     public double X { get; set; }
     public double Y { get; set; }
+
+    /// <summary>이 점에서 다음 점으로 향하는 세그먼트의 나가는 베지어 제어점 X (mm, bbox 기준).
+    /// null 이면 Catmull-Rom 자동 계산.</summary>
+    public double? OutCtrlX { get; set; }
+
+    /// <summary>이 점에서 다음 점으로 향하는 세그먼트의 나가는 베지어 제어점 Y (mm, bbox 기준).</summary>
+    public double? OutCtrlY { get; set; }
+
+    /// <summary>이전 점에서 이 점으로 들어오는 세그먼트의 베지어 제어점 X (mm, bbox 기준).
+    /// null 이면 Catmull-Rom 자동 계산.</summary>
+    public double? InCtrlX { get; set; }
+
+    /// <summary>이전 점에서 이 점으로 들어오는 세그먼트의 베지어 제어점 Y (mm, bbox 기준).</summary>
+    public double? InCtrlY { get; set; }
 }
 
 /// <summary>
@@ -113,11 +134,14 @@ public sealed class ShapeObject : Block, IOverlayAnchored
     /// <summary>선 종류 (실선·파선·점선·일점쇄선).</summary>
     public StrokeDash StrokeDash { get; set; } = StrokeDash.Solid;
 
-    /// <summary>시작점 화살촉 (Line/Polyline/Spline 에만 의미 있음).</summary>
+    /// <summary>시작점 끝모양 (Line/Polyline/Spline 에만 의미 있음).</summary>
     public ShapeArrow StartArrow { get; set; } = ShapeArrow.None;
 
-    /// <summary>끝점 화살촉 (Line/Polyline/Spline 에만 의미 있음).</summary>
+    /// <summary>끝점 끝모양 (Line/Polyline/Spline 에만 의미 있음).</summary>
     public ShapeArrow EndArrow { get; set; } = ShapeArrow.None;
+
+    /// <summary>끝모양 크기 (mm). 0 이하면 선 두께에 비례한 자동 크기.</summary>
+    public double EndShapeSizeMm { get; set; } = 0;
 
     // ── 채우기 속성 ───────────────────────────────────────────────────────────
 
@@ -131,6 +155,20 @@ public sealed class ShapeObject : Block, IOverlayAnchored
 
     /// <summary>도형 회전각 (도, 시계 방향). 바운딩 박스 중심 기준.</summary>
     public double RotationAngleDeg { get; set; }
+
+    // ── 그리는 순서 ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 그리는 순서(z-order). 같은 페이지에서 여러 도형이 겹쳐 있을 때 어느 것이 위에 그려질지를 결정한다.
+    /// <list type="bullet">
+    ///   <item><c>0</c> (기본) — 자동: 같은 그룹 내에서 한 도형이 다른 도형을 완전히 포함하면
+    ///   안쪽(작은) 도형이 위에 그려진다. 그 외에는 문서 순서를 유지.</item>
+    ///   <item>음수 — 항상 자동 그룹보다 뒤. 더 작을수록 더 뒤에 그려진다.</item>
+    ///   <item>양수 — 항상 자동 그룹보다 앞. 더 클수록 더 앞에 그려진다.</item>
+    /// </list>
+    /// 같은 ZOrder 값을 가진 도형들 사이에서는 문서 순서를 그대로 유지한다(stable sort).
+    /// </summary>
+    public int ZOrder { get; set; }
 
     // ── 레이블 ───────────────────────────────────────────────────────────────
 
@@ -148,6 +186,21 @@ public sealed class ShapeObject : Block, IOverlayAnchored
 
     public bool LabelBold { get; set; }
     public bool LabelItalic { get; set; }
+
+    /// <summary>레이블 가로 정렬. 기본 Center.</summary>
+    public ShapeLabelHAlign LabelHAlign { get; set; } = ShapeLabelHAlign.Center;
+
+    /// <summary>레이블 세로 정렬. 기본 Middle.</summary>
+    public ShapeLabelVAlign LabelVAlign { get; set; } = ShapeLabelVAlign.Middle;
+
+    /// <summary>레이블 배경색 hex. null / 빈 문자열이면 배경 없음(투명).</summary>
+    public string? LabelBackgroundColor { get; set; }
+
+    /// <summary>레이블 가로 위치 오프셋 (mm). 정렬 기준점에서 양수면 오른쪽, 음수면 왼쪽으로 이동.</summary>
+    public double LabelOffsetXMm { get; set; }
+
+    /// <summary>레이블 세로 위치 오프셋 (mm). 정렬 기준점에서 양수면 아래, 음수면 위로 이동.</summary>
+    public double LabelOffsetYMm { get; set; }
 
     // ── 여백 ─────────────────────────────────────────────────────────────────
 

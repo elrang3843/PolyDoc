@@ -29,6 +29,12 @@ public partial class TextBoxPropertiesWindow : Window
     public double                 ResultRotationAngleDeg   { get; private set; }
     public TextOrientation        ResultTextOrientation    { get; private set; }
     public TextProgression        ResultTextProgression    { get; private set; }
+    public int                    ResultColumnCount        { get; private set; } = 1;
+    public double                 ResultColumnGapMm        { get; private set; } = 5.0;
+    public bool                   ResultColumnDividerVisible     { get; private set; }
+    public string                 ResultColumnDividerColor       { get; private set; } = "#888888";
+    public double                 ResultColumnDividerThicknessPt { get; private set; } = 0.7;
+    public ColumnDividerStyle     ResultColumnDividerStyle       { get; private set; } = ColumnDividerStyle.Dashed;
 
     public TextBoxPropertiesWindow(TextBoxObject model)
     {
@@ -59,10 +65,19 @@ public partial class TextBoxPropertiesWindow : Window
         CboTextOrientation.SelectedIndex = (int)model.TextOrientation;
         CboTextProgression.SelectedIndex = (int)model.TextProgression;
 
+        TxtColumnCount.Text = System.Math.Max(1, model.ColumnCount).ToString();
+        TxtColumnGap.Text   = model.ColumnGapMm.ToString("0.##");
+
+        ChkDividerVisible.IsChecked    = model.ColumnDividerVisible;
+        TxtDividerColor.Text           = model.ColumnDividerColor ?? "#888888";
+        TxtDividerThickness.Text       = model.ColumnDividerThicknessPt.ToString("0.##");
+        CboDividerStyle.SelectedIndex  = (int)model.ColumnDividerStyle;
+
         UpdateShapePanelVisibility();
 
         RefreshColorButton(BtnBorderColorPick,     TxtBorderColor.Text);
         RefreshColorButton(BtnBackgroundColorPick, TxtBackgroundColor.Text);
+        RefreshColorButton(BtnDividerColorPick,    TxtDividerColor.Text);
     }
 
     // ── 모양 변경 → 해당 파라미터 패널만 표시 ──────────────────────
@@ -117,6 +132,9 @@ public partial class TextBoxPropertiesWindow : Window
     private void OnBackgroundColorChanged(object sender, TextChangedEventArgs e)
         => RefreshColorButton(BtnBackgroundColorPick, TxtBackgroundColor.Text);
 
+    private void OnDividerColorChanged(object sender, TextChangedEventArgs e)
+        => RefreshColorButton(BtnDividerColorPick, TxtDividerColor.Text);
+
     private static void RefreshColorButton(Button btn, string? hex)
     {
         if (string.IsNullOrWhiteSpace(hex))
@@ -141,6 +159,9 @@ public partial class TextBoxPropertiesWindow : Window
 
     private void OnBackgroundColorPickClick(object sender, RoutedEventArgs e)
         => PickColor(TxtBackgroundColor);
+
+    private void OnDividerColorPickClick(object sender, RoutedEventArgs e)
+        => PickColor(TxtDividerColor);
 
     private void PickColor(TextBox target)
     {
@@ -196,6 +217,17 @@ public partial class TextBoxPropertiesWindow : Window
         ResultRotationAngleDeg   = ParseAngle(TxtRotationAngle.Text);
         ResultTextOrientation    = (TextOrientation)System.Math.Clamp(CboTextOrientation.SelectedIndex, 0, 1);
         ResultTextProgression    = (TextProgression)System.Math.Clamp(CboTextProgression.SelectedIndex, 0, 1);
+
+        ResultColumnCount = ParseInt(TxtColumnCount.Text, 1, 1, 4);
+        ResultColumnGapMm = ParseMm(TxtColumnGap.Text);
+
+        ResultColumnDividerVisible     = ChkDividerVisible.IsChecked == true;
+        ResultColumnDividerColor       = string.IsNullOrWhiteSpace(TxtDividerColor.Text)
+            ? "#888888" : TxtDividerColor.Text.Trim();
+        ResultColumnDividerThicknessPt = double.TryParse(TxtDividerThickness.Text, out var dpt) && dpt > 0
+            ? dpt : 0.7;
+        ResultColumnDividerStyle = (ColumnDividerStyle)System.Math.Clamp(
+            CboDividerStyle.SelectedIndex, 0, 3);
 
         DialogResult = true;
     }

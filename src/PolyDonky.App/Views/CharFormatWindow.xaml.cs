@@ -337,22 +337,7 @@ public partial class CharFormatWindow : Window
         if (double.TryParse(TxtLetterSpacing.Text, out var ls)) s.LetterSpacingPx = ls;
     }
 
-    private static PolyDonky.Core.RunStyle CloneRunStyle(PolyDonky.Core.RunStyle s) => new()
-    {
-        FontFamily     = s.FontFamily,
-        FontSizePt     = s.FontSizePt,
-        Bold           = s.Bold,
-        Italic         = s.Italic,
-        Underline      = s.Underline,
-        Strikethrough  = s.Strikethrough,
-        Overline       = s.Overline,
-        Superscript    = s.Superscript,
-        Subscript      = s.Subscript,
-        Foreground     = s.Foreground,
-        Background     = s.Background,
-        WidthPercent   = s.WidthPercent,
-        LetterSpacingPx = s.LetterSpacingPx,
-    };
+    private static PolyDonky.Core.RunStyle CloneRunStyle(PolyDonky.Core.RunStyle s) => s.Clone();
 
     // ── 선택 영역 서식 적용 (RichTextBox 모드) ───────────────────
 

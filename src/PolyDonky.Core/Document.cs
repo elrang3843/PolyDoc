@@ -19,6 +19,12 @@ public sealed class PolyDonkyument
     /// <summary>개요 수준별 서식 세트 (선택). null 이면 내장 기본값 사용.</summary>
     public OutlineStyleSet? OutlineStyles { get; set; }
 
+    /// <summary>문서 수준 각주 목록. Run.FootnoteId 가 여기 FootnoteEntry.Id 를 참조한다.</summary>
+    public IList<FootnoteEntry> Footnotes { get; set; } = new List<FootnoteEntry>();
+
+    /// <summary>문서 수준 미주 목록. Run.EndnoteId 가 여기 FootnoteEntry.Id 를 참조한다.</summary>
+    public IList<FootnoteEntry> Endnotes { get; set; } = new List<FootnoteEntry>();
+
     /// <summary>비어 있지 않은 단일 섹션 단일 문단을 가진 최소 문서를 생성한다.</summary>
     public static PolyDonkyument Empty()
     {
@@ -30,13 +36,23 @@ public sealed class PolyDonkyument
     public IEnumerable<Paragraph> EnumerateParagraphs()
     {
         foreach (var section in Sections)
+        foreach (var p in EnumerateParagraphsIn(section.Blocks))
+            yield return p;
+    }
+
+    private static IEnumerable<Paragraph> EnumerateParagraphsIn(IEnumerable<Block> blocks)
+    {
+        foreach (var b in blocks)
         {
-            foreach (var block in section.Blocks)
+            switch (b)
             {
-                if (block is Paragraph p)
-                {
+                case Paragraph p:
                     yield return p;
-                }
+                    break;
+                case ContainerBlock cb:
+                    foreach (var nested in EnumerateParagraphsIn(cb.Children)) yield return nested;
+                    break;
+                // 표 / 텍스트박스 안의 단락은 의도적으로 제외 — 검색·문자수 통계 등 본문 흐름과는 별도.
             }
         }
     }

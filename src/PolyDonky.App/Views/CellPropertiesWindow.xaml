@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ctrl="clr-namespace:PolyDonky.App.Controls"
         Title="셀 속성"
-        Width="400" Height="420"
-        MinWidth="360" MinHeight="390"
+        Width="500" SizeToContent="Height"
+        MinWidth="460" MinHeight="420"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
@@ -70,32 +70,46 @@
             </Grid>
         </GroupBox>
 
-        <!-- ── 테두리 ───────────────────────────────────────────────────── -->
+        <!-- ── 테두리 — 공통 + 면별 ────────────────────────────────────────── -->
         <GroupBox Grid.Row="6" Header="테두리" Padding="8,4,8,8">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="6" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="64" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <StackPanel>
+                <!-- 공통값 — 면별 미지정 시 적용 -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="6" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="공통 두께:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox   Grid.Row="0" Grid.Column="1" x:Name="BorderThicknessBox"
+                               Text="0.75" TextAlignment="Right" VerticalContentAlignment="Center" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text=" pt" VerticalAlignment="Center"
+                               Foreground="{DynamicResource OnSurfaceMuted}" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="공통 색상:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ctrl:ColorPickerBox x:Name="BorderColorPicker"
+                                         Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                                         AllowEmpty="False" />
+                </Grid>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="두께:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="BorderThicknessBox"
-                           Text="0.75" TextAlignment="Right" VerticalContentAlignment="Center" />
-                <TextBlock Grid.Row="0" Grid.Column="2" Text=" pt" VerticalAlignment="Center"
-                           Foreground="{DynamicResource OnSurfaceMuted}" />
+                <!-- 면별 설정 토글 -->
+                <ToggleButton x:Name="PerSideToggle" Margin="0,8,0,0"
+                              HorizontalAlignment="Left"
+                              Click="OnPerSideToggleClick"
+                              Content="면별 설정 펼치기 ▾" />
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="색상:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <ctrl:ColorPickerBox x:Name="BorderColorPicker"
-                                     Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
-                                     Margin="32,0,0,0"
-                                     AllowEmpty="False" />
-            </Grid>
+                <!-- 면별 편집 — 4면 (위·아래·왼쪽·오른쪽) -->
+                <StackPanel x:Name="PerSidePanel" Visibility="Collapsed" Margin="0,8,0,0">
+                    <ctrl:BorderSideEditor x:Name="SideTop"    Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideBottom" Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideLeft"   Margin="0,2" />
+                    <ctrl:BorderSideEditor x:Name="SideRight"  Margin="0,2" />
+                </StackPanel>
+            </StackPanel>
         </GroupBox>
 
         <!-- ── 버튼 ─────────────────────────────────────────────────────── -->

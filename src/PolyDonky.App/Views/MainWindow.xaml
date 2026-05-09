@@ -53,6 +53,19 @@
             </MenuItem>
 
             <MenuItem Header="{Binding MenuEdit, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem Header="{Binding MenuEditUndo, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditUndo"
+                          IsEnabled="{Binding CanUndo}"
+                          InputGestureText="Ctrl+Z" />
+                <MenuItem Header="{Binding MenuEditRedo, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditRedo"
+                          IsEnabled="{Binding CanRedo}"
+                          InputGestureText="Ctrl+Y" />
+                <Separator />
+                <MenuItem Header="{Binding MenuEditDelete, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditDelete"
+                          InputGestureText="Del" />
+                <Separator />
                 <MenuItem Header="{Binding MenuEditCopy, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="ApplicationCommands.Copy"
                           InputGestureText="Ctrl+C" />
@@ -62,9 +75,10 @@
                 <MenuItem Header="{Binding MenuEditPaste, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="ApplicationCommands.Paste"
                           InputGestureText="Ctrl+V" />
-                <MenuItem Header="{Binding MenuEditDelete, Source={x:Static svc:LocalizedStrings.Instance}}"
-                          Click="OnEditDelete"
-                          InputGestureText="Del" />
+                <MenuItem Header="{Binding MenuEditImport, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditImport" />
+                <MenuItem Header="{Binding MenuEditExport, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnEditExport" />
                 <Separator />
                 <MenuItem Header="{Binding MenuEditFindReplace, Source={x:Static svc:LocalizedStrings.Instance}}" Command="{Binding FindReplaceCommand}" InputGestureText="Ctrl+F" />
                 <Separator />
@@ -99,12 +113,41 @@
                     <MenuItem Header="사각형(_R)"   Command="{Binding InsertShapeCommand}" CommandParameter="Rectangle" />
                     <MenuItem Header="둥근사각형(_O)" Command="{Binding InsertShapeCommand}" CommandParameter="RoundedRect" />
                     <MenuItem Header="타원(_E)"     Command="{Binding InsertShapeCommand}" CommandParameter="Ellipse" />
+                    <MenuItem Header="반원(_F)"     Command="{Binding InsertShapeCommand}" CommandParameter="HalfCircle" />
                     <MenuItem Header="삼각형(_T)"   Command="{Binding InsertShapeCommand}" CommandParameter="Triangle" />
                     <MenuItem Header="정다각형(_G)" Command="{Binding InsertShapeCommand}" CommandParameter="RegularPolygon" />
                     <MenuItem Header="별모양(_A)"   Command="{Binding InsertShapeCommand}" CommandParameter="Star" />
                 </MenuItem>
                 <MenuItem Header="{Binding MenuInsertImage, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnInsertImage" />
+                <Separator />
+                <MenuItem Header="{Binding MenuInsertHyperlink, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertHyperlink" InputGestureText="Ctrl+K" />
+                <MenuItem Header="{Binding MenuInsertFootnote, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertFootnote" />
+                <MenuItem Header="{Binding MenuInsertEndnote, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertEndnote" />
+                <MenuItem Header="{Binding MenuInsertPageBreak, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertPageBreak" InputGestureText="Ctrl+Enter" />
+                <Separator />
+                <MenuItem Header="{Binding MenuInsertToc, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnInsertToc" />
+                <MenuItem Header="{Binding MenuInsertTocRefresh, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnRefreshAllToc" />
+                <MenuItem Header="{Binding MenuInsertField, Source={x:Static svc:LocalizedStrings.Instance}}">
+                    <MenuItem Header="{Binding MenuInsertFieldDate,     Source={x:Static svc:LocalizedStrings.Instance}}"
+                              Click="OnInsertField" Tag="Date" />
+                    <MenuItem Header="{Binding MenuInsertFieldTime,     Source={x:Static svc:LocalizedStrings.Instance}}"
+                              Click="OnInsertField" Tag="Time" />
+                    <MenuItem Header="{Binding MenuInsertFieldPage,     Source={x:Static svc:LocalizedStrings.Instance}}"
+                              Click="OnInsertField" Tag="Page" />
+                    <MenuItem Header="{Binding MenuInsertFieldNumPages, Source={x:Static svc:LocalizedStrings.Instance}}"
+                              Click="OnInsertField" Tag="NumPages" />
+                    <MenuItem Header="{Binding MenuInsertFieldAuthor,   Source={x:Static svc:LocalizedStrings.Instance}}"
+                              Click="OnInsertField" Tag="Author" />
+                    <MenuItem Header="{Binding MenuInsertFieldTitle,    Source={x:Static svc:LocalizedStrings.Instance}}"
+                              Click="OnInsertField" Tag="Title" />
+                </MenuItem>
             </MenuItem>
 
             <MenuItem Header="{Binding MenuFormat, Source={x:Static svc:LocalizedStrings.Instance}}">
@@ -114,9 +157,23 @@
                           Click="OnFormatPara" InputGestureText="Ctrl+T" />
                 <MenuItem Header="{Binding MenuFormatPage, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Click="OnFormatPage" />
+                <MenuItem Header="{Binding MenuFormatHeaderFooter, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnFormatHeaderFooter" />
                 <Separator />
                 <MenuItem Header="{Binding MenuFormatOutline, Source={x:Static svc:LocalizedStrings.Instance}}"
                           Command="{Binding OutlineStyleCommand}" />
+            </MenuItem>
+
+            <MenuItem Header="{Binding MenuView, Source={x:Static svc:LocalizedStrings.Instance}}">
+                <MenuItem x:Name="MiTypesettingMarks"
+                          Header="{Binding MenuViewTypesettingMarks, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsCheckable="True"
+                          Click="OnTypesettingMarksToggle"
+                          InputGestureText="Ctrl+Shift+F8" />
+                <MenuItem x:Name="MiFootnotePanel"
+                          Header="{Binding MenuViewFootnotePanel, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          IsCheckable="True"
+                          Click="OnToggleFootnotePanel" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuTools, Source={x:Static svc:LocalizedStrings.Instance}}">
@@ -280,6 +337,26 @@
             <Separator DockPanel.Dock="Right"
                        Visibility="{Binding IsWriteProtected, Converter={StaticResource BoolToVis}}" />
 
+            <!-- 진행 막대 — 파일 열기/저장 등 백그라운드 I/O 중에만 보임. -->
+            <StatusBarItem DockPanel.Dock="Right"
+                           Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding BusyMessage}"
+                               Foreground="{DynamicResource OnSurfaceMuted}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="320" />
+                    <ProgressBar Value="{Binding BusyProgress}"
+                                 Minimum="0" Maximum="100"
+                                 IsIndeterminate="{Binding BusyProgressIsIndeterminate}"
+                                 Width="160" Height="14"
+                                 VerticalAlignment="Center" />
+                </StackPanel>
+            </StatusBarItem>
+            <Separator DockPanel.Dock="Right"
+                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+
             <!-- 좌측 — 가변 너비. LastChildFill=True 로 남은 가로 공간을 모두 차지. -->
             <StatusBarItem>
                 <TextBlock Text="{Binding StatusMessage}"
@@ -288,6 +365,17 @@
                            TextTrimming="CharacterEllipsis" />
             </StatusBarItem>
         </StatusBar>
+
+        <!-- 각주/미주 편집 패널 — StatusBar 위, 본문 영역 아래에 dock.
+             기본은 숨김(보기 메뉴로 토글 / 항목 삽입 시 자동 표시). -->
+        <Border x:Name="FootnotePanelHost"
+                DockPanel.Dock="Bottom"
+                Height="200"
+                Visibility="Collapsed"
+                BorderBrush="{DynamicResource Divider}"
+                BorderThickness="0,1,0,0">
+            <views:FootnoteEditorPanel x:Name="FootnotePanel" />
+        </Border>
 
         <!-- 본문 영역 — 다중 페이지 뷰: 페이지마다 별도의 종이 모양 Border 가 스택되어
              10 DIP 갭으로 분리된 형태. 본문 RichTextBox 는 모든 페이지를 가로질러
@@ -307,6 +395,7 @@
                 <!-- PaperHost: 모든 페이지 + 본문 + 오버레이를 담는 단일 좌표 공간.
                      크기 = pageWidth × (pageHeight × pageCount + gap × (pageCount-1)) -->
                 <Grid x:Name="PaperHost"
+                      Background="Transparent"
                       PreviewMouseLeftButtonDown="OnPaperPreviewMouseLeftButtonDown"
                       PreviewMouseMove="OnPaperPreviewMouseMove"
                       PreviewMouseLeftButtonUp="OnPaperPreviewMouseLeftButtonUp"
@@ -314,6 +403,9 @@
                     <!-- 레이어 0: 페이지 배경 — 페이지 별 흰 Border + 그림자 + 점선 여백 가이드.
                          code-behind RebuildPageFrames() 가 이 캔버스에 페이지마다 동적으로 추가. -->
                     <Canvas x:Name="PageBackgroundCanvas" IsHitTestVisible="False" />
+                    <!-- 머리말·꼬리말 — 페이지 배경 위, 본문/오버레이 뒤. PageFormatWindow 에서 편집,
+                         이 레이어 자체는 IsHitTestVisible=False. PageViewBuilder.BuildHeaderFooterLayer 가 채움. -->
+                    <Canvas x:Name="HeaderFooterCanvas" IsHitTestVisible="False" />
                     <!-- 그림 오버레이(BehindText) — 본문 텍스트 뒤에 위치. -->
                     <Canvas x:Name="UnderlayImageCanvas" />
                     <!-- 도형 오버레이(BehindText) -->
@@ -342,6 +434,8 @@
                                    Fill="#224A90E2"
                                    Visibility="Collapsed" />
                     </Canvas>
+                    <!-- 조판부호 보기 오버레이 — 머리글/바닥글 영역 + 오버레이 앵커 배지. IsHitTestVisible=False. -->
+                    <Canvas x:Name="TypesettingMarksCanvas" IsHitTestVisible="False" />
                     <!-- (페이지별 여백 가이드 / 페이지 구분 라벨은 PageBackgroundCanvas 에서 함께 그림) -->
                 </Grid>
             </StackPanel>

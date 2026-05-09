@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 샘플 XML 문서: 파일 열기 시험용 -->
+<library name="중앙 도서관" established="1998">
+    <description>XML 형식 파일 열기 시험을 위한 샘플 문서입니다.</description>
+    <books>
+        <book id="B001" category="소설">
+            <title language="ko">어린 왕자</title>
+            <author>앙투안 드 생텍쥐페리</author>
+            <year>1943</year>
+            <price currency="KRW">12000</price>
+            <available>true</available>
+        </book>
+        <book id="B002" category="과학">
+            <title language="ko">코스모스</title>
+            <author>칼 세이건</author>
+            <year>1980</year>
+            <price currency="KRW">25000</price>
+            <available>true</available>
+        </book>
+        <book id="B003" category="역사">
+            <title language="ko">사피엔스</title>
+            <author>유발 하라리</author>
+            <year>2011</year>
+            <price currency="KRW">22000</price>
+            <available>false</available>
+        </book>
+    </books>
+    <members>
+        <member id="M001">
+            <name>김민수</name>
+            <email>minsu.kim@example.com</email>
+            <joinDate>2023-03-15</joinDate>
+        </member>
+        <member id="M002">
+            <name>이지영</name>
+            <email>jiyoung.lee@example.com</email>
+            <joinDate>2024-07-22</joinDate>
+        </member>
+    </members>
+</library>

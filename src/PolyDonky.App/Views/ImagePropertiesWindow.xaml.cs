@@ -60,9 +60,54 @@ public partial class ImagePropertiesWindow : Window
 
         DescriptionBox.Text = _image.Description ?? string.Empty;
 
+        // 그림 제목
+        ShowTitleCheck.IsChecked    = _image.ShowTitle;
+        TitleTextBox.Text           = _image.Title ?? string.Empty;
+        SelectComboByTag(TitlePositionCombo, _image.TitlePosition.ToString());
+        SelectComboByTag(TitleHAlignCombo,   _image.TitleHAlign.ToString());
+        TitleOffsetXBox.Text        = _image.TitleOffsetXMm.ToString("0.##");
+        TitleOffsetYBox.Text        = _image.TitleOffsetYMm.ToString("0.##");
+        UpdateTitleStylePreview();
+
         _suppressSync = false;
         UpdateBorderPreview();
     }
+
+    private void OnTitleStyleClick(object sender, RoutedEventArgs e)
+    {
+        var dlg = new CharFormatWindow(_image.TitleStyle) { Owner = this };
+        if (dlg.ShowDialog() == true && dlg.ResultStyle is { } result)
+        {
+            _image.TitleStyle = result;
+            UpdateTitleStylePreview();
+        }
+    }
+
+    private void UpdateTitleStylePreview()
+    {
+        var s = _image.TitleStyle;
+        var parts = new System.Collections.Generic.List<string>();
+        if (!string.IsNullOrEmpty(s.FontFamily)) parts.Add(s.FontFamily);
+        parts.Add($"{s.FontSizePt:0.#}pt");
+        if (s.Bold)       parts.Add("굵게");
+        if (s.Italic)     parts.Add("기울임");
+        if (s.Underline)  parts.Add("밑줄");
+        if (s.Foreground is { } fg) parts.Add($"글자 #{fg.R:X2}{fg.G:X2}{fg.B:X2}");
+        if (s.Background is { } bg) parts.Add($"배경 #{bg.R:X2}{bg.G:X2}{bg.B:X2}");
+        TitleStylePreview.Text = string.Join(" · ", parts);
+    }
+
+    private static void SelectComboByTag(ComboBox cbo, string tag)
+    {
+        foreach (ComboBoxItem item in cbo.Items)
+        {
+            if (item.Tag?.ToString() == tag) { cbo.SelectedItem = item; return; }
+        }
+        if (cbo.Items.Count > 0) cbo.SelectedIndex = 0;
+    }
+
+    private static string? GetComboTag(ComboBox cbo)
+        => (cbo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
     private void OnWidthChanged(object sender, TextChangedEventArgs e)
     {
@@ -152,6 +197,16 @@ public partial class ImagePropertiesWindow : Window
         _image.BorderColor = bt > 0 && colorText.Length > 0 ? colorText : null;
 
         _image.Description = DescriptionBox.Text.Trim() is { Length: > 0 } d ? d : null;
+
+        // 그림 제목 — 글자 서식은 OnTitleStyleClick 에서 이미 _image.TitleStyle 에 반영됨.
+        _image.ShowTitle = ShowTitleCheck.IsChecked == true;
+        _image.Title     = string.IsNullOrWhiteSpace(TitleTextBox.Text) ? null : TitleTextBox.Text;
+        if (GetComboTag(TitlePositionCombo) is string tpStr && Enum.TryParse<ImageTitlePosition>(tpStr, out var tp))
+            _image.TitlePosition = tp;
+        if (GetComboTag(TitleHAlignCombo) is string thStr && Enum.TryParse<ImageHAlign>(thStr, out var th))
+            _image.TitleHAlign = th;
+        if (double.TryParse(TitleOffsetXBox.Text, out double tox)) _image.TitleOffsetXMm = tox;
+        if (double.TryParse(TitleOffsetYBox.Text, out double toy)) _image.TitleOffsetYMm = toy;
 
         DialogResult = true;
         Close();

@@ -14,6 +14,8 @@ internal sealed class HwpxHeader
     public Dictionary<int, RunStyle> CharProperties { get; } = new();
     public Dictionary<int, ParagraphStyle> ParaProperties { get; } = new();
     public Dictionary<int, HwpxStyleDef> Styles { get; } = new();
+    /// <summary>borderFillIDRef 가 가리키는 borderFill 정의 — 표/셀 외곽선·배경 회수에 사용.</summary>
+    public Dictionary<int, HwpxBorderFillDef> BorderFills { get; } = new();
 
     public RunStyle GetRunStyle(int? charPrId)
     {
@@ -36,40 +38,10 @@ internal sealed class HwpxHeader
     public HwpxStyleDef? GetStyle(int? styleId)
         => styleId is { } id && Styles.TryGetValue(id, out var s) ? s : null;
 
-    public static RunStyle CloneRunStyle(RunStyle s) => new()
-    {
-        FontFamily = s.FontFamily,
-        FontSizePt = s.FontSizePt,
-        Bold = s.Bold,
-        Italic = s.Italic,
-        Underline = s.Underline,
-        Strikethrough = s.Strikethrough,
-        Overline = s.Overline,
-        Superscript = s.Superscript,
-        Subscript = s.Subscript,
-        Foreground = s.Foreground,
-        Background = s.Background,
-        WidthPercent = s.WidthPercent,
-        LetterSpacingPx = s.LetterSpacingPx,
-    };
+    // Core 의 정식 RunStyle.Clone() 사용 — 시그니처는 backward-compat 유지.
+    public static RunStyle CloneRunStyle(RunStyle s) => s.Clone();
 
-    public static ParagraphStyle CloneParagraphStyle(ParagraphStyle s) => new()
-    {
-        Alignment = s.Alignment,
-        LineHeightFactor = s.LineHeightFactor,
-        SpaceBeforePt = s.SpaceBeforePt,
-        SpaceAfterPt = s.SpaceAfterPt,
-        IndentFirstLineMm = s.IndentFirstLineMm,
-        IndentLeftMm = s.IndentLeftMm,
-        IndentRightMm = s.IndentRightMm,
-        Outline = s.Outline,
-        ListMarker = s.ListMarker is null ? null : new ListMarker
-        {
-            Kind = s.ListMarker.Kind,
-            Level = s.ListMarker.Level,
-            OrderedNumber = s.ListMarker.OrderedNumber,
-        },
-    };
+    public static ParagraphStyle CloneParagraphStyle(ParagraphStyle s) => s.Clone();
 }
 
 /// <summary>HWPX style 정의 — paragraph 의 styleIDRef 가 가리킨다.</summary>
@@ -80,4 +52,22 @@ internal sealed class HwpxStyleDef
     public string? Name { get; init; }
     public string? EngName { get; init; }
     public OutlineLevel Outline { get; init; } = OutlineLevel.Body;
+}
+
+/// <summary>
+/// HWPX borderFill 정의 — 4면(top/bottom/left/right) 색·두께(pt) 와 fill 색.
+/// 표/셀의 borderFillIDRef 가 가리키며, 표 외곽선·배경 회수에 사용.
+/// </summary>
+internal sealed class HwpxBorderFillDef
+{
+    public string? TopColor { get; init; }
+    public double TopWidthPt { get; init; }
+    public string? BottomColor { get; init; }
+    public double BottomWidthPt { get; init; }
+    public string? LeftColor { get; init; }
+    public double LeftWidthPt { get; init; }
+    public string? RightColor { get; init; }
+    public double RightWidthPt { get; init; }
+    /// <summary>winBrush 의 faceColor — 셀 배경. null 이면 채움 없음.</summary>
+    public string? FillFaceColor { get; init; }
 }

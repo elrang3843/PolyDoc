@@ -25,14 +25,42 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
 
+  <!-- 메인 앱이 직접 링크하는 코덱 — IWPF/MD/TXT 만. CLAUDE.md §3 의 외부 변환 모듈 분리 원칙. -->
   <ItemGroup>
     <ProjectReference Include="..\PolyDonky.Core\PolyDonky.Core.csproj" />
     <ProjectReference Include="..\PolyDonky.Iwpf\PolyDonky.Iwpf.csproj" />
     <ProjectReference Include="..\PolyDonky.Codecs.Text\PolyDonky.Codecs.Text.csproj" />
     <ProjectReference Include="..\PolyDonky.Codecs.Markdown\PolyDonky.Codecs.Markdown.csproj" />
-    <ProjectReference Include="..\PolyDonky.Codecs.Docx\PolyDonky.Codecs.Docx.csproj" />
-    <ProjectReference Include="..\PolyDonky.Codecs.Hwpx\PolyDonky.Codecs.Hwpx.csproj" />
   </ItemGroup>
+
+  <!-- 외부 CLI 변환기 — 빌드 시 빌드 의존성만 (어셈블리 링크 안 함).
+       실제 .dll/.deps.json/.runtimeconfig.json 복사는 CopyExternalConverters 타깃에서 처리. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\PolyDonky.Convert.Html\PolyDonky.Convert.Html.csproj"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\..\tools\PolyDonky.Convert.Xml\PolyDonky.Convert.Xml.csproj"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\..\tools\PolyDonky.Convert.Docx\PolyDonky.Convert.Docx.csproj"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\..\tools\PolyDonky.Convert.Hwpx\PolyDonky.Convert.Hwpx.csproj"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+  <!-- CLI 출력을 메인 앱 출력 디렉터리로 복사. ExternalConverter 가
+       AppContext.BaseDirectory 에서 PolyDonky.Convert.*.dll 을 찾는다. -->
+  <Target Name="CopyExternalConverters" AfterTargets="Build">
+    <ItemGroup>
+      <_ConvHtmlFiles Include="..\..\tools\PolyDonky.Convert.Html\bin\$(Configuration)\net10.0\**\*.*" />
+      <_ConvXmlFiles  Include="..\..\tools\PolyDonky.Convert.Xml\bin\$(Configuration)\net10.0\**\*.*" />
+      <_ConvDocxFiles Include="..\..\tools\PolyDonky.Convert.Docx\bin\$(Configuration)\net10.0\**\*.*" />
+      <_ConvHwpxFiles Include="..\..\tools\PolyDonky.Convert.Hwpx\bin\$(Configuration)\net10.0\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ConvHtmlFiles)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ConvXmlFiles)"  DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ConvDocxFiles)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ConvHwpxFiles)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 
   <!-- LICENSE 및 THIRD_PARTY_NOTICES.md 를 어셈블리에 내장 (라이선스 다이얼로그용) -->
   <ItemGroup>

@@ -22,15 +22,20 @@ public partial class SettingsWindow : Window
             LangEnglish.IsChecked = true;
         else
             LangKorean.IsChecked = true;
+
+        // 덮어쓰기 방지 반영
+        OverwriteProtectionCheck.IsChecked = LanguageService.OverwriteProtection;
     }
 
     private void OnThemeChecked(object sender, RoutedEventArgs e)
     {
         if (ThemeDark is null || ThemeSoft is null) return;
 
-        if (ThemeDark.IsChecked == true)       ThemeService.Apply(ThemeService.Theme.Dark);
-        else if (ThemeSoft.IsChecked == true)  ThemeService.Apply(ThemeService.Theme.Soft);
-        else                                   ThemeService.Apply(ThemeService.Theme.Light);
+        var theme = ThemeDark.IsChecked == true ? ThemeService.Theme.Dark
+                  : ThemeSoft.IsChecked == true ? ThemeService.Theme.Soft
+                  : ThemeService.Theme.Light;
+        ThemeService.Apply(theme);
+        LanguageService.SaveTheme(theme);
     }
 
     private void OnLanguageChecked(object sender, RoutedEventArgs e)
@@ -41,6 +46,12 @@ public partial class SettingsWindow : Window
             ? LanguageService.Language.English
             : LanguageService.Language.Korean;
         LanguageService.Apply(lang);
+    }
+
+    private void OnOverwriteProtectionChanged(object sender, RoutedEventArgs e)
+    {
+        if (OverwriteProtectionCheck is null) return;
+        LanguageService.SetOverwriteProtection(OverwriteProtectionCheck.IsChecked == true);
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();

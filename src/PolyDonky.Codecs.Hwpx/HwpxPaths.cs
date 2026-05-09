@@ -35,14 +35,17 @@ public static class HwpxNamespaces
     public const string OpfContainer = "urn:oasis:names:tc:opendocument:xmlns:container";
 
     public const string Hancom = "http://www.hancom.co.kr/hwpml/2011/";
-    public const string Application = Hancom + "application";
-    public const string Common = Hancom + "common";
+    public const string Application = Hancom + "app";
+    public const string Common = Hancom + "core";
     public const string Head = Hancom + "head";
     public const string Paragraph = Hancom + "paragraph";
     public const string Section = Hancom + "section";
     public const string Hwpml = Hancom + "hwpml";
     public const string Pgcd = Hancom + "pagecontentdef";
     public const string Master = Hancom + "masterpage";
+
+    /// <summary>version.xml 의 HCFVersion 루트가 사용하는 네임스페이스 (hwpml/2011/version).</summary>
+    public const string HcfVersion = "http://www.hancom.co.kr/hwpml/2011/version";
 
     public const string OpfPackage = "http://www.idpf.org/2007/opf/";
     public const string DcMetadata = "http://purl.org/dc/elements/1.1/";
@@ -53,6 +56,7 @@ public static class HwpxNamespaces
     public const string PrefixHp = "hp";
     public const string PrefixHs = "hs";
     public const string PrefixHml = "hml";
+    public const string PrefixHv = "hv";
 }
 
 /// <summary>본 codec 이 출력하는 HWPX 의 자체 식별 정보.</summary>

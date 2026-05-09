@@ -38,6 +38,17 @@
                      Content="{Binding SettingsLangEnglish, Source={x:Static svc:LocalizedStrings.Instance}}"
                      GroupName="Language" Margin="0,2" Checked="OnLanguageChecked" />
 
+        <Separator Margin="0,14,0,10" />
+
+        <!-- 파일 저장 -->
+        <Label Content="{Binding SettingsSave, Source={x:Static svc:LocalizedStrings.Instance}}"
+               FontWeight="SemiBold" Padding="0,0,0,4" />
+        <CheckBox x:Name="OverwriteProtectionCheck"
+                  Content="{Binding SettingsOverwriteProtect, Source={x:Static svc:LocalizedStrings.Instance}}"
+                  Margin="0,2"
+                  Checked="OnOverwriteProtectionChanged"
+                  Unchecked="OnOverwriteProtectionChanged" />
+
         <Separator Margin="0,14,0,12" />
 
         <!-- 닫기 버튼 -->

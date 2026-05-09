@@ -46,10 +46,14 @@
 
   <!-- Menu: Edit -->
   <data name="MenuEdit" xml:space="preserve"><value>_Edit</value></data>
+  <data name="MenuEditUndo" xml:space="preserve"><value>_Undo</value></data>
+  <data name="MenuEditRedo" xml:space="preserve"><value>_Redo</value></data>
   <data name="MenuEditCopy" xml:space="preserve"><value>_Copy</value></data>
   <data name="MenuEditCut" xml:space="preserve"><value>Cu_t</value></data>
   <data name="MenuEditPaste" xml:space="preserve"><value>_Paste</value></data>
   <data name="MenuEditDelete" xml:space="preserve"><value>_Delete</value></data>
+  <data name="MenuEditImport" xml:space="preserve"><value>I_mport...</value></data>
+  <data name="MenuEditExport" xml:space="preserve"><value>E_xport...</value></data>
   <data name="MenuEditFindReplace" xml:space="preserve"><value>_Find / Replace...</value></data>
   <data name="MenuEditDocInfo" xml:space="preserve"><value>Document _Info...</value></data>
 
@@ -62,12 +66,69 @@
   <data name="MenuInsertEmoji" xml:space="preserve"><value>E_moji</value></data>
   <data name="MenuInsertShape" xml:space="preserve"><value>S_hape</value></data>
   <data name="MenuInsertImage" xml:space="preserve"><value>_Image</value></data>
+  <data name="MenuInsertHyperlink"    xml:space="preserve"><value>Hyper_link...</value></data>
+  <data name="MenuInsertFootnote"    xml:space="preserve"><value>_Footnote</value></data>
+  <data name="MenuInsertEndnote"     xml:space="preserve"><value>E_ndnote</value></data>
+  <data name="MenuInsertPageBreak"   xml:space="preserve"><value>Pa_ge Break</value></data>
+  <data name="MsgPageBreakInTableCell" xml:space="preserve"><value>Page breaks cannot be inserted inside a table cell.</value></data>
+  <data name="MenuInsertToc"         xml:space="preserve"><value>Table of Contents (_O)</value></data>
+  <data name="MenuInsertTocRefresh"  xml:space="preserve"><value>Refresh TOC (_R)</value></data>
+  <data name="MenuInsertField"       xml:space="preserve"><value>Insert Field (_D)</value></data>
+  <data name="MenuInsertFieldDate"   xml:space="preserve"><value>Date</value></data>
+  <data name="MenuInsertFieldTime"   xml:space="preserve"><value>Time</value></data>
+  <data name="MenuInsertFieldPage"   xml:space="preserve"><value>Page Number</value></data>
+  <data name="MenuInsertFieldNumPages" xml:space="preserve"><value>Total Pages</value></data>
+  <data name="MenuInsertFieldAuthor" xml:space="preserve"><value>Author</value></data>
+  <data name="MenuInsertFieldTitle"  xml:space="preserve"><value>Document Title</value></data>
+  <data name="MsgNoTocToRefresh"     xml:space="preserve"><value>No table of contents found. Please use 'Insert TOC' first.</value></data>
+
+  <!-- Footnote/Endnote editor panel -->
+  <data name="FootnotePanelTitle"      xml:space="preserve"><value>Footnotes/Endnotes</value></data>
+  <data name="FootnotePanelTabFn"      xml:space="preserve"><value>Footnotes</value></data>
+  <data name="FootnotePanelTabEn"      xml:space="preserve"><value>Endnotes</value></data>
+  <data name="FootnotePanelClose"      xml:space="preserve"><value>Close panel</value></data>
+  <data name="FootnotePanelDelete"     xml:space="preserve"><value>Delete this entry</value></data>
+  <data name="FootnotePanelEmpty"      xml:space="preserve"><value>No footnotes/endnotes. Select text in the body and choose Insert &gt; Footnote (or Endnote) to add one.</value></data>
+  <data name="FootnotePanelGotoRef"    xml:space="preserve"><value>Go to reference in body</value></data>
+  <data name="MenuViewFootnotePanel"   xml:space="preserve"><value>Footnote/Endnote _Panel</value></data>
+
+  <!-- Context menu -->
+  <data name="CtxInsertFootnote"   xml:space="preserve"><value>Insert _Footnote</value></data>
+  <data name="CtxInsertEndnote"    xml:space="preserve"><value>Insert E_ndnote</value></data>
+  <data name="CtxFootnoteEdit"     xml:space="preserve"><value>Edit _Footnote</value></data>
+  <data name="CtxEndnoteEdit"      xml:space="preserve"><value>Edit E_ndnote</value></data>
+
+  <!-- Hyperlink dialog -->
+  <data name="HyperlinkDlgTitle"       xml:space="preserve"><value>Hyperlink</value></data>
+  <data name="HyperlinkDlgUrl"         xml:space="preserve"><value>_URL:</value></data>
+  <data name="HyperlinkDlgDisplayText" xml:space="preserve"><value>_Display text:</value></data>
+  <data name="HyperlinkDlgDisplayHint" xml:space="preserve"><value>(leave blank to use URL as text)</value></data>
+  <data name="HyperlinkDlgRemove"      xml:space="preserve"><value>_Remove link</value></data>
+  <data name="HyperlinkDlgUrlEmpty"    xml:space="preserve"><value>Please enter a URL.</value></data>
+  <data name="CtxHyperlinkEdit"        xml:space="preserve"><value>Edit _Hyperlink...</value></data>
+  <data name="CtxHyperlinkOpen"        xml:space="preserve"><value>_Open Link</value></data>
 
   <!-- Menu: Format -->
   <data name="MenuFormat" xml:space="preserve"><value>F_ormat</value></data>
   <data name="MenuFormatChar" xml:space="preserve"><value>_Character...</value></data>
   <data name="MenuFormatPara" xml:space="preserve"><value>_Paragraph...</value></data>
   <data name="MenuFormatPage" xml:space="preserve"><value>Pa_ge...</value></data>
+  <data name="MenuFormatHeaderFooter" xml:space="preserve"><value>_Header/Footer...</value></data>
+
+  <!-- Menu: View -->
+  <data name="MenuView"                    xml:space="preserve"><value>_View</value></data>
+  <data name="MenuViewTypesettingMarks"    xml:space="preserve"><value>Typesetting _Marks</value></data>
+
+  <!-- Typesetting mark labels -->
+  <data name="TyposettingMarkHeader"       xml:space="preserve"><value>Header</value></data>
+  <data name="TyposettingMarkFooter"       xml:space="preserve"><value>Footer</value></data>
+  <data name="TyposettingMarkImage"        xml:space="preserve"><value>Image</value></data>
+  <data name="TyposettingMarkImageBehind"  xml:space="preserve"><value>Image (behind)</value></data>
+  <data name="TyposettingMarkShape"        xml:space="preserve"><value>Shape</value></data>
+  <data name="TyposettingMarkShapeBehind"  xml:space="preserve"><value>Shape (behind)</value></data>
+  <data name="TyposettingMarkTable"        xml:space="preserve"><value>Table</value></data>
+  <data name="TyposettingMarkTableBehind"  xml:space="preserve"><value>Table (behind)</value></data>
+  <data name="TyposettingMarkTextBox"      xml:space="preserve"><value>Text Box</value></data>
 
   <!-- Menu: Tools -->
   <data name="MenuTools" xml:space="preserve"><value>_Tools</value></data>
@@ -100,6 +161,49 @@
   <data name="StatusNewDoc" xml:space="preserve"><value>New document created.</value></data>
   <data name="StatusOpenDone" xml:space="preserve"><value>Opened — {0}</value></data>
   <data name="StatusSaveDone" xml:space="preserve"><value>Saved — {0}</value></data>
+  <data name="StatusBusyOpen" xml:space="preserve"><value>Opening — {0}</value></data>
+  <data name="StatusBusySave" xml:space="preserve"><value>Saving — {0}</value></data>
+  <data name="StatusBusyConvert" xml:space="preserve"><value>Converting — {0}</value></data>
+  <data name="StatusBusyConvertProgress" xml:space="preserve"><value>Converting ({0}%) {1} — {2}</value></data>
+  <data name="StatusConvertedAndOpened" xml:space="preserve"><value>Converted {0} → {1} and opened the IWPF file.</value></data>
+  <data name="StatusSavedAndConverted" xml:space="preserve"><value>Saved {0} and exported {1}.</value></data>
+  <data name="DlgConvertOnOpenTitle" xml:space="preserve"><value>External format conversion</value></data>
+  <data name="DlgConvertOnOpenPrompt" xml:space="preserve"><value>This format cannot be edited directly in the main app.
+
+It will be converted to a regular IWPF document with the same name, saved, and the converted file will be opened.
+
+  Source     : {0}
+  Converted  : {1}
+
+Continue?</value></data>
+  <data name="DlgConvertOnSaveTitle" xml:space="preserve"><value>External format export</value></data>
+  <data name="DlgConvertOnSavePrompt" xml:space="preserve"><value>External formats are produced through an IWPF master.
+
+A same-named IWPF document is saved first, then converted to the external format. Both files remain on disk.
+
+  IWPF master : {0}
+  External    : {1}
+
+Continue?</value></data>
+  <data name="DlgConvertOverwriteTitle" xml:space="preserve"><value>IWPF file exists</value></data>
+  <data name="DlgConvertOverwritePrompt" xml:space="preserve"><value>An IWPF file with the same name already exists:
+
+  {0}
+
+[Yes] Re-convert and overwrite
+[No]  Open the existing IWPF file as-is
+[Cancel] Cancel</value></data>
+  <data name="DlgUnsupportedVersionTitle" xml:space="preserve"><value>Unsupported version</value></data>
+  <data name="DlgUnsupportedVersionPrompt" xml:space="preserve"><value>This file is too old for PolyDonky to handle.
+
+  File   : {0}
+  Detail : {1}
+
+Supported range:
+  • HWP / HWPX — 2014 or later (HWPX 1.2+)
+  • DOC / DOCX — 2012 or later (Word 2013 / AppVersion 15.0+)
+
+Re-save the file in a recent Hancom Office or Microsoft Word and try again.</value></data>
   <data name="StatusInsert" xml:space="preserve"><value>INS</value></data>
   <data name="StatusOverwrite" xml:space="preserve"><value>OVR</value></data>
   <data name="StatusDocClosed" xml:space="preserve"><value>Document closed.</value></data>
@@ -233,6 +337,8 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="SettingsLanguage" xml:space="preserve"><value>Language:</value></data>
   <data name="SettingsLangKorean" xml:space="preserve"><value>한국어</value></data>
   <data name="SettingsLangEnglish" xml:space="preserve"><value>English (Default)</value></data>
+  <data name="SettingsSave" xml:space="preserve"><value>File Saving:</value></data>
+  <data name="SettingsOverwriteProtect" xml:space="preserve"><value>Overwrite protection (auto-number converted files)</value></data>
 
   <!-- Character Formatting dialog -->
   <data name="FormatCharTitle"       xml:space="preserve"><value>Character Formatting</value></data>
@@ -314,6 +420,26 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageFormatPaperTab"           xml:space="preserve"><value>Paper</value></data>
   <data name="PageFormatMarginsTab"         xml:space="preserve"><value>Margins</value></data>
   <data name="PageFormatLayoutTab"          xml:space="preserve"><value>Layout</value></data>
+  <data name="PageFormatHeaderFooterTab"    xml:space="preserve"><value>Header/Footer</value></data>
+  <data name="PageFormatHeaderGroup"        xml:space="preserve"><value>Header</value></data>
+  <data name="PageFormatFooterGroup"        xml:space="preserve"><value>Footer</value></data>
+  <data name="PageFormatHFLeft"             xml:space="preserve"><value>Left</value></data>
+  <data name="PageFormatHFCenter"           xml:space="preserve"><value>Center</value></data>
+  <data name="PageFormatHFRight"            xml:space="preserve"><value>Right</value></data>
+  <data name="PageFormatHFTokenHint"        xml:space="preserve"><value>Available tokens: {PAGE} {NUMPAGES} {DATE} {TIME} {TITLE} {AUTHOR} {FILENAME}</value></data>
+  <data name="PageFormatHFToolbarFontFamily" xml:space="preserve"><value>Font</value></data>
+  <data name="PageFormatHFToolbarBold"      xml:space="preserve"><value>Bold (Ctrl+B)</value></data>
+  <data name="PageFormatHFToolbarItalic"    xml:space="preserve"><value>Italic (Ctrl+I)</value></data>
+  <data name="PageFormatHFToolbarUnderline" xml:space="preserve"><value>Underline (Ctrl+U)</value></data>
+  <data name="PageFormatHFToolbarStrike"    xml:space="preserve"><value>Strikethrough</value></data>
+  <data name="PageFormatHFToolbarFontSize"  xml:space="preserve"><value>Font Size (pt)</value></data>
+  <data name="PageFormatHFToolbarColor"       xml:space="preserve"><value>Font Color</value></data>
+  <data name="PageFormatHFToolbarAlignLeft"   xml:space="preserve"><value>Align Left</value></data>
+  <data name="PageFormatHFToolbarAlignCenter" xml:space="preserve"><value>Align Center</value></data>
+  <data name="PageFormatHFToolbarAlignRight"  xml:space="preserve"><value>Align Right</value></data>
+  <data name="PageFormatHFToolbarAlignJustify" xml:space="preserve"><value>Justify</value></data>
+  <data name="PageFormatHFTokenInsert"      xml:space="preserve"><value>Insert</value></data>
+  <data name="PageFormatHFTokenPlaceholder" xml:space="preserve"><value>Select token…</value></data>
   <data name="PageFormatSizeLabel"          xml:space="preserve"><value>Paper size</value></data>
   <data name="PageFormatCustomSize"         xml:space="preserve"><value>Custom</value></data>
   <data name="PageFormatWidthLabel"         xml:space="preserve"><value>Width (mm)</value></data>
@@ -331,6 +457,14 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="PageFormatMarginFooter"       xml:space="preserve"><value>Footer (mm)</value></data>
   <data name="PageFormatColumns"            xml:space="preserve"><value>Columns</value></data>
   <data name="PageFormatColumnGap"          xml:space="preserve"><value>Column gap (mm)</value></data>
+  <data name="PageFormatColumnDividerVisible"   xml:space="preserve"><value>Show column divider</value></data>
+  <data name="PageFormatColumnDividerColor"     xml:space="preserve"><value>Divider color</value></data>
+  <data name="PageFormatColumnDividerThickness" xml:space="preserve"><value>Divider thickness (pt)</value></data>
+  <data name="PageFormatColumnDividerStyle"     xml:space="preserve"><value>Divider style</value></data>
+  <data name="ColumnDividerStyleNone"           xml:space="preserve"><value>None</value></data>
+  <data name="ColumnDividerStyleSolid"          xml:space="preserve"><value>Solid</value></data>
+  <data name="ColumnDividerStyleDashed"         xml:space="preserve"><value>Dashed</value></data>
+  <data name="ColumnDividerStyleDotted"         xml:space="preserve"><value>Dotted</value></data>
   <data name="PageFormatPageNumberStart"    xml:space="preserve"><value>Page number start</value></data>
   <data name="PageFormatShowMarginGuides"   xml:space="preserve"><value>Show margin guides</value></data>
   <data name="PageFormatPreviewGroup"       xml:space="preserve"><value>Preview</value></data>

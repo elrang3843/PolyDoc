@@ -181,10 +181,13 @@ public partial class ImageWindow : Window
     private static WpfMedia.Imaging.BitmapImage LoadBitmap(byte[] data)
     {
         var bmp = new WpfMedia.Imaging.BitmapImage();
+        // OnLoad + 명시 Dispose — EndInit 후 내부 캐시에 데이터가 복사되므로 원본 stream 해제 안전.
+        var ms = new MemoryStream(data, writable: false);
         bmp.BeginInit();
         bmp.CacheOption  = WpfMedia.Imaging.BitmapCacheOption.OnLoad;
-        bmp.StreamSource = new MemoryStream(data, writable: false);
+        bmp.StreamSource = ms;
         bmp.EndInit();
+        ms.Dispose();
         bmp.Freeze();
         return bmp;
     }

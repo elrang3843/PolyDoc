@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -32,6 +33,50 @@ public partial class MainViewModel : ObservableObject
     /// per-page RTB 모드에서 MainWindow 가 등록한다. null 이면 FlowDocument 파싱으로 폴백.
     /// </summary>
     public Func<PolyDonkyument?>? LiveDocumentProvider { get; set; }
+
+    /// <summary>편집 작업의 Undo/Redo 스냅샷 스택. MainWindow 가 액션 시점에 PushUndo 한다.</summary>
+    public UndoRedoManager UndoRedo { get; } = new();
+
+    /// <summary>Undo 가능 여부 (메뉴 활성/비활성 바인딩용).</summary>
+    public bool CanUndo => UndoRedo.CanUndo;
+
+    /// <summary>Redo 가능 여부 (메뉴 활성/비활성 바인딩용).</summary>
+    public bool CanRedo => UndoRedo.CanRedo;
+
+    public MainViewModel()
+    {
+        UndoRedo.StateChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(CanUndo));
+            OnPropertyChanged(nameof(CanRedo));
+        };
+    }
+
+    /// <summary>
+    /// Undo/Redo 가 호출 직후 사용. 모델을 통째로 교체하고 FlowDocument 를 재빌드한다.
+    /// HasUnsavedChanges 는 호출자가 따로 관리(보통 true 로 유지).
+    /// </summary>
+    internal void ReplaceDocumentForUndo(PolyDonkyument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        _document = document;
+        _suppressDirty = true;
+        FlowDocument = FlowDocumentBuilder.Build(document);
+        _suppressDirty = false;
+        // RTB·오버레이 재구성은 MainWindow.ApplyFlowDocument 가 처리.
+    }
+
+    /// <summary>
+    /// 텍스트 입력 burst 종료 시 호출 — 라이브로 파싱한 결과를 _document 에 동기화.
+    /// MarkDirty 를 트리거하지 않는다 (이미 dirty).
+    /// </summary>
+    internal void SyncDocumentFromLive(PolyDonkyument live)
+    {
+        ArgumentNullException.ThrowIfNull(live);
+        _suppressDirty = true;
+        _document = live;
+        _suppressDirty = false;
+    }
 
     /// <summary>
     /// 열기 보호(Read/Both)에 사용할 비밀번호. null/빈 문자열이면 평문 저장.
@@ -82,6 +127,27 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hasUnsavedChanges;
+
+    /// <summary>
+    /// 파일 입출력 등 백그라운드 작업 진행 중 상태. true 일 때 상태 표시줄의 진행 막대가 보인다.
+    /// 사용자 입력은 차단되지 않으며, 같은 작업이 동시에 시작되지 않게 호출자에서 직접 가드한다.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isBusy;
+
+    /// <summary>진행 중 작업 설명 — 상태 표시줄의 진행 막대 옆에 표시.</summary>
+    [ObservableProperty]
+    private string _busyMessage = string.Empty;
+
+    /// <summary>
+    /// 외부 CLI 가 보고하는 진행률 (0~100). -1 이면 진행률 미정 → ProgressBar 가 indeterminate 모드.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BusyProgressIsIndeterminate))]
+    private int _busyProgress = -1;
+
+    /// <summary>BusyProgress 가 음수면 indeterminate. ProgressBar.IsIndeterminate 에 바인딩.</summary>
+    public bool BusyProgressIsIndeterminate => BusyProgress < 0;
 
     // 상태 표시줄 우측 4칸: 메모리·Insert/Overwrite·CapsLock·NumLock.
     // MainWindow code-behind 가 DispatcherTimer 로 1초마다 RefreshSystemKeys/Memory 를 호출한다.
@@ -153,6 +219,7 @@ public partial class MainViewModel : ObservableObject
         CurrentFilePath = path ?? string.Empty;
         DocumentTitle = string.IsNullOrEmpty(path) ? SR.DlgNewDocTitle : Path.GetFileName(path);
         HasUnsavedChanges = false;
+        UndoRedo.Clear(); // 새 문서·로드된 문서는 이전 편집 이력과 무관
     }
 
     [RelayCommand]
@@ -164,7 +231,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Open()
+    private async Task OpenAsync()
     {
         if (!ConfirmDiscardChanges()) return;
 
@@ -175,25 +242,28 @@ public partial class MainViewModel : ObservableObject
         };
         if (dlg.ShowDialog() != true) return;
 
-        OpenPath(dlg.FileName);
+        await OpenPathAsync(dlg.FileName);
     }
 
     /// <summary>드래그&드롭 등 외부에서 파일 경로를 직접 전달받아 열기.</summary>
-    public void OpenFile(string path)
+    public async Task OpenFileAsync(string path)
     {
         if (!ConfirmDiscardChanges()) return;
-        OpenPath(path);
+        await OpenPathAsync(path);
     }
 
-    private void OpenPath(string path)
+    /// <summary>비-async 호출 사이트(이벤트 핸들러 등) 호환을 위한 동기 래퍼 — fire-and-forget.</summary>
+    public void OpenFile(string path) => _ = OpenFileAsync(path);
+
+    private async Task OpenPathAsync(string path)
     {
-        if (KnownFormats.RequiresExternalConverter(path) && !KnownFormats.IsSupportedNatively(path))
+        if (IsBusy) return;  // 동시 열기 가드
+
+        // CLAUDE.md §3 — 외부 CLI 변환기로 IWPF 우회 처리하는 포맷 (HTML/XML/HWP/DOC 등).
+        // 메인 앱에서 직접 처리 불가 → CLI spawn 후 임시 IWPF 를 읽는다.
+        if (KnownFormats.RequiresExternalConverter(path))
         {
-            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-            MessageBox.Show(
-                string.Format(SR.DlgUnsupportedFormat, ext),
-                SR.DlgUnsupportedFormatTitle,
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            await OpenViaExternalConverterAsync(path);
             return;
         }
 
@@ -207,34 +277,162 @@ public partial class MainViewModel : ObservableObject
 
         PolyDonkyument? doc;
         string? usedPassword = null;
+
+        IsBusy       = true;
+        BusyMessage  = string.Format(SR.StatusBusyOpen, Path.GetFileName(path));
         try
         {
-            using var fs = File.OpenRead(path);
-            doc = reader.Read(fs);
+            try
+            {
+                doc = await Task.Run(() =>
+                {
+                    using var fs = File.OpenRead(path);
+                    return reader.Read(fs);
+                });
+            }
+            catch (EncryptedIwpfException) when (reader is IwpfReader iwpf)
+            {
+                // 암호화된 IWPF — 비밀번호 입력 + 재시도 루프 (UI 스레드).
+                doc = ReadEncryptedWithPrompt(iwpf, path, out usedPassword);
+                if (doc is null) return; // 사용자 취소
+            }
+            catch (Exception ex)
+            {
+                ReportError(SR.DlgOpenError, ex);
+                return;
+            }
+
+            // IwpfReader 가 Metadata.Custom 에 넣어둔 write-lock 데이터를 꺼낸다.
+            IwpfWriteLock? writeLock = null;
+            if (doc.Metadata.Custom.TryGetValue("iwpf.writeLock", out var wlJson))
+            {
+                writeLock = JsonSerializer.Deserialize<IwpfWriteLock>(wlJson, JsonDefaults.Options);
+                doc.Metadata.Custom.Remove("iwpf.writeLock");
+            }
+
+            LoadDocument(doc, path, usedPassword, writeLock);
+            StatusMessage = BuildOpenStatusMessage(path, doc)
+                + (IsWriteProtected ? "  " + SR.StatusWriteProtectedSuffix : "");
         }
-        catch (EncryptedIwpfException) when (reader is IwpfReader iwpf)
+        finally
         {
-            // 암호화된 IWPF — 비밀번호 입력 + 재시도 루프.
-            doc = ReadEncryptedWithPrompt(iwpf, path, out usedPassword);
-            if (doc is null) return; // 사용자 취소
+            IsBusy      = false;
+            BusyMessage = string.Empty;
         }
-        catch (Exception ex)
+    }
+
+    /// <summary>
+    /// 외부 CLI 변환기로 입력을 같은 이름의 정식 IWPF 파일(예: book.html → book.iwpf)로 변환한 뒤
+    /// 그 IWPF 파일을 메인 앱이 연다 (CLAUDE.md §3 — IWPF 가 정본).
+    /// 사용자에게 변환 사실을 명시 안내하고, 같은 이름의 IWPF 가 이미 있으면 덮어쓰기/기존열기/취소 선택.
+    /// </summary>
+    private async Task OpenViaExternalConverterAsync(string sourcePath)
+    {
+        var converter = ExternalConverter.GetConverter(sourcePath);
+        if (converter is null)
         {
-            ReportError(SR.DlgOpenError, ex);
+            var ext = Path.GetExtension(sourcePath).TrimStart('.').ToLowerInvariant();
+            MessageBox.Show(
+                string.Format(SR.DlgUnsupportedFormat, ext),
+                SR.DlgUnsupportedFormatTitle,
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        // IwpfReader 가 Metadata.Custom 에 넣어둔 write-lock 데이터를 꺼낸다.
-        IwpfWriteLock? writeLock = null;
-        if (doc.Metadata.Custom.TryGetValue("iwpf.writeLock", out var wlJson))
+        // 덮어쓰기 방지 모드: 안전한 번호 경로를 바로 사용 (덮어쓰기 대화 건너뜀).
+        var iwpfBase = Path.ChangeExtension(sourcePath, ".iwpf");
+        var iwpfPath = LanguageService.OverwriteProtection
+            ? GetSafePath(iwpfBase)
+            : iwpfBase;
+
+        // 사용자 안내 — 변환 후 IWPF 를 연다는 사실을 분명히 알린다.
+        var promptMsg = string.Format(SR.DlgConvertOnOpenPrompt,
+            Path.GetFileName(sourcePath), Path.GetFileName(iwpfPath));
+        var promptResult = MessageBox.Show(
+            promptMsg,
+            SR.DlgConvertOnOpenTitle,
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information,
+            MessageBoxResult.OK);
+        if (promptResult != MessageBoxResult.OK) return;
+
+        // 덮어쓰기 방지 비활성화 시: 같은 이름의 IWPF 가 이미 있으면 사용자 선택.
+        if (!LanguageService.OverwriteProtection && File.Exists(iwpfPath))
         {
-            writeLock = JsonSerializer.Deserialize<IwpfWriteLock>(wlJson, JsonDefaults.Options);
-            doc.Metadata.Custom.Remove("iwpf.writeLock");
+            var owMsg = string.Format(SR.DlgConvertOverwritePrompt, Path.GetFileName(iwpfPath));
+            var ow = MessageBox.Show(
+                owMsg,
+                SR.DlgConvertOverwriteTitle,
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (ow == MessageBoxResult.Cancel) return;
+            if (ow == MessageBoxResult.No)
+            {
+                // 기존 IWPF 를 그대로 연다 (변환 건너뜀).
+                await OpenPathAsync(iwpfPath);
+                return;
+            }
+            // Yes → 변환 진행해 덮어쓰기.
         }
 
-        LoadDocument(doc, path, usedPassword, writeLock);
-        StatusMessage = BuildOpenStatusMessage(path, doc)
-            + (IsWriteProtected ? "  " + SR.StatusWriteProtectedSuffix : "");
+        IsBusy        = true;
+        BusyProgress  = 0;
+        BusyMessage   = string.Format(SR.StatusBusyConvert, Path.GetFileName(sourcePath));
+        var sourceName = Path.GetFileName(sourcePath);
+        var iwpfName   = Path.GetFileName(iwpfPath);
+        var reporter = new Progress<(int Percent, string Message)>(t =>
+        {
+            BusyProgress = t.Percent;
+            BusyMessage  = string.Format(SR.StatusBusyConvertProgress, t.Percent, t.Message, sourceName);
+        });
+        try
+        {
+            try
+            {
+                await ExternalConverter.ConvertAsync(converter, sourcePath, iwpfPath, reporter);
+            }
+            catch (UnsupportedFormatVersionException ex)
+            {
+                MessageBox.Show(
+                    string.Format(SR.DlgUnsupportedVersionPrompt, Path.GetFileName(sourcePath), ex.Message),
+                    SR.DlgUnsupportedVersionTitle,
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            catch (Exception ex)
+            {
+                ReportError(SR.DlgOpenError, ex);
+                return;
+            }
+
+            PolyDonkyument doc;
+            try
+            {
+                BusyProgress = -1;  // IWPF 로드 단계는 indeterminate.
+                BusyMessage  = string.Format(SR.StatusBusyOpen, iwpfName);
+                doc = await Task.Run(() =>
+                {
+                    using var fs = File.OpenRead(iwpfPath);
+                    return new IwpfReader().Read(fs);
+                });
+            }
+            catch (Exception ex)
+            {
+                ReportError(SR.DlgOpenError, ex);
+                return;
+            }
+
+            // 정본은 IWPF — CurrentFilePath 가 .iwpf 가 되어 다음 저장은 IWPF 로 직행.
+            LoadDocument(doc, iwpfPath, password: null);
+            StatusMessage = string.Format(SR.StatusConvertedAndOpened, sourceName, iwpfName);
+        }
+        finally
+        {
+            IsBusy       = false;
+            BusyProgress = -1;
+            BusyMessage  = string.Empty;
+        }
     }
 
     /// <summary>
@@ -277,39 +475,22 @@ public partial class MainViewModel : ObservableObject
     private static string BuildOpenStatusMessage(string path, PolyDonkyument doc)
     {
         var name = Path.GetFileName(path);
-        if (doc.Metadata.Custom.TryGetValue("hwpx.paragraphCount", out var pCount)
-            && int.TryParse(pCount, out var pc) && pc == 0)
-        {
-            doc.Metadata.Custom.TryGetValue("hwpx.sectionFilesFound", out var sCount);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionEntryHit", out var hit);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionPath", out var firstPath);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionRoot", out var rootName);
-            doc.Metadata.Custom.TryGetValue("hwpx.firstSectionTags", out var tags);
-            doc.Metadata.Custom.TryGetValue("hwpx.xmlEntries", out var xmlEntries);
-            doc.Metadata.Custom.TryGetValue("hwpx.parseErrors", out var parseErrors);
-            var errPart = string.IsNullOrEmpty(parseErrors) ? "" : $" | XML 오류: {parseErrors}";
-            return $"열기 완료 — {name} | 본문 0건, 섹션 {sCount ?? "?"}개 (entry-hit={hit ?? "?"}) | path={firstPath ?? "?"} | root=<{rootName ?? "?"}> | 자식: {tags ?? "(없음)"} | xml: {xmlEntries ?? "(없음)"}{errPart}";
-        }
-        if (doc.Metadata.Custom.TryGetValue("hwpx.parseErrors", out var perr) && !string.IsNullOrEmpty(perr))
-        {
-            return $"열기 완료 — {name} (일부 XML 파싱 경고: {perr})";
-        }
         return string.Format(SR.StatusOpenDone, name);
     }
 
     [RelayCommand]
-    private void Save()
+    private async Task SaveAsync()
     {
         if (string.IsNullOrEmpty(CurrentFilePath))
         {
-            SaveAs();
+            await SaveAsAsync();
             return;
         }
-        SaveTo(CurrentFilePath);
+        await SaveToAsync(CurrentFilePath);
     }
 
     [RelayCommand]
-    private void SaveAs()
+    private async Task SaveAsAsync()
     {
         var dlg = new SaveFileDialog
         {
@@ -321,17 +502,9 @@ public partial class MainViewModel : ObservableObject
         };
         if (dlg.ShowDialog() != true) return;
 
-        if (KnownFormats.RequiresExternalConverter(dlg.FileName) && !KnownFormats.IsSupportedNatively(dlg.FileName))
-        {
-            var ext = Path.GetExtension(dlg.FileName).TrimStart('.').ToLowerInvariant();
-            MessageBox.Show(
-                string.Format(SR.DlgSaveConverterNeeded, ext),
-                SR.DlgSaveConverterTitle,
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        SaveTo(dlg.FileName);
+        // 외부 CLI 변환 포맷(DOCX/HWPX/HTML/XML)은 SaveToAsync → SaveViaExternalConverterAsync
+        // 가 IWPF 정본을 만든 뒤 CLI 로 변환한다. 변환기 미등록 시(HWP/DOC) 그쪽에서 안내.
+        await SaveToAsync(dlg.FileName);
     }
 
     [RelayCommand]
@@ -788,69 +961,186 @@ public partial class MainViewModel : ObservableObject
         Application.Current.Shutdown();
     }
 
-    private void SaveTo(string path)
+    private async Task SaveToAsync(string path)
+    {
+        if (IsBusy) return;  // 동시 저장 가드
+
+        IsBusy      = true;
+        BusyMessage = string.Format(SR.StatusBusySave, Path.GetFileName(path));
+        try
+        {
+            // CLAUDE.md §3 — 외부 CLI 위탁 포맷은 임시 IWPF 만들고 CLI 가 최종 변환.
+            if (KnownFormats.RequiresExternalConverter(path))
+            {
+                await SaveViaExternalConverterAsync(path);
+            }
+            else
+            {
+                await Task.Run(() => SaveToCore(path, showProgress: false));
+            }
+        }
+        finally
+        {
+            IsBusy      = false;
+            BusyMessage = string.Empty;
+        }
+    }
+
+    private async Task SaveViaExternalConverterAsync(string targetPath)
+    {
+        var converter = ExternalConverter.GetConverter(targetPath);
+        if (converter is null)
+        {
+            var ext = Path.GetExtension(targetPath).TrimStart('.').ToLowerInvariant();
+            MessageBox.Show(string.Format(SR.DlgSaveConverterNeeded, ext),
+                SR.DlgSaveConverterTitle, MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // 같은 이름의 정식 .iwpf 와 외부 포맷을 함께 저장 (IWPF 정본 + 외부 export).
+        var iwpfBase = Path.ChangeExtension(targetPath, ".iwpf");
+        var iwpfPath = LanguageService.OverwriteProtection ? GetSafePath(iwpfBase) : iwpfBase;
+        if (LanguageService.OverwriteProtection)
+            targetPath = GetSafePath(targetPath);
+
+        var promptMsg = string.Format(SR.DlgConvertOnSavePrompt,
+            Path.GetFileName(iwpfPath), Path.GetFileName(targetPath));
+        var promptResult = MessageBox.Show(
+            promptMsg,
+            SR.DlgConvertOnSaveTitle,
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information,
+            MessageBoxResult.OK);
+        if (promptResult != MessageBoxResult.OK) return;
+
+        var iwpfName   = Path.GetFileName(iwpfPath);
+        var targetName = Path.GetFileName(targetPath);
+        try
+        {
+            // 1) 현재 모델을 같은 이름의 IWPF 정본 파일로 저장 (UI 스레드 — FlowDocument 파싱).
+            BusyProgress = -1;
+            BusyMessage  = string.Format(SR.StatusBusySave, iwpfName);
+            await Task.Run(() => SaveToCore(iwpfPath, showProgress: false));
+            if (!File.Exists(iwpfPath))
+            {
+                ReportError(SR.DlgSaveError, new InvalidOperationException("IWPF 저장 실패"));
+                return;
+            }
+
+            // 2) CLI 가 IWPF 정본을 외부 포맷으로 변환.
+            BusyProgress = 0;
+            BusyMessage  = string.Format(SR.StatusBusyConvert, iwpfName);
+            var reporter = new Progress<(int Percent, string Message)>(t =>
+            {
+                BusyProgress = t.Percent;
+                BusyMessage  = string.Format(SR.StatusBusyConvertProgress, t.Percent, t.Message, targetName);
+            });
+            try
+            {
+                await ExternalConverter.ConvertAsync(converter, iwpfPath, targetPath, reporter);
+            }
+            catch (Exception ex)
+            {
+                ReportError(SR.DlgSaveError, ex);
+                return;
+            }
+
+            // 정본은 IWPF — CurrentFilePath 를 .iwpf 로 갱신해 이후 저장은 IWPF 로 직행.
+            CurrentFilePath = iwpfPath;
+            DocumentTitle   = iwpfName;
+            HasUnsavedChanges = false;
+            StatusMessage   = string.Format(SR.StatusSavedAndConverted, iwpfName, targetName);
+        }
+        catch (Exception ex)
+        {
+            ReportError(SR.DlgSaveError, ex);
+        }
+        finally
+        {
+            BusyProgress = -1;
+        }
+    }
+
+    /// <summary>
+    /// 덮어쓰기 방지: 파일이 이미 존재하면 이름 뒤에 -1, -2, ... 를 붙인 첫 번째 빈 경로를 반환.
+    /// 파일이 없으면 그대로 반환한다.
+    /// </summary>
+    private static string GetSafePath(string path)
+    {
+        if (!File.Exists(path)) return path;
+
+        var dir  = Path.GetDirectoryName(path) ?? string.Empty;
+        var name = Path.GetFileNameWithoutExtension(path);
+        var ext  = Path.GetExtension(path);
+        for (int i = 1; i <= 9999; i++)
+        {
+            var candidate = Path.Combine(dir, $"{name}-{i}{ext}");
+            if (!File.Exists(candidate)) return candidate;
+        }
+        return path;  // fallback (사실상 발생 불가)
+    }
+
+    /// <summary>
+    /// 동기 저장 — 비동기 경로(<see cref="SaveToAsync"/>)와 ConfirmDiscardChanges 같은
+    /// 동기 호출자가 공유한다. UI 스레드에서 직접 호출돼도 안전하지만 진행 막대는 보이지 않는다.
+    /// </summary>
+    private void SaveToCore(string path, bool showProgress)
     {
         var writer = KnownFormats.PickWriter(path);
         if (writer is null)
         {
+            // 백그라운드 스레드에서도 MessageBox 는 자체 STA 메시지 펌프로 동작 — 안전.
             MessageBox.Show(SR.DlgSaveFail, SR.DlgSaveFailTitle,
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        // 쓰기 보호가 설정된 경우 저장 전에 비밀번호를 검증한다.
         if (writer is IwpfWriter && _writeLock is not null)
         {
-            if (!VerifyWritePassword()) return; // 사용자 취소 또는 불일치 반복
+            if (!VerifyWritePassword()) return;
         }
 
-        // CurrentFilePath 가 비어 있으면 디스크에 한 번도 안 쓰여진 신규 문서 — 작성일 갱신.
         var isFirstSave = string.IsNullOrEmpty(CurrentFilePath);
         var now = DateTimeOffset.UtcNow;
 
         try
         {
-            var rebuilt = LiveDocumentProvider?.Invoke()
+            // FlowDocument → 모델 변환은 UI 스레드 종속 — Dispatcher 로 마샬링.
+            PolyDonkyument rebuilt = null!;
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                rebuilt = LiveDocumentProvider?.Invoke()
                        ?? FlowDocumentParser.Parse(FlowDocument, _document);
+            });
 
-            // 자동 일자 갱신: 첫 저장이면 Created+Modified 둘 다, 아니면 Modified 만.
-            if (isFirstSave)
-            {
-                rebuilt.Metadata.Created  = now;
-                rebuilt.Metadata.Modified = now;
-            }
-            else
-            {
-                rebuilt.Metadata.Modified = now;
-            }
+            if (isFirstSave) { rebuilt.Metadata.Created  = now; rebuilt.Metadata.Modified = now; }
+            else             { rebuilt.Metadata.Modified = now; }
 
-            // 제목이 없으면 첫 줄 텍스트에서 자동 추출 (6단어 이내)
             if (string.IsNullOrWhiteSpace(rebuilt.Metadata.Title))
-            {
                 rebuilt.Metadata.Title = ExtractFirstLineTitle(rebuilt);
-            }
 
-            // IWPF writer 에 현재 보호 모드와 비밀번호를 지정한다.
             var actualWriter = writer;
             if (writer is IwpfWriter)
             {
                 var mode = CurrentPasswordMode;
-                if (mode != PasswordMode.None)
-                    actualWriter = BuildIwpfWriter(mode);
+                if (mode != PasswordMode.None) actualWriter = BuildIwpfWriter(mode);
             }
 
-            using var fs = File.Create(path);
-            actualWriter.Write(rebuilt, fs);
+            using (var fs = File.Create(path)) actualWriter.Write(rebuilt, fs);
 
-            _document = rebuilt;
-            CurrentFilePath = path;
-            DocumentTitle = Path.GetFileName(path);
-            HasUnsavedChanges = false;
-            StatusMessage = string.Format(SR.StatusSaveDone, Path.GetFileName(path));
+            // UI 스레드에서 상태 갱신.
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                _document = rebuilt;
+                CurrentFilePath = path;
+                DocumentTitle = Path.GetFileName(path);
+                HasUnsavedChanges = false;
+                StatusMessage = string.Format(SR.StatusSaveDone, Path.GetFileName(path));
+            });
         }
         catch (Exception ex)
         {
-            ReportError(SR.DlgSaveError, ex);
+            Application.Current.Dispatcher.Invoke(() => ReportError(SR.DlgSaveError, ex));
         }
     }
 
@@ -970,7 +1260,24 @@ public partial class MainViewModel : ObservableObject
         if (result == MessageBoxResult.Cancel) return false;
         if (result == MessageBoxResult.Yes)
         {
-            Save();
+            // 동기 컨텍스트에서 호출되므로 동기 코어를 직접 사용 — 진행 막대 없음.
+            if (string.IsNullOrEmpty(CurrentFilePath))
+            {
+                // 신규 문서면 다이얼로그가 필요 — 비동기 SaveAs 를 fire-and-forget 으로 실행 불가
+                // (호출자가 결과를 기다림). 동기 대화상자 후 동기 저장.
+                var dlg = new SaveFileDialog
+                {
+                    Filter   = KnownFormats.SaveFilter,
+                    Title    = SR.DlgFileSaveTitle,
+                    FileName = SR.DlgDefaultFileName,
+                };
+                if (dlg.ShowDialog() != true) return false;
+                SaveToCore(dlg.FileName, showProgress: false);
+            }
+            else
+            {
+                SaveToCore(CurrentFilePath, showProgress: false);
+            }
             return !HasUnsavedChanges;
         }
         return true;

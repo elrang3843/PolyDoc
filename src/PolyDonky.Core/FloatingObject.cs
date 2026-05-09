@@ -46,6 +46,15 @@ public enum TextBoxHAlign { Left = 0, Center = 1, Right = 2, Justify = 3 }
 /// <summary>글상자 내 텍스트 세로 정렬.</summary>
 public enum TextBoxVAlign { Top = 0, Middle = 1, Bottom = 2 }
 
+/// <summary>글상자 다단 구분선 스타일.</summary>
+public enum ColumnDividerStyle
+{
+    None   = 0,
+    Solid  = 1,
+    Dashed = 2,
+    Dotted = 3,
+}
+
 /// <summary>
 /// 글상자 — 페이지 위에 자유 위치로 배치되는 텍스트 컨테이너.
 /// 도형·이미지·표와 동일한 <see cref="ImageWrapMode"/> 배치 체계 + <see cref="OverlayXMm"/>/
@@ -122,6 +131,24 @@ public sealed class TextBoxObject : Block, IOverlayAnchored
     public int LightningBendCount { get; set; } = 2;
     public double PieStartAngleDeg { get; set; } = 0;
     public double PieSweepAngleDeg { get; set; } = 270;
+
+    // ── 다단 (글상자 내부 다단 레이아웃) ─────────────────────────────────────
+    /// <summary>단 수. 1 이면 단일 단(기본값), 2 이상이면 다단.</summary>
+    public int ColumnCount { get; set; } = 1;
+    /// <summary>단 간격 (mm). 단일 단이면 무시.</summary>
+    public double ColumnGapMm { get; set; } = 5.0;
+    /// <summary>각 단의 너비 (mm). null/빈 = 균등 배분. 길이가 ColumnCount 와 다르면 균등 배분.</summary>
+    public List<double>? ColumnWidthsMm { get; set; }
+
+    // ── 단 구분선 ────────────────────────────────────────────────────────
+    /// <summary>단 구분선 표시 여부. ColumnCount &gt; 1 일 때만 의미 있음.</summary>
+    public bool               ColumnDividerVisible      { get; set; } = false;
+    /// <summary>단 구분선 색 (hex). 기본값 회색.</summary>
+    public string             ColumnDividerColor        { get; set; } = "#888888";
+    /// <summary>단 구분선 두께 (pt).</summary>
+    public double             ColumnDividerThicknessPt  { get; set; } = 0.7;
+    /// <summary>단 구분선 스타일.</summary>
+    public ColumnDividerStyle ColumnDividerStyle        { get; set; } = ColumnDividerStyle.Dashed;
 
     /// <summary>본문 블록. 최소 1개의 빈 Paragraph 를 포함하도록 기본값 설정.</summary>
     public IList<Block> Content { get; set; } = new List<Block> { new Paragraph() };

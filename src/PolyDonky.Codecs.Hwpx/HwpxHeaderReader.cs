@@ -15,8 +15,6 @@ namespace PolyDonky.Codecs.Hwpx;
 /// </summary>
 internal static class HwpxHeaderReader
 {
-    private const double HwpUnitToMm = 25.4 / 7200.0;
-
     public static HwpxHeader Parse(XDocument? doc)
     {
         var header = new HwpxHeader();
@@ -41,6 +39,9 @@ internal static class HwpxHeaderReader
                     break;
                 case "style":
                     ParseStyle(elem, header);
+                    break;
+                case "borderFill":
+                    ParseBorderFill(elem, header);
                     break;
             }
         }
@@ -98,6 +99,13 @@ internal static class HwpxHeaderReader
                     if (string.IsNullOrEmpty(ss) || !string.Equals(ss, "NONE", StringComparison.OrdinalIgnoreCase))
                     {
                         rs.Strikethrough = true;
+                    }
+                    break;
+                case "overline":
+                    var ol = child.Attribute("type")?.Value;
+                    if (string.IsNullOrEmpty(ol) || !string.Equals(ol, "NONE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        rs.Overline = true;
                     }
                     break;
                 case "supscript":     // HWPX 사양 표기 (super 가 아닌 sup)
@@ -162,9 +170,9 @@ internal static class HwpxHeaderReader
         var margin = elem.Elements().FirstOrDefault(c => c.Name.LocalName == "margin");
         if (margin is not null)
         {
-            if (TryGetDoubleAttr(margin, "left", out var lm)) ps.IndentLeftMm = lm * HwpUnitToMm;
-            if (TryGetDoubleAttr(margin, "right", out var rm)) ps.IndentRightMm = rm * HwpUnitToMm;
-            if (TryGetDoubleAttr(margin, "intent", out var im)) ps.IndentFirstLineMm = im * HwpUnitToMm;
+            if (TryGetDoubleAttr(margin, "left", out var lm)) ps.IndentLeftMm = UnitConverter.HwpUnitToMm(lm);
+            if (TryGetDoubleAttr(margin, "right", out var rm)) ps.IndentRightMm = UnitConverter.HwpUnitToMm(rm);
+            if (TryGetDoubleAttr(margin, "intent", out var im)) ps.IndentFirstLineMm = UnitConverter.HwpUnitToMm(im);
             if (TryGetDoubleAttr(margin, "prev", out var prev)) ps.SpaceBeforePt = prev / 100.0;     // hwpunit 가 아닌 pt*100 (사양 변종)
             if (TryGetDoubleAttr(margin, "next", out var next)) ps.SpaceAfterPt = next / 100.0;
         }
@@ -178,6 +186,61 @@ internal static class HwpxHeaderReader
         }
 
         header.ParaProperties[id] = ps;
+    }
+
+    /// <summary>
+    /// borderFill 파싱 — 4면 외곽선 색·두께(pt) + winBrush 채움 색을 모은다.
+    /// width 는 한컴 표준 형식 "0.12 mm" 또는 "0.12" 같은 숫자 문자열로 옴 — mm 가정 후 pt 변환.
+    /// </summary>
+    private static void ParseBorderFill(XElement elem, HwpxHeader header)
+    {
+        if (!TryGetIntAttr(elem, "id", out var id))
+        {
+            return;
+        }
+
+        (string? color, double widthPt) ReadSide(string sideName)
+        {
+            var s = elem.Elements().FirstOrDefault(c => c.Name.LocalName == sideName);
+            if (s is null) return (null, 0);
+            string? color = s.Attribute("color")?.Value;
+            double widthPt = 0;
+            string? type = s.Attribute("type")?.Value;
+            if (type is not null && !type.Equals("NONE", StringComparison.OrdinalIgnoreCase))
+            {
+                var raw = s.Attribute("width")?.Value;
+                if (raw is not null)
+                {
+                    var trimmed = raw.Trim();
+                    var spaceIdx = trimmed.IndexOf(' ');
+                    var num = spaceIdx >= 0 ? trimmed[..spaceIdx] : trimmed;
+                    if (double.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out var mm))
+                        widthPt = mm / 0.3527777778;  // mm → pt
+                }
+            }
+            return (color, widthPt);
+        }
+
+        var (topColor,    topWidth)    = ReadSide("topBorder");
+        var (bottomColor, bottomWidth) = ReadSide("bottomBorder");
+        var (leftColor,   leftWidth)   = ReadSide("leftBorder");
+        var (rightColor,  rightWidth)  = ReadSide("rightBorder");
+
+        // hc:fillBrush/hc:winBrush.faceColor 회수 — "none" 이면 무시.
+        string? fill = elem.Descendants()
+            .FirstOrDefault(d => d.Name.LocalName == "winBrush")
+            ?.Attribute("faceColor")?.Value;
+        if (string.Equals(fill, "none", StringComparison.OrdinalIgnoreCase))
+            fill = null;
+
+        header.BorderFills[id] = new HwpxBorderFillDef
+        {
+            TopColor = topColor,       TopWidthPt = topWidth,
+            BottomColor = bottomColor, BottomWidthPt = bottomWidth,
+            LeftColor = leftColor,     LeftWidthPt = leftWidth,
+            RightColor = rightColor,   RightWidthPt = rightWidth,
+            FillFaceColor = fill,
+        };
     }
 
     private static void ParseStyle(XElement elem, HwpxHeader header)

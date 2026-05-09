@@ -44,8 +44,11 @@ public sealed class BlockJsonConverter : JsonConverter<Block>
             "table"     => typeof(Table),
             "image"     => typeof(ImageBlock),
             "shape"     => typeof(ShapeObject),
-            "textbox"   => typeof(TextBoxObject),
-            "opaque"    => typeof(OpaqueBlock),
+            "textbox"        => typeof(TextBoxObject),
+            "thematicBreak"  => typeof(ThematicBreakBlock),
+            "opaque"         => typeof(OpaqueBlock),
+            "toc"       => typeof(TocBlock),
+            "container" => typeof(ContainerBlock),
             null        => typeof(Paragraph),  // legacy fallback
             _           => throw new JsonException($"Unknown Block discriminator: '{discriminator}'"),
         };
@@ -63,8 +66,11 @@ public sealed class BlockJsonConverter : JsonConverter<Block>
             nameof(Table)         => "table",
             nameof(ImageBlock)    => "image",
             nameof(ShapeObject)   => "shape",
-            nameof(TextBoxObject) => "textbox",
-            nameof(OpaqueBlock)   => "opaque",
+            nameof(TextBoxObject)      => "textbox",
+            nameof(ThematicBreakBlock) => "thematicBreak",
+            nameof(OpaqueBlock)        => "opaque",
+            nameof(TocBlock)      => "toc",
+            nameof(ContainerBlock)     => "container",
             _ => throw new JsonException($"Unknown Block runtime type: {type.FullName}"),
         };
 

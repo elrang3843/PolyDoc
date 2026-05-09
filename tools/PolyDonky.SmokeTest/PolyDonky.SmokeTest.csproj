@@ -7,6 +7,8 @@
     <ProjectReference Include="..\..\src\PolyDonky.Codecs.Markdown\PolyDonky.Codecs.Markdown.csproj" />
     <ProjectReference Include="..\..\src\PolyDonky.Codecs.Docx\PolyDonky.Codecs.Docx.csproj" />
     <ProjectReference Include="..\..\src\PolyDonky.Codecs.Hwpx\PolyDonky.Codecs.Hwpx.csproj" />
+    <ProjectReference Include="..\..\src\PolyDonky.Codecs.Html\PolyDonky.Codecs.Html.csproj" />
+    <ProjectReference Include="..\..\src\PolyDonky.Codecs.Xml\PolyDonky.Codecs.Xml.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

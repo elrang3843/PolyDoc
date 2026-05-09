@@ -307,6 +307,111 @@
             </ComboBox>
         </Grid>
 
+        <!-- ── 다단 (글상자 내부 다단 레이아웃) ── -->
+        <TextBlock Text="다단" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="단 수 (1~4)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtColumnCount"
+                     Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}"
+                     TextAlignment="Center" />
+            <TextBlock Grid.Column="3" Text="단 간격 (mm)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtColumnGap"
+                     Grid.Column="4"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}"
+                     TextAlignment="Center" />
+        </Grid>
+
+        <!-- ── 단 구분선 ── -->
+        <TextBlock Text="단 구분선" FontWeight="SemiBold" Margin="0,12,0,6" />
+
+        <!-- 표시 여부 -->
+        <CheckBox x:Name="ChkDividerVisible"
+                  Content="단 구분선 표시"
+                  Margin="0,0,0,8" />
+
+        <!-- 색 + 두께 -->
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="36" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="80" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="색 (hex)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtDividerColor"
+                     Grid.Column="1"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}"
+                     TextChanged="OnDividerColorChanged" />
+            <Button x:Name="BtnDividerColorPick"
+                    Grid.Column="3"
+                    Height="26"
+                    BorderBrush="{DynamicResource Divider}"
+                    BorderThickness="1"
+                    ToolTip="색상 선택..."
+                    Click="OnDividerColorPickClick"
+                    Padding="0">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+            <TextBlock Grid.Column="5" Text="두께 (pt)" VerticalAlignment="Center" />
+            <TextBox x:Name="TxtDividerThickness"
+                     Grid.Column="6"
+                     Padding="4,3"
+                     Background="{DynamicResource SurfaceAlt}"
+                     Foreground="{DynamicResource OnSurface}"
+                     BorderBrush="{DynamicResource Divider}" />
+        </Grid>
+
+        <!-- 스타일 -->
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="선 스타일" VerticalAlignment="Center" />
+            <ComboBox x:Name="CboDividerStyle"
+                      Grid.Column="1"
+                      Background="{DynamicResource SurfaceAlt}"
+                      Foreground="{DynamicResource OnSurface}"
+                      BorderBrush="{DynamicResource Divider}">
+                <ComboBoxItem Content="없음" />
+                <ComboBoxItem Content="실선" />
+                <ComboBoxItem Content="파선" />
+                <ComboBoxItem Content="점선" />
+            </ComboBox>
+        </Grid>
+
         <!-- ── 회전 ── -->
         <TextBlock Text="회전" FontWeight="SemiBold" Margin="0,0,0,6" />
 
