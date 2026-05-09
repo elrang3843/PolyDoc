@@ -46,6 +46,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **단일 단 페이지가 내부 스크롤되던 문제**: `PerPageEditorHost` 의 단일 단 RTB 가 `VerticalScrollBarVisibility = Hidden` 이라 스크롤바만 숨겨지고 키보드/휠 스크롤은 살아있었다. 페이지네이션이 한 페이지에 들어갈 양보다 큰 블록(긴 표·이미지·단락) 을 배정한 경우 사용자가 페이지 안을 스크롤해 인쇄·미리보기 결과와 시각적으로 어긋났다. 다단처럼 `Disabled` 로 통일 — 페이지 영역을 넘는 콘텐츠는 클리핑되고 RTB 내부 스크롤은 더 이상 일어나지 않는다.
+
+- **Fixed** — **누락 이미지(figcaption) 캡션이 안 보이던 문제**: `BuildImage` 의 `Data.Length == 0` 폴백 분기가 깨진-이미지 아이콘만 그리고 `WrapImageWithTitle` 을 호출하지 않아 `ImageBlock.Title` 이 무시됐다 (샘플의 `https://via.placeholder.com/...` 처럼 외부 URL 이라 데이터가 비는 케이스에서 figcaption 사라짐). 정상 이미지 경로와 동일하게 wrap 거치도록 수정 — 깨진 아이콘 아래 캡션이 정상 출력.
+
 - **Fixed** — **셀 안 단락이 부모 td 의 border/배경/padding 까지 받아 셀 내부에 작은 박스가 보이던 문제**: `ApplyBlockAlignment(p, parentEl)` 가 이름과 달리 내부적으로 `ApplyBlockStyle` 을 그대로 호출해 부모의 모든 박스 속성(4면 보더, 배경, padding) 을 자식 단락에 그대로 옮겼다. ParagraphStyle 4면 보더 plumbing 이 추가된 뒤로는 표 셀 안 단락이 td 의 `border:1px solid #000` 까지 그려 시각적으로 doubled. 본래 의도(상속되는 text-align/line-height 만 복사) 대로 `ApplyBlockAlignment` 를 재구현하고, 자체 박스 스타일이 의미 있는 호출자(`<p>`, inline-block 으로 표시되는 `<span>`) 는 명시적으로 `ApplyBlockStyle` 로 전환. 표 셀 / TOC / blockquote 등 컨테이너 안의 텍스트 단락이 더 이상 부모의 보더를 중복 그리지 않는다.
 
 - **Fixed** — **`border-collapse:collapse` 미반영으로 셀 사이 doubled 보더**: WPF Table 은 `border-collapse` 사양이 없어 각 셀이 자기 4면 보더를 모두 그렸고, 결과적으로 인접 셀 사이엔 두 셀이 각각 그린 라인이 겹쳐 doubled 라인 + 가짜 간격이 생겼다 (샘플 표 1 의 외형 차이의 주된 원인). `Table.BorderCollapse` 속성 신규(기본 true), `HtmlReader` 가 `border-collapse:separate` 일 때만 false 로 읽음, `HtmlWriter` 는 collapse 값 그대로 직렬화. `FlowDocumentBuilder.ApplyCellPropertiesToWpf` 가 collapse=true 일 때 비-edge 셀의 위/왼쪽 보더를 0 으로 떨어뜨려 오른쪽+아래만 그리도록 — 인접 셀 사이엔 단일 라인만 남는다(가장자리 셀은 자기 면을 추가로 그려 표 외곽선 형성).
