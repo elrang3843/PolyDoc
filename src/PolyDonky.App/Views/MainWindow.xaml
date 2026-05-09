@@ -113,6 +113,7 @@
                     <MenuItem Header="사각형(_R)"   Command="{Binding InsertShapeCommand}" CommandParameter="Rectangle" />
                     <MenuItem Header="둥근사각형(_O)" Command="{Binding InsertShapeCommand}" CommandParameter="RoundedRect" />
                     <MenuItem Header="타원(_E)"     Command="{Binding InsertShapeCommand}" CommandParameter="Ellipse" />
+                    <MenuItem Header="반원(_F)"     Command="{Binding InsertShapeCommand}" CommandParameter="HalfCircle" />
                     <MenuItem Header="삼각형(_T)"   Command="{Binding InsertShapeCommand}" CommandParameter="Triangle" />
                     <MenuItem Header="정다각형(_G)" Command="{Binding InsertShapeCommand}" CommandParameter="RegularPolygon" />
                     <MenuItem Header="별모양(_A)"   Command="{Binding InsertShapeCommand}" CommandParameter="Star" />

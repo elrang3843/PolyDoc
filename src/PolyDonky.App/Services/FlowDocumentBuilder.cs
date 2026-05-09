@@ -417,6 +417,18 @@ public static class FlowDocumentBuilder
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
+
+        // WPF FlowDocument 에서 Section.Background 는 자식이 Wpf.Table 하나뿐일 때
+        // 렌더링되지 않는 경우가 있다. 이 경우 배경을 Table 에 직접 설정하는 방식으로 우회한다.
+        if (section.Background is not null
+            && section.Blocks.Count == 1
+            && section.Blocks.FirstBlock is Wpf.Table innerWpfTable
+            && innerWpfTable.Background is null)
+        {
+            innerWpfTable.Background = section.Background;
+            section.Background = null;
+        }
+
         return section;
     }
 
@@ -702,9 +714,11 @@ public static class FlowDocumentBuilder
         double commonThk = cell.BorderThicknessPt > 0
             ? cell.BorderThicknessPt
             : (tableDefaults?.BorderThicknessPt ?? 0);
+        // 면별·공통 두께가 모두 0 이면 테두리 없음. 0.75pt fallback 은 의도하지 않은
+        // 외곽선(레이아웃 표·CSS 도형 그리드 등)을 생성하므로 제거.
         double FallbackThk(double sideThk) => sideThk > 0 ? sideThk
                                             : commonThk > 0 ? commonThk
-                                            : 0.75;
+                                            : 0;
 
         wcell.BorderBrush     = new WpfMedia.SolidColorBrush(borderColor);
         // border-collapse 시뮬레이션: WPF Table 은 셀별로 보더를 그려 인접 셀의 공유 모서리에서
@@ -1529,10 +1543,15 @@ public static class FlowDocumentBuilder
         };
         visual.HorizontalAlignment = imgHA;
 
+        // 인라인 도형의 회전: 회전된 경계 박스 크기의 Grid 로 감싸 레이아웃이 그 공간을 확보하도록 한다.
+        // (Canvas 자체의 LayoutTransform 은 explicit Width/Height 와 BlockUIContainer 의
+        // measure 와 상호작용이 불안정해 신뢰할 수 없음.)
+        FrameworkElement inlineHost = BuildInlineRotationHost(visual, shape.RotationAngleDeg, wDip, hDip, imgHA);
+
         // ── Inline ────────────────────────────────────────────────────────
         if (shape.WrapMode == ImageWrapMode.Inline)
         {
-            return new Wpf.BlockUIContainer(visual)
+            return new Wpf.BlockUIContainer(inlineHost)
             {
                 Tag           = shape,
                 Margin        = new Thickness(0, marginTopDip, 0, marginBottomDip),
@@ -1559,7 +1578,7 @@ public static class FlowDocumentBuilder
                 marginBottomDip),
         };
         if (shape.WidthMm > 0) floater.Width = wDip;
-        floater.Blocks.Add(new Wpf.BlockUIContainer(visual));
+        floater.Blocks.Add(new Wpf.BlockUIContainer(inlineHost));
 
         var paragraph = new Wpf.Paragraph
         {
@@ -1583,7 +1602,9 @@ public static class FlowDocumentBuilder
     {
         double wDip = MmToDip(shape.WidthMm);
         double hDip = MmToDip(shape.HeightMm);
-        return BuildShapeVisual(shape, wDip, hDip);
+        var canvas  = BuildShapeVisual(shape, wDip, hDip);
+        ApplyOverlayShapeRotation(canvas, shape.RotationAngleDeg);
+        return canvas;
     }
 
     private static System.Windows.Controls.Canvas BuildShapeVisual(ShapeObject shape, double wDip, double hDip)
@@ -1693,14 +1714,55 @@ public static class FlowDocumentBuilder
             canvas.Children.Add(label);
         }
 
-        // 회전 — canvas 전체에 적용해 path·끝모양·레이블이 함께 회전한다.
-        if (Math.Abs(shape.RotationAngleDeg) > 0.01)
-        {
-            canvas.RenderTransformOrigin = new Point(0.5, 0.5);
-            canvas.RenderTransform = new WpfMedia.RotateTransform(shape.RotationAngleDeg);
-        }
-
         return canvas;
+    }
+
+    // 오버레이 도형 회전 적용 — 절대 위치 배치이므로 RenderTransform 으로 충분.
+    private static void ApplyOverlayShapeRotation(System.Windows.Controls.Canvas canvas, double angleDeg)
+    {
+        if (Math.Abs(angleDeg) < 0.01) return;
+        canvas.RenderTransformOrigin = new Point(0.5, 0.5);
+        canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
+    }
+
+    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 외부 Canvas 안에 오프셋 배치 후 회전.
+    // 외부 Canvas 에 Width/Height 를 명시하면 FrameworkElement.MeasureCore 가 그 값을 DesiredSize
+    // 로 반영해 BlockUIContainer / 셀 행 높이에 회전 bbox 만큼의 공간이 예약된다.
+    // ClipToBounds=false 로 회전된 모서리가 외부 Canvas 경계 바깥으로 잘리지 않게 한다.
+    // (Border 를 외부 컨테이너로 쓰면 자식을 콘텐츠 영역 안에 clip 해 모서리가 잘리는 문제 발생.)
+    private static FrameworkElement BuildInlineRotationHost(
+        System.Windows.Controls.Canvas canvas,
+        double angleDeg,
+        double wDip,
+        double hDip,
+        HorizontalAlignment hAlign)
+    {
+        if (Math.Abs(angleDeg) < 0.01) return canvas;
+
+        double rad  = angleDeg * Math.PI / 180.0;
+        double cos  = Math.Abs(Math.Cos(rad));
+        double sin  = Math.Abs(Math.Sin(rad));
+        double rotW = wDip * cos + hDip * sin;
+        double rotH = wDip * sin + hDip * cos;
+
+        // 내부 캔버스를 외부 Canvas 중앙에 배치: 오프셋 = (rotW-wDip)/2, (rotH-hDip)/2
+        // → 내부 캔버스의 중심 = 외부 Canvas 의 중심 → RenderTransformOrigin(0.5,0.5) 이 외부 중심 기준으로 회전.
+        double offsetX = (rotW - wDip) / 2.0;
+        double offsetY = (rotH - hDip) / 2.0;
+        System.Windows.Controls.Canvas.SetLeft(canvas, offsetX);
+        System.Windows.Controls.Canvas.SetTop(canvas, offsetY);
+        canvas.RenderTransformOrigin = new Point(0.5, 0.5);
+        canvas.RenderTransform       = new WpfMedia.RotateTransform(angleDeg);
+
+        var outer = new System.Windows.Controls.Canvas
+        {
+            Width               = rotW,
+            Height              = rotH,
+            ClipToBounds        = false,
+            HorizontalAlignment = hAlign,
+        };
+        outer.Children.Add(canvas);
+        return outer;
     }
 
     private static WpfMedia.DoubleCollection? BuildDashArray(StrokeDash dash, double strokeDip)
@@ -1937,6 +1999,28 @@ public static class FlowDocumentBuilder
 
             case ShapeKind.Ellipse:
                 return new WpfMedia.EllipseGeometry(new Rect(0, 0, wDip, hDip));
+
+            case ShapeKind.HalfCircle:
+            {
+                // 위쪽이 둥근 반원 (CSS border-radius: r r 0 0 패턴 대응).
+                // (0, hDip) → 타원호 통해 (wDip, hDip) 까지, 위로 볼록.
+                // 회전이 필요하면 ShapeObject.RotationAngleDeg 로 처리한다.
+                var fig = new WpfMedia.PathFigure
+                {
+                    StartPoint = new Point(0, hDip),
+                    IsClosed   = true,
+                };
+                fig.Segments.Add(new WpfMedia.ArcSegment(
+                    point:          new Point(wDip, hDip),
+                    size:           new Size(wDip / 2.0, hDip),
+                    rotationAngle:  0,
+                    isLargeArc:     false,
+                    sweepDirection: WpfMedia.SweepDirection.Clockwise,
+                    isStroked:      true));
+                var pg = new WpfMedia.PathGeometry();
+                pg.Figures.Add(fig);
+                return pg;
+            }
 
             case ShapeKind.Line:
             {
