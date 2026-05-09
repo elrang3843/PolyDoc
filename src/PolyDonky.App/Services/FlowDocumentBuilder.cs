@@ -2096,6 +2096,7 @@ public static class FlowDocumentBuilder
             {
                 FontFamily = monoFamily,
                 FontSize   = fontSize,
+                Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x1A, 0x1A, 0x1A)),
             };
             if (sourceRuns.Count > 0)
             {
@@ -2321,6 +2322,7 @@ public static class FlowDocumentBuilder
         if (codeLanguage is null) return;
         wpfPara.FontFamily      = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
         wpfPara.Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xF8, 0xF8, 0xF8));
+        wpfPara.Foreground      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x1A, 0x1A, 0x1A));
         wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xD0, 0xD0, 0xD0));
         wpfPara.BorderThickness = new Thickness(1);
         wpfPara.Padding         = new Thickness(MmToDip(3.0), MmToDip(1.5), MmToDip(3.0), MmToDip(1.5));
