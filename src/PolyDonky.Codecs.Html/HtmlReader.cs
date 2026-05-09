@@ -2151,6 +2151,29 @@ public sealed class HtmlReader : IDocumentReader
                 };
                 var cellContent = new List<PdBlock>();
                 ProcessChildren(cells[i], cellContent, ctx);
+
+                // 셀 div 의 text-align 을 자식 단락에 명시적으로 반영한다.
+                // PropagateInheritableStyles 가 <small> 등 래퍼 요소에 전파하지만,
+                // 텍스트노드를 직접 감싸는 경로에서 누락될 수 있으므로 여기서 보강.
+                var cellAlign = StyleProp(cells[i].GetAttribute("style") ?? "", "text-align")
+                             ?? cells[i].GetAttribute("align");
+                if (cellAlign is not null)
+                {
+                    var al = cellAlign.Trim().ToLowerInvariant() switch
+                    {
+                        "center"  => Alignment.Center,
+                        "right"   => Alignment.Right,
+                        "justify" => Alignment.Justify,
+                        _         => Alignment.Left,
+                    };
+                    if (al != Alignment.Left)
+                    {
+                        foreach (var b in cellContent)
+                            if (b is Paragraph cp && cp.Style.Alignment == Alignment.Left)
+                                cp.Style.Alignment = al;
+                    }
+                }
+
                 foreach (var b in cellContent) cell.Blocks.Add(b);
                 if (cell.Blocks.Count == 0)
                     cell.Blocks.Add(new Paragraph());
@@ -2930,6 +2953,19 @@ public sealed class HtmlReader : IDocumentReader
         {
             s.Kind = ShapeKind.Rectangle;
         }
+
+        // CSS margin → ShapeObject 위/아래 여백 (mm).
+        // margin shorthand 먼저 파싱한 뒤 개별 longhand 가 있으면 덮어씀.
+        if (StyleProp(style, "margin") is { } marginAll)
+        {
+            ParseCssBoxShorthand(marginAll, 11.0, out var mTopPt, out _, out var mBotPt, out _);
+            if (mTopPt > 0) s.MarginTopMm    = mTopPt * 25.4 / 72.0;
+            if (mBotPt > 0) s.MarginBottomMm = mBotPt * 25.4 / 72.0;
+        }
+        if (TryParseCssPt(StyleProp(style, "margin-top"),    11.0, out var mtPt) && mtPt > 0)
+            s.MarginTopMm    = mtPt * 25.4 / 72.0;
+        if (TryParseCssPt(StyleProp(style, "margin-bottom"), 11.0, out var mbPt) && mbPt > 0)
+            s.MarginBottomMm = mbPt * 25.4 / 72.0;
 
         shape = s;
         return true;
