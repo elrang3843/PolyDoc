@@ -2226,12 +2226,11 @@ public static class FlowDocumentBuilder
         if (Math.Abs(style.LineHeightFactor - 1.2) > 0.01)
             wpfPara.LineHeight = wpfPara.FontSize * style.LineHeightFactor;
 
-        ApplyCodeBlockStyle(wpfPara, style.CodeLanguage);
+        ApplyCodeBlockStyle(wpfPara, style);
         ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
 
-        // ── CSS 4면 보더 + 배경 + 위/아래 padding ─────────────────────────────────
-        // 모델 기본값이 0/null 이면 ApplyCodeBlockStyle / ApplyQuoteLevelStyle 가 미리 깔아둔
-        // 하드코딩 기본값을 그대로 두고, 비-0 값이 있으면 그 값으로 덮어 쓴다 — 사용자 CSS 가 항상 우선.
+        // CSS 4면 보더 + 배경 + 위/아래 padding (ApplyCodeBlockStyle 이 비어 있는 속성에만 기본값을 채우므로
+        // 여기서 덮어 쓰지 않아도 되지만, QuoteLevel 기본값 위에서 CSS 가 이길 수 있도록 그대로 유지).
         ApplyParagraphBoxStyle(wpfPara, style);
     }
 
@@ -2319,18 +2318,31 @@ public static class FlowDocumentBuilder
     }
 
     /// <summary>
-    /// CodeLanguage != null(= pre/code 블록)이면 회색 배경·테두리·모노스페이스를 적용.
-    /// null 이면 일반 단락 — 아무것도 하지 않는다.
+    /// CodeLanguage != null(= pre/code 블록)이면 모노스페이스 + 기본 박스 스타일을 적용.
+    /// CSS 에 이미 값이 있는 속성(배경·보더·Foreground)은 건드리지 않는다 — CSS 가 항상 우선.
     /// </summary>
-    private static void ApplyCodeBlockStyle(Wpf.Paragraph wpfPara, string? codeLanguage)
+    private static void ApplyCodeBlockStyle(Wpf.Paragraph wpfPara, ParagraphStyle style)
     {
-        if (codeLanguage is null) return;
-        wpfPara.FontFamily      = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
-        wpfPara.Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xF8, 0xF8, 0xF8));
-        wpfPara.Foreground      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x1A, 0x1A, 0x1A));
-        wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xD0, 0xD0, 0xD0));
-        wpfPara.BorderThickness = new Thickness(1);
-        wpfPara.Padding         = new Thickness(MmToDip(3.0), MmToDip(1.5), MmToDip(3.0), MmToDip(1.5));
+        if (style.CodeLanguage is null) return;
+        wpfPara.FontFamily = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
+
+        // CSS background-color 가 없을 때만 기본 밝은 회색 배경 적용.
+        if (string.IsNullOrEmpty(style.BackgroundColor))
+            wpfPara.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xF8, 0xF8, 0xF8));
+
+        // Foreground 는 절대 하드코딩하지 않는다 — CSS color 는 Run 레벨에 이미 반영되어 있고,
+        // 단락 레벨 기본값을 강제하면 테마·CSS 색상 모두 덮어써 버린다.
+
+        // CSS border 가 없을 때만 기본 회색 테두리 적용.
+        bool hasCssBorder = style.BorderTopPt > 0 || style.BorderBottomPt > 0 ||
+                            style.BorderLeftPt > 0 || style.BorderRightPt  > 0;
+        if (!hasCssBorder)
+        {
+            wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xD0, 0xD0, 0xD0));
+            wpfPara.BorderThickness = new Thickness(1);
+        }
+
+        wpfPara.Padding = new Thickness(MmToDip(3.0), MmToDip(1.5), MmToDip(3.0), MmToDip(1.5));
         var m = wpfPara.Margin;
         if (m.Top < 2 && m.Bottom < 2)
             wpfPara.Margin = new Thickness(m.Left, 4, m.Right, 4);

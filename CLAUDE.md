@@ -296,11 +296,15 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 
 새 CLI 컨버터 추가 시 이 규약을 그대로 지켜야 메인 앱의 진행 대화상자와 오류 처리가 작동한다.
 
-### 코드 블록 테마 주의사항
+### 코드 블록 스타일 규칙
 
-`FlowDocumentBuilder.ApplyCodeBlockStyle` 은 `Background = #F8F8F8`, `Foreground = #1A1A1A`, `BorderBrush = #D0D0D0` 을 모두 명시한다 — 배경·글자색·테두리가 항상 쌍으로 고정되므로 테마 상속에 의존하지 않는다. 배경색을 바꿀 때는 반드시 Foreground 도 대비되는 색으로 함께 바꿔야 한다.
+`FlowDocumentBuilder.ApplyCodeBlockStyle(wpfPara, ParagraphStyle)` 은 **CSS 우선** 원칙을 따른다.
+- `Foreground` 는 절대 단락 레벨에서 하드코딩하지 않는다 — CSS `color` 는 Run 레벨에 이미 반영되어 있으며, 단락 레벨에 고정값을 쓰면 모든 테마·CSS 색상을 덮어쓴다.
+- `Background = #F8F8F8` (기본 밝은 회색) 은 `ParagraphStyle.BackgroundColor` 가 비어 있을 때만 적용된다.
+- `BorderBrush = #D0D0D0` / `BorderThickness = 1` 은 CSS 에서 보더 값이 없을 때만 적용된다.
+- `ApplyParagraphBoxStyle` 이 뒤에서 CSS border/background 로 다시 설정하므로 충돌 없음.
 
-`BuildCodeBlockWithLineNumbers` 의 줄 번호 TextBlock 은 Foreground = `#888888`, 줄 텍스트 Run 은 Foreground = `#1A1A1A` 을 명시해 테마 무관 가시.
+`BuildCodeBlockWithLineNumbers` 의 줄 번호 TextBlock 은 Foreground = `#888888`, 줄 텍스트 Run 은 `sourceRuns[0].Style.Foreground` 값을 우선 사용하고 없으면 `#1A1A1A` 을 폴백으로 사용.
 
 ### 핵심 이름 주의사항
 

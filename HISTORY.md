@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **코드 블록 CSS `color`/`border` 가 무시되던 문제 (`ApplyCodeBlockStyle` CSS 우선 원칙 적용)**: `ApplyCodeBlockStyle` 이 `Foreground = #1A1A1A` 를 단락 레벨에 항상 하드코딩해 `pre { color: #abb2bf }` 같은 CSS 색상이 Run 레벨에는 반영돼도 단락 상속 기본값이 뒤집히지 않았던 문제, 그리고 `BorderBrush = #D0D0D0` / `BorderThickness = 1` 이 CSS 에 보더가 없는 경우에도 무조건 적용되던 문제를 수정. 수정 후: (1) 단락 레벨 `Foreground` 는 일절 하드코딩하지 않는다 — CSS `color` 는 Run 레벨에 이미 반영되며, 단락 기본값 강제는 테마·CSS 색상을 모두 덮어썼다. (2) 기본 회색 배경 `#F8F8F8` 은 `ParagraphStyle.BackgroundColor` 가 비어 있을 때만 적용. (3) 기본 회색 테두리 `#D0D0D0` 는 CSS 에 보더가 없을 때만 적용. 이로써 `pre { background-color: #282c34; color: #abb2bf }` 같은 다크 코드 블록 스타일이 PolyDonky 에서도 의도한 색상 그대로 표시된다.
+
 - **Fixed** — **`ContainerBlock` (`Wpf.Section`) 가 페이지네이션에서 단일 블록으로 처리돼 페이지를 넘어가던 문제**: `FlowDocumentPaginationAdapter.FlattenBlocks` 가 `Wpf.List` 만 재귀하고 `Wpf.Section` 은 통째로 yield 해서, 박스 컨테이너(`.toc`/`.alert`/styled `<div>`) 의 모든 자식이 Section 의 단일 Y 좌표 한 점에 묶여 한 페이지 슬롯에 몰렸다. 컨테이너가 페이지 본문보다 길면 그대로 다음 페이지로 흘러넘쳐 RTB 내부 스크롤이 발생했다. Section 을 자체 yield 하지 않고 자식만 재귀하도록 변경 — 자식 단락/표/이미지가 각자의 Y 로 정상 페이지 분산. 단점: Section 이 페이지 경계를 넘는 경우 box framing(테두리/배경) 이 페이지마다 다시 그려지지 않아 시각적으로 끊긴다 (정상 워드프로세서도 동일 한계).
 
 - **Fixed** — **단일 단 페이지가 내부 스크롤되던 문제**: `PerPageEditorHost` 의 단일 단 RTB 가 `VerticalScrollBarVisibility = Hidden` 이라 스크롤바만 숨겨지고 키보드/휠 스크롤은 살아있었다. 페이지네이션이 한 페이지에 들어갈 양보다 큰 블록(긴 표·이미지·단락) 을 배정한 경우 사용자가 페이지 안을 스크롤해 인쇄·미리보기 결과와 시각적으로 어긋났다. 다단처럼 `Disabled` 로 통일 — 페이지 영역을 넘는 콘텐츠는 클리핑되고 RTB 내부 스크롤은 더 이상 일어나지 않는다.
