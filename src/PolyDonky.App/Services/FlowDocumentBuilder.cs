@@ -430,7 +430,11 @@ public static class FlowDocumentBuilder
     /// <summary>TocBlock 을 시각적 BlockUIContainer 로 빌드한다. Tag = TocBlock 으로 라운드트립 가능.</summary>
     public static Wpf.BlockUIContainer BuildTocBlock(TocBlock toc)
     {
-        var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(2) };
+        var stack = new System.Windows.Controls.StackPanel
+        {
+            Margin              = new Thickness(2),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+        };
 
         // 제목
         var titleTb = new System.Windows.Controls.TextBlock
@@ -500,13 +504,14 @@ public static class FlowDocumentBuilder
 
         var border = new System.Windows.Controls.Border
         {
-            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0)),
-            BorderThickness = new Thickness(1),
-            CornerRadius    = new System.Windows.CornerRadius(3),
-            Padding         = new Thickness(10),
-            Margin          = new Thickness(0, 4, 0, 4),
-            Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(15, 0, 0, 0)),
-            Child           = stack,
+            BorderBrush         = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0)),
+            BorderThickness     = new Thickness(1),
+            CornerRadius        = new System.Windows.CornerRadius(3),
+            Padding             = new Thickness(10),
+            Margin              = new Thickness(0, 4, 0, 4),
+            Background          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(15, 0, 0, 0)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Child               = stack,
         };
 
         return new Wpf.BlockUIContainer(border) { Tag = toc };
