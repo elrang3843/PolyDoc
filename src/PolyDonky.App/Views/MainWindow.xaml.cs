@@ -1991,6 +1991,9 @@ public partial class MainWindow : Window
         bool showGuides = page?.ShowMarginGuides ?? true;
         WpfMedia.Brush pageBg = ResolvePaperBackground(page);
 
+        // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 클리어한 뒤 마지막에 올린다.
+        var pendingDebugLabels = new List<(System.Windows.Controls.TextBlock label, double left, double top)>();
+
         for (int i = 0; i < pageCount; i++)
         {
             double topY = i * pg.PageStrideDip;
@@ -2088,11 +2091,90 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (label, topY + 2);
             PageBackgroundCanvas.Children.Add(label);
 
+            // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 + 페이지네이션 측정 fill (육안 검증용).
+            // 좌측 하단 여백 안쪽. 페이지네이션 측정값과 실제 렌더 높이를 비교해
+            // 클리핑·공백 원인을 추적할 때 사용.
+            // measured fill = MapBodyBlocksToPages 에서 이 슬롯에 누적된 블록 높이 합 — 이 값이
+            // body H 를 초과(혹은 근접) 하면 페이지가 꽉 찼다고 판단해 다음 페이지로 넘긴다.
+            double dbgBodyH      = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
+            double dbgPageHmm    = FlowDocumentBuilder.DipToMm(pg.PageHeightDip);
+            double dbgBodyHmm    = FlowDocumentBuilder.DipToMm(dbgBodyH);
+            double dbgPadTopMm   = FlowDocumentBuilder.DipToMm(pg.PadTopDip);
+            double dbgPadBottomMm= FlowDocumentBuilder.DipToMm(pg.PadBottomDip);
+
+            var dbgSb = new System.Text.StringBuilder();
+            dbgSb.AppendLine($"page H: {pg.PageHeightDip:F1} DIP ({dbgPageHmm:F1} mm)");
+            dbgSb.AppendLine($"body H: {dbgBodyH:F1} DIP ({dbgBodyHmm:F1} mm)");
+            dbgSb.AppendLine($"pad ↑: {pg.PadTopDip:F1} DIP ({dbgPadTopMm:F1} mm)");
+            dbgSb.AppendLine($"pad ↓: {pg.PadBottomDip:F1} DIP ({dbgPadBottomMm:F1} mm)");
+
+            if (_currentPaginatedDoc is { } paginated2 && paginated2.SlotMeasuredFillDip.Count > 0)
+            {
+                int colCount2 = Math.Max(1, pg.ColumnCount);
+                var fillSb = new System.Text.StringBuilder();
+                for (int c = 0; c < colCount2; c++)
+                {
+                    int slotIdx = i * colCount2 + c;
+                    if (fillSb.Length > 0) fillSb.Append(" / ");
+                    fillSb.Append(paginated2.SlotMeasuredFillDip.TryGetValue(slotIdx, out var fill)
+                        ? $"{fill:F1}" : "·");
+                }
+                dbgSb.AppendLine(colCount2 > 1 ? $"fill[col]: {fillSb} DIP" : $"fill: {fillSb} DIP");
+            }
+            else
+            {
+                dbgSb.AppendLine("fill: (fast-path/N/A)");
+            }
+
+            // 블록별 측정 진단: 이 페이지에 배정된 블록의 topY / blockH / gap 표시
+            // blockH=0 인 항목은 과소평가 의심 → '!' 마킹
+            if (_currentPaginatedDoc is { } paginated3 && paginated3.DebugBlockMeasurements.Count > 0)
+            {
+                int colCount3 = Math.Max(1, pg.ColumnCount);
+                var pageEntries = paginated3.DebugBlockMeasurements
+                    .Where(e => e.SlotIdx / colCount3 == i)
+                    .ToList();
+                if (pageEntries.Count > 0)
+                {
+                    dbgSb.AppendLine("── blocks ──");
+                    foreach (var e in pageEntries)
+                    {
+                        string flag = e.BlockH < 1.0 ? "!" : " ";
+                        string gapStr = e.Gap > 0.5 ? $" g+{e.Gap:F0}" : "";
+                        string topStr = double.IsNaN(e.TopY) ? "Y=?" : $"Y={e.TopY:F0}";
+                        string hStr   = double.IsNaN(e.BlockH) ? "h=?" : $"h={e.BlockH:F0}";
+                        // 레이블은 30자 이내로 자름
+                        string lbl = e.Label.Length > 28 ? e.Label[..28] : e.Label;
+                        dbgSb.AppendLine($"{flag}{lbl} {topStr} {hStr}{gapStr}");
+                    }
+                }
+            }
+
+            var debugLabel = new System.Windows.Controls.TextBlock
+            {
+                Text             = dbgSb.ToString().TrimEnd(),
+                FontSize         = 9,
+                FontFamily       = new WpfMedia.FontFamily("Consolas, Cascadia Mono, monospace"),
+                Foreground       = new SolidColorBrush(WpfMedia.Color.FromArgb(0xE0, 0xB4, 0x40, 0x40)),
+                Background       = new SolidColorBrush(WpfMedia.Color.FromArgb(0x60, 0xFF, 0xFF, 0x80)),
+                Padding          = new Thickness(3, 1, 3, 1),
+                IsHitTestVisible = false,
+            };
+            // 페이지 오른쪽 바깥 여백에 배치 — 본문과 겹치지 않도록.
+            pendingDebugLabels.Add((debugLabel, pg.PageWidthDip + 8, topY + 4));
         }
 
         RenderWatermark(pg, pageCount);
         RebuildHeaderFooterLayer(pg, pageCount, page);
         RebuildTypesettingMarks();
+
+        // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 비운 뒤 한꺼번에 올린다.
+        foreach (var (label, left, top) in pendingDebugLabels)
+        {
+            System.Windows.Controls.Canvas.SetLeft(label, left);
+            System.Windows.Controls.Canvas.SetTop (label, top);
+            TypesettingMarksCanvas.Children.Add(label);
+        }
     }
 
     private void RebuildHeaderFooterLayer(

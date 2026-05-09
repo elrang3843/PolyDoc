@@ -180,6 +180,13 @@ public static class FlowDocumentParser
                     break;
 
                 // 래핑 모드(WrapLeft/WrapRight) 그림은 Floater 가 든 Paragraph 로 빌드됨 — Tag 로 회수.
+                // 분리된 이미지 캡션 Paragraph — 캡션 정보는 ImageBlock.ShowTitle/Title 에 이미 있으므로
+                // 모델에 별도 추가하지 않는다(추가하면 round-trip 마다 텍스트 paragraph 가 누적). 반드시
+                // ImageBlock 매칭 case 보다 먼저 위치해야 ImageCaptionTag.Image 가 일반 ImageBlock 으로
+                // 흘러가지 않는다.
+                case Wpf.Paragraph captionImgPara when captionImgPara.Tag is FlowDocumentBuilder.ImageCaptionTag:
+                    break;
+
                 // ShapeObject 래핑 모드도 동일. 반드시 일반 'case Wpf.Paragraph' 보다 먼저 위치해야 한다.
                 case Wpf.Paragraph wrappedImagePara when wrappedImagePara.Tag is ImageBlock wrappedImage:
                     target.Add(wrappedImage);

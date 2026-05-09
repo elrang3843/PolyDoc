@@ -199,6 +199,9 @@ public sealed class IwpfReader : IDocumentReader
                     case TextBoxObject textbox:
                         Walk(textbox.Content);
                         break;
+                    case ContainerBlock container:
+                        Walk(container.Children);
+                        break;
                 }
             }
         }

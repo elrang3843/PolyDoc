@@ -449,6 +449,8 @@ public sealed class HtmlReader : IDocumentReader
                     target.Add(BuildTocBlock(el));
                     break;
                 }
+                if (TryWrapAsContainer(el, target, ctx, navCls))
+                    break;
                 ProcessChildren(el, target, ctx);
                 break;
             }
@@ -706,7 +708,7 @@ public sealed class HtmlReader : IDocumentReader
         if (StyleProp(preStyle, "color") is { } preColor && TryParseCssColor(preColor, out var preFgC))
             preFg = preFgC;
 
-        var text = inner?.TextContent ?? preEl.TextContent;
+        var text = ExtractCleanCodeText(inner ?? preEl);
         // <pre> 의 leading newline 제거 (HTML 관례).
         if (text.StartsWith('\n')) text = text[1..];
         var runStyle = MonoStyle();
@@ -726,6 +728,56 @@ public sealed class HtmlReader : IDocumentReader
                 return token[5..];
         }
         return null;
+    }
+
+    /// <summary>
+    /// <c>&lt;code&gt;</c> / <c>&lt;pre&gt;</c> 요소에서 줄 번호 span 을 제거한 순수 코드 텍스트를 반환한다.
+    /// Prism.js <c>.line-numbers-rows</c>, 또는 <c>.line-number</c>/<c>.ln</c>/<c>.lineno</c> 류
+    /// span 이 DOM 에 포함된 경우 그 텍스트를 건너뛴다 — 그 외에는 <c>TextContent</c> 와 동일.
+    /// </summary>
+    private static string ExtractCleanCodeText(IElement el)
+    {
+        // 줄 번호 span 이 없으면 TextContent 그대로 반환 (Prism.js 표준: .line-numbers-rows 내 span 은 비어 있음).
+        // span[data-pd-pseudo] 는 Convert.Html 이 CSS counter(linenumber) 를 실체화한 것 — 코드 블록 내에서는 제거.
+        bool hasLineNumSpan = el.QuerySelector(
+            "span.line-numbers-rows, span.line-number, span.linenumber, span.ln, span.lineno, span[data-pd-pseudo]") is not null;
+        if (!hasLineNumSpan) return el.TextContent;
+
+        // 줄 번호 span 이 있으면 자식 노드를 순회하며 해당 span 만 건너뛴다.
+        var sb = new StringBuilder();
+        AppendTextSkippingLineNums(el, sb);
+        return sb.ToString();
+    }
+
+    private static void AppendTextSkippingLineNums(INode node, StringBuilder sb)
+    {
+        foreach (var child in node.ChildNodes)
+        {
+            if (child is IElement el)
+            {
+                if (IsLineNumberSpan(el)) continue;
+                AppendTextSkippingLineNums(el, sb);
+            }
+            else if (child is IText txt)
+            {
+                sb.Append(txt.Data);
+            }
+        }
+    }
+
+    private static bool IsLineNumberSpan(IElement el)
+    {
+        if (el.LocalName != "span") return false;
+        // Convert.Html 의 ResolvePseudoAndCounters 가 삽입한 가상 요소 — 코드 블록 안에서는 텍스트로 포함하지 않음.
+        if (el.HasAttribute("data-pd-pseudo")) return true;
+        var cls = el.GetAttribute("class") ?? "";
+        return cls.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(c =>
+            c.Equals("line-numbers-rows", StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("line-number",       StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("linenumber",        StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("ln",                StringComparison.OrdinalIgnoreCase) ||
+            c.Equals("lineno",            StringComparison.OrdinalIgnoreCase) ||
+            c.StartsWith("line-num",      StringComparison.OrdinalIgnoreCase));
     }
 
     private static PdTable BuildTable(IElement tableEl, InlineCtx ctx)

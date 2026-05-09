@@ -301,9 +301,48 @@ public static class FlowDocumentBuilder
                     break;
 
                 case ImageBlock image:
+                {
                     listStack.Clear();
-                    target.Add(BuildImage(image));
+
+                    // Inline + Above/Below 캡션은 별도 Paragraph 로 분리한다.
+                    // 이유: WPF FlowDocument 의 BlockUIContainer 안에 들어간 UIElement 의
+                    // ActualHeight 가 오프스크린 측정 RTB 에서 layout 미완료로 인해 0/과소
+                    // 측정되는 케이스가 있다(특히 multi-row Grid 또는 visual tree 미부착 시).
+                    // 캡션을 별도 Wpf.Paragraph 로 두면 텍스트 측정이 reliable 하게 동작해
+                    // pagination 이 정확한 페이지 슬롯 배정을 한다(워드/한글도 동일 동작).
+                    bool separateCaption = image.WrapMode == ImageWrapMode.Inline
+                                        && image.ShowTitle
+                                        && !string.IsNullOrWhiteSpace(image.Title)
+                                        && image.TitlePosition is ImageTitlePosition.Above
+                                                                or ImageTitlePosition.Below;
+
+                    if (separateCaption && image.TitlePosition == ImageTitlePosition.Above)
+                    {
+                        var capPara = BuildImageCaptionParagraph(image);
+                        if (capPara is not null) target.Add(capPara);
+                    }
+
+                    if (separateCaption)
+                    {
+                        // BuildImage 가 내부에서 캡션을 그리지 않도록 ShowTitle 을 임시로 끔.
+                        // STA 스레드 단일 스레드라 동시성 위험 없음.
+                        var savedShow = image.ShowTitle;
+                        image.ShowTitle = false;
+                        try { target.Add(BuildImage(image)); }
+                        finally { image.ShowTitle = savedShow; }
+                    }
+                    else
+                    {
+                        target.Add(BuildImage(image));
+                    }
+
+                    if (separateCaption && image.TitlePosition == ImageTitlePosition.Below)
+                    {
+                        var capPara = BuildImageCaptionParagraph(image);
+                        if (capPara is not null) target.Add(capPara);
+                    }
                     break;
+                }
 
                 case ShapeObject shape:
                     listStack.Clear();
@@ -430,7 +469,11 @@ public static class FlowDocumentBuilder
     /// <summary>TocBlock 을 시각적 BlockUIContainer 로 빌드한다. Tag = TocBlock 으로 라운드트립 가능.</summary>
     public static Wpf.BlockUIContainer BuildTocBlock(TocBlock toc)
     {
-        var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(2) };
+        var stack = new System.Windows.Controls.StackPanel
+        {
+            Margin              = new Thickness(2),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+        };
 
         // 제목
         var titleTb = new System.Windows.Controls.TextBlock
@@ -500,13 +543,14 @@ public static class FlowDocumentBuilder
 
         var border = new System.Windows.Controls.Border
         {
-            BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0)),
-            BorderThickness = new Thickness(1),
-            CornerRadius    = new System.Windows.CornerRadius(3),
-            Padding         = new Thickness(10),
-            Margin          = new Thickness(0, 4, 0, 4),
-            Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(15, 0, 0, 0)),
-            Child           = stack,
+            BorderBrush         = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0)),
+            BorderThickness     = new Thickness(1),
+            CornerRadius        = new System.Windows.CornerRadius(3),
+            Padding             = new Thickness(10),
+            Margin              = new Thickness(0, 4, 0, 4),
+            Background          = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(15, 0, 0, 0)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Child               = stack,
         };
 
         return new Wpf.BlockUIContainer(border) { Tag = toc };
@@ -1290,9 +1334,76 @@ public static class FlowDocumentBuilder
         return withTitle as System.Windows.FrameworkElement ?? control;
     }
 
+    /// <summary>분리된 이미지 캡션 Paragraph 의 Tag — Parser 가 이 sentinel 을 보면
+    /// 캡션 정보는 이미 ImageBlock.ShowTitle/Title 에 보존돼 있으므로 모델에 별도 추가하지 않고 skip 한다.</summary>
+    internal sealed class ImageCaptionTag
+    {
+        public ImageBlock Image { get; }
+        public ImageCaptionTag(ImageBlock image) { Image = image; }
+    }
+
+    /// <summary>
+    /// Inline + Above/Below 위치의 그림 캡션을 별도 Wpf.Paragraph 로 빌드한다.
+    /// AppendBlocks 가 ImageBlock 의 BlockUIContainer 와 별개로 이 Paragraph 를 추가해
+    /// pagination 이 캡션 텍스트 높이를 정확히 측정·배정할 수 있게 한다(WPF Paragraph 측정은
+    /// 오프스크린 RTB 에서도 reliable). overlay/floater/AsText 모드는 같은 시각 단위 안에
+    /// 캡션이 묶여야 하므로 이 함수를 사용하지 않고 WrapImageWithTitle 로 처리한다.
+    /// Tag = ImageCaptionTag(image) — Parser 가 이 sentinel 을 보고 round-trip 에서 skip(중복 방지).
+    /// </summary>
+    internal static Wpf.Paragraph? BuildImageCaptionParagraph(ImageBlock image)
+    {
+        if (!image.ShowTitle || string.IsNullOrWhiteSpace(image.Title)) return null;
+
+        var s = image.TitleStyle;
+
+        WpfMedia.Brush titleFg = s.Foreground is { } fg
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B))
+            : WpfMedia.Brushes.Black;
+        WpfMedia.Brush? titleBg = s.Background is { } bg
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B))
+            : null;
+
+        TextAlignment ta = image.TitleHAlign switch
+        {
+            ImageHAlign.Left   => TextAlignment.Left,
+            ImageHAlign.Right  => TextAlignment.Right,
+            _                  => TextAlignment.Center,
+        };
+
+        var run = new Wpf.Run(image.Title)
+        {
+            FontSize   = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 10),
+            Foreground = titleFg,
+            FontWeight = s.Bold   ? FontWeights.Bold   : FontWeights.Normal,
+            FontStyle  = s.Italic ? FontStyles.Italic  : FontStyles.Normal,
+        };
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            run.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+        if (titleBg is not null)
+            run.Background = titleBg;
+
+        if (s.Underline || s.Strikethrough || s.Overline)
+        {
+            var decos = new System.Windows.TextDecorationCollection();
+            if (s.Underline)     foreach (var d in System.Windows.TextDecorations.Underline)    decos.Add(d);
+            if (s.Strikethrough) foreach (var d in System.Windows.TextDecorations.Strikethrough) decos.Add(d);
+            if (s.Overline)      foreach (var d in System.Windows.TextDecorations.OverLine)     decos.Add(d);
+            run.TextDecorations = decos;
+        }
+
+        return new Wpf.Paragraph(run)
+        {
+            Tag           = new ImageCaptionTag(image),
+            TextAlignment = ta,
+            Margin        = new Thickness(0, 2, 0, 4),
+        };
+    }
+
     /// <summary>
     /// 그림 제목(캡션) 표시가 켜져 있으면 image 시각 요소를 Grid 로 감싸 제목을 함께 배치한다.
     /// 위치(Above/Below/OverlayTop/Middle/Bottom) + 가로 정렬 + X/Y 오프셋(mm)을 적용.
+    /// Inline + Above/Below 케이스는 AppendBlocks 가 BuildImageCaptionParagraph 로 분리 처리하므로
+    /// 이 함수가 캡션을 그리는 경우는 overlay/floater/AsText 모드에 한정.
     /// </summary>
     private static UIElement WrapImageWithTitle(UIElement imageVisual, ImageBlock image, HorizontalAlignment imgHA)
     {
@@ -1345,14 +1456,13 @@ public static class FlowDocumentBuilder
                 MmToDip(image.TitleOffsetXMm), MmToDip(image.TitleOffsetYMm));
         }
 
-        var grid = new System.Windows.Controls.Grid { HorizontalAlignment = imgHA };
-
         bool isOverlay = image.TitlePosition is ImageTitlePosition.OverlayTop
                                               or ImageTitlePosition.OverlayMiddle
                                               or ImageTitlePosition.OverlayBottom;
         if (isOverlay)
         {
-            // 같은 셀에 그림과 제목이 겹침. VerticalAlignment 로 위/가운데/아래 결정.
+            // 같은 셀에 그림과 제목이 겹침 — Grid 단일 셀에 overlap.
+            var grid = new System.Windows.Controls.Grid { HorizontalAlignment = imgHA };
             grid.Children.Add(imageVisual);
             tb.VerticalAlignment = image.TitlePosition switch
             {
@@ -1362,20 +1472,25 @@ public static class FlowDocumentBuilder
             };
             tb.HorizontalAlignment = HorizontalAlignment.Stretch;
             grid.Children.Add(tb);
+            return grid;
         }
         else
         {
-            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
-            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
-            int titleRow = image.TitlePosition == ImageTitlePosition.Above ? 0 : 1;
-            int imageRow = image.TitlePosition == ImageTitlePosition.Above ? 1 : 0;
-            System.Windows.Controls.Grid.SetRow(tb, titleRow);
-            System.Windows.Controls.Grid.SetRow((FrameworkElement)imageVisual, imageRow);
+            // 그림 위/아래에 제목을 별도 행으로 배치 — StackPanel 이 FlowDocument 안에서 안정적.
             tb.HorizontalAlignment = HorizontalAlignment.Stretch;
-            grid.Children.Add(imageVisual);
-            grid.Children.Add(tb);
+            var sp = new System.Windows.Controls.StackPanel { HorizontalAlignment = imgHA };
+            if (image.TitlePosition == ImageTitlePosition.Above)
+            {
+                sp.Children.Add(tb);
+                sp.Children.Add(imageVisual);
+            }
+            else
+            {
+                sp.Children.Add(imageVisual);
+                sp.Children.Add(tb);
+            }
+            return sp;
         }
-        return grid;
     }
 
     // ── 도형 렌더링 ─────────────────────────────────────────────────────────
@@ -2062,6 +2177,11 @@ public static class FlowDocumentBuilder
         var numBorder = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0));
         var monoFamily = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
 
+        // CSS color 속성이 Run.Style.Foreground 에 저장된 경우 그 색을 사용, 없으면 기본값.
+        var codeFg = sourceRuns.Count > 0 && sourceRuns[0].Style.Foreground is { } cfgC
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(cfgC.A, cfgC.R, cfgC.G, cfgC.B))
+            : new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x1A, 0x1A, 0x1A));
+
         for (int i = 0; i < lines.Length; i++)
         {
             var numTb = new System.Windows.Controls.TextBlock
@@ -2091,6 +2211,7 @@ public static class FlowDocumentBuilder
             {
                 FontFamily = monoFamily,
                 FontSize   = fontSize,
+                Foreground = codeFg,
             };
             if (sourceRuns.Count > 0)
             {
@@ -2215,12 +2336,11 @@ public static class FlowDocumentBuilder
         if (Math.Abs(style.LineHeightFactor - 1.2) > 0.01)
             wpfPara.LineHeight = wpfPara.FontSize * style.LineHeightFactor;
 
-        ApplyCodeBlockStyle(wpfPara, style.CodeLanguage);
+        ApplyCodeBlockStyle(wpfPara, style);
         ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
 
-        // ── CSS 4면 보더 + 배경 + 위/아래 padding ─────────────────────────────────
-        // 모델 기본값이 0/null 이면 ApplyCodeBlockStyle / ApplyQuoteLevelStyle 가 미리 깔아둔
-        // 하드코딩 기본값을 그대로 두고, 비-0 값이 있으면 그 값으로 덮어 쓴다 — 사용자 CSS 가 항상 우선.
+        // CSS 4면 보더 + 배경 + 위/아래 padding (ApplyCodeBlockStyle 이 비어 있는 속성에만 기본값을 채우므로
+        // 여기서 덮어 쓰지 않아도 되지만, QuoteLevel 기본값 위에서 CSS 가 이길 수 있도록 그대로 유지).
         ApplyParagraphBoxStyle(wpfPara, style);
     }
 
@@ -2308,17 +2428,31 @@ public static class FlowDocumentBuilder
     }
 
     /// <summary>
-    /// CodeLanguage != null(= pre/code 블록)이면 회색 배경·테두리·모노스페이스를 적용.
-    /// null 이면 일반 단락 — 아무것도 하지 않는다.
+    /// CodeLanguage != null(= pre/code 블록)이면 모노스페이스 + 기본 박스 스타일을 적용.
+    /// CSS 에 이미 값이 있는 속성(배경·보더·Foreground)은 건드리지 않는다 — CSS 가 항상 우선.
     /// </summary>
-    private static void ApplyCodeBlockStyle(Wpf.Paragraph wpfPara, string? codeLanguage)
+    private static void ApplyCodeBlockStyle(Wpf.Paragraph wpfPara, ParagraphStyle style)
     {
-        if (codeLanguage is null) return;
-        wpfPara.FontFamily      = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
-        wpfPara.Background      = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xF8, 0xF8, 0xF8));
-        wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xD0, 0xD0, 0xD0));
-        wpfPara.BorderThickness = new Thickness(1);
-        wpfPara.Padding         = new Thickness(MmToDip(3.0), MmToDip(1.5), MmToDip(3.0), MmToDip(1.5));
+        if (style.CodeLanguage is null) return;
+        wpfPara.FontFamily = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
+
+        // CSS background-color 가 없을 때만 기본 밝은 회색 배경 적용.
+        if (string.IsNullOrEmpty(style.BackgroundColor))
+            wpfPara.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xF8, 0xF8, 0xF8));
+
+        // Foreground 는 절대 하드코딩하지 않는다 — CSS color 는 Run 레벨에 이미 반영되어 있고,
+        // 단락 레벨 기본값을 강제하면 테마·CSS 색상 모두 덮어써 버린다.
+
+        // CSS border 가 없을 때만 기본 회색 테두리 적용.
+        bool hasCssBorder = style.BorderTopPt > 0 || style.BorderBottomPt > 0 ||
+                            style.BorderLeftPt > 0 || style.BorderRightPt  > 0;
+        if (!hasCssBorder)
+        {
+            wpfPara.BorderBrush     = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xD0, 0xD0, 0xD0));
+            wpfPara.BorderThickness = new Thickness(1);
+        }
+
+        wpfPara.Padding = new Thickness(MmToDip(3.0), MmToDip(1.5), MmToDip(3.0), MmToDip(1.5));
         var m = wpfPara.Margin;
         if (m.Top < 2 && m.Bottom < 2)
             wpfPara.Margin = new Thickness(m.Left, 4, m.Right, 4);
