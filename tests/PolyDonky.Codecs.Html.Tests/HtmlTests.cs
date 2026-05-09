@@ -416,6 +416,32 @@ public class HtmlTests
     }
 
     [Fact]
+    public void RoundTrip_ContainerBlock_PreservesBoxStyle()
+    {
+        // .toc 처럼 박스 framing 을 가진 div 가 ContainerBlock 으로 보존되는지 확인.
+        var html = """
+            <div class="toc" style="background-color:#f9f9f9;border:1px solid #ddd;padding:20px">
+              <h2>목차</h2>
+              <p>1. 개요</p>
+              <p>2. 본론</p>
+            </div>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var box = doc.Sections.SelectMany(s => s.Blocks).OfType<ContainerBlock>().Single();
+        Assert.Equal(ContainerRole.Toc, box.Role);
+        Assert.False(string.IsNullOrEmpty(box.BackgroundColor));
+        Assert.True(box.BorderTopPt > 0 && box.BorderBottomPt > 0 && box.BorderLeftPt > 0 && box.BorderRightPt > 0);
+        Assert.True(box.PaddingLeftMm > 4); // 20px ≒ 5.3mm
+        Assert.Equal(3, box.Children.Count);
+
+        var html2 = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("<div class=\"toc\"", html2);
+        Assert.Contains("background-color:", html2);
+        Assert.Contains("border-top:", html2);
+        Assert.Contains("padding-left:", html2);
+    }
+
+    [Fact]
     public void RoundTrip_Pre_BackgroundAppliedToParagraph()
     {
         var html = """

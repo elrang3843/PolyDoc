@@ -419,7 +419,8 @@ public sealed class HtmlReader : IDocumentReader
 
                 // 블록 자식이 없는 div(`<div>text</div>`, `<div>text<span>x</span></div>`) 는
                 // 단락처럼 처리해 div 자체의 text-align/스타일을 적용. 블록 자식이 하나라도 있으면
-                // 평탄화해 자식 처리(부모의 text-align 은 PropagateInheritableStyles 로 이미 자식에 전파됨).
+                // box style(테두리/배경/padding/margin) 이 있으면 ContainerBlock 으로 감싸 framing 보존,
+                // 없으면 평탄화해 자식만 처리.
                 bool hasBlockChild = el.Children.Any(c => IsBlockElement(c));
                 if (!hasBlockChild)
                 {
@@ -433,6 +434,8 @@ public sealed class HtmlReader : IDocumentReader
                         target.Add(p);
                     break;
                 }
+                if (TryWrapAsContainer(el, target, ctx, divCls))
+                    break;
                 ProcessChildren(el, target, ctx);
                 break;
             }
@@ -1581,8 +1584,63 @@ public sealed class HtmlReader : IDocumentReader
 
     /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.
     /// <paramref name="baseFontSizePt"/>는 em 단위 margin 환산 기준 (기본 11pt = body 기본값).</summary>
-    /// <summary>blockquote / 스타일이 있는 div 등 컨테이너의 인라인 style 을 그 안의 단락(들) 로 전파한다.
-    /// 컨테이너 블록 모델이 없으므로 시각적 효과(좌측 줄, 배경, 안쪽 여백) 를 자식 단락이 직접 보유.
+    /// <summary>박스 스타일(테두리·배경·padding·margin) 이 있는 div 또는 의미가 있는 클래스(<c>toc</c>·<c>alert</c>·
+    /// <c>header-sim</c>·<c>footer-sim</c> 등) 가 있는 div 를 <see cref="ContainerBlock"/> 으로
+    /// 감싸 자식들과 함께 target 에 추가한다. 감쌀 필요가 없으면 false 를 돌려 상위에서 평탄화 처리.</summary>
+    private static bool TryWrapAsContainer(IElement el, IList<PdBlock> target, InlineCtx ctx, string classNames)
+    {
+        var probe = new Paragraph();
+        ApplyBlockStyle(probe, el);
+        var ps = probe.Style;
+
+        bool hasBox = ps.BorderTopPt > 0 || ps.BorderBottomPt > 0 ||
+                      ps.BorderLeftPt > 0 || ps.BorderRightPt > 0 ||
+                      !string.IsNullOrEmpty(ps.BackgroundColor) ||
+                      ps.PaddingTopMm > 0 || ps.PaddingBottomMm > 0;
+
+        ContainerRole role = ContainerRole.Generic;
+        var classTokens = classNames.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var cls in classTokens)
+        {
+            if      (cls.Equals("toc",         StringComparison.OrdinalIgnoreCase)) role = ContainerRole.Toc;
+            else if (cls.StartsWith("alert",   StringComparison.OrdinalIgnoreCase)) role = ContainerRole.Alert;
+            else if (cls.Equals("header-sim",  StringComparison.OrdinalIgnoreCase)
+                  || cls.Equals("footer-sim",  StringComparison.OrdinalIgnoreCase)) role = ContainerRole.HeaderFooterSim;
+        }
+
+        if (!hasBox && role == ContainerRole.Generic) return false;
+
+        var inner = new List<PdBlock>();
+        ProcessChildren(el, inner, ctx);
+        if (inner.Count == 0) return false;
+
+        var box = new ContainerBlock
+        {
+            Children          = inner,
+            BorderTopPt       = ps.BorderTopPt,
+            BorderTopColor    = ps.BorderTopColor,
+            BorderRightPt     = ps.BorderRightPt,
+            BorderRightColor  = ps.BorderRightColor,
+            BorderBottomPt    = ps.BorderBottomPt,
+            BorderBottomColor = ps.BorderBottomColor,
+            BorderLeftPt      = ps.BorderLeftPt,
+            BorderLeftColor   = ps.BorderLeftColor,
+            BackgroundColor   = ps.BackgroundColor,
+            PaddingTopMm      = ps.PaddingTopMm,
+            PaddingBottomMm   = ps.PaddingBottomMm,
+            PaddingLeftMm     = ps.IndentLeftMm,
+            PaddingRightMm    = ps.IndentRightMm,
+            MarginTopMm       = ps.SpaceBeforePt > 0 ? ps.SpaceBeforePt * 25.4 / 72.0 : 0,
+            MarginBottomMm    = ps.SpaceAfterPt  > 0 ? ps.SpaceAfterPt  * 25.4 / 72.0 : 0,
+            ClassNames        = string.IsNullOrWhiteSpace(classNames) ? null : classNames.Trim(),
+            Role              = role,
+        };
+        target.Add(box);
+        return true;
+    }
+
+    /// <summary>blockquote 등 자식이 단락인 컨테이너의 인라인 style 을 그 안의 단락(들) 로 전파한다.
+    /// 컨테이너 블록 대신 자식 단락이 직접 시각 효과를 보유하는 경로(blockquote 등) 에서 사용.
     /// 첫 자식엔 padding-top, 마지막 자식엔 padding-bottom 만 적용해 단락 사이 공간이 중복되지 않도록 한다.</summary>
     private static void ApplyContainerStyleToChildren(IElement containerEl, IList<PdBlock> target, int startIndex)
     {

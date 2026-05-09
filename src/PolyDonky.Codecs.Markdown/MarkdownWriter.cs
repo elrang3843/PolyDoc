@@ -80,6 +80,11 @@ public sealed class MarkdownWriter : IDocumentWriter
                 case ImageBlock img:
                     WriteImage(sb, img, indent);
                     break;
+
+                case ContainerBlock box:
+                    // Markdown 은 박스 framing 표현이 없어 자식만 평탄화 — 라운드트립 보존은 다른 코덱에서.
+                    WriteBlocks(sb, box.Children, indent);
+                    break;
             }
         }
     }

@@ -195,6 +195,10 @@ public sealed class HwpxWriter : IDocumentWriter
                             foreach (var inner in cell.Blocks)
                                 RegisterFromBlock(inner);
                     break;
+                case ContainerBlock box:
+                    foreach (var inner in box.Children)
+                        RegisterFromBlock(inner);
+                    break;
                 // ImageBlock / OpaqueBlock → default styles (id 0 already registered)
             }
         }
@@ -238,6 +242,10 @@ public sealed class HwpxWriter : IDocumentWriter
                         foreach (var cell in row.Cells)
                             foreach (var inner in cell.Blocks)
                                 PreRegisterImagesFromBlock(inner);
+                    break;
+                case ContainerBlock box:
+                    foreach (var inner in box.Children)
+                        PreRegisterImagesFromBlock(inner);
                     break;
             }
         }
@@ -1013,6 +1021,14 @@ public sealed class HwpxWriter : IDocumentWriter
         if (block is TocBlock toc)
         {
             AppendTocBlock(target, toc, ctx, section, ref injectSecPr);
+            return;
+        }
+
+        if (block is ContainerBlock box)
+        {
+            // HWPX 에는 직접 대응되는 박스 컨테이너가 없어 자식만 평탄화 (best-effort).
+            foreach (var child in box.Children)
+                AppendBlock(target, child, ctx, section, ref injectSecPr);
             return;
         }
 

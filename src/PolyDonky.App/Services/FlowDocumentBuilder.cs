@@ -319,8 +319,66 @@ public static class FlowDocumentBuilder
                     listStack.Clear();
                     target.Add(BuildTocBlock(toc));
                     break;
+
+                case ContainerBlock box:
+                    listStack.Clear();
+                    target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                    break;
             }
         }
+    }
+
+    /// <summary>박스 스타일을 가진 <see cref="ContainerBlock"/> 을 WPF FlowDocument 의 <see cref="Wpf.Section"/>
+    /// 으로 빌드한다 — Section 은 BorderBrush/BorderThickness/Background/Padding 을 모두 지원하며 Block 트리를 그대로 품을 수 있다.
+    /// 자식 블록은 본문과 동일한 dispatch 를 거쳐 Section.Blocks 에 추가된다.</summary>
+    private static Wpf.Section BuildContainer(ContainerBlock box, OutlineStyleSet? outlineStyles,
+        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null)
+    {
+        var section = new Wpf.Section { Tag = box };
+
+        // 4면 보더 (단일 BorderBrush — 가장 먼저 명시된 색 채택).
+        bool anyBorder = box.BorderTopPt > 0 || box.BorderRightPt > 0 ||
+                         box.BorderBottomPt > 0 || box.BorderLeftPt > 0;
+        if (anyBorder)
+        {
+            string? colorStr = box.BorderTopColor ?? box.BorderRightColor
+                            ?? box.BorderBottomColor ?? box.BorderLeftColor;
+            WpfMedia.Brush brush;
+            if (!string.IsNullOrEmpty(colorStr))
+            {
+                try { brush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(colorStr)); }
+                catch { brush = WpfMedia.Brushes.DimGray; }
+            }
+            else brush = WpfMedia.Brushes.DimGray;
+            section.BorderBrush     = brush;
+            section.BorderThickness = new Thickness(
+                box.BorderLeftPt   > 0 ? PtToDip(box.BorderLeftPt)   : 0,
+                box.BorderTopPt    > 0 ? PtToDip(box.BorderTopPt)    : 0,
+                box.BorderRightPt  > 0 ? PtToDip(box.BorderRightPt)  : 0,
+                box.BorderBottomPt > 0 ? PtToDip(box.BorderBottomPt) : 0);
+        }
+
+        if (!string.IsNullOrEmpty(box.BackgroundColor))
+        {
+            try
+            {
+                section.Background = new WpfMedia.SolidColorBrush(
+                    (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(box.BackgroundColor));
+            }
+            catch { /* 잘못된 색 — 무시 */ }
+        }
+
+        section.Padding = new Thickness(
+            MmToDip(box.PaddingLeftMm),
+            MmToDip(box.PaddingTopMm),
+            MmToDip(box.PaddingRightMm),
+            MmToDip(box.PaddingBottomMm));
+        section.Margin = new Thickness(0,
+            MmToDip(box.MarginTopMm), 0, MmToDip(box.MarginBottomMm));
+
+        // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
+        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
+        return section;
     }
 
     /// <summary>

@@ -263,6 +263,7 @@ public sealed class HtmlWriter : IDocumentWriter
                 case Table table:        WriteTable(sb, table, indent, notes);    break;
                 case ImageBlock img:     WriteImage(sb, img, indent);             break;
                 case TocBlock toc:       WriteToc(sb, toc, indent);               break;
+                case ContainerBlock box: WriteContainer(sb, box, indent, notes);  break;
                 case ShapeObject shape:
                     WriteShape(sb, shape, indent, shapeZ?.GetValueOrDefault(shape) ?? 0);
                     break;
@@ -861,6 +862,31 @@ public sealed class HtmlWriter : IDocumentWriter
         }
 
         return string.Join(';', parts);
+    }
+
+    private static void WriteContainer(StringBuilder sb, ContainerBlock box, string indent, NoteNums? notes)
+    {
+        var parts = new List<string>(8);
+        if (box.BorderTopPt    > 0) parts.Add($"border-top:{FmtNum(box.BorderTopPt)}pt solid {box.BorderTopColor ?? "#CCCCCC"}");
+        if (box.BorderRightPt  > 0) parts.Add($"border-right:{FmtNum(box.BorderRightPt)}pt solid {box.BorderRightColor ?? "#CCCCCC"}");
+        if (box.BorderBottomPt > 0) parts.Add($"border-bottom:{FmtNum(box.BorderBottomPt)}pt solid {box.BorderBottomColor ?? "#CCCCCC"}");
+        if (box.BorderLeftPt   > 0) parts.Add($"border-left:{FmtNum(box.BorderLeftPt)}pt solid {box.BorderLeftColor ?? "#CCCCCC"}");
+        if (box.BackgroundColor is { Length: > 0 } bg) parts.Add($"background-color:{bg}");
+        if (box.PaddingTopMm    > 0) parts.Add($"padding-top:{FmtNum(box.PaddingTopMm)}mm");
+        if (box.PaddingRightMm  > 0) parts.Add($"padding-right:{FmtNum(box.PaddingRightMm)}mm");
+        if (box.PaddingBottomMm > 0) parts.Add($"padding-bottom:{FmtNum(box.PaddingBottomMm)}mm");
+        if (box.PaddingLeftMm   > 0) parts.Add($"padding-left:{FmtNum(box.PaddingLeftMm)}mm");
+        if (box.MarginTopMm     > 0) parts.Add($"margin-top:{FmtNum(box.MarginTopMm)}mm");
+        if (box.MarginBottomMm  > 0) parts.Add($"margin-bottom:{FmtNum(box.MarginBottomMm)}mm");
+        if (box.WidthMm         > 0) parts.Add($"width:{FmtNum(box.WidthMm)}mm");
+        if (box.HAlign == ContainerHAlign.Center) parts.Add("margin-left:auto;margin-right:auto");
+        else if (box.HAlign == ContainerHAlign.Right) parts.Add("margin-left:auto");
+
+        var styleAttr = parts.Count > 0 ? $" style=\"{string.Join(';', parts)}\"" : "";
+        var classAttr = string.IsNullOrEmpty(box.ClassNames) ? "" : $" class=\"{EscapeAttr(box.ClassNames!)}\"";
+        sb.Append(indent).Append("<div").Append(classAttr).Append(styleAttr).Append(">\n");
+        WriteBlocks(sb, box.Children, indent + "  ", notes);
+        sb.Append(indent).Append("</div>\n");
     }
 
     private static void WriteToc(StringBuilder sb, TocBlock toc, string indent)

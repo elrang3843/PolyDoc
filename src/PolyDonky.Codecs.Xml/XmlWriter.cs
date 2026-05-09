@@ -222,6 +222,7 @@ public sealed class XmlWriter : IDocumentWriter
                 case Table table:        WriteTable(sb, table, indent, notes);    break;
                 case ImageBlock img:     WriteImage(sb, img, indent);             break;
                 case TocBlock toc:       WriteToc(sb, toc, indent);               break;
+                case ContainerBlock box: WriteContainer(sb, box, indent, notes);  break;
                 case ShapeObject shape:  WriteShape(sb, shape, indent);           break;
                 case TextBoxObject tbox: WriteTextBox(sb, tbox, indent, notes);   break;
                 case OpaqueBlock opq:    WriteOpaque(sb, opq, indent);            break;
@@ -578,6 +579,28 @@ public sealed class XmlWriter : IDocumentWriter
             sb.Append(indent).Append("<img src=\"").Append(EscapeAttr(src))
               .Append("\" alt=\"").Append(alt).Append('"').Append(size).Append(styleStr).Append("/>\n");
         }
+    }
+
+    /// <summary>ContainerBlock 을 XHTML 의 &lt;div&gt; 로 직렬화 — HTML 코덱과 동일 패턴.</summary>
+    private static void WriteContainer(StringBuilder sb, ContainerBlock box, string indent, NoteNums? notes)
+    {
+        var parts = new List<string>(8);
+        if (box.BorderTopPt    > 0) parts.Add($"border-top:{box.BorderTopPt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt solid {box.BorderTopColor ?? "#CCCCCC"}");
+        if (box.BorderRightPt  > 0) parts.Add($"border-right:{box.BorderRightPt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt solid {box.BorderRightColor ?? "#CCCCCC"}");
+        if (box.BorderBottomPt > 0) parts.Add($"border-bottom:{box.BorderBottomPt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt solid {box.BorderBottomColor ?? "#CCCCCC"}");
+        if (box.BorderLeftPt   > 0) parts.Add($"border-left:{box.BorderLeftPt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt solid {box.BorderLeftColor ?? "#CCCCCC"}");
+        if (box.BackgroundColor is { Length: > 0 } bg) parts.Add($"background-color:{bg}");
+        if (box.PaddingTopMm    > 0) parts.Add($"padding-top:{box.PaddingTopMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}mm");
+        if (box.PaddingRightMm  > 0) parts.Add($"padding-right:{box.PaddingRightMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}mm");
+        if (box.PaddingBottomMm > 0) parts.Add($"padding-bottom:{box.PaddingBottomMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}mm");
+        if (box.PaddingLeftMm   > 0) parts.Add($"padding-left:{box.PaddingLeftMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}mm");
+        if (box.MarginTopMm     > 0) parts.Add($"margin-top:{box.MarginTopMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}mm");
+        if (box.MarginBottomMm  > 0) parts.Add($"margin-bottom:{box.MarginBottomMm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}mm");
+        var styleAttr = parts.Count > 0 ? $" style=\"{string.Join(';', parts)}\"" : "";
+        var classAttr = string.IsNullOrEmpty(box.ClassNames) ? "" : $" class=\"{System.Net.WebUtility.HtmlEncode(box.ClassNames!)}\"";
+        sb.Append(indent).Append("<div").Append(classAttr).Append(styleAttr).Append(">\n");
+        WriteBlocks(sb, box.Children, indent + "  ", notes);
+        sb.Append(indent).Append("</div>\n");
     }
 
     private static void WriteToc(StringBuilder sb, TocBlock toc, string indent)

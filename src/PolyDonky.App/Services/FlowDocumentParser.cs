@@ -279,6 +279,28 @@ public static class FlowDocumentParser
                     target.Add(pastedInlineImg!);
                     break;
 
+                case Wpf.Section { Tag: ContainerBlock boxOriginal } boxSec:
+                {
+                    // 박스 스타일은 원본 ContainerBlock 인스턴스에서 그대로 가져오고,
+                    // 자식만 현재 시각 트리에서 다시 추출 — 사용자가 안에서 텍스트를 편집해도 보존.
+                    var rebuilt = new ContainerBlock
+                    {
+                        BorderTopPt       = boxOriginal.BorderTopPt,       BorderTopColor    = boxOriginal.BorderTopColor,
+                        BorderRightPt     = boxOriginal.BorderRightPt,     BorderRightColor  = boxOriginal.BorderRightColor,
+                        BorderBottomPt    = boxOriginal.BorderBottomPt,    BorderBottomColor = boxOriginal.BorderBottomColor,
+                        BorderLeftPt      = boxOriginal.BorderLeftPt,      BorderLeftColor   = boxOriginal.BorderLeftColor,
+                        BackgroundColor   = boxOriginal.BackgroundColor,
+                        PaddingTopMm      = boxOriginal.PaddingTopMm,      PaddingRightMm = boxOriginal.PaddingRightMm,
+                        PaddingBottomMm   = boxOriginal.PaddingBottomMm,   PaddingLeftMm  = boxOriginal.PaddingLeftMm,
+                        MarginTopMm       = boxOriginal.MarginTopMm,       MarginBottomMm = boxOriginal.MarginBottomMm,
+                        WidthMm           = boxOriginal.WidthMm,           HAlign         = boxOriginal.HAlign,
+                        ClassNames        = boxOriginal.ClassNames,        Role           = boxOriginal.Role,
+                    };
+                    ParseInto(rebuilt.Children, boxSec.Blocks);
+                    target.Add(rebuilt);
+                    break;
+                }
+
                 case Wpf.Section nested:
                     ParseInto(target, nested.Blocks);
                     break;

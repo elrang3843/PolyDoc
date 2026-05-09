@@ -48,6 +48,7 @@ public sealed class BlockJsonConverter : JsonConverter<Block>
             "thematicBreak"  => typeof(ThematicBreakBlock),
             "opaque"         => typeof(OpaqueBlock),
             "toc"       => typeof(TocBlock),
+            "container" => typeof(ContainerBlock),
             null        => typeof(Paragraph),  // legacy fallback
             _           => throw new JsonException($"Unknown Block discriminator: '{discriminator}'"),
         };
@@ -69,6 +70,7 @@ public sealed class BlockJsonConverter : JsonConverter<Block>
             nameof(ThematicBreakBlock) => "thematicBreak",
             nameof(OpaqueBlock)        => "opaque",
             nameof(TocBlock)      => "toc",
+            nameof(ContainerBlock)     => "container",
             _ => throw new JsonException($"Unknown Block runtime type: {type.FullName}"),
         };
 

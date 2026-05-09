@@ -141,6 +141,11 @@ public sealed class DocxWriter : IDocumentWriter
             case OpaqueBlock opaque:
                 target.AppendChild(BuildParagraph(Paragraph.Of(opaque.DisplayLabel), ctx));
                 break;
+            case ContainerBlock box:
+                // DOCX 에는 직접 대응되는 박스 컨테이너가 없어 자식만 평탄화 (best-effort).
+                // 박스 framing 보존은 IWPF / HTML / XML 라운드트립으로만 지원.
+                foreach (var child in box.Children) AppendBlock(target, child, ctx);
+                break;
         }
     }
 
