@@ -301,9 +301,48 @@ public static class FlowDocumentBuilder
                     break;
 
                 case ImageBlock image:
+                {
                     listStack.Clear();
-                    target.Add(BuildImage(image));
+
+                    // Inline + Above/Below 캡션은 별도 Paragraph 로 분리한다.
+                    // 이유: WPF FlowDocument 의 BlockUIContainer 안에 들어간 UIElement 의
+                    // ActualHeight 가 오프스크린 측정 RTB 에서 layout 미완료로 인해 0/과소
+                    // 측정되는 케이스가 있다(특히 multi-row Grid 또는 visual tree 미부착 시).
+                    // 캡션을 별도 Wpf.Paragraph 로 두면 텍스트 측정이 reliable 하게 동작해
+                    // pagination 이 정확한 페이지 슬롯 배정을 한다(워드/한글도 동일 동작).
+                    bool separateCaption = image.WrapMode == ImageWrapMode.Inline
+                                        && image.ShowTitle
+                                        && !string.IsNullOrWhiteSpace(image.Title)
+                                        && image.TitlePosition is ImageTitlePosition.Above
+                                                                or ImageTitlePosition.Below;
+
+                    if (separateCaption && image.TitlePosition == ImageTitlePosition.Above)
+                    {
+                        var capPara = BuildImageCaptionParagraph(image);
+                        if (capPara is not null) target.Add(capPara);
+                    }
+
+                    if (separateCaption)
+                    {
+                        // BuildImage 가 내부에서 캡션을 그리지 않도록 ShowTitle 을 임시로 끔.
+                        // STA 스레드 단일 스레드라 동시성 위험 없음.
+                        var savedShow = image.ShowTitle;
+                        image.ShowTitle = false;
+                        try { target.Add(BuildImage(image)); }
+                        finally { image.ShowTitle = savedShow; }
+                    }
+                    else
+                    {
+                        target.Add(BuildImage(image));
+                    }
+
+                    if (separateCaption && image.TitlePosition == ImageTitlePosition.Below)
+                    {
+                        var capPara = BuildImageCaptionParagraph(image);
+                        if (capPara is not null) target.Add(capPara);
+                    }
                     break;
+                }
 
                 case ShapeObject shape:
                     listStack.Clear();
@@ -1295,9 +1334,76 @@ public static class FlowDocumentBuilder
         return withTitle as System.Windows.FrameworkElement ?? control;
     }
 
+    /// <summary>분리된 이미지 캡션 Paragraph 의 Tag — Parser 가 이 sentinel 을 보면
+    /// 캡션 정보는 이미 ImageBlock.ShowTitle/Title 에 보존돼 있으므로 모델에 별도 추가하지 않고 skip 한다.</summary>
+    internal sealed class ImageCaptionTag
+    {
+        public ImageBlock Image { get; }
+        public ImageCaptionTag(ImageBlock image) { Image = image; }
+    }
+
+    /// <summary>
+    /// Inline + Above/Below 위치의 그림 캡션을 별도 Wpf.Paragraph 로 빌드한다.
+    /// AppendBlocks 가 ImageBlock 의 BlockUIContainer 와 별개로 이 Paragraph 를 추가해
+    /// pagination 이 캡션 텍스트 높이를 정확히 측정·배정할 수 있게 한다(WPF Paragraph 측정은
+    /// 오프스크린 RTB 에서도 reliable). overlay/floater/AsText 모드는 같은 시각 단위 안에
+    /// 캡션이 묶여야 하므로 이 함수를 사용하지 않고 WrapImageWithTitle 로 처리한다.
+    /// Tag = ImageCaptionTag(image) — Parser 가 이 sentinel 을 보고 round-trip 에서 skip(중복 방지).
+    /// </summary>
+    internal static Wpf.Paragraph? BuildImageCaptionParagraph(ImageBlock image)
+    {
+        if (!image.ShowTitle || string.IsNullOrWhiteSpace(image.Title)) return null;
+
+        var s = image.TitleStyle;
+
+        WpfMedia.Brush titleFg = s.Foreground is { } fg
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B))
+            : WpfMedia.Brushes.Black;
+        WpfMedia.Brush? titleBg = s.Background is { } bg
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B))
+            : null;
+
+        TextAlignment ta = image.TitleHAlign switch
+        {
+            ImageHAlign.Left   => TextAlignment.Left,
+            ImageHAlign.Right  => TextAlignment.Right,
+            _                  => TextAlignment.Center,
+        };
+
+        var run = new Wpf.Run(image.Title)
+        {
+            FontSize   = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 10),
+            Foreground = titleFg,
+            FontWeight = s.Bold   ? FontWeights.Bold   : FontWeights.Normal,
+            FontStyle  = s.Italic ? FontStyles.Italic  : FontStyles.Normal,
+        };
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            run.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+        if (titleBg is not null)
+            run.Background = titleBg;
+
+        if (s.Underline || s.Strikethrough || s.Overline)
+        {
+            var decos = new System.Windows.TextDecorationCollection();
+            if (s.Underline)     foreach (var d in System.Windows.TextDecorations.Underline)    decos.Add(d);
+            if (s.Strikethrough) foreach (var d in System.Windows.TextDecorations.Strikethrough) decos.Add(d);
+            if (s.Overline)      foreach (var d in System.Windows.TextDecorations.OverLine)     decos.Add(d);
+            run.TextDecorations = decos;
+        }
+
+        return new Wpf.Paragraph(run)
+        {
+            Tag           = new ImageCaptionTag(image),
+            TextAlignment = ta,
+            Margin        = new Thickness(0, 2, 0, 4),
+        };
+    }
+
     /// <summary>
     /// 그림 제목(캡션) 표시가 켜져 있으면 image 시각 요소를 Grid 로 감싸 제목을 함께 배치한다.
     /// 위치(Above/Below/OverlayTop/Middle/Bottom) + 가로 정렬 + X/Y 오프셋(mm)을 적용.
+    /// Inline + Above/Below 케이스는 AppendBlocks 가 BuildImageCaptionParagraph 로 분리 처리하므로
+    /// 이 함수가 캡션을 그리는 경우는 overlay/floater/AsText 모드에 한정.
     /// </summary>
     private static UIElement WrapImageWithTitle(UIElement imageVisual, ImageBlock image, HorizontalAlignment imgHA)
     {
