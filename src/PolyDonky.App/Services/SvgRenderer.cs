@@ -63,8 +63,18 @@ internal static class SvgRenderer
         if (vbX != 0 || vbY != 0)
             canvas.RenderTransform = new TranslateTransform(-vbX, -vbY);
 
+        // <defs><marker> 추출 — 화살표 머리 등 line/polyline 의 marker-* 참조용.
+        var markers = new Dictionary<string, XElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var defs in root.Descendants().Where(e => e.Name.LocalName == "defs"))
+            foreach (var mk in defs.Elements().Where(e => e.Name.LocalName == "marker"))
+            {
+                var mid = mk.Attribute("id")?.Value;
+                if (!string.IsNullOrEmpty(mid)) markers[mid] = mk;
+            }
+
         // 루트 svg 의 style="background:..." / 인라인 fill / border 등 흡수
         var rootCtx = SvgContext.Default.MergedWith(root);
+        rootCtx.Markers = markers;
         if (rootCtx.RootBackground is { } bg) canvas.Background = bg;
 
         foreach (var el in root.Elements())
@@ -118,6 +128,7 @@ internal static class SvgRenderer
         public Brush?     RootBackground { get; set; }
         public Brush?     RootBorderBrush { get; set; }
         public double     RootBorderThickness { get; set; }
+        public Dictionary<string, XElement> Markers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public static SvgContext Default => new()
         {
@@ -325,17 +336,85 @@ internal static class SvgRenderer
 
     private static void RenderLine(XElement el, Canvas parent, SvgContext ctx)
     {
-        var line = new Line
-        {
-            X1 = AttrDouble(el, "x1"),
-            Y1 = AttrDouble(el, "y1"),
-            X2 = AttrDouble(el, "x2"),
-            Y2 = AttrDouble(el, "y2"),
-        };
+        var x1 = AttrDouble(el, "x1");
+        var y1 = AttrDouble(el, "y1");
+        var x2 = AttrDouble(el, "x2");
+        var y2 = AttrDouble(el, "y2");
+        var line = new Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2 };
         // Line 은 fill 무시 — stroke 만 적용.
         ApplyStroke(line, ctx);
         ApplyTransform(line, el.Attribute("transform")?.Value);
         parent.Children.Add(line);
+
+        // 화살표 머리 등 marker-* 참조 처리.
+        var markerEnd   = ResolveMarkerRef(GetAttrOrStyle(el, "marker-end"),   ctx);
+        var markerStart = ResolveMarkerRef(GetAttrOrStyle(el, "marker-start"), ctx);
+        if (markerEnd is not null)
+        {
+            double angleEnd = Math.Atan2(y2 - y1, x2 - x1) * 180.0 / Math.PI;
+            RenderMarker(parent, markerEnd, x2, y2, angleEnd, ctx);
+        }
+        if (markerStart is not null)
+        {
+            double angleStart = Math.Atan2(y1 - y2, x1 - x2) * 180.0 / Math.PI;
+            RenderMarker(parent, markerStart, x1, y1, angleStart, ctx);
+        }
+    }
+
+    private static string? GetAttrOrStyle(XElement el, string name)
+    {
+        var v = el.Attribute(name)?.Value;
+        if (!string.IsNullOrEmpty(v)) return v;
+        var style = el.Attribute("style")?.Value;
+        if (string.IsNullOrEmpty(style)) return null;
+        var props = ParseInlineStyle(style);
+        return props.TryGetValue(name, out var sv) ? sv : null;
+    }
+
+    /// <summary>"url(#id)" 형식 의 marker 참조를 해소해 marker XElement 를 돌려준다. 미해소 시 null.</summary>
+    private static XElement? ResolveMarkerRef(string? markerRef, SvgContext ctx)
+    {
+        if (string.IsNullOrWhiteSpace(markerRef)) return null;
+        markerRef = markerRef.Trim();
+        if (!markerRef.StartsWith("url(", StringComparison.OrdinalIgnoreCase)) return null;
+        var inside = markerRef.Substring(4, markerRef.IndexOf(')') - 4).Trim().Trim('"', '\'');
+        if (inside.StartsWith('#')) inside = inside.Substring(1);
+        return ctx.Markers.TryGetValue(inside, out var mk) ? mk : null;
+    }
+
+    private static void RenderMarker(Canvas parent, XElement marker, double atX, double atY, double angleDeg, SvgContext ctx)
+    {
+        // Marker 좌표계 (viewBox) — 없으면 markerWidth/Height 와 동일.
+        double mw = double.TryParse(marker.Attribute("markerWidth")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mwv) ? mwv : 3;
+        double mh = double.TryParse(marker.Attribute("markerHeight")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var mhv) ? mhv : 3;
+        double vbW = mw, vbH = mh, vbX = 0, vbY = 0;
+        if (TryParseViewBox(marker.Attribute("viewBox")?.Value, out var mvb))
+        { vbX = mvb.x; vbY = mvb.y; vbW = mvb.w; vbH = mvb.h; }
+        double refX = double.TryParse(marker.Attribute("refX")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var rxv) ? rxv : 0;
+        double refY = double.TryParse(marker.Attribute("refY")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ryv) ? ryv : 0;
+        bool orientAuto = string.Equals(marker.Attribute("orient")?.Value, "auto", StringComparison.OrdinalIgnoreCase);
+        if (!orientAuto && double.TryParse(marker.Attribute("orient")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var fixedAngle))
+            angleDeg = fixedAngle;
+
+        // marker 자식을 marker 좌표계 그대로 그려주는 내부 Canvas.
+        var inner = new Canvas { Width = vbW, Height = vbH };
+        if (vbX != 0 || vbY != 0)
+            inner.RenderTransform = new TranslateTransform(-vbX, -vbY);
+        var markerCtx = SvgContext.Default;
+        markerCtx.Markers = ctx.Markers; // 중첩 marker 참조 가능
+        foreach (var c in marker.Elements())
+            RenderElement(c, inner, markerCtx);
+
+        // 변환: 1) refX,refY 를 원점으로, 2) markerWidth/Height 비율로 스케일, 3) 라인 방향으로 회전, 4) 끝점으로 평행이동.
+        var tg = new TransformGroup();
+        tg.Children.Add(new TranslateTransform(-refX, -refY));
+        tg.Children.Add(new ScaleTransform(mw / vbW, mh / vbH));
+        tg.Children.Add(new RotateTransform(angleDeg));
+        tg.Children.Add(new TranslateTransform(atX, atY));
+
+        var wrapper = new Canvas { Width = mw, Height = mh, RenderTransform = tg };
+        wrapper.Children.Add(inner);
+        parent.Children.Add(wrapper);
     }
 
     private static void RenderPolygon(XElement el, Canvas parent, SvgContext ctx, bool closed)
@@ -349,6 +428,25 @@ internal static class SvgRenderer
         else        ApplyPaintNoFillByDefault(shape, ctx);
         ApplyTransform(shape, el.Attribute("transform")?.Value);
         parent.Children.Add(shape);
+
+        if (!closed)
+        {
+            // polyline 끝/시작 marker.
+            var markerEnd   = ResolveMarkerRef(GetAttrOrStyle(el, "marker-end"),   ctx);
+            var markerStart = ResolveMarkerRef(GetAttrOrStyle(el, "marker-start"), ctx);
+            if (markerEnd is not null && pts.Count >= 2)
+            {
+                var p1 = pts[^2]; var p2 = pts[^1];
+                double a = Math.Atan2(p2.Y - p1.Y, p2.X - p1.X) * 180.0 / Math.PI;
+                RenderMarker(parent, markerEnd, p2.X, p2.Y, a, ctx);
+            }
+            if (markerStart is not null && pts.Count >= 2)
+            {
+                var p1 = pts[1]; var p2 = pts[0];
+                double a = Math.Atan2(p2.Y - p1.Y, p2.X - p1.X) * 180.0 / Math.PI;
+                RenderMarker(parent, markerStart, p2.X, p2.Y, a, ctx);
+            }
+        }
     }
 
     private static void RenderPath(XElement el, Canvas parent, SvgContext ctx)
@@ -362,6 +460,34 @@ internal static class SvgRenderer
         ApplyPaintNoFillByDefault(path, ctx);
         ApplyTransform(path, el.Attribute("transform")?.Value);
         parent.Children.Add(path);
+
+        // path 끝 marker — d 문자열에서 마지막 두 좌표 쌍을 추출해 끝점 + 접선 방향 근사.
+        var markerEnd   = ResolveMarkerRef(GetAttrOrStyle(el, "marker-end"),   ctx);
+        var markerStart = ResolveMarkerRef(GetAttrOrStyle(el, "marker-start"), ctx);
+        if (markerEnd is not null || markerStart is not null)
+        {
+            var matches = System.Text.RegularExpressions.Regex.Matches(d!, @"-?\d+(?:\.\d+)?");
+            if (matches.Count >= 4)
+            {
+                var nums = matches
+                    .Select(m => double.TryParse(m.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0)
+                    .ToList();
+                if (markerEnd is not null)
+                {
+                    double endX = nums[^2], endY = nums[^1];
+                    double prevX = nums[^4], prevY = nums[^3];
+                    double a = Math.Atan2(endY - prevY, endX - prevX) * 180.0 / Math.PI;
+                    RenderMarker(parent, markerEnd, endX, endY, a, ctx);
+                }
+                if (markerStart is not null)
+                {
+                    double startX = nums[0], startY = nums[1];
+                    double nextX = nums[2], nextY = nums[3];
+                    double a = Math.Atan2(startY - nextY, startX - nextX) * 180.0 / Math.PI;
+                    RenderMarker(parent, markerStart, startX, startY, a, ctx);
+                }
+            }
+        }
     }
 
     private static void RenderText(XElement el, Canvas parent, SvgContext ctx)

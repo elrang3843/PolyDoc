@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using AngleSharp;
@@ -500,6 +501,13 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
 
     if (rules.Count == 0) return html;
 
+    // ::before / ::after pseudo-elements + counter() 해소 — 변환 시점에 실제 <span> 으로 굳혀
+    // 이후 cascade 패스가 inline style 을 추가 적용한다.
+    ResolvePseudoAndCounters(document, rules);
+
+    // ::first-letter — 매치되는 요소의 첫 글자를 별도 <span> 으로 분리해 스타일 적용.
+    ResolveFirstLetter(document, rules);
+
     var skipTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         { "script", "style", "head", "title", "meta", "link", "base", "noscript", "template" };
 
@@ -588,6 +596,311 @@ static IReadOnlyList<string> ExpandShorthand(string prop)
         _ => Array.Empty<string>(),
     };
 }
+
+/// <summary>
+/// CSS ::before / ::after 가상 요소 + counter() 함수를 변환 시점에 실제 &lt;span&gt; 노드로 굳혀
+/// HtmlReader 가 일반 인라인 텍스트로 처리하도록 한다. 동적 효과 없는 정적 문서이므로
+/// CSS 의 가상 요소는 한 번 굳히면 이후 라운드트립에 보존된다.
+/// 지원 패턴:
+///  - <c>content: 'literal'</c> / <c>content: "literal"</c>
+///  - <c>content: counter(name)</c> (counter-increment / counter-reset 지원)
+///  - 여러 토큰 연결: <c>content: counter(line) ' '</c>
+///  - 쓸 수 없는 함수(<c>attr()</c>, <c>url()</c>, <c>open-quote</c> 등)는 무시.
+/// 카운터 상태는 문서 깊이 우선 순회 동안 단일 글로벌 dictionary 로 추적 — CSS 의 scoped counter
+/// 사양 일부를 단순화한 근사. 워드프로세서 도메인의 일반적인 줄 번호/리스트 번호엔 충분.
+/// </summary>
+static void ResolvePseudoAndCounters(IDocument document, List<(string Selector, ICssStyleDeclaration Decl)> rules)
+{
+    var pseudoBefore = new List<(string baseSel, ICssStyleDeclaration decl)>();
+    var pseudoAfter  = new List<(string baseSel, ICssStyleDeclaration decl)>();
+    foreach (var (sel, decl) in rules)
+    {
+        if (TryStripPseudo(sel, "before", out var b)) pseudoBefore.Add((b, decl));
+        else if (TryStripPseudo(sel, "after", out var a)) pseudoAfter.Add((a, decl));
+    }
+    if (pseudoBefore.Count == 0 && pseudoAfter.Count == 0)
+        return;
+
+    var counters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    if (document.DocumentElement is { } root)
+        WalkPseudo(root, rules, pseudoBefore, pseudoAfter, counters);
+}
+
+/// <summary>::first-letter 해소 — 매치되는 요소의 첫 텍스트 자식의 맨 앞 한 글자(또는 잇따른 구두점/따옴표 포함)
+/// 를 별도 &lt;span&gt; 으로 잘라내고 인라인 style 을 적용한다. ::first-line 은 줄바꿈 위치에 의존하므로
+/// 변환 시점에 정확히 알 수 없어 미지원 (필요 시 사용자가 직접 첫 줄을 분리 마크업).</summary>
+static void ResolveFirstLetter(IDocument document, List<(string Selector, ICssStyleDeclaration Decl)> rules)
+{
+    var firstLetter = new List<(string baseSel, ICssStyleDeclaration decl)>();
+    foreach (var (sel, decl) in rules)
+    {
+        if (TryStripPseudo(sel, "first-letter", out var b)) firstLetter.Add((b, decl));
+    }
+    if (firstLetter.Count == 0) return;
+
+    foreach (var el in document.All.ToList())
+    {
+        if (el.GetAttribute("data-pd-pseudo") is not null) continue;
+
+        Dictionary<string, string>? merged = null;
+        foreach (var (sel, decl) in firstLetter)
+        {
+            bool m;
+            try { m = el.Matches(sel); } catch { continue; }
+            if (!m) continue;
+            merged ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ICssProperty p in decl)
+            {
+                if (string.IsNullOrEmpty(p.Value)) continue;
+                merged[p.Name] = p.Value;
+            }
+        }
+        if (merged is null) continue;
+
+        // 첫 텍스트 자식 노드를 찾는다 (공백 무시).
+        IText? firstText = null;
+        foreach (var n in el.ChildNodes)
+        {
+            if (n is IText t && !string.IsNullOrWhiteSpace(t.Data)) { firstText = t; break; }
+            if (n is IElement) break;     // 첫 자식이 다른 요소면 우리 영역 아님
+        }
+        if (firstText is null) continue;
+
+        var text = firstText.Data;
+        int firstNonWs = 0;
+        while (firstNonWs < text.Length && char.IsWhiteSpace(text[firstNonWs])) firstNonWs++;
+        if (firstNonWs >= text.Length) continue;
+
+        // 한 글자 (서로게이트 페어 처리 — 한글/이모지 안전).
+        int letterEnd = firstNonWs + 1;
+        if (char.IsHighSurrogate(text[firstNonWs]) && firstNonWs + 1 < text.Length)
+            letterEnd = firstNonWs + 2;
+
+        var prefix    = text.Substring(0, firstNonWs);
+        var letter    = text.Substring(firstNonWs, letterEnd - firstNonWs);
+        var remainder = text.Substring(letterEnd);
+
+        var owner = el.Owner!;
+        var span = owner.CreateElement("span");
+        span.SetAttribute("data-pd-pseudo", "first-letter");
+        span.TextContent = letter;
+        var styleParts = new List<string>();
+        foreach (var (n, v) in merged)
+        {
+            if (n.StartsWith("counter-", StringComparison.OrdinalIgnoreCase)) continue;
+            styleParts.Add($"{n}:{v}");
+        }
+        if (styleParts.Count > 0) span.SetAttribute("style", string.Join(";", styleParts));
+
+        // 텍스트 노드 분할: prefix(텍스트) → span → remainder(텍스트). InsertBefore + NextSibling 으로
+        // 정확히 firstText 바로 뒤에 삽입한다 (DOM 표준).
+        firstText.Data = prefix;
+        var parent = firstText.Parent!;
+        var anchor = firstText.NextSibling;
+        if (anchor is not null) parent.InsertBefore(span, anchor);
+        else                    parent.AppendChild(span);
+        if (!string.IsNullOrEmpty(remainder))
+        {
+            var rem = owner.CreateTextNode(remainder);
+            var anchor2 = span.NextSibling;
+            if (anchor2 is not null) parent.InsertBefore(rem, anchor2);
+            else                     parent.AppendChild(rem);
+        }
+    }
+}
+
+static bool IsPseudoSelector(string sel)
+{
+    if (string.IsNullOrEmpty(sel)) return false;
+    return sel.IndexOf("::before", StringComparison.OrdinalIgnoreCase) >= 0
+        || sel.IndexOf("::after",  StringComparison.OrdinalIgnoreCase) >= 0
+        || sel.EndsWith(":before", StringComparison.OrdinalIgnoreCase)
+        || sel.EndsWith(":after",  StringComparison.OrdinalIgnoreCase);
+}
+
+static bool TryStripPseudo(string sel, string pseudoName, out string baseSelector)
+{
+    baseSelector = sel;
+    if (string.IsNullOrEmpty(sel)) return false;
+    string[] suffixes = { "::" + pseudoName, ":" + pseudoName };
+    foreach (var suffix in suffixes)
+    {
+        if (sel.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            baseSelector = sel.Substring(0, sel.Length - suffix.Length);
+            if (string.IsNullOrWhiteSpace(baseSelector)) baseSelector = "*";
+            return true;
+        }
+    }
+    return false;
+}
+
+static void WalkPseudo(IElement el, List<(string, ICssStyleDeclaration)> rules,
+    List<(string, ICssStyleDeclaration)> pseudoBefore,
+    List<(string, ICssStyleDeclaration)> pseudoAfter,
+    Dictionary<string, int> counters)
+{
+    // 우리가 직접 삽입한 합성 pseudo span 은 사용자 규칙 매치에서 제외 — 무한 재귀 방지.
+    if (el.GetAttribute("data-pd-pseudo") is not null) return;
+
+    // 일반 요소의 counter-reset / counter-increment (regular 규칙 매치).
+    foreach (var (sel, decl) in rules)
+    {
+        if (IsPseudoSelector(sel)) continue; // pseudo 는 분리해 처리
+        bool m;
+        try { m = el.Matches(sel); } catch { continue; }
+        if (!m) continue;
+        var reset = decl.GetPropertyValue("counter-reset");
+        if (!string.IsNullOrEmpty(reset)) ApplyCounterTokens(reset, counters, isReset: true);
+        var incr = decl.GetPropertyValue("counter-increment");
+        if (!string.IsNullOrEmpty(incr)) ApplyCounterTokens(incr, counters, isReset: false);
+    }
+
+    // ::before pseudo — 매치되는 모든 규칙을 캐스케이드 순서로 머지(같은 속성은 뒤가 이김), 단일 span 으로 삽입.
+    var beforeMerged = MergePseudoRules(el, pseudoBefore);
+    if (beforeMerged is { Count: > 0 })
+        InjectPseudoSpanFromProps(el, beforeMerged, isBefore: true, counters);
+
+    // 자식 재귀 (스냅샷 — 삽입 중 인덱스 흔들림 방지)
+    var children = el.Children.ToList();
+    foreach (var child in children)
+        WalkPseudo(child, rules, pseudoBefore, pseudoAfter, counters);
+
+    // ::after pseudo
+    var afterMerged = MergePseudoRules(el, pseudoAfter);
+    if (afterMerged is { Count: > 0 })
+        InjectPseudoSpanFromProps(el, afterMerged, isBefore: false, counters);
+}
+
+static Dictionary<string,string>? MergePseudoRules(IElement el,
+    List<(string baseSel, ICssStyleDeclaration decl)> pseudoRules)
+{
+    Dictionary<string,string>? props = null;
+    foreach (var (sel, decl) in pseudoRules)
+    {
+        bool m;
+        try { m = el.Matches(sel); } catch { continue; }
+        if (!m) continue;
+        props ??= new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        foreach (ICssProperty p in decl)
+        {
+            if (string.IsNullOrEmpty(p.Value)) continue;
+            props[p.Name] = p.Value;
+        }
+    }
+    return props;
+}
+
+static void InjectPseudoSpanFromProps(IElement el, Dictionary<string,string> props, bool isBefore,
+    Dictionary<string,int> counters)
+{
+    if (props.TryGetValue("counter-increment", out var inc))   ApplyCounterTokens(inc,  counters, isReset: false);
+    if (props.TryGetValue("counter-reset",     out var reset)) ApplyCounterTokens(reset, counters, isReset: true);
+
+    if (!props.TryGetValue("content", out var contentVal) || string.IsNullOrEmpty(contentVal)) return;
+    var text = ResolvePseudoContent(contentVal, counters);
+    if (text is null) return;
+
+    var styleParts = new List<string>();
+    foreach (var (n, v) in props)
+    {
+        if (n.Equals("content", StringComparison.OrdinalIgnoreCase)) continue;
+        if (n.StartsWith("counter-", StringComparison.OrdinalIgnoreCase)) continue;
+        styleParts.Add($"{n}:{v}");
+    }
+
+    var owner = el.Owner;
+    if (owner is null) return;
+    var span = owner.CreateElement("span");
+    span.SetAttribute("data-pd-pseudo", isBefore ? "before" : "after");
+    span.TextContent = text;
+    if (styleParts.Count > 0)
+        span.SetAttribute("style", string.Join(";", styleParts));
+
+    if (isBefore)
+        el.InsertBefore(span, el.FirstChild);
+    else
+        el.AppendChild(span);
+}
+
+static void ApplyCounterTokens(string value, Dictionary<string, int> counters, bool isReset)
+{
+    var tokens = value.Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+    int i = 0;
+    while (i < tokens.Length)
+    {
+        var name = tokens[i++];
+        int n = isReset ? 0 : 1;
+        if (i < tokens.Length && int.TryParse(tokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        { n = parsed; i++; }
+        if (isReset) counters[name] = n;
+        else
+        {
+            counters.TryGetValue(name, out var cur);
+            counters[name] = cur + n;
+        }
+    }
+}
+
+static string? ResolvePseudoContent(string val, Dictionary<string, int> counters)
+{
+    var sb = new StringBuilder();
+    int i = 0;
+    while (i < val.Length)
+    {
+        while (i < val.Length && char.IsWhiteSpace(val[i])) i++;
+        if (i >= val.Length) break;
+
+        char c = val[i];
+        if (c == '\'' || c == '"')
+        {
+            int end = val.IndexOf(c, i + 1);
+            if (end < 0) return null;
+            sb.Append(val.Substring(i + 1, end - i - 1));
+            i = end + 1;
+        }
+        else if (StartsWithCi(val, i, "counter("))
+        {
+            int closing = val.IndexOf(')', i);
+            if (closing < 0) return null;
+            var inside = val.Substring(i + "counter(".Length, closing - i - "counter(".Length);
+            var args = inside.Split(',');
+            var name = args[0].Trim();
+            counters.TryGetValue(name, out var cur);
+            sb.Append(cur);
+            i = closing + 1;
+        }
+        else if (StartsWithCi(val, i, "counters("))
+        {
+            // counters(name, sep) — 같은 이름의 모든 중첩 counter 를 sep 으로 join.
+            // 본 구현은 단일 글로벌 counter 라 sep 없이 현재 값 하나만.
+            int closing = val.IndexOf(')', i);
+            if (closing < 0) return null;
+            var inside = val.Substring(i + "counters(".Length, closing - i - "counters(".Length);
+            var args = inside.Split(',');
+            var name = args[0].Trim();
+            counters.TryGetValue(name, out var cur);
+            sb.Append(cur);
+            i = closing + 1;
+        }
+        else if (StartsWithCi(val, i, "attr(") || StartsWithCi(val, i, "url("))
+        {
+            int closing = val.IndexOf(')', i);
+            if (closing < 0) return null;
+            i = closing + 1;
+        }
+        else
+        {
+            // 알 수 없는 토큰 — 한 글자 건너뜀.
+            i++;
+        }
+    }
+    return sb.ToString();
+}
+
+static bool StartsWithCi(string haystack, int idx, string needle)
+    => idx + needle.Length <= haystack.Length &&
+       string.Compare(haystack, idx, needle, 0, needle.Length, StringComparison.OrdinalIgnoreCase) == 0;
 
 static void CollectStyleRules(ICssRuleList ruleList, List<(string, ICssStyleDeclaration)> result)
 {
