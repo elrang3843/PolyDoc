@@ -1711,11 +1711,10 @@ public static class FlowDocumentBuilder
         canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
     }
 
-    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 외부 Canvas 안에 안쪽 도형 캔버스를
-    // 절대 좌표로 배치(`Canvas.Left/Top` 으로 가운데 오프셋) 하고, 안쪽 캔버스에 RenderTransform
-    // 으로 회전을 건다. 외부 Canvas 가 회전 경계 박스 만큼의 레이아웃 공간을 점유.
-    // (Grid 래퍼·LayoutTransform 모두 BlockUIContainer measure 와 상호작용이 불안정 — 절대 좌표
-    // 외부 Canvas 만 신뢰성 있게 동작.)
+    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 Border 안에 회전된 캔버스를 가운데 배치.
+    // Border 는 단순 레이아웃 의미 (Width/Height 명시 시 그대로 점유) 로 BlockUIContainer 가
+    // 안정적으로 회전 bbox 만큼의 공간을 셀 행 높이에 반영. Canvas.Left/Top + 외부 Canvas 조합
+    // 은 BUC measure 에 회전 bbox 가 전달되지 않는 문제가 있어 사용하지 않음.
     private static FrameworkElement BuildInlineRotationHost(
         System.Windows.Controls.Canvas canvas,
         double angleDeg,
@@ -1732,19 +1731,18 @@ public static class FlowDocumentBuilder
         double rotH  = wDip * sin + hDip * cos;
 
         canvas.RenderTransformOrigin = new Point(0.5, 0.5);
-        canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
+        canvas.RenderTransform       = new WpfMedia.RotateTransform(angleDeg);
+        canvas.HorizontalAlignment   = HorizontalAlignment.Center;
+        canvas.VerticalAlignment     = VerticalAlignment.Center;
 
-        var outer = new System.Windows.Controls.Canvas
+        return new System.Windows.Controls.Border
         {
             Width               = rotW,
             Height              = rotH,
             HorizontalAlignment = hAlign,
-            ClipToBounds        = false,
+            Background          = WpfMedia.Brushes.Transparent,
+            Child               = canvas,
         };
-        System.Windows.Controls.Canvas.SetLeft(canvas, (rotW - wDip) / 2.0);
-        System.Windows.Controls.Canvas.SetTop (canvas, (rotH - hDip) / 2.0);
-        outer.Children.Add(canvas);
-        return outer;
     }
 
     private static WpfMedia.DoubleCollection? BuildDashArray(StrokeDash dash, double strokeDip)
