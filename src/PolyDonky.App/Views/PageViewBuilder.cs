@@ -85,6 +85,32 @@ public static class PageViewBuilder
                 Canvas.SetLeft(label, 6);
                 Canvas.SetTop (label, topY + 2);
                 target.Children.Add(label);
+
+                // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 (육안 검증용).
+                // 좌측 여백 안쪽 상단에 세로로 stacked. 페이지네이션 측정값과 실제 렌더 높이를
+                // 비교해 클리핑·공백 원인을 추적할 때 사용한다.
+                double bodyH = geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip;
+                double pageHmm = FlowDocumentBuilder.DipToMm(geo.PageHeightDip);
+                double bodyHmm = FlowDocumentBuilder.DipToMm(bodyH);
+                double padTopMm    = FlowDocumentBuilder.DipToMm(geo.PadTopDip);
+                double padBottomMm = FlowDocumentBuilder.DipToMm(geo.PadBottomDip);
+                var debugLabel = new System.Windows.Controls.TextBlock
+                {
+                    Text =
+                        $"page H: {geo.PageHeightDip:F1} DIP ({pageHmm:F1} mm)\n" +
+                        $"body H: {bodyH:F1} DIP ({bodyHmm:F1} mm)\n" +
+                        $"pad ↑: {geo.PadTopDip:F1} DIP ({padTopMm:F1} mm)\n" +
+                        $"pad ↓: {geo.PadBottomDip:F1} DIP ({padBottomMm:F1} mm)",
+                    FontSize         = 9,
+                    FontFamily       = new FontFamily("Consolas, Cascadia Mono, monospace"),
+                    Foreground       = new SolidColorBrush(WpfColor.FromArgb(0xC0, 0xB4, 0x40, 0x40)),
+                    Background       = new SolidColorBrush(WpfColor.FromArgb(0x30, 0xFF, 0xFF, 0x80)),
+                    Padding          = new Thickness(3, 1, 3, 1),
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(debugLabel, 6);
+                Canvas.SetTop (debugLabel, topY + 18);
+                target.Children.Add(debugLabel);
             }
         }
     }
