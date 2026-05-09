@@ -1991,6 +1991,9 @@ public partial class MainWindow : Window
         bool showGuides = page?.ShowMarginGuides ?? true;
         WpfMedia.Brush pageBg = ResolvePaperBackground(page);
 
+        // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 클리어한 뒤 마지막에 올린다.
+        var pendingDebugLabels = new List<(System.Windows.Controls.TextBlock label, double left, double top)>();
+
         for (int i = 0; i < pageCount; i++)
         {
             double topY = i * pg.PageStrideDip;
@@ -2160,17 +2163,24 @@ public partial class MainWindow : Window
             // 좌측 — 텍스트 높이 측정 후 페이지 바닥 안쪽에 정렬 (아래로 잘리지 않도록).
             // bodyArea 하단 바로 아래 ~ 페이지 바닥 4 DIP 안쪽 사이에 배치되며,
             // 길이가 많으면 위쪽 본문 영역으로 자라난다.
+            // 본문 RTB 가 위에 덮이지 않도록 최상위 TypesettingMarksCanvas 에 올리되,
+            // RebuildTypesettingMarks() 가 캔버스를 클리어하므로 그 뒤에 한꺼번에 추가한다.
             debugLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double dbgH = debugLabel.DesiredSize.Height;
-            System.Windows.Controls.Canvas.SetLeft(debugLabel, 6);
-            System.Windows.Controls.Canvas.SetTop(debugLabel,
-                topY + pg.PageHeightDip - dbgH - 4);
-            PageBackgroundCanvas.Children.Add(debugLabel);
+            pendingDebugLabels.Add((debugLabel, 6, topY + pg.PageHeightDip - dbgH - 4));
         }
 
         RenderWatermark(pg, pageCount);
         RebuildHeaderFooterLayer(pg, pageCount, page);
         RebuildTypesettingMarks();
+
+        // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 비운 뒤 한꺼번에 올린다.
+        foreach (var (label, left, top) in pendingDebugLabels)
+        {
+            System.Windows.Controls.Canvas.SetLeft(label, left);
+            System.Windows.Controls.Canvas.SetTop (label, top);
+            TypesettingMarksCanvas.Children.Add(label);
+        }
     }
 
     private void RebuildHeaderFooterLayer(
