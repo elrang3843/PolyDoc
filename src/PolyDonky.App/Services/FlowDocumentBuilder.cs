@@ -1001,8 +1001,6 @@ public static class FlowDocumentBuilder
         // 브라우저(Edge/Chrome) 의 깨진-이미지 모양을 흉내낸다: 작은 X 아이콘 + alt 텍스트(Description).
         if (image.Data.Length == 0)
         {
-            var emptyBuc = new Wpf.BlockUIContainer { Tag = image };
-
             var icon = new System.Windows.Controls.Border
             {
                 Width               = 16,
@@ -1020,15 +1018,16 @@ public static class FlowDocumentBuilder
                 },
             };
 
+            var emptyHA = image.HAlign switch
+            {
+                ImageHAlign.Center => HorizontalAlignment.Center,
+                ImageHAlign.Right  => HorizontalAlignment.Right,
+                _                  => HorizontalAlignment.Left,
+            };
             var stack = new System.Windows.Controls.StackPanel
             {
                 Orientation         = System.Windows.Controls.Orientation.Horizontal,
-                HorizontalAlignment = image.HAlign switch
-                {
-                    ImageHAlign.Center => HorizontalAlignment.Center,
-                    ImageHAlign.Right  => HorizontalAlignment.Right,
-                    _                  => HorizontalAlignment.Left,
-                },
+                HorizontalAlignment = emptyHA,
             };
             stack.Children.Add(icon);
 
@@ -1042,9 +1041,11 @@ public static class FlowDocumentBuilder
                 });
             }
 
+            // 캡션(`figcaption`) 도 함께 그리도록 WrapImageWithTitle 거쳐 BlockUIContainer 로 포장.
+            UIElement emptyVisual = WrapImageWithTitle(stack, image, emptyHA);
+            var emptyMargin = new Thickness(0, MmToDip(image.MarginTopMm), 0, MmToDip(image.MarginBottomMm));
+            var emptyBuc = new Wpf.BlockUIContainer(emptyVisual) { Tag = image, Margin = emptyMargin };
             if (!string.IsNullOrEmpty(image.Description)) emptyBuc.ToolTip = image.Description;
-
-            emptyBuc.Child = stack;
             return emptyBuc;
         }
 
