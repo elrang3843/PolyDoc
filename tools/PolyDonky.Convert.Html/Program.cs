@@ -511,21 +511,44 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
     var skipTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         { "script", "style", "head", "title", "meta", "link", "base", "noscript", "template" };
 
+    // 콤마 분리된 selector 를 분기별로 펼쳐 specificity 를 가지는 평탄 리스트로 만든다.
+    // 같은 declaration 에 대해 분기별로 (selector, specificity, sourceIndex) 를 가짐.
+    var indexedRules = new List<(string Selector, int Specificity, int SourceIndex, ICssStyleDeclaration Decl)>();
+    for (int idx = 0; idx < rules.Count; idx++)
+    {
+        var (selectorList, decl) = rules[idx];
+        foreach (var branch in SplitTopLevelCommas(selectorList))
+        {
+            var trimmed = branch.Trim();
+            if (trimmed.Length == 0) continue;
+            indexedRules.Add((trimmed, ComputeSpecificity(trimmed), idx, decl));
+        }
+    }
+
     foreach (var element in document.All)
     {
         if (skipTags.Contains(element.LocalName)) continue;
 
-        var applied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        // 매치되는 author 규칙만 순서대로(선언 순서) 적용 — 같은 속성이면 뒤가 이김(specificity 무시,
-        // 본 변환은 정확한 캐스케이드 우선순위까지 흉내내지 않음 — 충분히 가까운 근사).
-        foreach (var (selector, decl) in rules)
+        // 캐스케이드: 매치되는 모든 규칙을 (specificity asc, sourceIndex asc) 로 정렬해
+        // 순서대로 덮어쓴다 — 마지막에 적용되는 규칙이 이김. CSS 사양의 specificity > source-order 와 일치.
+        var matchedRules = new List<(int Specificity, int SourceIndex, ICssStyleDeclaration Decl)>();
+        foreach (var r in indexedRules)
         {
             bool matched;
-            try { matched = element.Matches(selector); }
+            try { matched = element.Matches(r.Selector); }
             catch { continue; }
-            if (!matched) continue;
-            foreach (ICssProperty p in decl)
+            if (matched) matchedRules.Add((r.Specificity, r.SourceIndex, r.Decl));
+        }
+        matchedRules.Sort((a, b) =>
+        {
+            int s = a.Specificity.CompareTo(b.Specificity);
+            return s != 0 ? s : a.SourceIndex.CompareTo(b.SourceIndex);
+        });
+
+        var applied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in matchedRules)
+        {
+            foreach (ICssProperty p in r.Decl)
             {
                 if (string.IsNullOrEmpty(p.Value)) continue;
                 applied[p.Name] = p.Value;
@@ -534,9 +557,7 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
 
         // 기존 인라인 style="" 이 author 규칙보다 우선.
         // 인라인 단축속성(margin / padding / border 등) 은 같은 영역의 longhand(margin-top 등) 를
-        // 함께 무효화해야 한다. 그렇지 않으면 author 규칙이 longhand 로 펼쳐 적용된 값이 남아
-        // 결과적으로 인라인 단축속성이 무시되는 버그가 생긴다 (예: hr style="margin:2px 0" 이
-        // class hr {margin:20px 0} 의 margin-top:20px 에 의해 가려지던 문제).
+        // 함께 무효화해야 한다.
         var existing = element.GetAttribute("style");
         if (!string.IsNullOrWhiteSpace(existing))
         {
@@ -559,6 +580,95 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
     }
 
     return document.DocumentElement?.OuterHtml ?? html;
+}
+
+/// <summary>CSS selector 의 specificity 를 (a*100 + b*10 + c) 단일 정수로 근사. inline style 은 별도 처리이므로 제외.
+/// a = id 개수, b = class/attr/pseudo-class 개수, c = type/pseudo-element 개수.</summary>
+static int ComputeSpecificity(string selector)
+{
+    int a = 0, b = 0, c = 0;
+    int i = 0;
+    while (i < selector.Length)
+    {
+        char ch = selector[i];
+        if (ch == '#') { a++; i++; i = SkipIdent(selector, i); }
+        else if (ch == '.') { b++; i++; i = SkipIdent(selector, i); }
+        else if (ch == '[')
+        {
+            b++;
+            while (i < selector.Length && selector[i] != ']') i++;
+            if (i < selector.Length) i++;
+        }
+        else if (ch == ':')
+        {
+            // ::pseudo-element 는 c 에 카운트, :pseudo-class 는 b.
+            if (i + 1 < selector.Length && selector[i + 1] == ':')
+            { c++; i += 2; i = SkipIdent(selector, i); }
+            else
+            {
+                // :before/:after/:first-letter/:first-line 은 사양상 pseudo-element (c).
+                int start = i + 1;
+                int end = SkipIdent(selector, start);
+                var name = selector.Substring(start, end - start).ToLowerInvariant();
+                if (name is "before" or "after" or "first-letter" or "first-line") c++;
+                else b++;
+                i = end;
+                // pseudo-class 함수 :nth-child(...) — 괄호 건너뜀.
+                if (i < selector.Length && selector[i] == '(')
+                {
+                    int depth = 1; i++;
+                    while (i < selector.Length && depth > 0)
+                    {
+                        if (selector[i] == '(') depth++;
+                        else if (selector[i] == ')') depth--;
+                        i++;
+                    }
+                }
+            }
+        }
+        else if (char.IsLetter(ch))
+        {
+            // 타입 selector (a, div, td 등) — c 에 카운트.
+            c++;
+            i = SkipIdent(selector, i);
+        }
+        else if (ch == '*')
+        {
+            // universal selector — specificity 0.
+            i++;
+        }
+        else
+        {
+            i++; // 결합자 ' ', '>', '+', '~' 등 또는 공백.
+        }
+    }
+    return a * 10000 + b * 100 + c;
+}
+
+static int SkipIdent(string s, int i)
+{
+    while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] == '-' || s[i] == '_')) i++;
+    return i;
+}
+
+/// <summary>"a, b, c" 형식의 selector 를 콤마 분기로 분리. 함수 인자 안의 콤마는 무시.</summary>
+static IEnumerable<string> SplitTopLevelCommas(string selector)
+{
+    int depth = 0;
+    int start = 0;
+    for (int i = 0; i < selector.Length; i++)
+    {
+        char ch = selector[i];
+        if (ch == '(' || ch == '[') depth++;
+        else if (ch == ')' || ch == ']') depth--;
+        else if (ch == ',' && depth == 0)
+        {
+            yield return selector.Substring(start, i - start);
+            start = i + 1;
+        }
+    }
+    if (start < selector.Length)
+        yield return selector.Substring(start);
 }
 
 /// <summary>
