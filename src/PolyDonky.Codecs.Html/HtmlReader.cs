@@ -2169,8 +2169,14 @@ public sealed class HtmlReader : IDocumentReader
                     if (al != Alignment.Left)
                     {
                         foreach (var b in cellContent)
+                        {
                             if (b is Paragraph cp && cp.Style.Alignment == Alignment.Left)
                                 cp.Style.Alignment = al;
+                            else if (b is ShapeObject so && so.HAlign == ImageHAlign.Left && al == Alignment.Center)
+                                so.HAlign = ImageHAlign.Center;
+                            else if (b is ImageBlock ib && ib.HAlign == ImageHAlign.Left && al == Alignment.Center)
+                                ib.HAlign = ImageHAlign.Center;
+                        }
                     }
                 }
 

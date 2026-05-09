@@ -1535,6 +1535,18 @@ public static class FlowDocumentBuilder
         var marginTopDip    = MmToDip(shape.MarginTopMm);
         var marginBottomDip = MmToDip(shape.MarginBottomMm);
 
+        // 회전 시 상하 꼭짓점이 원본 레이아웃 박스 바깥으로 나오므로 마진을 보충해 잘리지 않게 한다.
+        if (Math.Abs(shape.RotationAngleDeg) > 0.01)
+        {
+            double rad   = shape.RotationAngleDeg * Math.PI / 180.0;
+            double cos   = Math.Abs(Math.Cos(rad));
+            double sin   = Math.Abs(Math.Sin(rad));
+            double rotH  = wDip * sin + hDip * cos;
+            double extra = (rotH - hDip) / 2.0;
+            marginTopDip    += extra;
+            marginBottomDip += extra;
+        }
+
         var imgHA = shape.HAlign switch
         {
             ImageHAlign.Center => HorizontalAlignment.Center,
@@ -1725,11 +1737,10 @@ public static class FlowDocumentBuilder
         canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
     }
 
-    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 외부 Canvas 안에 오프셋 배치 후 회전.
-    // 외부 Canvas 에 Width/Height 를 명시하면 FrameworkElement.MeasureCore 가 그 값을 DesiredSize
-    // 로 반영해 BlockUIContainer / 셀 행 높이에 회전 bbox 만큼의 공간이 예약된다.
-    // ClipToBounds=false 로 회전된 모서리가 외부 Canvas 경계 바깥으로 잘리지 않게 한다.
-    // (Border 를 외부 컨테이너로 쓰면 자식을 콘텐츠 영역 안에 clip 해 모서리가 잘리는 문제 발생.)
+    // 인라인 도형 회전 호스트 — CSS transform:rotate() 와 동일하게 레이아웃 풋프린트는 원본 크기(wDip×hDip) 유지.
+    // 외부 Canvas 의 Width/Height 를 원본 크기로 고정하고 ClipToBounds=false 로 시각적 오버플로를 허용한다.
+    // 좁은 표 셀에서 회전 bounding-box 크기로 잘리는 문제를 방지하는 CSS-correct 접근.
+    // (BuildShape 에서 회전 오버플로만큼 상하 마진을 보충해 위아래 꼭짓점도 레이아웃 흐름 안에 들어온다.)
     private static FrameworkElement BuildInlineRotationHost(
         System.Windows.Controls.Canvas canvas,
         double angleDeg,
@@ -1739,25 +1750,18 @@ public static class FlowDocumentBuilder
     {
         if (Math.Abs(angleDeg) < 0.01) return canvas;
 
-        double rad  = angleDeg * Math.PI / 180.0;
-        double cos  = Math.Abs(Math.Cos(rad));
-        double sin  = Math.Abs(Math.Sin(rad));
-        double rotW = wDip * cos + hDip * sin;
-        double rotH = wDip * sin + hDip * cos;
-
-        // 내부 캔버스를 외부 Canvas 중앙에 배치: 오프셋 = (rotW-wDip)/2, (rotH-hDip)/2
-        // → 내부 캔버스의 중심 = 외부 Canvas 의 중심 → RenderTransformOrigin(0.5,0.5) 이 외부 중심 기준으로 회전.
-        double offsetX = (rotW - wDip) / 2.0;
-        double offsetY = (rotH - hDip) / 2.0;
-        System.Windows.Controls.Canvas.SetLeft(canvas, offsetX);
-        System.Windows.Controls.Canvas.SetTop(canvas, offsetY);
+        // CSS transform:rotate() 는 레이아웃 풋프린트를 변경하지 않는다.
+        // 외부 Canvas 는 원본 크기(wDip×hDip)로 유지하고 ClipToBounds=false 로 시각적 오버플로를 허용.
+        // 이렇게 해야 표 셀 같은 좁은 컨테이너에서 회전 bounding-box 크기로 잘리는 문제를 막을 수 있다.
+        System.Windows.Controls.Canvas.SetLeft(canvas, 0);
+        System.Windows.Controls.Canvas.SetTop(canvas, 0);
         canvas.RenderTransformOrigin = new Point(0.5, 0.5);
         canvas.RenderTransform       = new WpfMedia.RotateTransform(angleDeg);
 
         var outer = new System.Windows.Controls.Canvas
         {
-            Width               = rotW,
-            Height              = rotH,
+            Width               = wDip,
+            Height              = hDip,
             ClipToBounds        = false,
             HorizontalAlignment = hAlign,
         };
