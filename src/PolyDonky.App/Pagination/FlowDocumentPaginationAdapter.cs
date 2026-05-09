@@ -467,10 +467,17 @@ public static class FlowDocumentPaginationAdapter
             };
         }
 
-        // WPF 블록 타입 힌트 (BlockUIContainer 여부 구분)
-        string wpfHint = wpfBlock is WpfDocs.BlockUIContainer
-            ? "(BUC)"
-            : wpfBlock is WpfDocs.Paragraph ? "" : $"({wpfBlock.GetType().Name})";
+        // WPF 블록 타입 힌트 (BlockUIContainer + 자식 FE 타입 포함)
+        string wpfHint;
+        if (wpfBlock is WpfDocs.BlockUIContainer buc)
+        {
+            string childName = buc.Child is null ? "null" : buc.Child.GetType().Name;
+            wpfHint = $"(BUC:{childName})";
+        }
+        else
+        {
+            wpfHint = wpfBlock is WpfDocs.Paragraph ? "" : $"({wpfBlock.GetType().Name})";
+        }
 
         return $"{typeName}{wpfHint}{extra}";
     }
@@ -672,6 +679,9 @@ public static class FlowDocumentPaginationAdapter
                         // topY = ContentStart 기준 → Margin.Top 이미 포함 → Margin.Bottom 만 추가.
                         return topY + h + block.Margin.Bottom;
                 }
+                // 높이를 못 구하면 NaN 반환 — caret 높이(≈20 DIP) 폴백을 피해
+                // 잘못된 작은 blockH 로 페이지 분할이 어긋나는 일을 막는다.
+                return double.NaN;
             }
 
             // Wpf.Table 은 ContentEnd.GetCharacterRect 가 표 직후 캐럿 위치(≈ 표의 top) 만
@@ -714,8 +724,10 @@ public static class FlowDocumentPaginationAdapter
         if (!double.IsNaN(fe.Height) && fe.Height > 0)
             return fe.Height;
 
-        // 강제 측정 — 오프스크린 RTB UpdateLayout 이후에도 UIElement 가 layout-pass 를
+        // 강제 측정 + 배치 — 오프스크린 RTB UpdateLayout 이후에도 UIElement 가 layout-pass 를
         // 받지 못한 경우(FlowDocument 내 BlockUIContainer 에서 흔함)에 대한 보완.
+        // Measure 만으로 DesiredSize.Height=0 이 나오는 케이스(빈 데이터 이미지의 StackPanel,
+        // SVG Viewbox 래퍼 등)에 대비해 Arrange 까지 강제하면 ActualHeight 가 채워진다.
         // 폭은 단 폭을 상한으로, 명시적 Width 가 있으면 그 값이 우선된다.
         try
         {
@@ -723,6 +735,11 @@ public static class FlowDocumentPaginationAdapter
             fe.Measure(new Size(availW, double.PositiveInfinity));
             if (fe.DesiredSize.Height > 0)
                 return fe.DesiredSize.Height;
+
+            // Arrange 강제 — 일부 컨테이너(StackPanel/Grid)에서 자식 ActualHeight 가
+            // Arrange 후에야 채워지는 경우가 있다.
+            fe.Arrange(new Rect(0, 0, fe.DesiredSize.Width, fe.DesiredSize.Height));
+            if (fe.ActualHeight > 0) return fe.ActualHeight;
         }
         catch { /* 측정 실패 시 0 반환 */ }
 

@@ -2160,14 +2160,8 @@ public partial class MainWindow : Window
                 Padding          = new Thickness(3, 1, 3, 1),
                 IsHitTestVisible = false,
             };
-            // 좌측 — 텍스트 높이 측정 후 페이지 바닥 안쪽에 정렬 (아래로 잘리지 않도록).
-            // bodyArea 하단 바로 아래 ~ 페이지 바닥 4 DIP 안쪽 사이에 배치되며,
-            // 길이가 많으면 위쪽 본문 영역으로 자라난다.
-            // 본문 RTB 가 위에 덮이지 않도록 최상위 TypesettingMarksCanvas 에 올리되,
-            // RebuildTypesettingMarks() 가 캔버스를 클리어하므로 그 뒤에 한꺼번에 추가한다.
-            debugLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            double dbgH = debugLabel.DesiredSize.Height;
-            pendingDebugLabels.Add((debugLabel, 6, topY + pg.PageHeightDip - dbgH - 4));
+            // 페이지 오른쪽 바깥 여백에 배치 — 본문과 겹치지 않도록.
+            pendingDebugLabels.Add((debugLabel, pg.PageWidthDip + 8, topY + 4));
         }
 
         RenderWatermark(pg, pageCount);
