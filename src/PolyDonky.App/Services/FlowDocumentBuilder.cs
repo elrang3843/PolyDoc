@@ -1711,10 +1711,11 @@ public static class FlowDocumentBuilder
         canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
     }
 
-    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 Grid 안에 캔버스를 가운데 배치하고
-    // 캔버스에는 RenderTransform 으로 회전을 건다. Grid 자체가 큰 경계 박스를 점유해 셀 행 높이가
-    // 회전된 도형 크기에 맞춰 늘어난다 (LayoutTransform on Canvas 는 BlockUIContainer measure 와
-    // 상호작용이 불안정해 사용하지 않음).
+    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 외부 Canvas 안에 안쪽 도형 캔버스를
+    // 절대 좌표로 배치(`Canvas.Left/Top` 으로 가운데 오프셋) 하고, 안쪽 캔버스에 RenderTransform
+    // 으로 회전을 건다. 외부 Canvas 가 회전 경계 박스 만큼의 레이아웃 공간을 점유.
+    // (Grid 래퍼·LayoutTransform 모두 BlockUIContainer measure 와 상호작용이 불안정 — 절대 좌표
+    // 외부 Canvas 만 신뢰성 있게 동작.)
     private static FrameworkElement BuildInlineRotationHost(
         System.Windows.Controls.Canvas canvas,
         double angleDeg,
@@ -1732,17 +1733,18 @@ public static class FlowDocumentBuilder
 
         canvas.RenderTransformOrigin = new Point(0.5, 0.5);
         canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
-        canvas.HorizontalAlignment = HorizontalAlignment.Center;
-        canvas.VerticalAlignment   = VerticalAlignment.Center;
 
-        var grid = new System.Windows.Controls.Grid
+        var outer = new System.Windows.Controls.Canvas
         {
-            Width  = rotW,
-            Height = rotH,
+            Width               = rotW,
+            Height              = rotH,
             HorizontalAlignment = hAlign,
+            ClipToBounds        = false,
         };
-        grid.Children.Add(canvas);
-        return grid;
+        System.Windows.Controls.Canvas.SetLeft(canvas, (rotW - wDip) / 2.0);
+        System.Windows.Controls.Canvas.SetTop (canvas, (rotH - hDip) / 2.0);
+        outer.Children.Add(canvas);
+        return outer;
     }
 
     private static WpfMedia.DoubleCollection? BuildDashArray(StrokeDash dash, double strokeDip)
