@@ -108,8 +108,9 @@ public static class PageViewBuilder
                     Padding          = new Thickness(3, 1, 3, 1),
                     IsHitTestVisible = false,
                 };
-                Canvas.SetLeft(debugLabel, 6);
-                Canvas.SetTop (debugLabel, topY + 18);
+                // 우측 여백 안 — 본문 가이드 오른쪽 바깥 4 DIP. 좌측 상단 페이지 번호와 겹치지 않음.
+                Canvas.SetLeft(debugLabel, geo.PageWidthDip - geo.PadRightDip + 4);
+                Canvas.SetTop (debugLabel, topY + 4);
                 target.Children.Add(debugLabel);
             }
         }
