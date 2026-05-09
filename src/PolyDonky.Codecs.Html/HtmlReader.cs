@@ -2858,10 +2858,18 @@ public sealed class HtmlReader : IDocumentReader
 
         if (brStr is not null)
         {
-            var firstTok = brStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            var brToks = brStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var firstTok = brToks[0];
             if (firstTok.Equals("50%", StringComparison.Ordinal))
             {
                 s.Kind = ShapeKind.Ellipse;
+            }
+            // 4-value 패턴: TopLeft TopRight BottomRight BottomLeft.
+            // R R 0 0 (위쪽 둥근 반원), 0 0 R R, 0 R R 0, R 0 0 R 형태를 HalfCircle 로 인식.
+            else if (brToks.Length == 4 && TryParseHalfCircleRadius(brToks, out var halfRot))
+            {
+                s.Kind             = ShapeKind.HalfCircle;
+                s.RotationAngleDeg = halfRot;
             }
             else
             {
@@ -2885,6 +2893,36 @@ public sealed class HtmlReader : IDocumentReader
 
         shape = s;
         return true;
+    }
+
+    /// <summary>
+    /// CSS <c>border-radius</c> 의 4-value 형식이 반원(HalfCircle) 패턴인지 검사.
+    /// TopLeft TopRight BottomRight BottomLeft 순. 두 인접 코너만 둥글고 나머지 둘은 0,
+    /// 그리고 둥근 반지름이 해당 변 길이의 절반에 가까울 때 HalfCircle 로 본다.
+    /// </summary>
+    /// <param name="rotationDeg">위쪽이 둥근 기본 모양 기준의 회전각 (도). 0/90/180/270.</param>
+    private static bool TryParseHalfCircleRadius(string[] toks, out double rotationDeg)
+    {
+        rotationDeg = 0;
+        if (toks.Length != 4) return false;
+
+        bool IsZero(string tok) => tok is "0" or "0px" or "0%" or "0mm" or "0pt";
+
+        // 4 코너 중 어느 두 개가 0 인지로 패턴 판별.
+        // tl tr br bl
+        bool tl0 = IsZero(toks[0]); bool tr0 = IsZero(toks[1]);
+        bool br0 = IsZero(toks[2]); bool bl0 = IsZero(toks[3]);
+
+        // R R 0 0 — 위쪽 둥근 (no rotation)
+        if (!tl0 && !tr0 && br0 && bl0) { rotationDeg = 0;   return true; }
+        // 0 0 R R — 아래쪽 둥근 (180)
+        if (tl0 && tr0 && !br0 && !bl0) { rotationDeg = 180; return true; }
+        // 0 R R 0 — 오른쪽 둥근 (90)
+        if (tl0 && !tr0 && !br0 && bl0) { rotationDeg = 90;  return true; }
+        // R 0 0 R — 왼쪽 둥근 (270)
+        if (!tl0 && tr0 && br0 && !bl0) { rotationDeg = 270; return true; }
+
+        return false;
     }
 
     /// <summary>CSS border-trick 삼각형 파싱 (width:0; height:0; border-* solid color).</summary>

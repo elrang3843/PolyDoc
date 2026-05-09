@@ -11,6 +11,7 @@ public enum ShapeKind
     Rectangle,
     RoundedRect,
     Ellipse,
+    HalfCircle,
     Triangle,
     RegularPolygon,
     Star,

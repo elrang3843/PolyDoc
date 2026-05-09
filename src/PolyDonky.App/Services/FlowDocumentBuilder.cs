@@ -1938,6 +1938,28 @@ public static class FlowDocumentBuilder
             case ShapeKind.Ellipse:
                 return new WpfMedia.EllipseGeometry(new Rect(0, 0, wDip, hDip));
 
+            case ShapeKind.HalfCircle:
+            {
+                // 위쪽이 둥근 반원 (CSS border-radius: r r 0 0 패턴 대응).
+                // (0, hDip) → 타원호 통해 (wDip, hDip) 까지, 위로 볼록.
+                // 회전이 필요하면 ShapeObject.RotationAngleDeg 로 처리한다.
+                var fig = new WpfMedia.PathFigure
+                {
+                    StartPoint = new Point(0, hDip),
+                    IsClosed   = true,
+                };
+                fig.Segments.Add(new WpfMedia.ArcSegment(
+                    point:          new Point(wDip, hDip),
+                    size:           new Size(wDip / 2.0, hDip),
+                    rotationAngle:  0,
+                    isLargeArc:     false,
+                    sweepDirection: WpfMedia.SweepDirection.Counterclockwise,
+                    isStroked:      true));
+                var pg = new WpfMedia.PathGeometry();
+                pg.Figures.Add(fig);
+                return pg;
+            }
+
             case ShapeKind.Line:
             {
                 var pts = GetPointsDip(shape.Points, wDip, hDip);
