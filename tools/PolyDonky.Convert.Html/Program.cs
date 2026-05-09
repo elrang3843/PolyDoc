@@ -853,6 +853,10 @@ static void WalkPseudo(IElement el, List<(string, ICssStyleDeclaration)> rules,
     // 우리가 직접 삽입한 합성 pseudo span 은 사용자 규칙 매치에서 제외 — 무한 재귀 방지.
     if (el.GetAttribute("data-pd-pseudo") is not null) return;
 
+    // <pre>/<code> 내부 요소에는 ::before/::after 를 DOM 텍스트로 주입하지 않는다.
+    // 줄 번호 CSS(counter(linenumber)) 등이 코드 내용에 섞여 WPF 줄 번호와 이중으로 표시되는 문제 방지.
+    bool insideCode = IsInsidePreOrCode(el);
+
     // 일반 요소의 counter-reset / counter-increment (regular 규칙 매치).
     foreach (var (sel, decl) in rules)
     {
@@ -866,20 +870,36 @@ static void WalkPseudo(IElement el, List<(string, ICssStyleDeclaration)> rules,
         if (!string.IsNullOrEmpty(incr)) ApplyCounterTokens(incr, counters, isReset: false);
     }
 
-    // ::before pseudo — 매치되는 모든 규칙을 캐스케이드 순서로 머지(같은 속성은 뒤가 이김), 단일 span 으로 삽입.
-    var beforeMerged = MergePseudoRules(el, pseudoBefore);
-    if (beforeMerged is { Count: > 0 })
-        InjectPseudoSpanFromProps(el, beforeMerged, isBefore: true, counters);
+    // ::before/::after pseudo — <pre>/<code> 내부는 건너뜀 (코드 텍스트 오염 방지).
+    if (!insideCode)
+    {
+        var beforeMerged = MergePseudoRules(el, pseudoBefore);
+        if (beforeMerged is { Count: > 0 })
+            InjectPseudoSpanFromProps(el, beforeMerged, isBefore: true, counters);
+    }
 
     // 자식 재귀 (스냅샷 — 삽입 중 인덱스 흔들림 방지)
     var children = el.Children.ToList();
     foreach (var child in children)
         WalkPseudo(child, rules, pseudoBefore, pseudoAfter, counters);
 
-    // ::after pseudo
-    var afterMerged = MergePseudoRules(el, pseudoAfter);
-    if (afterMerged is { Count: > 0 })
-        InjectPseudoSpanFromProps(el, afterMerged, isBefore: false, counters);
+    if (!insideCode)
+    {
+        var afterMerged = MergePseudoRules(el, pseudoAfter);
+        if (afterMerged is { Count: > 0 })
+            InjectPseudoSpanFromProps(el, afterMerged, isBefore: false, counters);
+    }
+}
+
+static bool IsInsidePreOrCode(IElement el)
+{
+    var parent = el.ParentElement;
+    while (parent is not null)
+    {
+        if (parent.LocalName is "pre" or "code") return true;
+        parent = parent.ParentElement;
+    }
+    return false;
 }
 
 static Dictionary<string,string>? MergePseudoRules(IElement el,

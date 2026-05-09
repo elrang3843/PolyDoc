@@ -738,8 +738,9 @@ public sealed class HtmlReader : IDocumentReader
     private static string ExtractCleanCodeText(IElement el)
     {
         // 줄 번호 span 이 없으면 TextContent 그대로 반환 (Prism.js 표준: .line-numbers-rows 내 span 은 비어 있음).
+        // span[data-pd-pseudo] 는 Convert.Html 이 CSS counter(linenumber) 를 실체화한 것 — 코드 블록 내에서는 제거.
         bool hasLineNumSpan = el.QuerySelector(
-            "span.line-numbers-rows, span.line-number, span.linenumber, span.ln, span.lineno") is not null;
+            "span.line-numbers-rows, span.line-number, span.linenumber, span.ln, span.lineno, span[data-pd-pseudo]") is not null;
         if (!hasLineNumSpan) return el.TextContent;
 
         // 줄 번호 span 이 있으면 자식 노드를 순회하며 해당 span 만 건너뛴다.
@@ -767,6 +768,8 @@ public sealed class HtmlReader : IDocumentReader
     private static bool IsLineNumberSpan(IElement el)
     {
         if (el.LocalName != "span") return false;
+        // Convert.Html 의 ResolvePseudoAndCounters 가 삽입한 가상 요소 — 코드 블록 안에서는 텍스트로 포함하지 않음.
+        if (el.HasAttribute("data-pd-pseudo")) return true;
         var cls = el.GetAttribute("class") ?? "";
         return cls.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(c =>
             c.Equals("line-numbers-rows", StringComparison.OrdinalIgnoreCase) ||
