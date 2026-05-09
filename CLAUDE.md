@@ -126,7 +126,7 @@ WPF 앱은 `net10.0-windows`). 중앙 패키지 관리(`Directory.Packages.props
 ```
 src/
   PolyDonky.Core/             공통 문서 모델 — PolyDonkyument/Section/Paragraph/Run/Block/Table/
-                              ShapeObject/TextBoxObject/ImageBlock/ThematicBreakBlock/TocBlock/OpaqueBlock/
+                              ShapeObject/TextBoxObject/ImageBlock/ContainerBlock/ThematicBreakBlock/TocBlock/OpaqueBlock/
                               StyleSheet/Provenance, IDocumentCodec, JSON 직렬화
   PolyDonky.Iwpf/             IWPF ZIP 패키지 reader/writer, manifest, 암호화, write-lock
   PolyDonky.Codecs.Text/      TXT codec
@@ -298,9 +298,9 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 
 ### 코드 블록 테마 주의사항
 
-`FlowDocumentBuilder.ApplyCodeBlockStyle` 은 `Paragraph.Background = #F8F8F8` (고정 light) 를 설정하지만 **`Foreground` 를 명시하지 않는다**. Dark 테마에서 RTB 가 상속하는 전경색이 light 계열이면 밝은 배경 위 밝은 글자 → 불가시. 코드 블록 배경을 바꿀 때는 반드시 Foreground 도 배경과 대비되는 색으로 명시 설정해야 한다.
+`FlowDocumentBuilder.ApplyCodeBlockStyle` 은 `Background = #F8F8F8`, `Foreground = #1A1A1A`, `BorderBrush = #D0D0D0` 을 모두 명시한다 — 배경·글자색·테두리가 항상 쌍으로 고정되므로 테마 상속에 의존하지 않는다. 배경색을 바꿀 때는 반드시 Foreground 도 대비되는 색으로 함께 바꿔야 한다.
 
-`BuildCodeBlockWithLineNumbers` 의 줄 번호 TextBlock 은 Foreground = `#888888` 을 명시 → 테마 무관 가시. 줄 텍스트 Run 은 Foreground 미지정 → 테마 상속.
+`BuildCodeBlockWithLineNumbers` 의 줄 번호 TextBlock 은 Foreground = `#888888`, 줄 텍스트 Run 은 Foreground = `#1A1A1A` 을 명시해 테마 무관 가시.
 
 ### 핵심 이름 주의사항
 
@@ -312,19 +312,19 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 `Block`은 `Section.Blocks`에 담기는 모든 요소의 추상 기반 클래스다. **`FloatingObject` 는 제거됨** — 도형·텍스트박스·표도 모두 `Block`을 상속하고, 오버레이 배치 객체는 `IOverlayAnchored`를 추가로 구현한다.
 
 현재 `Block` 서브클래스:
-- `Paragraph` — 일반 문단, 개요/목록/코드블록/인용구 포함
+- `Paragraph` — 일반 문단, 개요/목록/코드블록/인용구 포함. `CodeLanguage`(non-null이면 코드 블록, `""`=언어 미지정)와 `ShowLineNumbers`는 Run이 아닌 **Paragraph 속성**.
 - `Table` — 표 (병합 지원)
 - `ImageBlock` — 블록 레벨 이미지 (`ImageWrapMode`로 인라인/float 구분)
 - `ShapeObject` — 벡터 도형 (선/폴리선/스플라인/사각형/타원 등 11종)
-- `TextBoxObject` — 글상자 (다단·말풍선·회전 지원, 내부 `IList<Block>` 포함) — 물리 파일은 `FloatingObject.cs`
-- `ContainerBlock` — 논리 그룹 박스 (배경·테두리·패딩; HTML div/alert/admonition 등). WPF 렌더 시 `Wpf.Section` 으로 변환.
+- `TextBoxObject` — 글상자 (다단·말풍선·회전 지원, `Content: IList<Block>`) — 물리 파일은 `FloatingObject.cs`
+- `ContainerBlock` — 논리 그룹 박스 (`Children: IList<Block>`, 4면 테두리·배경·패딩·마진·너비). HTML `class` 속성은 `ClassNames` 로 보존, `Role: ContainerRole` (Generic/Toc/Alert/PageBreakMarker/HeaderFooterSim/QuoteBox) 로 의미 힌트. WPF 렌더 시 `Wpf.Section` 으로 변환.
 - `ThematicBreakBlock` — 수평선 (HR)
 - `TocBlock` — 목차
 - `OpaqueBlock` — 미인식 콘텐츠 보존
 
 `Section`에는 더 이상 `FloatingObjects` 컬렉션이 없다 (구형 JSON 역직렬화 호환을 위한 `LegacyFloatingObjects`만 존재). `IOverlayAnchored` 구현 객체(`ShapeObject`, `TextBoxObject`, `Table`, `ImageBlock`)의 overlay 위치는 `AnchorPageIndex`, `OverlayXMm`, `OverlayYMm`으로 표현한다.
 
-`Run` 인라인 기능: 일반 텍스트 외에 `LatexSource`(수식), `EmojiKey`(이모지), `FootnoteId`/`EndnoteId`(각주/미주 참조), `Field`(FieldType: Page/NumPages/Date/Time/Author/Title), `Url`(하이퍼링크)을 하나의 `Run`으로 표현한다.
+`Run` 인라인 기능: 일반 텍스트 외에 `LatexSource`(수식, `IsDisplayEquation`으로 inline/display 구분), `EmojiKey`(이모지, `EmojiAlignment`: TextTop/Center/TextBottom/Baseline), `FootnoteId`/`EndnoteId`(각주/미주 참조), `Field`(FieldType: Page/NumPages/Date/Time/Author/Title), `Url`(하이퍼링크)을 하나의 `Run`으로 표현한다.
 
 ## 작업 시 유의사항
 
