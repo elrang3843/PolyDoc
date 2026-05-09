@@ -222,11 +222,11 @@ public static class FlowDocumentPaginationAdapter
         // PerPageEditorHost.ClipRenderingTolerance 와 동일한 값을 유지한다.
         const double BoundaryTol = 2.0;
 
-        // 단 슬롯별 실제 사용 높이 (DIP). 의미: "슬롯 내 최대 localBottomY" =
-        // 슬롯 시작점부터 현재까지 콘텐츠가 도달한 최하단 Y (margin·padding·gap 포함).
-        // 단순 높이 합산이 아니라 max(bottomY − slotStart) 로 추적하므로 블록 사이 margin
-        // 이나 ContainerBlock(Section) padding 같은 빈 공간이 모두 자동 반영된다.
-        // 페이지 경계 결정과 fillOverflow/splitY 계산의 입력으로 사용된다.
+        // 단 슬롯별 누적 채움 높이 (DIP). 의미: 슬롯에 배정된 블록들의 "커서" —
+        // 이전 블록 채움 + 블록 간 gap(WPF 마진 붕괴 반영) + 이 블록 높이 를 순차 누적한다.
+        // 슬롯 이동(페이지 경계 초과·강제 나누기)이 발생하면 gap=0 으로 리셋해 슬롯 커서가
+        // 이전 슬롯의 연속으로 이어지지 않도록 한다.
+        // 페이지 경계 결정(fillOverflow), 단락 분할, 디버그 오버레이 표시에 사용된다.
         var slotFill = new System.Collections.Generic.Dictionary<int, double>();
 
         // 직전 블록이 최종 배정된 슬롯 인덱스. ForcePageBreakBefore 단락을 다음 페이지로
@@ -239,6 +239,11 @@ public static class FlowDocumentPaginationAdapter
         // (모든 콘텐츠가 한 페이지에 들어갈 만큼 짧아도 페이지 나누기가 정확히 작동하게 함.)
         int minSlot = 0;
 
+        // 직전 블록의 연속 레이아웃 bottomY. 블록 사이 간격(gap)을 계산하는 데 사용한다.
+        // gap = topY[i] - prevContBottom[i-1] — 이 값은 WPF 마진 붕괴(margin collapsing)와
+        // 행간 여백을 이미 반영한 실제 간격이다.
+        double prevContBottom = double.NaN;
+
         for (int i = 0; i < flat.Count; i++)
         {
             var wpfBlock = flat[i];
@@ -247,6 +252,12 @@ public static class FlowDocumentPaginationAdapter
 
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock, colWidth);
+
+            // 직전 블록과의 간격 (연속 레이아웃 기준). WPF 가 마진 붕괴를 이미 적용한 값이므로
+            // 이 gap 을 슬롯 커서에 더하면 페이지 내 실제 간격이 자동으로 반영된다.
+            double gap = (!double.IsNaN(prevContBottom) && !double.IsNaN(topY) && topY > prevContBottom)
+                ? topY - prevContBottom
+                : 0.0;
 
             // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
@@ -262,6 +273,7 @@ public static class FlowDocumentPaginationAdapter
                     prevSlot = tblSlot;
                     minSlot  = Math.Max(minSlot, tblSlot);
                 }
+                if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
                 continue;
             }
 
@@ -292,6 +304,7 @@ public static class FlowDocumentPaginationAdapter
                 int forcedSlot = ((prevSlot / colCount) + 1) * colCount;
                 if (slotTop < forcedSlot) slotTop = forcedSlot;
                 minSlot = slotTop;
+                gap = 0.0; // 페이지 나누기 후에는 앞 간격 리셋
             }
 
             // ── 줄 단위 분할 ──────────────────────────────────────────────────────────
@@ -306,9 +319,10 @@ public static class FlowDocumentPaginationAdapter
             {
                 double slotBoundaryY = (slotTop + 1) * bodyH;
                 bool   crossesBoundary = !double.IsNaN(bottomY) && bottomY > slotBoundaryY + BoundaryTol;
-                // slotFill = 슬롯 내 max localBottomY (margin·section padding 포함). 이 단락의
-                // bottomY 가 슬롯을 안 넘어도, 이미 다른 블록이 슬롯 끝까지 채웠다면 이 단락은 잘릴 것.
-                bool   fillOverflow    = slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH + BoundaryTol;
+                // 슬롯 커서(이전 블록들이 채운 양) + 현재 블록까지의 간격 + 이 단락 높이가 슬롯을 넘으면 오버플로.
+                // cursor = slotFill[slotTop] 은 이전에 이 슬롯에 배정된 블록들의 누적 채움이다.
+                double cursor4Para     = slotFill.GetValueOrDefault(slotTop, 0.0);
+                bool   fillOverflow    = cursor4Para + gap + blockH > bodyH + BoundaryTol;
 
                 if (crossesBoundary || fillOverflow)
                 {
@@ -324,7 +338,7 @@ public static class FlowDocumentPaginationAdapter
                     {
                         var (frag1, frag2) = SplitCoreParagraph(corePara, splitCharOffset);
 
-                        // 첫 조각 → 현재 슬롯. localBottomY = splitY - slotStart = bodyH (슬롯 가득 참).
+                        // 첫 조각 → 현재 슬롯. 슬롯을 끝까지 채운 것으로 표시.
                         slotFill[slotTop] = bodyH;
                         var rect1 = TryGetColumnLocalRect(
                             wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
@@ -339,17 +353,19 @@ public static class FlowDocumentPaginationAdapter
                                 nextSlot++;
                         }
                         if (frag2H > 0)
+                            // 커서 누적: nextSlot 에 이미 채워진 양 + frag2H
                             slotFill[nextSlot] = Math.Min(bodyH,
-                                Math.Max(slotFill.GetValueOrDefault(nextSlot, 0.0), frag2H));
+                                slotFill.GetValueOrDefault(nextSlot, 0.0) + frag2H);
                         result.Add((nextSlot / colCount, nextSlot % colCount, frag2, Rect.Empty));
 
                         prevSlot = nextSlot;
+                        if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
                         continue; // 아래 단일 블록 처리 생략
                     }
                 }
             }
 
-            // ── 단일 블록 배정 (기존 로직) ────────────────────────────────────────────
+            // ── 단일 블록 배정 ────────────────────────────────────────────────────────
             // 블록이 단 슬롯 경계를 넘고 한 슬롯에 들어갈 만큼 작으면 다음 슬롯으로 이동.
             // BoundaryTol 이하의 초과는 mm→DIP 변환 오차로 보고 현재 슬롯에 유지한다.
             // 강제 페이지 나누기 단락은 위에서 이미 슬롯을 끌어올렸으므로 이 보정을 건너뛴다
@@ -365,33 +381,35 @@ public static class FlowDocumentPaginationAdapter
                 && (blockH < bodyH || isTable))
             {
                 slotTop += 1;
+                gap = 0.0; // 슬롯 이동 시 간격 리셋 — 새 슬롯은 이전 슬롯의 연속이 아니다
             }
 
-            // 슬롯 누적 채움이 이 블록을 수용하기에 부족하면 다음 슬롯으로 밀어낸다.
-            // bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
+            // 슬롯 커서(이 슬롯에 이미 배정된 누적 채움) + gap + blockH 가 슬롯 높이를 넘으면
+            // 다음 슬롯으로 밀어낸다. bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
             if (blockH > 0 && blockH < bodyH)
             {
-                while (slotFill.GetValueOrDefault(slotTop, 0.0) + blockH > bodyH + BoundaryTol)
+                while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH + BoundaryTol)
+                {
                     slotTop += 1;
+                    gap = 0.0; // 슬롯 이동 시 간격 리셋
+                }
             }
 
-            // 슬롯 채움 갱신: 슬롯 내 max localBottomY 로 추적 (margin·padding·gap 자동 포함).
-            // 자연 배치(bottomY 유효): localBottomY = bottomY - slotStart.
-            // 강제 슬롯 이동·NaN bottomY: 이전 fill + blockH 로 fallback (sum-style).
+            // 슬롯 채움 갱신: "이전 커서 + 간격 + 이 블록 높이" 의 순수 누적.
+            // 블록이 같은 슬롯에 자연 배치되면 gap 이 실제 WPF 마진·행간을 반영하고,
+            // 슬롯 이동 후라면 gap=0 이므로 blockH 만 더해진다.
+            // 이전 bottomY 기준 localBottomY 방식은 블록이 이동됐을 때 실제 높이를 과소평가했다.
             if (blockH > 0)
             {
-                double slotStartY    = slotTop * bodyH;
-                double prevFill      = slotFill.GetValueOrDefault(slotTop, 0.0);
-                double localBottomY  = !double.IsNaN(bottomY) && bottomY > slotStartY
-                    ? bottomY - slotStartY
-                    : prevFill + blockH;
-                slotFill[slotTop] = Math.Min(bodyH, Math.Max(prevFill, localBottomY));
+                double prevFill = slotFill.GetValueOrDefault(slotTop, 0.0);
+                slotFill[slotTop] = Math.Min(bodyH, prevFill + gap + blockH);
             }
 
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
             prevSlot = slotTop;
+            if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
