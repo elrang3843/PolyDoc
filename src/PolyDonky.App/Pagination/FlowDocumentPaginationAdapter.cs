@@ -225,6 +225,12 @@ public static class FlowDocumentPaginationAdapter
         // PerPageEditorHost.ClipRenderingTolerance 와 동일한 값을 유지한다.
         const double BoundaryTol = 2.0;
 
+        // 페이지 하단에 남겨두는 최소 여유 공간 (DIP).
+        // 오프스크린 RTB 측정값과 실제 렌더 높이 사이의 누적 오차(Padding.Bottom 일부 미반영,
+        // 마진 붕괴 근사 등)를 흡수하기 위한 safety margin.
+        // 이 값보다 작은 공간이 남으면 다음 블록을 다음 슬롯으로 밀어낸다.
+        const double FillSafetyMarginDip = 15.0;
+
         // 단 슬롯별 누적 채움 높이 (DIP). 의미: 슬롯에 배정된 블록들의 "커서" —
         // 이전 블록 채움 + 블록 간 gap(WPF 마진 붕괴 반영) + 이 블록 높이 를 순차 누적한다.
         // 슬롯 이동(페이지 경계 초과·강제 나누기)이 발생하면 gap=0 으로 리셋해 슬롯 커서가
@@ -250,6 +256,29 @@ public static class FlowDocumentPaginationAdapter
         for (int i = 0; i < flat.Count; i++)
         {
             var wpfBlock = flat[i];
+
+            // 이미지/표 캡션 단락은 Core Block 이 없는 WPF 전용 블록 — Core 배정 대상은 아니지만
+            // 실제 렌더 높이를 차지하므로 slotFill 과 prevContBottom 은 갱신해야 한다.
+            bool isSatellitePara = wpfBlock.Tag is FlowDocumentBuilder.ImageCaptionTag
+                                  || wpfBlock.Tag == FlowDocumentBuilder.TableCaptionTag;
+            if (isSatellitePara)
+            {
+                double satTopY    = TryGetTopY(wpfBlock);
+                double satBottomY = TryGetBottomY(wpfBlock, colWidth);
+                double satBlockH  = (!double.IsNaN(satBottomY) && satBottomY > satTopY) ? satBottomY - satTopY : 0.0;
+                if (satBlockH > 0)
+                {
+                    double satGap = (!double.IsNaN(prevContBottom) && !double.IsNaN(satTopY) && satTopY > prevContBottom)
+                        ? satTopY - prevContBottom : 0.0;
+                    int satSlot = Math.Max(prevSlot >= 0 ? prevSlot : 0,
+                                          (int)(satTopY / bodyH));
+                    double satPrevFill = slotFill.GetValueOrDefault(satSlot, 0.0);
+                    slotFill[satSlot] = Math.Min(bodyH, satPrevFill + satGap + satBlockH);
+                }
+                if (!double.IsNaN(satBottomY)) prevContBottom = satBottomY;
+                continue;
+            }
+
             if (wpfBlock.Tag is not Block coreBlock) continue;
             if (IsOverlayMode(coreBlock)) continue;
 
@@ -391,7 +420,7 @@ public static class FlowDocumentPaginationAdapter
             // 다음 슬롯으로 밀어낸다. bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
             if (blockH > 0 && blockH < bodyH)
             {
-                while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH + BoundaryTol)
+                while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH - FillSafetyMarginDip)
                 {
                     slotTop += 1;
                     gap = 0.0; // 슬롯 이동 시 간격 리셋
