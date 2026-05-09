@@ -84,6 +84,11 @@ public sealed class Table : Block, IOverlayAnchored
     /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
     public int HeaderColumnCount { get; set; }
 
+    /// <summary>인접 셀 보더가 단일 선으로 합쳐지는지(true) 또는 셀별로 별도 보더를 갖는지(false).
+    /// CSS <c>border-collapse:collapse</c> 에 대응. 기본 true — 워드프로세서 도메인의 일반적인 표 외형.
+    /// false (separate) 이면 각 셀이 자기 4면 보더를 모두 그려 셀 사이에 doubled 라인이 생긴다.</summary>
+    public bool BorderCollapse { get; set; } = true;
+
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }

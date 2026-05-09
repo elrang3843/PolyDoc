@@ -577,8 +577,8 @@ public sealed class HtmlWriter : IDocumentWriter
         {
             var bColor = t.BorderColor is { Length: > 0 } ? t.BorderColor : "#C8C8C8";
             tblStyle.Add($"border:{t.BorderThicknessPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {bColor}");
-            tblStyle.Add("border-collapse:collapse");
         }
+        tblStyle.Add(t.BorderCollapse ? "border-collapse:collapse" : "border-collapse:separate");
         if (t.OuterMarginTopMm > 0 || t.OuterMarginBottomMm > 0)
             tblStyle.Add($"margin:{FmtMm(t.OuterMarginTopMm)} 0 {FmtMm(t.OuterMarginBottomMm)} 0");
 

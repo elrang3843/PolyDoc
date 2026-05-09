@@ -757,6 +757,11 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(tblStyle, "margin-top"),    out var tblMt) && tblMt > 0) t.OuterMarginTopMm    = tblMt;
         if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
 
+        // border-collapse: separate → false, 그 외(collapse 또는 미지정) → true (기본값).
+        if (StyleProp(tblStyle, "border-collapse") is { } bc &&
+            bc.Equals("separate", StringComparison.OrdinalIgnoreCase))
+            t.BorderCollapse = false;
+
         // 표 외곽선 shorthand (border:Npt solid #HHH).
         if (StyleProp(tblStyle, "border") is { } tblBorderVal)
         {

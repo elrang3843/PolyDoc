@@ -663,11 +663,20 @@ public static class FlowDocumentBuilder
                                             : 0.75;
 
         wcell.BorderBrush     = new WpfMedia.SolidColorBrush(borderColor);
-        wcell.BorderThickness = new Thickness(
-            PtToDip(FallbackThk(left.ThicknessPt)),
-            PtToDip(FallbackThk(top.ThicknessPt)),
-            PtToDip(FallbackThk(right.ThicknessPt)),
-            PtToDip(FallbackThk(bottom.ThicknessPt)));
+        // border-collapse 시뮬레이션: WPF Table 은 셀별로 보더를 그려 인접 셀의 공유 모서리에서
+        // doubled 라인이 생긴다. tableDefaults.BorderCollapse=true 인 경우 셀의 위/왼쪽 보더를
+        // 가장자리에서만 그려 한쪽(오른쪽 + 아래) 으로 일관 — 인접 셀 사이엔 단일 라인만 남게 한다.
+        bool collapse = tableDefaults?.BorderCollapse ?? true;
+        double leftDip   = PtToDip(FallbackThk(left.ThicknessPt));
+        double topDip    = PtToDip(FallbackThk(top.ThicknessPt));
+        double rightDip  = PtToDip(FallbackThk(right.ThicknessPt));
+        double bottomDip = PtToDip(FallbackThk(bottom.ThicknessPt));
+        if (collapse)
+        {
+            if (!atTopEdge)  topDip  = 0;
+            if (!atLeftEdge) leftDip = 0;
+        }
+        wcell.BorderThickness = new Thickness(leftDip, topDip, rightDip, bottomDip);
 
         double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : 1.0;
         double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : 1.0;
