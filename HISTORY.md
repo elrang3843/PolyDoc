@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Fixed** — **`ContainerBlock` (`Wpf.Section`) 가 페이지네이션에서 단일 블록으로 처리돼 페이지를 넘어가던 문제**: `FlowDocumentPaginationAdapter.FlattenBlocks` 가 `Wpf.List` 만 재귀하고 `Wpf.Section` 은 통째로 yield 해서, 박스 컨테이너(`.toc`/`.alert`/styled `<div>`) 의 모든 자식이 Section 의 단일 Y 좌표 한 점에 묶여 한 페이지 슬롯에 몰렸다. 컨테이너가 페이지 본문보다 길면 그대로 다음 페이지로 흘러넘쳐 RTB 내부 스크롤이 발생했다. Section 을 자체 yield 하지 않고 자식만 재귀하도록 변경 — 자식 단락/표/이미지가 각자의 Y 로 정상 페이지 분산. 단점: Section 이 페이지 경계를 넘는 경우 box framing(테두리/배경) 이 페이지마다 다시 그려지지 않아 시각적으로 끊긴다 (정상 워드프로세서도 동일 한계).
+
 - **Fixed** — **단일 단 페이지가 내부 스크롤되던 문제**: `PerPageEditorHost` 의 단일 단 RTB 가 `VerticalScrollBarVisibility = Hidden` 이라 스크롤바만 숨겨지고 키보드/휠 스크롤은 살아있었다. 페이지네이션이 한 페이지에 들어갈 양보다 큰 블록(긴 표·이미지·단락) 을 배정한 경우 사용자가 페이지 안을 스크롤해 인쇄·미리보기 결과와 시각적으로 어긋났다. 다단처럼 `Disabled` 로 통일 — 페이지 영역을 넘는 콘텐츠는 클리핑되고 RTB 내부 스크롤은 더 이상 일어나지 않는다.
 
 - **Fixed** — **누락 이미지(figcaption) 캡션이 안 보이던 문제**: `BuildImage` 의 `Data.Length == 0` 폴백 분기가 깨진-이미지 아이콘만 그리고 `WrapImageWithTitle` 을 호출하지 않아 `ImageBlock.Title` 이 무시됐다 (샘플의 `https://via.placeholder.com/...` 처럼 외부 URL 이라 데이터가 비는 케이스에서 figcaption 사라짐). 정상 이미지 경로와 동일하게 wrap 거치도록 수정 — 깨진 아이콘 아래 캡션이 정상 출력.

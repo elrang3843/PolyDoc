@@ -531,6 +531,18 @@ public static class FlowDocumentPaginationAdapter
     {
         foreach (var b in blocks)
         {
+            // Section(=ContainerBlock 렌더 결과) 은 자체를 yield 하지 않고 자식만 재귀.
+            // 그래야 Section 안의 단락/표/이미지가 Section 의 단일 Y 좌표 한 점이 아닌
+            // 각자의 Y 로 페이지에 배정돼 컨테이너가 길어도 페이지를 넘어 분산된다.
+            // 페이지 단위 box 시각화는 같은 페이지에 모든 자식이 들어갔을 때만 보장 — Section 이
+            // 페이지 경계를 넘으면 box framing 이 끊긴다 (현재 단계의 trade-off).
+            if (b is WpfDocs.Section sect)
+            {
+                foreach (var nested in FlattenBlocks(sect.Blocks))
+                    yield return nested;
+                continue;
+            }
+
             yield return b;
             if (b is WpfDocs.List list)
             {
