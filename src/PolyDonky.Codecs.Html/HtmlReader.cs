@@ -449,6 +449,8 @@ public sealed class HtmlReader : IDocumentReader
                     target.Add(BuildTocBlock(el));
                     break;
                 }
+                if (TryWrapAsContainer(el, target, ctx, navCls))
+                    break;
                 ProcessChildren(el, target, ctx);
                 break;
             }

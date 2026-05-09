@@ -2067,6 +2067,11 @@ public static class FlowDocumentBuilder
         var numBorder = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0xC0, 0xC0, 0xC0));
         var monoFamily = new WpfMedia.FontFamily("Consolas, D2Coding, monospace");
 
+        // CSS color 속성이 Run.Style.Foreground 에 저장된 경우 그 색을 사용, 없으면 기본값.
+        var codeFg = sourceRuns.Count > 0 && sourceRuns[0].Style.Foreground is { } cfgC
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(cfgC.A, cfgC.R, cfgC.G, cfgC.B))
+            : new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x1A, 0x1A, 0x1A));
+
         for (int i = 0; i < lines.Length; i++)
         {
             var numTb = new System.Windows.Controls.TextBlock
@@ -2096,7 +2101,7 @@ public static class FlowDocumentBuilder
             {
                 FontFamily = monoFamily,
                 FontSize   = fontSize,
-                Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromRgb(0x1A, 0x1A, 0x1A)),
+                Foreground = codeFg,
             };
             if (sourceRuns.Count > 0)
             {
