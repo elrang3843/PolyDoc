@@ -201,6 +201,8 @@ CI 워크플로: `.github/workflows/dotnet.yml`(라이브러리/테스트),
 `.github/workflows/dotnet-desktop.yml`(WPF 앱). 분석기 경고는 빌드 오류로 승격되므로
 무시하지 말고 수정한다.
 
+> **주의**: `dotnet.yml` 의 `dotnet-version: 8.0.x` 는 오래된 값이다 — 프로젝트는 `global.json` 기준 SDK `10.0.107` 이 필요하므로, CI 파이프라인을 수정할 때 `dotnet-version: 10.0.x` 로 업데이트해야 한다.
+
 ## WPF 앱 내부 구조
 
 ### PaperHost 캔버스 레이어 스택 (z-순서, 아래→위)
@@ -244,10 +246,59 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 
 ### MainWindow 부분 클래스 분리
 
-- `Views/MainWindow.xaml.cs` — 문서 로드/저장, 오버레이 배치, 마우스 핸들러, 메뉴 빌더 전체
+- `Views/MainWindow.xaml.cs` (~6,500 줄) — 문서 로드/저장, 오버레이 배치, 마우스 핸들러, 메뉴 빌더 전체
 - `Views/MainWindow.ShapeEdit.cs` — 도형 편집 핸들(`_shapeEditHandles`, 정점/세그먼트) + `OnShapeEditHandleRightClicked`
 
+두 파일 모두 대형 파일이므로 수정 전 반드시 부분 읽기(`offset` / `limit`)로 해당 영역만 확인한다.
 도형 편집 코드 수정 시 두 파일을 함께 본다.
+
+### 페이지네이션 파이프라인
+
+문서를 화면에 표시하기까지 5단계를 거친다. **모두 STA 스레드 전용** (WPF `DependencyObject` 의존).
+
+```
+1. FlowDocumentBuilder.Build(doc)
+   → Wpf.FlowDocument (편집·측정용)
+
+2. FlowDocumentPaginationAdapter.Paginate(doc)
+   → PaginatedDocument (페이지별 블록 배정 테이블)
+   ※ MaxBlocksForPreciseMapping = 2,500 초과 시 fast-path (모든 블록 → page 0 일괄 배정)
+   ※ FlattenBlocks: Wpf.List + Wpf.Section 재귀, Wpf.Table 은 TableRowSplitter 로 분할
+
+3. PerPageDocumentSplitter.Split(paginated)
+   → IReadOnlyList<PerPageDocumentSlice>  (페이지·단별 Core 블록 목록)
+
+4. PerPageEditorHost.LoadSlices(slices, geo, configure)
+   → RichTextBox N개 (페이지당 단 수만큼) Canvas 배치
+
+5. PageViewBuilder.BuildPageFrames(canvas, geo, …)
+   → 페이지 테두리·그림자·여백 가이드 렌더
+```
+
+`PerPageDocumentSplitter` 는 Core 모델만 알고 WPF 를 직접 만지지 않는다.
+`PerPageEditorHost` 가 슬라이스를 받아 RTB 를 생성하고, `FlowDocumentBuilder` 로 각 슬라이스를 FlowDocument 로 변환해 할당한다.
+
+### FlowDocumentParser Tag-merge 전략
+
+`FlowDocumentParser.Parse(fd, originalDoc)` 는 **FlowDocument 의 각 Block.Tag 를 보고 원본 Core 노드를 식별**해 머지한다. Tag 가 없거나 타입이 다르면 새 Core 노드를 생성한다.
+
+중요 제약: `TextBoxObject` (글상자) 는 FlowDocument 본문 흐름에 anchor 가 없는 부유 객체라 Parser 로 역직렬화되지 않는다. Parse 후 `originalDoc` 에서 `TextBoxObject` 를 직접 인계해 Section.Blocks 에 재삽입하는 별도 코드(`if (b is TextBoxObject)`)가 있다 — 이 코드 제거 시 글상자 전부 소실.
+
+### CLI 변환기 프로토콜
+
+`ExternalConverter.ConvertAsync` 가 spawn 하는 CLI 도구가 따르는 규약:
+- **stdout**: `PROGRESS:<0-100>:<메시지>` 형식으로 진행상황 보고 (다른 줄은 무시됨)
+- **종료 코드 0**: 성공
+- **종료 코드 6** (`ExitCodeUnsupportedVersion`): 지원 범위 밖 포맷 버전 → `UnsupportedFormatVersionException`
+- **그 외 비-0**: 오류 (stderr 내용을 `InvalidOperationException` 메시지에 포함)
+
+새 CLI 컨버터 추가 시 이 규약을 그대로 지켜야 메인 앱의 진행 대화상자와 오류 처리가 작동한다.
+
+### 코드 블록 테마 주의사항
+
+`FlowDocumentBuilder.ApplyCodeBlockStyle` 은 `Paragraph.Background = #F8F8F8` (고정 light) 를 설정하지만 **`Foreground` 를 명시하지 않는다**. Dark 테마에서 RTB 가 상속하는 전경색이 light 계열이면 밝은 배경 위 밝은 글자 → 불가시. 코드 블록 배경을 바꿀 때는 반드시 Foreground 도 배경과 대비되는 색으로 명시 설정해야 한다.
+
+`BuildCodeBlockWithLineNumbers` 의 줄 번호 TextBlock 은 Foreground = `#888888` 을 명시 → 테마 무관 가시. 줄 텍스트 Run 은 Foreground 미지정 → 테마 상속.
 
 ### 핵심 이름 주의사항
 
@@ -264,6 +315,7 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 - `ImageBlock` — 블록 레벨 이미지 (`ImageWrapMode`로 인라인/float 구분)
 - `ShapeObject` — 벡터 도형 (선/폴리선/스플라인/사각형/타원 등 11종)
 - `TextBoxObject` — 글상자 (다단·말풍선·회전 지원, 내부 `IList<Block>` 포함)
+- `ContainerBlock` — 논리 그룹 박스 (배경·테두리·패딩; HTML div/alert/admonition 등). WPF 렌더 시 `Wpf.Section` 으로 변환.
 - `ThematicBreakBlock` — 수평선 (HR)
 - `TocBlock` — 목차
 - `OpaqueBlock` — 미인식 콘텐츠 보존
