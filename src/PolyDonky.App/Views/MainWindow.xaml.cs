@@ -2157,10 +2157,14 @@ public partial class MainWindow : Window
                 Padding          = new Thickness(3, 1, 3, 1),
                 IsHitTestVisible = false,
             };
-            // 좌측 하단 여백 안쪽 — 페이지 번호(좌상단) 와 충돌하지 않음.
+            // 좌측 — 텍스트 높이 측정 후 페이지 바닥 안쪽에 정렬 (아래로 잘리지 않도록).
+            // bodyArea 하단 바로 아래 ~ 페이지 바닥 4 DIP 안쪽 사이에 배치되며,
+            // 길이가 많으면 위쪽 본문 영역으로 자라난다.
+            debugLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double dbgH = debugLabel.DesiredSize.Height;
             System.Windows.Controls.Canvas.SetLeft(debugLabel, 6);
-            System.Windows.Controls.Canvas.SetTop (debugLabel,
-                topY + pg.PageHeightDip - pg.PadBottomDip + 4);
+            System.Windows.Controls.Canvas.SetTop(debugLabel,
+                topY + pg.PageHeightDip - dbgH - 4);
             PageBackgroundCanvas.Children.Add(debugLabel);
         }
 
