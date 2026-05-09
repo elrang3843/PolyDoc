@@ -1517,8 +1517,6 @@ public static class FlowDocumentBuilder
         double wDip = MmToDip(shape.WidthMm);
         double hDip = MmToDip(shape.HeightMm);
         var visual  = BuildShapeVisual(shape, wDip, hDip);
-        // 인라인 도형: LayoutTransform 으로 회전해야 WPF 레이아웃이 회전된 경계 박스를 확보.
-        ApplyShapeRotation(visual, shape.RotationAngleDeg, useLayoutTransform: true);
 
         var marginTopDip    = MmToDip(shape.MarginTopMm);
         var marginBottomDip = MmToDip(shape.MarginBottomMm);
@@ -1531,10 +1529,15 @@ public static class FlowDocumentBuilder
         };
         visual.HorizontalAlignment = imgHA;
 
+        // 인라인 도형의 회전: 회전된 경계 박스 크기의 Grid 로 감싸 레이아웃이 그 공간을 확보하도록 한다.
+        // (Canvas 자체의 LayoutTransform 은 explicit Width/Height 와 BlockUIContainer 의
+        // measure 와 상호작용이 불안정해 신뢰할 수 없음.)
+        FrameworkElement inlineHost = BuildInlineRotationHost(visual, shape.RotationAngleDeg, wDip, hDip, imgHA);
+
         // ── Inline ────────────────────────────────────────────────────────
         if (shape.WrapMode == ImageWrapMode.Inline)
         {
-            return new Wpf.BlockUIContainer(visual)
+            return new Wpf.BlockUIContainer(inlineHost)
             {
                 Tag           = shape,
                 Margin        = new Thickness(0, marginTopDip, 0, marginBottomDip),
@@ -1561,7 +1564,7 @@ public static class FlowDocumentBuilder
                 marginBottomDip),
         };
         if (shape.WidthMm > 0) floater.Width = wDip;
-        floater.Blocks.Add(new Wpf.BlockUIContainer(visual));
+        floater.Blocks.Add(new Wpf.BlockUIContainer(inlineHost));
 
         var paragraph = new Wpf.Paragraph
         {
@@ -1586,8 +1589,7 @@ public static class FlowDocumentBuilder
         double wDip = MmToDip(shape.WidthMm);
         double hDip = MmToDip(shape.HeightMm);
         var canvas  = BuildShapeVisual(shape, wDip, hDip);
-        // 오버레이 도형: 절대 위치 배치이므로 RenderTransform 으로 회전.
-        ApplyShapeRotation(canvas, shape.RotationAngleDeg, useLayoutTransform: false);
+        ApplyOverlayShapeRotation(canvas, shape.RotationAngleDeg);
         return canvas;
     }
 
@@ -1701,26 +1703,46 @@ public static class FlowDocumentBuilder
         return canvas;
     }
 
-    // 회전 적용 — 인라인(레이아웃 공간 확보 필요)과 오버레이(절대 위치) 를 달리 처리.
-    private static void ApplyShapeRotation(
-        System.Windows.Controls.Canvas canvas, double angleDeg, bool useLayoutTransform)
+    // 오버레이 도형 회전 적용 — 절대 위치 배치이므로 RenderTransform 으로 충분.
+    private static void ApplyOverlayShapeRotation(System.Windows.Controls.Canvas canvas, double angleDeg)
     {
         if (Math.Abs(angleDeg) < 0.01) return;
+        canvas.RenderTransformOrigin = new Point(0.5, 0.5);
+        canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
+    }
 
-        if (useLayoutTransform)
+    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 Grid 안에 캔버스를 가운데 배치하고
+    // 캔버스에는 RenderTransform 으로 회전을 건다. Grid 자체가 큰 경계 박스를 점유해 셀 행 높이가
+    // 회전된 도형 크기에 맞춰 늘어난다 (LayoutTransform on Canvas 는 BlockUIContainer measure 와
+    // 상호작용이 불안정해 사용하지 않음).
+    private static FrameworkElement BuildInlineRotationHost(
+        System.Windows.Controls.Canvas canvas,
+        double angleDeg,
+        double wDip,
+        double hDip,
+        HorizontalAlignment hAlign)
+    {
+        if (Math.Abs(angleDeg) < 0.01) return canvas;
+
+        double rad   = angleDeg * Math.PI / 180.0;
+        double cos   = Math.Abs(Math.Cos(rad));
+        double sin   = Math.Abs(Math.Sin(rad));
+        double rotW  = wDip * cos + hDip * sin;
+        double rotH  = wDip * sin + hDip * cos;
+
+        canvas.RenderTransformOrigin = new Point(0.5, 0.5);
+        canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
+        canvas.HorizontalAlignment = HorizontalAlignment.Center;
+        canvas.VerticalAlignment   = VerticalAlignment.Center;
+
+        var grid = new System.Windows.Controls.Grid
         {
-            // LayoutTransform: WPF 레이아웃 패스가 회전된 경계 박스 크기를 확보 → 클리핑 없음.
-            canvas.LayoutTransform = new WpfMedia.RotateTransform(
-                angleDeg,
-                canvas.Width  / 2.0,
-                canvas.Height / 2.0);
-        }
-        else
-        {
-            // RenderTransform: 오버레이(절대 좌표) 에서는 레이아웃 공간이 불필요.
-            canvas.RenderTransformOrigin = new Point(0.5, 0.5);
-            canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
-        }
+            Width  = rotW,
+            Height = rotH,
+            HorizontalAlignment = hAlign,
+        };
+        grid.Children.Add(canvas);
+        return grid;
     }
 
     private static WpfMedia.DoubleCollection? BuildDashArray(StrokeDash dash, double strokeDip)
