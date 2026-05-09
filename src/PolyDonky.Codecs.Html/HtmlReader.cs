@@ -271,7 +271,7 @@ public sealed class HtmlReader : IDocumentReader
                 p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
                 p.Style.QuoteLevel = ctx.QuoteLevel;
                 p.Style.ListMarker = CloneMarker(ctx.Marker);
-                ApplyBlockAlignment(p, el);
+                ApplyBlockStyle(p, el);
                 AppendInline(p, el);
                 if (p.Runs.Count > 0) target.Add(p);
                 break;
@@ -545,7 +545,7 @@ public sealed class HtmlReader : IDocumentReader
                     p.StyleId          = ExtractPdStyleId(el.GetAttribute("class"));
                     p.Style.QuoteLevel = ctx.QuoteLevel;
                     p.Style.ListMarker = CloneMarker(ctx.Marker);
-                    ApplyBlockAlignment(p, el);
+                    ApplyBlockStyle(p, el);
                     AppendInline(p, el);
                     if (p.Runs.Count > 0) target.Add(p);
                     break;
@@ -1582,9 +1582,24 @@ public sealed class HtmlReader : IDocumentReader
         _         => CellTextAlign.Left,
     };
 
+    /// <summary>부모 요소에서 단락으로 상속되는 CSS 속성(text-align, line-height) 만 복사.
+    /// 보더/배경/padding/margin 등 박스 속성은 가져오지 않는다 — 텍스트 노드를 감싸는 합성 단락이
+    /// 부모(예: 표 셀, 컨테이너 div) 의 박스 속성을 중복으로 그리지 않게 한다.</summary>
     private static void ApplyBlockAlignment(Paragraph p, IElement el)
     {
-        ApplyBlockStyle(p, el);
+        var style = el.GetAttribute("style");
+        var align = el.GetAttribute("align") ?? StyleProp(style, "text-align");
+        if (align is not null)
+            p.Style.Alignment = align.ToLowerInvariant() switch
+            {
+                "center"  => Alignment.Center,
+                "right"   => Alignment.Right,
+                "justify" => Alignment.Justify,
+                "left"    => Alignment.Left,
+                _         => p.Style.Alignment,
+            };
+        if (TryParseLineHeight(StyleProp(style, "line-height"), out var lh))
+            p.Style.LineHeightFactor = lh;
     }
 
     /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.
