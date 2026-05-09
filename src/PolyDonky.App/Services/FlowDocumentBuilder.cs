@@ -1350,14 +1350,13 @@ public static class FlowDocumentBuilder
                 MmToDip(image.TitleOffsetXMm), MmToDip(image.TitleOffsetYMm));
         }
 
-        var grid = new System.Windows.Controls.Grid { HorizontalAlignment = imgHA };
-
         bool isOverlay = image.TitlePosition is ImageTitlePosition.OverlayTop
                                               or ImageTitlePosition.OverlayMiddle
                                               or ImageTitlePosition.OverlayBottom;
         if (isOverlay)
         {
-            // 같은 셀에 그림과 제목이 겹침. VerticalAlignment 로 위/가운데/아래 결정.
+            // 같은 셀에 그림과 제목이 겹침 — Grid 단일 셀에 overlap.
+            var grid = new System.Windows.Controls.Grid { HorizontalAlignment = imgHA };
             grid.Children.Add(imageVisual);
             tb.VerticalAlignment = image.TitlePosition switch
             {
@@ -1367,20 +1366,25 @@ public static class FlowDocumentBuilder
             };
             tb.HorizontalAlignment = HorizontalAlignment.Stretch;
             grid.Children.Add(tb);
+            return grid;
         }
         else
         {
-            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
-            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
-            int titleRow = image.TitlePosition == ImageTitlePosition.Above ? 0 : 1;
-            int imageRow = image.TitlePosition == ImageTitlePosition.Above ? 1 : 0;
-            System.Windows.Controls.Grid.SetRow(tb, titleRow);
-            System.Windows.Controls.Grid.SetRow((FrameworkElement)imageVisual, imageRow);
+            // 그림 위/아래에 제목을 별도 행으로 배치 — StackPanel 이 FlowDocument 안에서 안정적.
             tb.HorizontalAlignment = HorizontalAlignment.Stretch;
-            grid.Children.Add(imageVisual);
-            grid.Children.Add(tb);
+            var sp = new System.Windows.Controls.StackPanel { HorizontalAlignment = imgHA };
+            if (image.TitlePosition == ImageTitlePosition.Above)
+            {
+                sp.Children.Add(tb);
+                sp.Children.Add(imageVisual);
+            }
+            else
+            {
+                sp.Children.Add(imageVisual);
+                sp.Children.Add(tb);
+            }
+            return sp;
         }
-        return grid;
     }
 
     // ── 도형 렌더링 ─────────────────────────────────────────────────────────

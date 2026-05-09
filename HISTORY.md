@@ -44,6 +44,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Fixed
+
+- **figcaption(그림 캡션) 미표시 문제**: `WrapImageWithTitle` 의 Above/Below 배치 코드가 WPF FlowDocument `BlockUIContainer` 안에서 레이아웃이 완료되지 않는 multi-row Grid 를 사용해 캡션 TextBlock 이 보이지 않았다. Grid 를 `StackPanel` 으로 교체(위/아래 방향 그대로, Overlay 케이스는 Grid 유지). 아울러 `IwpfWriter.Walk` / `IwpfReader.Walk` 가 `ContainerBlock` 내부 이미지를 순회하지 않아 컨테이너 안 이미지가 ZIP 분리 저장·복원되지 않던 잠재 버그도 함께 수정. (`FlowDocumentBuilder.cs`, `IwpfWriter.cs`, `IwpfReader.cs`)
+
 ### Added
 
 - **Fixed** — **코드 블록 줄 번호 이중 표시 (실제 원인 추가 수정)**: 이전 커밋의 클래스 기반 span 제거에 이어, 실제 원인인 `ResolvePseudoAndCounters` 오동작을 수정. CSS `.line-numbers span::before { counter-increment: linenumber; content: counter(linenumber) }` 규칙이 존재할 때 `WalkPseudo` 가 `<pre><code>` 내부의 각 `<span>` 에도 `<span data-pd-pseudo="before">1</span>` 등을 삽입해 코드 텍스트에 번호가 섞이는 문제. 수정: `WalkPseudo` 에 `IsInsidePreOrCode` 검사 추가 — 조상 중 `<pre>` 또는 `<code>` 가 있으면 `::before`/`::after` 주입을 건너뜀. 이중 방어: `HtmlReader.ExtractCleanCodeText` 도 `span[data-pd-pseudo]` 를 CSS 쿼리에 추가하고, `IsLineNumberSpan` 도 `data-pd-pseudo` 속성 존재 시 skip 하도록 수정.
