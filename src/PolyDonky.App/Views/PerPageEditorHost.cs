@@ -70,7 +70,6 @@ public sealed class PerPageEditorHost : Canvas
 
         if (slices.Count == 0) return;
 
-        bool multiColumn = slices[0].ColumnCount > 1;
         _physicalPageCount = slices.Max(s => s.PageIndex) + 1;
 
         for (int i = 0; i < slices.Count; i++)
@@ -78,60 +77,35 @@ public sealed class PerPageEditorHost : Canvas
             var slice = slices[i];
             RichTextBox rtb;
 
-            if (!multiColumn)
+            // 단일 단 / 다단 모두 동일하게 — 콘텐츠 영역(BodyWidth × BodyHeight)만 차지하는 RTB 를
+            // Canvas 좌표로 페이지 여백 안쪽에 배치한다. 단일 단에서 RTB.Width = PageWidth + Padding
+            // = 여백 으로 두면 측정 RTB(Padding=0, fd.PageWidth=ColWidth)와 콘텐츠 영역 layout 이
+            // 미세하게 어긋나(WPF 가 RTB.Padding 과 fd.PageWidth 를 다르게 처리) pagination 측정값
+            // 과 실렌더 길이가 달라져 페이지 끝에서 클리핑이 일어났다. 두 RTB 의 layout 조건을
+            // 동일하게 맞추는 것이 측정 정확도의 전제 — 단일 단도 다단과 동일 패턴으로 통일.
+            rtb = new RichTextBox
             {
-                // 단일 단 — 기존 동작: 전체 페이지 크기 + 여백 padding
-                rtb = new RichTextBox
-                {
-                    Document      = slice.FlowDocument,
-                    Width         = geo.PageWidthDip,
-                    Height        = geo.PageHeightDip,
-                    // 하단 패딩을 ClipRenderingTolerance 만큼 줄여 콘텐츠 표시 영역을 넓힌다.
-                    // 이렇게 해도 추가 표시 영역은 인쇄 여백 안이라 시각·인쇄 결과에 영향 없음.
-                    Padding       = new Thickness(geo.PadLeftDip, geo.PadTopDip,
-                                                  geo.PadRightDip,
-                                                  Math.Max(0, geo.PadBottomDip - ClipRenderingTolerance)),
-                    // Disabled 로 두어야 RTB 내부 스크롤이 발생하지 않는다(Hidden 은 바만 숨길 뿐 스크롤은 살아있어
-                    // 페이지 영역을 넘는 콘텐츠가 있을 때 사용자가 키보드/휠로 페이지 안을 스크롤할 수 있게 됨).
-                    VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    AcceptsReturn     = true,
-                    AcceptsTab        = true,
-                    Background        = Brushes.Transparent,
-                    BorderThickness   = new Thickness(0),
-                    FlowDirection     = FlowDirection.LeftToRight,
-                    IsDocumentEnabled = true,
-                };
-                SetLeft(rtb, 0);
-                SetTop (rtb, slice.PageIndex * geo.PageStrideDip);
-            }
-            else
-            {
-                // 다단 — 단 폭 × 본문 높이, 여백·단 오프셋은 Canvas 위치로.
-                // Disabled 로 설정해야 RTB 가 단 높이를 초과하는 콘텐츠를 내부 스크롤로
+                Document      = slice.FlowDocument,
+                Width         = slice.BodyWidthDip,
+                // ClipRenderingTolerance 만큼 높이를 늘려 mm→DIP 반올림 오차로 인한
+                // 마지막 줄 하단 클리핑을 방지한다. 추가 영역은 하단 여백 안에 위치.
+                Height        = slice.BodyHeightDip + ClipRenderingTolerance,
+                Padding       = new Thickness(0),
+                // Disabled 로 설정해야 RTB 가 슬롯 높이를 초과하는 콘텐츠를 내부 스크롤로
                 // 처리하지 않는다(Hidden 이면 스크롤이 발생해 편집창과 인쇄 미리보기가 달라진다).
-                rtb = new RichTextBox
-                {
-                    Document      = slice.FlowDocument,
-                    Width         = slice.BodyWidthDip,
-                    // ClipRenderingTolerance 만큼 높이를 늘려 mm→DIP 반올림 오차로 인한
-                    // 마지막 줄 하단 클리핑을 방지한다. 추가 영역은 하단 여백 안에 위치.
-                    Height        = slice.BodyHeightDip + ClipRenderingTolerance,
-                    Padding       = new Thickness(0),
-                    VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    AcceptsReturn     = true,
-                    AcceptsTab        = true,
-                    Background        = Brushes.Transparent,
-                    BorderThickness   = new Thickness(0),
-                    FlowDirection     = FlowDirection.LeftToRight,
-                    IsDocumentEnabled = true,
-                };
-                double xPos = geo.PadLeftDip  + slice.XOffsetDip;
-                double yPos = slice.PageIndex * geo.PageStrideDip + geo.PadTopDip;
-                SetLeft(rtb, xPos);
-                SetTop (rtb, yPos);
-            }
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                AcceptsReturn     = true,
+                AcceptsTab        = true,
+                Background        = Brushes.Transparent,
+                BorderThickness   = new Thickness(0),
+                FlowDirection     = FlowDirection.LeftToRight,
+                IsDocumentEnabled = true,
+            };
+            double xPos = geo.PadLeftDip + slice.XOffsetDip;
+            double yPos = slice.PageIndex * geo.PageStrideDip + geo.PadTopDip;
+            SetLeft(rtb, xPos);
+            SetTop (rtb, yPos);
 
             rtb.PreviewMouseLeftButtonDown += (_, _) => ActiveEditor = rtb;
             rtb.GotKeyboardFocus           += (_, _) => ActiveEditor = rtb;
