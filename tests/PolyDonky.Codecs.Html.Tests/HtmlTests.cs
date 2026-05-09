@@ -388,6 +388,52 @@ public class HtmlTests
     }
 
     [Fact]
+    public void RoundTrip_Blockquote_LeftBorderAndPaddingAppliedToChildParagraphs()
+    {
+        // CLI 가 클래스 규칙 (예: blockquote { border-left:4px solid #ccc; padding-left:20px; })
+        // 을 인라인화한 결과를 흉내. 자식 단락이 좌측 보더 + indent 를 받아야 한다.
+        var html = """
+            <blockquote style="border-left:4px solid #ccc;padding-left:20px;color:#555">
+              <p>인용 첫 줄</p>
+              <p>인용 둘째 줄</p>
+            </blockquote>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var ps = doc.EnumerateParagraphs().ToList();
+        Assert.Equal(2, ps.Count);
+
+        // 모든 자식 단락이 좌측 보더 + 들여쓰기를 가진다.
+        foreach (var p in ps)
+        {
+            Assert.Equal(3, p.Style.BorderLeftPt, precision: 1);   // 4px = 3pt
+            Assert.False(string.IsNullOrEmpty(p.Style.BorderLeftColor));
+            Assert.True(p.Style.IndentLeftMm > 4);                 // 20px ≈ 5.3mm
+        }
+
+        var html2 = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("border-left:3pt solid", html2);
+        Assert.Contains("padding-left:", html2);
+    }
+
+    [Fact]
+    public void RoundTrip_Pre_BackgroundAppliedToParagraph()
+    {
+        var html = """
+            <pre style="background-color:#282c34;color:#abb2bf;padding:15px;border-radius:4px"><code>code body</code></pre>
+            """;
+        var doc = HtmlReader.FromHtml(html);
+        var p   = doc.EnumerateParagraphs().Single();
+
+        Assert.Equal("", p.Style.CodeLanguage);  // pre 코드 블록
+        Assert.False(string.IsNullOrEmpty(p.Style.BackgroundColor));
+        Assert.Contains("28", p.Style.BackgroundColor!, StringComparison.OrdinalIgnoreCase);
+        Assert.True(p.Style.PaddingTopMm > 0);
+
+        var html2 = HtmlWriter.ToHtml(doc, fullDocument: false);
+        Assert.Contains("background-color:#282C34", html2, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void RoundTrip_Figcaption_OnSvg_StyleAppliedToTitleStyle()
     {
         var html = """

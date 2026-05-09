@@ -278,26 +278,14 @@ public sealed class HtmlWriter : IDocumentWriter
     private static Block StripQuoteLevel(Block b)
     {
         if (b is not Paragraph p) return b;
-        var copy = new Paragraph
+        var clonedStyle = p.Style.Clone();
+        clonedStyle.QuoteLevel = Math.Max(0, p.Style.QuoteLevel - 1);
+        return new Paragraph
         {
             StyleId = p.StyleId,
-            Style   = new ParagraphStyle
-            {
-                Alignment         = p.Style.Alignment,
-                LineHeightFactor  = p.Style.LineHeightFactor,
-                SpaceBeforePt     = p.Style.SpaceBeforePt,
-                SpaceAfterPt      = p.Style.SpaceAfterPt,
-                IndentFirstLineMm = p.Style.IndentFirstLineMm,
-                IndentLeftMm      = p.Style.IndentLeftMm,
-                IndentRightMm     = p.Style.IndentRightMm,
-                Outline           = p.Style.Outline,
-                ListMarker        = p.Style.ListMarker,
-                QuoteLevel        = Math.Max(0, p.Style.QuoteLevel - 1),
-                CodeLanguage      = p.Style.CodeLanguage,
-            },
+            Style   = clonedStyle,
             Runs    = p.Runs,
         };
-        return copy;
     }
 
     private static void WriteParagraph(StringBuilder sb, Paragraph p, string indent, NoteNums? notes = null)
@@ -314,12 +302,14 @@ public sealed class HtmlWriter : IDocumentWriter
                 // 줄 번호 재현을 위해 각 줄을 <span>으로 감싸 출력
                 var lines = code.Split('\n');
                 var spanLines = string.Join("\n", lines.Select(l => $"<span>{l}</span>"));
-                sb.Append(indent).Append("<pre").Append(preClass).Append("><code").Append(langAttr).Append('>')
+                var preStyleA = ParagraphStyleAttr(p.Style);
+                sb.Append(indent).Append("<pre").Append(preClass).Append(preStyleA).Append("><code").Append(langAttr).Append('>')
                   .Append(spanLines).Append("</code></pre>\n");
             }
             else
             {
-                sb.Append(indent).Append("<pre><code").Append(langAttr).Append('>')
+                var preStyleA = ParagraphStyleAttr(p.Style);
+                sb.Append(indent).Append("<pre").Append(preStyleA).Append("><code").Append(langAttr).Append('>')
                   .Append(code).Append("</code></pre>\n");
             }
             return;
@@ -377,8 +367,29 @@ public sealed class HtmlWriter : IDocumentWriter
         if (s.BorderBottomPt > 0)
         {
             var bColor = s.BorderBottomColor is { Length: > 0 } ? s.BorderBottomColor : "#CCCCCC";
-            parts.Add($"border-bottom:{s.BorderBottomPt.ToString("0.##", CultureInfo.InvariantCulture)}pt solid {bColor}");
+            parts.Add($"border-bottom:{FmtNum(s.BorderBottomPt)}pt solid {bColor}");
         }
+        if (s.BorderTopPt > 0)
+        {
+            var bColor = s.BorderTopColor is { Length: > 0 } ? s.BorderTopColor : "#CCCCCC";
+            parts.Add($"border-top:{FmtNum(s.BorderTopPt)}pt solid {bColor}");
+        }
+        if (s.BorderLeftPt > 0)
+        {
+            var bColor = s.BorderLeftColor is { Length: > 0 } ? s.BorderLeftColor : "#CCCCCC";
+            parts.Add($"border-left:{FmtNum(s.BorderLeftPt)}pt solid {bColor}");
+        }
+        if (s.BorderRightPt > 0)
+        {
+            var bColor = s.BorderRightColor is { Length: > 0 } ? s.BorderRightColor : "#CCCCCC";
+            parts.Add($"border-right:{FmtNum(s.BorderRightPt)}pt solid {bColor}");
+        }
+
+        if (s.BackgroundColor is { Length: > 0 } bgc)
+            parts.Add($"background-color:{bgc}");
+
+        if (s.PaddingTopMm    > 0) parts.Add($"padding-top:{FmtNum(s.PaddingTopMm)}mm");
+        if (s.PaddingBottomMm > 0) parts.Add($"padding-bottom:{FmtNum(s.PaddingBottomMm)}mm");
 
         return parts;
     }

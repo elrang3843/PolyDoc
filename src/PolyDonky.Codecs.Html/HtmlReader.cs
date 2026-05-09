@@ -341,7 +341,12 @@ public sealed class HtmlReader : IDocumentReader
 
             case "blockquote":
             {
+                int beforeCount = target.Count;
                 ProcessChildren(el, target, With(ctx, quote: ctx.QuoteLevel + 1));
+                // blockquote 자체의 인라인 style (border-left, background-color, padding 등) 을
+                // 새로 추가된 자식 단락들에 전파한다 — 워드 모델엔 컨테이너가 없어 시각적
+                // 좌측 줄/배경/안쪽여백을 각 단락이 가진다.
+                ApplyContainerStyleToChildren(el, target, beforeCount);
                 break;
             }
 
@@ -689,10 +694,21 @@ public sealed class HtmlReader : IDocumentReader
                     .Any(c => c.Equals("line-numbers", StringComparison.OrdinalIgnoreCase)))
             p.Style.ShowLineNumbers = true;
 
+        // <pre> 의 인라인 style (background-color, border, padding 등) 흡수.
+        // CLI 가 이미 클래스 규칙(예: pre { background:#282c34; padding:15px; ... }) 을 인라인화해 둠.
+        ApplyBlockStyle(p, preEl);
+        // 코드 블록 본문 색상이 클래스에서 지정된 경우(예: pre { color:#abb2bf }) Run 의 Foreground 로도 반영.
+        Color? preFg = null;
+        var preStyle = preEl.GetAttribute("style");
+        if (StyleProp(preStyle, "color") is { } preColor && TryParseCssColor(preColor, out var preFgC))
+            preFg = preFgC;
+
         var text = inner?.TextContent ?? preEl.TextContent;
         // <pre> 의 leading newline 제거 (HTML 관례).
         if (text.StartsWith('\n')) text = text[1..];
-        p.AddText(text, MonoStyle());
+        var runStyle = MonoStyle();
+        if (preFg is { } fg) runStyle.Foreground = fg;
+        p.AddText(text, runStyle);
         return p;
     }
 
@@ -1565,6 +1581,60 @@ public sealed class HtmlReader : IDocumentReader
 
     /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.
     /// <paramref name="baseFontSizePt"/>는 em 단위 margin 환산 기준 (기본 11pt = body 기본값).</summary>
+    /// <summary>blockquote / 스타일이 있는 div 등 컨테이너의 인라인 style 을 그 안의 단락(들) 로 전파한다.
+    /// 컨테이너 블록 모델이 없으므로 시각적 효과(좌측 줄, 배경, 안쪽 여백) 를 자식 단락이 직접 보유.
+    /// 첫 자식엔 padding-top, 마지막 자식엔 padding-bottom 만 적용해 단락 사이 공간이 중복되지 않도록 한다.</summary>
+    private static void ApplyContainerStyleToChildren(IElement containerEl, IList<PdBlock> target, int startIndex)
+    {
+        if (startIndex >= target.Count) return;
+        var style = containerEl.GetAttribute("style");
+        if (string.IsNullOrEmpty(style)) return;
+
+        // 일회용 임시 단락에 컨테이너 자체의 style 을 풀어 적용한 뒤, 그 결과를 자식 단락들에 복제.
+        var probe = new Paragraph();
+        ApplyBlockStyle(probe, containerEl);
+        var ps = probe.Style;
+
+        bool hasBorderTop    = ps.BorderTopPt    > 0;
+        bool hasBorderBottom = ps.BorderBottomPt > 0;
+        bool hasBorderLeft   = ps.BorderLeftPt   > 0;
+        bool hasBorderRight  = ps.BorderRightPt  > 0;
+        bool hasBg           = !string.IsNullOrEmpty(ps.BackgroundColor);
+        bool hasIndL         = ps.IndentLeftMm    > 0;
+        bool hasIndR         = ps.IndentRightMm   > 0;
+        bool hasPadT         = ps.PaddingTopMm    > 0;
+        bool hasPadB         = ps.PaddingBottomMm > 0;
+
+        if (!(hasBorderTop || hasBorderBottom || hasBorderLeft || hasBorderRight ||
+              hasBg || hasIndL || hasIndR || hasPadT || hasPadB))
+            return;
+
+        for (int i = startIndex; i < target.Count; i++)
+        {
+            if (target[i] is not Paragraph cp) continue;
+            // 좌·우 보더와 배경, 좌·우 들여쓰기(=padding) 는 모든 자식에 동일 적용.
+            if (hasBorderLeft  && cp.Style.BorderLeftPt   <= 0) { cp.Style.BorderLeftPt   = ps.BorderLeftPt;   cp.Style.BorderLeftColor   = ps.BorderLeftColor; }
+            if (hasBorderRight && cp.Style.BorderRightPt  <= 0) { cp.Style.BorderRightPt  = ps.BorderRightPt;  cp.Style.BorderRightColor  = ps.BorderRightColor; }
+            if (hasBg          && string.IsNullOrEmpty(cp.Style.BackgroundColor)) cp.Style.BackgroundColor = ps.BackgroundColor;
+            if (hasIndL        && cp.Style.IndentLeftMm   <= 0) cp.Style.IndentLeftMm   = ps.IndentLeftMm;
+            if (hasIndR        && cp.Style.IndentRightMm  <= 0) cp.Style.IndentRightMm  = ps.IndentRightMm;
+
+            // 위/아래 보더와 위/아래 padding 은 첫·마지막 단락에만 — 단락 사이 공간 중복 방지.
+            bool isFirst = i == startIndex;
+            bool isLast  = i == target.Count - 1;
+            if (isFirst)
+            {
+                if (hasBorderTop && cp.Style.BorderTopPt <= 0) { cp.Style.BorderTopPt = ps.BorderTopPt; cp.Style.BorderTopColor = ps.BorderTopColor; }
+                if (hasPadT      && cp.Style.PaddingTopMm <= 0) cp.Style.PaddingTopMm = ps.PaddingTopMm;
+            }
+            if (isLast)
+            {
+                if (hasBorderBottom && cp.Style.BorderBottomPt <= 0) { cp.Style.BorderBottomPt = ps.BorderBottomPt; cp.Style.BorderBottomColor = ps.BorderBottomColor; }
+                if (hasPadB         && cp.Style.PaddingBottomMm <= 0) cp.Style.PaddingBottomMm = ps.PaddingBottomMm;
+            }
+        }
+    }
+
     private static void ApplyBlockStyle(Paragraph p, IElement el, double baseFontSizePt = 11.0)
     {
         var style = el.GetAttribute("style");
@@ -1610,6 +1680,20 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(style, "padding-right") ?? StyleProp(style, "margin-right"), out var ir))
             p.Style.IndentRightMm = ir;
 
+        // border (4면 일괄) → 미지정 면에 폴백으로 적용. 면별 longhand 가 있으면 그게 우선(아래).
+        if (StyleProp(style, "border") is { } bAllVal)
+        {
+            ExtractBorderSizeColor(bAllVal, out double bAllPx, out string? bAllClr);
+            if (bAllPx > 0)
+            {
+                var pt = bAllPx * 72.0 / 96.0;
+                if (p.Style.BorderTopPt    <= 0) { p.Style.BorderTopPt    = pt; p.Style.BorderTopColor    = bAllClr; }
+                if (p.Style.BorderRightPt  <= 0) { p.Style.BorderRightPt  = pt; p.Style.BorderRightColor  = bAllClr; }
+                if (p.Style.BorderBottomPt <= 0) { p.Style.BorderBottomPt = pt; p.Style.BorderBottomColor = bAllClr; }
+                if (p.Style.BorderLeftPt   <= 0) { p.Style.BorderLeftPt   = pt; p.Style.BorderLeftColor   = bAllClr; }
+            }
+        }
+
         // border-bottom → ParagraphStyle.BorderBottomPt / BorderBottomColor
         var bbVal = StyleProp(style, "border-bottom");
         if (bbVal is not null)
@@ -1621,6 +1705,52 @@ public sealed class HtmlReader : IDocumentReader
                 p.Style.BorderBottomColor = bColor;
             }
         }
+        // border-top
+        if (StyleProp(style, "border-top") is { } btVal)
+        {
+            ExtractBorderSizeColor(btVal, out double btPx, out string? btClr);
+            if (btPx > 0) { p.Style.BorderTopPt = btPx * 72.0 / 96.0; p.Style.BorderTopColor = btClr; }
+        }
+        // border-left (blockquote 좌측 줄 등)
+        if (StyleProp(style, "border-left") is { } blVal)
+        {
+            ExtractBorderSizeColor(blVal, out double blPx, out string? blClr);
+            if (blPx > 0) { p.Style.BorderLeftPt = blPx * 72.0 / 96.0; p.Style.BorderLeftColor = blClr; }
+        }
+        // border-right
+        if (StyleProp(style, "border-right") is { } brVal)
+        {
+            ExtractBorderSizeColor(brVal, out double brPx, out string? brClr);
+            if (brPx > 0) { p.Style.BorderRightPt = brPx * 72.0 / 96.0; p.Style.BorderRightColor = brClr; }
+        }
+        // border-(top|right|bottom|left)-color shorthand override (CLI 가 분리한 longhand 도 인식).
+        if (StyleProp(style, "border-top-color")    is { } btc && TryParseCssColor(btc, out var btcCol)) p.Style.BorderTopColor    = ColorToHex(btcCol);
+        if (StyleProp(style, "border-right-color")  is { } brc && TryParseCssColor(brc, out var brcCol)) p.Style.BorderRightColor  = ColorToHex(brcCol);
+        if (StyleProp(style, "border-bottom-color") is { } bbc && TryParseCssColor(bbc, out var bbcCol)) p.Style.BorderBottomColor = ColorToHex(bbcCol);
+        if (StyleProp(style, "border-left-color")   is { } blc && TryParseCssColor(blc, out var blcCol)) p.Style.BorderLeftColor   = ColorToHex(blcCol);
+
+        // background-color → ParagraphStyle.BackgroundColor (pre 코드 블록 / .alert / .toc 등)
+        var bgVal = StyleProp(style, "background-color");
+        if (bgVal is null && StyleProp(style, "background") is { } bgShort)
+        {
+            // background shorthand 의 첫 토큰이 색상인 경우만 추출.
+            var firstTok = bgShort.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (firstTok is not null && TryParseCssColor(firstTok, out _)) bgVal = firstTok;
+        }
+        if (bgVal is not null && TryParseCssColor(bgVal, out var bgColor))
+            p.Style.BackgroundColor = ColorToHex(bgColor);
+
+        // padding-(top|bottom) — 경계선 안쪽 세로 여백 (좌우는 IndentLeft/RightMm 가 담당).
+        if (StyleProp(style, "padding") is { } padAll)
+        {
+            ParseCssBoxShorthand(padAll, baseFontSizePt, out var padT, out _, out var padB, out _);
+            if (padT > 0) p.Style.PaddingTopMm    = padT * 25.4 / 72.0;
+            if (padB > 0) p.Style.PaddingBottomMm = padB * 25.4 / 72.0;
+        }
+        if (TryParseCssMm(StyleProp(style, "padding-top"),    out var pTop) && pTop > 0)
+            p.Style.PaddingTopMm    = pTop;
+        if (TryParseCssMm(StyleProp(style, "padding-bottom"), out var pBot) && pBot > 0)
+            p.Style.PaddingBottomMm = pBot;
 
         // 강제 페이지 나누기: page-break-before:always (CSS2 legacy) 또는 break-before:page (CSS3).
         var pbv = StyleProp(style, "page-break-before") ?? StyleProp(style, "break-before");

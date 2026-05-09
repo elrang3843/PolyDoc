@@ -61,6 +61,30 @@ public sealed class ParagraphStyle
     /// <summary>단락 아래 경계선 색상(hex, 예: "#CCCCCC"). null이면 기본 색.</summary>
     public string? BorderBottomColor { get; set; }
 
+    /// <summary>단락 위 경계선 두께(pt). CSS <c>border-top</c>.</summary>
+    public double BorderTopPt { get; set; }
+    /// <summary>단락 위 경계선 색상(hex). null이면 <see cref="BorderBottomColor"/> 와 동일 폴백.</summary>
+    public string? BorderTopColor { get; set; }
+
+    /// <summary>단락 좌측 경계선 두께(pt). CSS <c>border-left</c> — blockquote 좌측 줄 등.</summary>
+    public double BorderLeftPt { get; set; }
+    /// <summary>단락 좌측 경계선 색상(hex).</summary>
+    public string? BorderLeftColor { get; set; }
+
+    /// <summary>단락 우측 경계선 두께(pt). CSS <c>border-right</c>.</summary>
+    public double BorderRightPt { get; set; }
+    /// <summary>단락 우측 경계선 색상(hex).</summary>
+    public string? BorderRightColor { get; set; }
+
+    /// <summary>단락 배경색(hex). null이면 투명. CSS <c>background-color</c> — pre 코드 블록 등.</summary>
+    public string? BackgroundColor { get; set; }
+
+    /// <summary>단락 안쪽 위 여백(mm). 경계선과 본문 사이의 padding. CSS <c>padding-top</c>.
+    /// (좌우 padding 은 <see cref="IndentLeftMm"/> / <see cref="IndentRightMm"/> 가 담당.)</summary>
+    public double PaddingTopMm { get; set; }
+    /// <summary>단락 안쪽 아래 여백(mm). CSS <c>padding-bottom</c>.</summary>
+    public double PaddingBottomMm { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본 — ListMarker 도 새 인스턴스로.</summary>
     public ParagraphStyle Clone() => new()
     {
@@ -79,6 +103,15 @@ public sealed class ParagraphStyle
         ForcePageBreakBefore   = ForcePageBreakBefore,
         BorderBottomPt         = BorderBottomPt,
         BorderBottomColor      = BorderBottomColor,
+        BorderTopPt            = BorderTopPt,
+        BorderTopColor         = BorderTopColor,
+        BorderLeftPt           = BorderLeftPt,
+        BorderLeftColor        = BorderLeftColor,
+        BorderRightPt          = BorderRightPt,
+        BorderRightColor       = BorderRightColor,
+        BackgroundColor        = BackgroundColor,
+        PaddingTopMm           = PaddingTopMm,
+        PaddingBottomMm        = PaddingBottomMm,
     };
 }
 

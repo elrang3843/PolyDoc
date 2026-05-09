@@ -2115,6 +2115,8 @@ public static class FlowDocumentBuilder
             if (Math.Abs(style.IndentFirstLineMm) > 0.001)
                 wpfPara.TextIndent = MmToDip(style.IndentFirstLineMm);
             ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
+            // 사용자 CSS 4면 보더/배경/padding 으로 OutlineStyle 기본값을 덮어쓴다.
+            ApplyParagraphBoxStyle(wpfPara, style);
             return;
         }
 
@@ -2148,21 +2150,58 @@ public static class FlowDocumentBuilder
         ApplyCodeBlockStyle(wpfPara, style.CodeLanguage);
         ApplyQuoteLevelStyle(wpfPara, style.QuoteLevel);
 
-        // CSS border-bottom (예: 단락 구분선).
-        if (style.BorderBottomPt > 0)
+        // ── CSS 4면 보더 + 배경 + 위/아래 padding ─────────────────────────────────
+        // 모델 기본값이 0/null 이면 ApplyCodeBlockStyle / ApplyQuoteLevelStyle 가 미리 깔아둔
+        // 하드코딩 기본값을 그대로 두고, 비-0 값이 있으면 그 값으로 덮어 쓴다 — 사용자 CSS 가 항상 우선.
+        ApplyParagraphBoxStyle(wpfPara, style);
+    }
+
+    private static void ApplyParagraphBoxStyle(Wpf.Paragraph wpfPara, ParagraphStyle s)
+    {
+        bool anyBorder = s.BorderTopPt    > 0 || s.BorderBottomPt > 0 ||
+                         s.BorderLeftPt   > 0 || s.BorderRightPt  > 0;
+        if (anyBorder)
         {
-            WpfMedia.SolidColorBrush bBrush;
-            if (!string.IsNullOrEmpty(style.BorderBottomColor))
+            // BorderBrush 는 단일이라 면 색상이 다르면 가장 먼저 명시된 것 채택.
+            string? colorStr = s.BorderTopColor ?? s.BorderRightColor ??
+                               s.BorderBottomColor ?? s.BorderLeftColor;
+            WpfMedia.Brush brush;
+            if (!string.IsNullOrEmpty(colorStr))
             {
-                try { bBrush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(style.BorderBottomColor)); }
-                catch { bBrush = WpfMedia.Brushes.DimGray; }
+                try { brush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(colorStr)); }
+                catch { brush = WpfMedia.Brushes.DimGray; }
             }
-            else
+            else brush = WpfMedia.Brushes.DimGray;
+
+            wpfPara.BorderBrush = brush;
+            wpfPara.BorderThickness = new Thickness(
+                s.BorderLeftPt   > 0 ? PtToDip(s.BorderLeftPt)   : 0,
+                s.BorderTopPt    > 0 ? PtToDip(s.BorderTopPt)    : 0,
+                s.BorderRightPt  > 0 ? PtToDip(s.BorderRightPt)  : 0,
+                s.BorderBottomPt > 0 ? PtToDip(s.BorderBottomPt) : 0);
+        }
+
+        // 배경색.
+        if (!string.IsNullOrEmpty(s.BackgroundColor))
+        {
+            try
             {
-                bBrush = WpfMedia.Brushes.DimGray;
+                var bgBrush = new WpfMedia.SolidColorBrush(
+                    (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(s.BackgroundColor));
+                wpfPara.Background = bgBrush;
             }
-            wpfPara.BorderBrush     = bBrush;
-            wpfPara.BorderThickness = new Thickness(0, 0, 0, PtToDip(style.BorderBottomPt));
+            catch { /* 잘못된 색상 — 무시 */ }
+        }
+
+        // 위/아래 padding (좌우 padding 은 IndentLeft/RightMm 가 wpfPara.Padding 로 별도 설정됨).
+        if (s.PaddingTopMm > 0 || s.PaddingBottomMm > 0)
+        {
+            var pad = wpfPara.Padding;
+            wpfPara.Padding = new Thickness(
+                pad.Left,
+                s.PaddingTopMm    > 0 ? MmToDip(s.PaddingTopMm)    : pad.Top,
+                pad.Right,
+                s.PaddingBottomMm > 0 ? MmToDip(s.PaddingBottomMm) : pad.Bottom);
         }
     }
 
