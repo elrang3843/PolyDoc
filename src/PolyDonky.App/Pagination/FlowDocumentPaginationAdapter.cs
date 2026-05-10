@@ -330,7 +330,24 @@ public static class FlowDocumentPaginationAdapter
                         slotFill[listSlot] = Math.Min(bodyH,
                             slotFill.GetValueOrDefault(listSlot, 0.0) + listGap + listH);
 
+                    int listResultFirst = result.Count;
                     AssignListCoreBlocks(listWpf, listSlot, colCount, result);
+                    int listResultLast = result.Count - 1;
+
+                    // resultFillContribs 등록: cascade 가 리스트 아이템을 찾아 다음 슬롯으로
+                    // 밀 수 있도록 각 아이템에 기여분을 기록한다.
+                    // 첫 번째 아이템만 listGap+listH(전체 기여), 나머지는 0.
+                    // cascade 루프가 마지막→첫 번째 순으로 이동하다가 첫 번째 아이템을 옮길 때
+                    // slotFill 이 listH 만큼 실제로 감소하며, 리스트 전체가 한 단위로 다음 슬롯에 배정된다.
+                    for (int ri = listResultFirst; ri <= listResultLast; ri++)
+                    {
+                        if (ri == listResultFirst)
+                            resultFillContribs[ri] = (listSlot, listGap + listH, listH);
+                        else
+                            resultFillContribs[ri] = (listSlot, 0.0, 0.0);
+                        // 리스트 아이템은 모두 같은 measurements 항목(아래 Add 전)을 가리킨다.
+                        resultToMeasurement[ri] = measurements.Count;
+                    }
 
                     measurements.Add(new BlockMeasurementEntry
                     {
