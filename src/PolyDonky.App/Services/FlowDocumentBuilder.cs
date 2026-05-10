@@ -654,7 +654,7 @@ public static class FlowDocumentBuilder
                             _                  => HorizontalAlignment.Left,
                         };
                         visual.HorizontalAlignment = imgHA;
-                        var host = BuildInlineRotationHost(visual, shape.RotationAngleDeg, wDip, hDip, imgHA);
+                        var host = BuildInlineRotationHost(visual, shape.RotationAngleDeg, wDip, hDip, imgHA, useBboxLayout: true);
                         host.Margin = new Thickness(0, MmToDip(shape.MarginTopMm), 0, MmToDip(shape.MarginBottomMm));
                         cellPanel.Children.Add(host);
                     }
@@ -1884,22 +1884,42 @@ public static class FlowDocumentBuilder
         double angleDeg,
         double wDip,
         double hDip,
-        HorizontalAlignment hAlign)
+        HorizontalAlignment hAlign,
+        bool useBboxLayout = false)
     {
         if (Math.Abs(angleDeg) < 0.01) return canvas;
 
-        // CSS transform:rotate() 는 레이아웃 풋프린트를 변경하지 않는다.
-        // 외부 Canvas 는 원본 크기(wDip×hDip)로 유지하고 ClipToBounds=false 로 시각적 오버플로를 허용.
-        // 이렇게 해야 표 셀 같은 좁은 컨테이너에서 회전 bounding-box 크기로 잘리는 문제를 막을 수 있다.
-        System.Windows.Controls.Canvas.SetLeft(canvas, 0);
-        System.Windows.Controls.Canvas.SetTop(canvas, 0);
+        double outerW, outerH;
+        if (useBboxLayout)
+        {
+            // flex/grid 셀 안에서는 회전 bounding-box 를 레이아웃 크기로 사용해
+            // 도형이 시각적으로 셀 영역 안에 담히도록 한다.
+            // 내부 캔버스(원본 크기)를 외부 bbox 캔버스 중앙에 배치하고 거기서 회전.
+            double rad  = angleDeg * Math.PI / 180.0;
+            double cosA = Math.Abs(Math.Cos(rad));
+            double sinA = Math.Abs(Math.Sin(rad));
+            outerW = cosA * wDip + sinA * hDip;
+            outerH = sinA * wDip + cosA * hDip;
+            System.Windows.Controls.Canvas.SetLeft(canvas, (outerW - wDip) / 2);
+            System.Windows.Controls.Canvas.SetTop(canvas,  (outerH - hDip) / 2);
+        }
+        else
+        {
+            // CSS transform:rotate() 는 레이아웃 풋프린트를 변경하지 않는다.
+            // 외부 Canvas 는 원본 크기(wDip×hDip)로 유지하고 ClipToBounds=false 로 시각적 오버플로를 허용.
+            outerW = wDip;
+            outerH = hDip;
+            System.Windows.Controls.Canvas.SetLeft(canvas, 0);
+            System.Windows.Controls.Canvas.SetTop(canvas, 0);
+        }
+
         canvas.RenderTransformOrigin = new Point(0.5, 0.5);
         canvas.RenderTransform       = new WpfMedia.RotateTransform(angleDeg);
 
         var outer = new System.Windows.Controls.Canvas
         {
-            Width               = wDip,
-            Height              = hDip,
+            Width               = outerW,
+            Height              = outerH,
             ClipToBounds        = false,
             HorizontalAlignment = hAlign,
         };
