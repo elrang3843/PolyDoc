@@ -610,10 +610,40 @@ public static class FlowDocumentPaginationAdapter
                     slotFill[oldSlot] = Math.Max(0.0,
                         slotFill.GetValueOrDefault(oldSlot, 0.0) - hc.contribution);
 
-                    // target 페이지: 제목 높이만 추가 (gap 없음 — 새 페이지 시작)
-                    double newFill = slotFill.GetValueOrDefault(newSlot, 0.0) + hc.blockHOnly;
-                    slotFill[newSlot] = Math.Min(bodyH, newFill);
-                    resultFillContribs[oi] = (newSlot, hc.blockHOnly, hc.blockHOnly);
+                    // target 페이지: 제목 높이 + WPF 마진(SpaceBefore + SpaceAfter) 추가.
+                    // blockH 는 TranslatePoint 기반 콘텐츠 높이만이며, WPF 렌더 시
+                    // Paragraph.Margin.Top/Bottom 이 별도로 추가된다. 이 마진을 반영하지 않으면
+                    // 여러 제목이 같은 페이지에 쌓일 때 slotFill 이 실제보다 과소 계산되어 오버플로가 된다.
+                    double hSpaceBefore = FlowDocumentBuilder.PtToDip(
+                        hp.Style.SpaceBeforePt > 0 ? hp.Style.SpaceBeforePt :
+                        hp.Style.Outline switch
+                        {
+                            OutlineLevel.H1 => 12.0,
+                            OutlineLevel.H2 => 10.0,
+                            OutlineLevel.H3 =>  8.0,
+                            OutlineLevel.H4 =>  6.0,
+                            OutlineLevel.H5 =>  4.0,
+                            OutlineLevel.H6 =>  4.0,
+                            _               =>  0.0,
+                        });
+                    double hSpaceAfter = FlowDocumentBuilder.PtToDip(
+                        hp.Style.SpaceAfterPt > 0 ? hp.Style.SpaceAfterPt :
+                        hp.Style.Outline switch
+                        {
+                            OutlineLevel.H1 => 6.0,
+                            OutlineLevel.H2 => 4.0,
+                            OutlineLevel.H3 => 4.0,
+                            OutlineLevel.H4 => 2.0,
+                            OutlineLevel.H5 => 2.0,
+                            OutlineLevel.H6 => 2.0,
+                            _               => 0.0,
+                        });
+                    double headingMargin = hSpaceBefore + hSpaceAfter;
+                    double headingTotalH = hc.blockHOnly + headingMargin;
+
+                    slotFill[newSlot] = Math.Min(bodyH,
+                        slotFill.GetValueOrDefault(newSlot, 0.0) + headingTotalH);
+                    resultFillContribs[oi] = (newSlot, headingTotalH, headingTotalH);
 
                     // measurements 도 실제 배정 슬롯으로 갱신 — 디버그 오버레이가
                     // 이동된 제목을 올바른 페이지에 표시하도록 한다.
@@ -631,10 +661,11 @@ public static class FlowDocumentPaginationAdapter
                         };
                     }
 
-                    // target 슬롯 overflow → 마지막 일반 블록을 다음 슬롯으로 cascade
-                    if (newFill > bodyH - FillSafetyMarginDip)
+                    // target 슬롯 overflow → 마지막 블록을 다음 슬롯으로 반복 cascade.
+                    // 단일 if 대신 while 루프로 여러 블록이 밀려야 할 때도 처리한다.
+                    while (slotFill.GetValueOrDefault(newSlot, 0.0) > bodyH - FillSafetyMarginDip)
                     {
-                        // target 슬롯의 마지막 블록 (forward scan; heading=oi 는 제외)
+                        // target 슬롯의 마지막 비-제목 블록 (forward scan; heading=oi 는 제외)
                         int lastOnTarget = -1;
                         for (int j = oi + 1; j < result.Count; j++)
                         {
@@ -644,32 +675,32 @@ public static class FlowDocumentPaginationAdapter
                             else if (rPage > next.pageIdx)
                                 break;
                         }
-                        if (lastOnTarget > oi
-                            && resultFillContribs.TryGetValue(lastOnTarget, out var lc))
+                        if (lastOnTarget <= oi
+                            || !resultFillContribs.TryGetValue(lastOnTarget, out var lc))
+                            break; // 더 밀 블록 없음
+
+                        int cascadeSlot = newSlot + 1;
+                        slotFill[newSlot] = Math.Max(0.0,
+                            slotFill.GetValueOrDefault(newSlot, 0.0) - lc.contribution);
+                        slotFill[cascadeSlot] = Math.Min(bodyH,
+                            slotFill.GetValueOrDefault(cascadeSlot, 0.0) + lc.blockHOnly);
+                        (int lrPage, int lrCol, Block lrCore, Rect lrRect) = result[lastOnTarget];
+                        result[lastOnTarget] = (cascadeSlot / colCount, cascadeSlot % colCount,
+                            lrCore, lrRect);
+                        resultFillContribs[lastOnTarget] = (cascadeSlot, lc.blockHOnly, lc.blockHOnly);
+                        // cascade 된 블록의 measurements 도 갱신
+                        if (resultToMeasurement.TryGetValue(lastOnTarget, out int cmIdx))
                         {
-                            int cascadeSlot = newSlot + 1;
-                            slotFill[newSlot] = Math.Max(0.0,
-                                slotFill.GetValueOrDefault(newSlot, 0.0) - lc.contribution);
-                            slotFill[cascadeSlot] = Math.Min(bodyH,
-                                slotFill.GetValueOrDefault(cascadeSlot, 0.0) + lc.blockHOnly);
-                            (int lrPage, int lrCol, Block lrCore, Rect lrRect) = result[lastOnTarget];
-                            result[lastOnTarget] = (cascadeSlot / colCount, cascadeSlot % colCount,
-                                lrCore, lrRect);
-                            resultFillContribs[lastOnTarget] = (cascadeSlot, lc.blockHOnly, lc.blockHOnly);
-                            // cascade 된 블록의 measurements 도 갱신
-                            if (resultToMeasurement.TryGetValue(lastOnTarget, out int cmIdx))
+                            var cm = measurements[cmIdx];
+                            measurements[cmIdx] = new BlockMeasurementEntry
                             {
-                                var cm = measurements[cmIdx];
-                                measurements[cmIdx] = new BlockMeasurementEntry
-                                {
-                                    SlotIdx = cascadeSlot,
-                                    Label   = cm.Label + "↓",
-                                    TopY    = cm.TopY,
-                                    BottomY = cm.BottomY,
-                                    BlockH  = cm.BlockH,
-                                    Gap     = 0,
-                                };
-                            }
+                                SlotIdx = cascadeSlot,
+                                Label   = cm.Label + "↓",
+                                TopY    = cm.TopY,
+                                BottomY = cm.BottomY,
+                                BlockH  = cm.BlockH,
+                                Gap     = 0,
+                            };
                         }
                     }
                 }
