@@ -109,6 +109,10 @@ public static class FlowDocumentPaginationAdapter
             pageCount = Math.Max(pageCount, maxBodyPage);
         }
 
+        // 4a. CSS flex 도형 spacer 기반 오버레이 좌표 해결.
+        // HtmlReader 가 생성한 AnchorPageIndex=-2 ShapeObject 에 spacer 의 페이지·Y 를 반영한다.
+        ResolveFlexShapeOverlays(document, bodyAssignments, geo);
+
         // 4. 오버레이 블록(글상자·이미지·도형·오버레이 표) 수집 — AnchorPageIndex 기준
         var overlayAssignments = CollectOverlayBlocks(document);
 
@@ -887,6 +891,56 @@ public static class FlowDocumentPaginationAdapter
         catch
         {
             return Rect.Empty;
+        }
+    }
+
+    // ── flex 도형 오버레이 좌표 해결 ─────────────────────────────────────────
+
+    /// <summary>
+    /// HtmlReader 가 생성한 <c>AnchorPageIndex = -2</c> 도형(CSS flex 순수 도형)의
+    /// 페이지 인덱스와 절대 좌표를 spacer 단락의 body 배치 결과로 확정한다.
+    /// </summary>
+    private static void ResolveFlexShapeOverlays(
+        PolyDonkyument                                                              document,
+        List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)>  bodyAssignments,
+        PageGeometry                                                            geo)
+    {
+        if (bodyAssignments.Count == 0) return;
+
+        // Core Block → 배치 결과 룩업.
+        var lookup = new System.Collections.Generic.Dictionary<Block,
+            (int pageIdx, Rect bodyLocalRect)>(bodyAssignments.Count);
+        foreach (var a in bodyAssignments)
+            lookup.TryAdd(a.coreBlock, (a.pageIdx, a.bodyLocalRect));
+
+        double marginLeftMm = FlowDocumentBuilder.DipToMm(geo.PadLeftDip);
+        double marginTopMm  = FlowDocumentBuilder.DipToMm(geo.PadTopDip);
+
+        int    currentSpacerPage  = 0;
+        double currentSpacerYMm   = 0; // spacer 콘텐츠 상단의 body 내 Y (mm)
+
+        foreach (var section in document.Sections)
+        {
+            foreach (var block in section.Blocks)
+            {
+                if (block is Paragraph p && p.StyleId == "pd-flex-shape-spacer")
+                {
+                    if (lookup.TryGetValue(p, out var info)
+                        && info.bodyLocalRect != Rect.Empty)
+                    {
+                        currentSpacerPage = info.pageIdx;
+                        currentSpacerYMm  = FlowDocumentBuilder.DipToMm(info.bodyLocalRect.Top);
+                    }
+                    // bodyLocalRect 가 Rect.Empty 이면 이전 값 유지 (fallback).
+                }
+                else if (block is ShapeObject shape && shape.AnchorPageIndex == -2)
+                {
+                    shape.AnchorPageIndex = currentSpacerPage;
+                    // OverlayXMm/YMm 은 콘텐츠 영역 기준 상대값 → 페이지 절대 좌표로 변환.
+                    shape.OverlayXMm += marginLeftMm;
+                    shape.OverlayYMm += marginTopMm + currentSpacerYMm;
+                }
+            }
         }
     }
 

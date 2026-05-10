@@ -2128,6 +2128,80 @@ public sealed class HtmlReader : IDocumentReader
         var gapStr = StyleProp(style, "gap") ?? StyleProp(style, "grid-gap");
         double gapMm = TryParseCssMm(gapStr, out var gv) ? gv : 3.0; // 기본 3mm
 
+        // 셀 콘텐츠를 미리 수집해서 순수 CSS 도형 flex 여부 판단.
+        var allCellContent = cells.Select(c => {
+            var content = new List<PdBlock>();
+            ProcessChildren(c, content, ctx);
+            return content;
+        }).ToList();
+
+        // ── 순수 CSS 도형 flex 감지 ──────────────────────────────────────────────
+        // 모든 셀이 ShapeObject 하나로만 이루어진 flex row 는 편집 가능한 오버레이 ShapeObject 로 변환한다.
+        // 본문 흐름에는 수직 공간 확보용 spacer 단락만 남기고,
+        // 도형은 InFrontOfText 오버레이로 배치해 드래그·크기 조절·컨텍스트 메뉴가 동작하게 한다.
+        bool isPureShapeFlex = isFlex
+            && allCellContent.Count >= 2
+            && allCellContent.All(cb => cb.Count == 1 && cb[0] is ShapeObject);
+
+        if (isPureShapeFlex)
+        {
+            // 컨테이너 padding 파싱 (px → mm).
+            double padLeftMm = 0, padTopMm = 0, padRightMm = 0, padBottomMm = 0;
+            if (StyleProp(style, "padding") is { } padAllStr)
+            {
+                var toks = padAllStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (TryParseCssMm(toks[0], out var p0))
+                {
+                    padTopMm = padRightMm = padBottomMm = padLeftMm = p0;
+                    if (toks.Length >= 2 && TryParseCssMm(toks[1], out var p1)) { padRightMm = padLeftMm = p1; }
+                    if (toks.Length >= 3 && TryParseCssMm(toks[2], out var p2)) padBottomMm = p2;
+                    if (toks.Length >= 4 && TryParseCssMm(toks[3], out var p3)) padLeftMm = p3;
+                }
+            }
+            if (StyleProp(style, "padding-left")   is { } plv && TryParseCssMm(plv, out var plr)) padLeftMm   = plr;
+            if (StyleProp(style, "padding-top")    is { } ptv && TryParseCssMm(ptv, out var ptr)) padTopMm    = ptr;
+            if (StyleProp(style, "padding-right")  is { } prv && TryParseCssMm(prv, out var prr)) padRightMm  = prr;
+            if (StyleProp(style, "padding-bottom") is { } pbv && TryParseCssMm(pbv, out var pbr)) padBottomMm = pbr;
+
+            // 컨테이너 외부 margin.
+            double marginTopMm = 0, marginBottomMm = 0;
+            if (StyleProp(style, "margin") is { } margAllStr)
+            {
+                var mt = margAllStr.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (TryParseCssMm(mt[0], out var m0)) { marginTopMm = marginBottomMm = m0; }
+                if (mt.Length >= 3 && TryParseCssMm(mt[2], out var m2)) marginBottomMm = m2;
+            }
+            if (StyleProp(style, "margin-top")    is { } mtv && TryParseCssMm(mtv, out var mtr)) marginTopMm    = mtr;
+            if (StyleProp(style, "margin-bottom") is { } mbv && TryParseCssMm(mbv, out var mbr)) marginBottomMm = mbr;
+
+            double maxShapeH = allCellContent.Max(cb => ((ShapeObject)cb[0]).HeightMm);
+            double containerH = padTopMm + maxShapeH + padBottomMm;
+
+            // spacer 단락: 컨테이너 시각 높이를 본문 흐름에 예약.
+            // FontSizePt=0.1 로 자연 행높이를 최소화하고 SpaceAfterPt 로 전체 높이를 확보.
+            var spacer = new Paragraph { StyleId = "pd-flex-shape-spacer" };
+            spacer.Style.SpaceBeforePt = marginTopMm * (72.0 / 25.4);
+            spacer.Style.SpaceAfterPt  = (containerH + marginBottomMm) * (72.0 / 25.4);
+            spacer.Runs.Add(new Run { Text = "​", Style = new RunStyle { FontSizePt = 0.1 } });
+            target.Add(spacer);
+
+            // 각 CSS 도형을 InFrontOfText 오버레이로 변환.
+            // AnchorPageIndex = -2 : 페이지네이션 후 spacer 기준으로 해결되는 sentinel.
+            // OverlayXMm / OverlayYMm 은 콘텐츠 영역 기준 상대값이며 해결 단계에서 여백이 더해진다.
+            double curX = padLeftMm;
+            foreach (var cb in allCellContent)
+            {
+                var shape = (ShapeObject)cb[0];
+                shape.WrapMode        = ImageWrapMode.InFrontOfText;
+                shape.AnchorPageIndex = -2;
+                shape.OverlayXMm      = curX;
+                shape.OverlayYMm      = padTopMm;
+                target.Add(shape);
+                curX += shape.WidthMm + gapMm;
+            }
+            return true;
+        }
+
         // Table 생성 — 테두리 없음(격자 없는 레이아웃 표).
         // IsFlexLayout=true 로 표시해 렌더러가 Wpf.Table 대신 BlockUIContainer(WPF Grid) 를 사용하도록 한다.
         var table = new Table
@@ -2140,19 +2214,19 @@ public sealed class HtmlReader : IDocumentReader
         for (int c = 0; c < colCount; c++)
             table.Columns.Add(new TableColumn { WidthMm = 0 });
 
+        // 미리 수집한 cellContent 를 재사용해 Table 구축.
         int i = 0;
-        while (i < cells.Count)
+        while (i < allCellContent.Count)
         {
             var row = new TableRow();
-            for (int c = 0; c < colCount && i < cells.Count; c++, i++)
+            for (int c = 0; c < colCount && i < allCellContent.Count; c++, i++)
             {
                 var cell = new TableCell
                 {
                     BorderThicknessPt = 0,
                     PaddingRightMm    = c < colCount - 1 ? gapMm : 0,
                 };
-                var cellContent = new List<PdBlock>();
-                ProcessChildren(cells[i], cellContent, ctx);
+                var cellContent = allCellContent[i];
 
                 // 셀 div 의 text-align 을 자식 단락에 명시적으로 반영한다.
                 // PropagateInheritableStyles 가 <small> 등 래퍼 요소에 전파하지만,

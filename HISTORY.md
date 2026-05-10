@@ -60,6 +60,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **flex/grid 셀 내 텍스트 정렬 무시**: `TryBuildGridAsTable` 가 셀 div 의 `text-align` 속성을 자식 Paragraph 에 전달하지 않아 `text-align: center` 셀 안의 레이블 텍스트가 좌측 정렬로 렌더링되던 문제. `ProcessChildren` 호출 후 셀 style/align 속성을 확인해 `Alignment.Left` 기본값인 자식 Paragraph 들에 명시적으로 정렬 값을 반영하도록 수정. (`HtmlReader.cs`)
 
+### Added
+
+- **CSS flex 컨테이너 내 순수 CSS 도형을 편집 가능한 오버레이 ShapeObject 로 변환**: `TryBuildGridAsTable` 가 모든 셀이 단일 ShapeObject 로만 구성된 flex 컨테이너를 감지해 `BlockUIContainer(WPF Grid)` 대신 `WrapMode=InFrontOfText` 오버레이 ShapeObject 로 변환. 본문 흐름에는 수직 공간 예약용 spacer 단락(`StyleId="pd-flex-shape-spacer"`)을 삽입하고, 페이지네이션 후 `ResolveFlexShapeOverlays` 가 `AnchorPageIndex=-2` 센티널을 spacer 의 body 배치 좌표(페이지 인덱스·Y)로 확정. 오버레이로 배치된 도형은 드래그·크기 조절·컨텍스트 메뉴 등 기존 오버레이 편집 기능을 그대로 사용 가능. (`HtmlReader.cs`, `FlowDocumentPaginationAdapter.cs`)
+
 - **flex ContainerBlock 의 Section 래퍼 제거 — h2/h3 제목 누락 및 회색 박스 미표시 근본 수정**: `Wpf.Section { BlockUIContainer(Grid) }` 구조 자체가 (1) 인접 `Wpf.Paragraph`(`h3`/`h2`)의 `ContentStart.GetCharacterRect` 를 `Rect.Empty` 로 만들어 제목이 엉뚱한 페이지에 배정되고 (2) `Wpf.Section.Background/BorderBrush` 가 WPF FlowDocument 렌더러에서 무시되어 회색 테두리 박스가 미표시되는 두 버그의 공통 근본 원인. `AppendBlocks` 에서 "단독 flex-table ContainerBlock" 을 탐지해 `BuildContainer`(→ Section 생성)를 우회, `BuildFlexContainer` 에 `boxStyle` 파라미터를 추가해 Grid 를 WPF `Border` 로 감싸 배경·테두리·패딩을 직접 적용. Section 래퍼 없이 `BlockUIContainer` 를 FlowDocument 에 직접 추가함으로써 인접 단락의 `GetCharacterRect` 신뢰성 회복 + 회색 박스 렌더링 모두 해결. (`FlowDocumentBuilder.cs`)
 
 - **flex 컨테이너 내 회전 도형(마름모 등) bbox 레이아웃 적용**: `BuildFlexContainer` 의 인라인 도형 호스트 생성 시 `useBboxLayout: true` 를 전달해 회전된 경계 박스 크기를 셀 레이아웃 점유 크기로 사용하도록 수정. 기존에는 원본 크기(CSS 방식)를 점유해 회전 꼭짓점이 인접 셀을 침범하던 문제 수정. (`FlowDocumentBuilder.cs`)
