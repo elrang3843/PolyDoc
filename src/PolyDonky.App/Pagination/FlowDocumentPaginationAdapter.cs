@@ -339,6 +339,13 @@ public static class FlowDocumentPaginationAdapter
             // 돌아가지 않도록 한다. 상한 클램프 없음 — 호출자(Paginate) 가 보정.
             int slotTop = Math.Max(minSlot, (int)(topY / bodyH));
 
+            // BlockUIContainer(BUC) 높이 cascade 오류 보호:
+            // BUC 는 off-screen RTB 에서 layout height ≈ 0 이므로 BUC 이후 블록의 Y 가
+            // BUC 시작 Y 로 붕괴, slotTop 이 직전 블록(prevSlot)보다 작아질 수 있다.
+            // prevSlot 을 하한으로 적용해 항상 앞 방향으로만 이동하도록 강제한다.
+            if (prevSlot >= 0 && slotTop < prevSlot)
+                slotTop = prevSlot;
+
             // ── 강제 페이지 나누기 처리 ─────────────────────────────────────────────
             // FlowDocumentBuilder 가 ForcePageBreakBefore=true 를 WPF 의 BreakPageBefore 로
             // 변환하지만, 본문 블록 Y 측정은 무한 높이(rtb.Measure(Size(_, +∞))) 에서 이루어져
@@ -474,6 +481,23 @@ public static class FlowDocumentPaginationAdapter
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
         rtb.Document = new WpfDocs.FlowDocument();
+
+        // ── 고아 제목 방지 ──────────────────────────────────────────────────────
+        // BUC(이미지·도형·flex 표) 높이 cascade 오류로 인해 제목 단락이
+        // 직후 내용보다 앞 페이지에 배정되는 경우를 역방향 스캔으로 교정한다.
+        // 역방향이면 연속된 제목 체인(h1→h2→h3→content)도 한 번의 패스로 처리된다.
+        for (int oi = result.Count - 2; oi >= 0; oi--)
+        {
+            (int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect) curr = result[oi];
+            (int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect) next = result[oi + 1];
+            if (curr.coreBlock is Paragraph hp
+                && hp.Style.Outline != OutlineLevel.Body
+                && next.pageIdx > curr.pageIdx)
+            {
+                result[oi] = (next.pageIdx, next.colIdx, curr.coreBlock, curr.bodyLocalRect);
+            }
+        }
+
         return (result, slotFill, measurements);
     }
 

@@ -64,6 +64,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **CSS flex 컨테이너 내 순수 CSS 도형을 편집 가능한 오버레이 ShapeObject 로 변환**: `TryBuildGridAsTable` 가 모든 셀이 단일 ShapeObject 로만 구성된 flex 컨테이너를 감지해 `BlockUIContainer(WPF Grid)` 대신 `WrapMode=InFrontOfText` 오버레이 ShapeObject 로 변환. 본문 흐름에는 수직 공간 예약용 spacer 단락(`StyleId="pd-flex-shape-spacer"`)을 삽입하고, 페이지네이션 후 `ResolveFlexShapeOverlays` 가 `AnchorPageIndex=-2` 센티널을 spacer 의 body 배치 좌표(페이지 인덱스·Y)로 확정. 오버레이로 배치된 도형은 드래그·크기 조절·컨텍스트 메뉴 등 기존 오버레이 편집 기능을 그대로 사용 가능. (`HtmlReader.cs`, `FlowDocumentPaginationAdapter.cs`)
 
+### Fixed
+
+- **BUC 높이 cascade 오류로 인한 페이지 역방향 배정**: `BlockUIContainer`(이미지·도형·flex 표) 가 off-screen RTB 에서 레이아웃 height ≈ 0 으로 측정돼, BUC 직후 블록의 RTB Y 가 BUC 시작 Y 로 붕괴되는 cascade 오류 발생. 이 블록의 `slotTop` 이 직전 BUC 가 overflow 해서 이동한 슬롯보다 작아져 더 앞 페이지에 배정되는 문제 수정. `prevSlot` 을 하한으로 적용(`slotTop = max(slotTop, prevSlot)`)해 항상 앞 방향으로만 이동하도록 강제. (`FlowDocumentPaginationAdapter.cs`)
+
+- **BUC 이전 제목 단락 고아 문제(orphan heading)**: BUC(이미지·flex 표) 가 overflow 해 slot N+1 로 이동할 때, 바로 앞 제목 단락은 그 이전에 처리되어 slot N 에 이미 배정된 상태. 결과적으로 제목은 페이지 N 에, 내용은 페이지 N+1 에 분리 배치되는 고아 문제 발생. `MapBodyBlocksToPages` 완료 후 역방향 스캔을 통해 `OutlineLevel != Body` 인 제목 단락이 직후 블록보다 앞 페이지에 있으면 직후 블록과 같은 페이지로 이동. 역방향 스캔으로 h1→h2→h3→content 체인도 한 번에 처리. (`FlowDocumentPaginationAdapter.cs`)
+
 - **flex ContainerBlock 의 Section 래퍼 제거 — h2/h3 제목 누락 및 회색 박스 미표시 근본 수정**: `Wpf.Section { BlockUIContainer(Grid) }` 구조 자체가 (1) 인접 `Wpf.Paragraph`(`h3`/`h2`)의 `ContentStart.GetCharacterRect` 를 `Rect.Empty` 로 만들어 제목이 엉뚱한 페이지에 배정되고 (2) `Wpf.Section.Background/BorderBrush` 가 WPF FlowDocument 렌더러에서 무시되어 회색 테두리 박스가 미표시되는 두 버그의 공통 근본 원인. `AppendBlocks` 에서 "단독 flex-table ContainerBlock" 을 탐지해 `BuildContainer`(→ Section 생성)를 우회, `BuildFlexContainer` 에 `boxStyle` 파라미터를 추가해 Grid 를 WPF `Border` 로 감싸 배경·테두리·패딩을 직접 적용. Section 래퍼 없이 `BlockUIContainer` 를 FlowDocument 에 직접 추가함으로써 인접 단락의 `GetCharacterRect` 신뢰성 회복 + 회색 박스 렌더링 모두 해결. (`FlowDocumentBuilder.cs`)
 
 - **flex 컨테이너 내 회전 도형(마름모 등) bbox 레이아웃 적용**: `BuildFlexContainer` 의 인라인 도형 호스트 생성 시 `useBboxLayout: true` 를 전달해 회전된 경계 박스 크기를 셀 레이아웃 점유 크기로 사용하도록 수정. 기존에는 원본 크기(CSS 방식)를 점유해 회전 꼭짓점이 인접 셀을 침범하던 문제 수정. (`FlowDocumentBuilder.cs`)
