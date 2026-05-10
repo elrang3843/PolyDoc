@@ -294,10 +294,18 @@ public static class FlowDocumentBuilder
                         // <caption> 이 있으면 표 위에 가운데 정렬 단락으로 렌더링.
                         if (!string.IsNullOrEmpty(t.Caption))
                             target.Add(BuildTableCaption(t.Caption));
-                        // CSS flex/grid 에서 변환된 레이아웃 표는 Wpf.Table(셀 클리핑) 대신
-                        // BlockUIContainer(WPF Grid) 로 렌더링해 회전 도형의 시각적 오버플로를 허용한다.
+                        // CSS flex/grid 에서 변환된 레이아웃 표:
+                        // - 회전 도형이 포함된 경우: BlockUIContainer(WPF Grid) → ClipToBounds=false 로 오버플로 허용.
+                        // - 텍스트/목록만 있는 경우: Wpf.Table → AppendBlocks 재귀로 WPF List 구조를 올바르게 생성.
+                        //   (BuildFlexContainer 의 BuildFlexLabel 은 ListMarker 를 TextBlock 으로 처리해 글머리 기호가 사라짐.)
                         if (t.IsFlexLayout)
-                            target.Add(BuildFlexContainer(t, outlineStyles));
+                        {
+                            bool hasRotatedShape = t.Rows.Any(row => row.Cells.Any(cell =>
+                                cell.Blocks.Any(b => b is ShapeObject s && s.RotationAngleDeg != 0)));
+                            target.Add(hasRotatedShape
+                                ? BuildFlexContainer(t, outlineStyles)
+                                : BuildTable(t, outlineStyles));
+                        }
                         else
                             target.Add(BuildTable(t, outlineStyles));
                     }
@@ -374,7 +382,15 @@ public static class FlowDocumentBuilder
                     if (box.Children.Count == 1
                         && box.Children[0] is Table { IsFlexLayout: true } singleFlex)
                     {
-                        target.Add(BuildFlexContainer(singleFlex, outlineStyles, box));
+                        // 회전 도형이 없으면 Wpf.Table 로 렌더 — AppendBlocks 재귀로 WPF List 보존.
+                        // 박스 스타일(배경·보더·패딩)은 BuildContainer 가 Wpf.Section 으로 적용.
+                        // 회전 도형이 있으면 기존 BuildFlexContainer(BUC+Grid) 로 ClipToBounds=false 유지.
+                        bool singleFlexHasRotated = singleFlex.Rows.Any(row => row.Cells.Any(cell =>
+                            cell.Blocks.Any(b => b is ShapeObject s && s.RotationAngleDeg != 0)));
+                        if (singleFlexHasRotated)
+                            target.Add(BuildFlexContainer(singleFlex, outlineStyles, box));
+                        else
+                            target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
                     }
                     else
                     {
