@@ -250,6 +250,12 @@ public static class FlowDocumentPaginationAdapter
         // (리스트 아이템·NaN 블록 등은 기여분이 없거나 개별 추적이 불필요해 등록하지 않는다.)
         var resultFillContribs = new System.Collections.Generic.Dictionary<int, (int slotIdx, double contribution, double blockHOnly)>();
 
+        // result[i] → measurements[j] 인덱스 매핑.
+        // orphan heading scan 이 result[i] 를 이동할 때 measurements[j].SlotIdx 도
+        // 함께 갱신해 디버그 오버레이가 실제 배정 페이지를 올바르게 표시하도록 한다.
+        // 리스트 아이템·분할 단락 등 measurements 항목이 없는 result 항목은 등록하지 않는다.
+        var resultToMeasurement = new System.Collections.Generic.Dictionary<int, int>();
+
         // 직전 블록이 최종 배정된 슬롯 인덱스. ForcePageBreakBefore 단락을 다음 페이지로
         // 강제 이동시킬 때 기준 페이지를 결정하는 데 사용. -1 = 첫 블록.
         int prevSlot = -1;
@@ -549,7 +555,8 @@ public static class FlowDocumentPaginationAdapter
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
-            resultFillContribs[result.Count - 1] = (slotTop, gap + blockH, blockH);
+            resultFillContribs[result.Count - 1]  = (slotTop, gap + blockH, blockH);
+            resultToMeasurement[result.Count - 1] = measurements.Count; // 아래 measurements.Add 직전
 
             // 진단: 블록 측정값 기록 (디버그 오버레이에 표시됨)
             measurements.Add(new BlockMeasurementEntry
@@ -608,6 +615,22 @@ public static class FlowDocumentPaginationAdapter
                     slotFill[newSlot] = Math.Min(bodyH, newFill);
                     resultFillContribs[oi] = (newSlot, hc.blockHOnly, hc.blockHOnly);
 
+                    // measurements 도 실제 배정 슬롯으로 갱신 — 디버그 오버레이가
+                    // 이동된 제목을 올바른 페이지에 표시하도록 한다.
+                    if (resultToMeasurement.TryGetValue(oi, out int mIdx))
+                    {
+                        var om = measurements[mIdx];
+                        measurements[mIdx] = new BlockMeasurementEntry
+                        {
+                            SlotIdx = newSlot,
+                            Label   = om.Label + "→",   // 이동됨을 라벨로 표시
+                            TopY    = om.TopY,
+                            BottomY = om.BottomY,
+                            BlockH  = om.BlockH,
+                            Gap     = 0,  // 새 페이지 시작 — gap 0 으로 보정
+                        };
+                    }
+
                     // target 슬롯 overflow → 마지막 일반 블록을 다음 슬롯으로 cascade
                     if (newFill > bodyH - FillSafetyMarginDip)
                     {
@@ -633,6 +656,20 @@ public static class FlowDocumentPaginationAdapter
                             result[lastOnTarget] = (cascadeSlot / colCount, cascadeSlot % colCount,
                                 lrCore, lrRect);
                             resultFillContribs[lastOnTarget] = (cascadeSlot, lc.blockHOnly, lc.blockHOnly);
+                            // cascade 된 블록의 measurements 도 갱신
+                            if (resultToMeasurement.TryGetValue(lastOnTarget, out int cmIdx))
+                            {
+                                var cm = measurements[cmIdx];
+                                measurements[cmIdx] = new BlockMeasurementEntry
+                                {
+                                    SlotIdx = cascadeSlot,
+                                    Label   = cm.Label + "↓",
+                                    TopY    = cm.TopY,
+                                    BottomY = cm.BottomY,
+                                    BlockH  = cm.BlockH,
+                                    Gap     = 0,
+                                };
+                            }
                         }
                     }
                 }
