@@ -2129,9 +2129,11 @@ public sealed class HtmlReader : IDocumentReader
         double gapMm = TryParseCssMm(gapStr, out var gv) ? gv : 3.0; // 기본 3mm
 
         // Table 생성 — 테두리 없음(격자 없는 레이아웃 표).
+        // IsFlexLayout=true 로 표시해 렌더러가 Wpf.Table 대신 BlockUIContainer(WPF Grid) 를 사용하도록 한다.
         var table = new Table
         {
             BorderThicknessPt = 0,
+            IsFlexLayout      = true,
         };
 
         // 열 너비: 균등 배분 (0 = 자동, 균등 배분은 렌더러가 처리)

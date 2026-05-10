@@ -294,7 +294,12 @@ public static class FlowDocumentBuilder
                         // <caption> 이 있으면 표 위에 가운데 정렬 단락으로 렌더링.
                         if (!string.IsNullOrEmpty(t.Caption))
                             target.Add(BuildTableCaption(t.Caption));
-                        target.Add(BuildTable(t, outlineStyles));
+                        // CSS flex/grid 에서 변환된 레이아웃 표는 Wpf.Table(셀 클리핑) 대신
+                        // BlockUIContainer(WPF Grid) 로 렌더링해 회전 도형의 시각적 오버플로를 허용한다.
+                        if (t.IsFlexLayout)
+                            target.Add(BuildFlexContainer(t, outlineStyles));
+                        else
+                            target.Add(BuildTable(t, outlineStyles));
                     }
                     else
                         target.Add(BuildTableAnchor(t));   // 오버레이 모드 — 앵커만 추가
@@ -566,6 +571,112 @@ public static class FlowDocumentBuilder
         };
 
         return new Wpf.BlockUIContainer(border) { Tag = toc };
+    }
+
+    // CSS flex/grid 컨테이너 전용 렌더러 — Wpf.Table 대신 BlockUIContainer(WPF Grid) 를 사용해
+    // 회전 도형 등의 시각적 오버플로가 TableCell 렌더러의 기하 클리핑에 걸리지 않도록 한다.
+    private static Wpf.Block BuildFlexContainer(Table table, OutlineStyleSet? outlineStyles)
+    {
+        int colCount = Math.Max(table.Columns.Count, 1);
+
+        var grid = new System.Windows.Controls.Grid { ClipToBounds = false };
+        for (int c = 0; c < colCount; c++)
+            grid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition
+                { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition
+            { Height = GridLength.Auto });
+
+        if (table.Rows.Count > 0)
+        {
+            int colIdx = 0;
+            foreach (var cell in table.Rows[0].Cells)
+            {
+                double gapRight = cell.PaddingRightMm > 0 ? MmToDip(cell.PaddingRightMm) : 0;
+                var cellPanel = new System.Windows.Controls.StackPanel
+                {
+                    Orientation         = System.Windows.Controls.Orientation.Vertical,
+                    ClipToBounds        = false,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin              = new Thickness(0, 0, gapRight, 0),
+                };
+
+                foreach (var block in cell.Blocks)
+                {
+                    if (block is ShapeObject shape && shape.WrapMode != ImageWrapMode.InFrontOfText
+                                                   && shape.WrapMode != ImageWrapMode.BehindText)
+                    {
+                        double wDip = MmToDip(shape.WidthMm);
+                        double hDip = MmToDip(shape.HeightMm);
+                        var visual = BuildShapeVisual(shape, wDip, hDip);
+                        var imgHA = shape.HAlign switch
+                        {
+                            ImageHAlign.Center => HorizontalAlignment.Center,
+                            ImageHAlign.Right  => HorizontalAlignment.Right,
+                            _                  => HorizontalAlignment.Left,
+                        };
+                        visual.HorizontalAlignment = imgHA;
+                        var host = BuildInlineRotationHost(visual, shape.RotationAngleDeg, wDip, hDip, imgHA);
+                        host.Margin = new Thickness(0, MmToDip(shape.MarginTopMm), 0, MmToDip(shape.MarginBottomMm));
+                        cellPanel.Children.Add(host);
+                    }
+                    else if (block is Paragraph para)
+                    {
+                        cellPanel.Children.Add(BuildFlexLabel(para));
+                    }
+                }
+
+                System.Windows.Controls.Grid.SetColumn(cellPanel, colIdx);
+                grid.Children.Add(cellPanel);
+                colIdx++;
+            }
+        }
+
+        return new Wpf.BlockUIContainer(grid)
+        {
+            Tag    = table,
+            Margin = new Thickness(
+                MmToDip(table.OuterMarginLeftMm),
+                MmToDip(table.OuterMarginTopMm),
+                MmToDip(table.OuterMarginRightMm),
+                MmToDip(table.OuterMarginBottomMm)),
+        };
+    }
+
+    // flex 셀 안의 텍스트 단락(레이블 등)을 WPF TextBlock 으로 변환.
+    private static System.Windows.Controls.TextBlock BuildFlexLabel(Paragraph para)
+    {
+        var ta = para.Style.Alignment switch
+        {
+            Alignment.Center  => TextAlignment.Center,
+            Alignment.Right   => TextAlignment.Right,
+            Alignment.Justify => TextAlignment.Justify,
+            _                 => TextAlignment.Center, // flex 셀은 기본 가운데
+        };
+        var tb = new System.Windows.Controls.TextBlock
+        {
+            TextAlignment = ta,
+            TextWrapping  = System.Windows.TextWrapping.Wrap,
+        };
+        if (para.Style.SpaceBeforePt > 0)
+            tb.Margin = new Thickness(0, PtToDip(para.Style.SpaceBeforePt), 0, 0);
+
+        foreach (var run in para.Runs)
+        {
+            if (run.Text is null) continue;
+            var wr = new System.Windows.Documents.Run(run.Text);
+            if (run.Style.FontSizePt > 0)
+                wr.FontSize = PtToDip(run.Style.FontSizePt);
+            if (!string.IsNullOrEmpty(run.Style.FontFamily))
+                wr.FontFamily = new WpfMedia.FontFamily(run.Style.FontFamily);
+            if (run.Style.Bold   == true) wr.FontWeight = System.Windows.FontWeights.Bold;
+            if (run.Style.Italic == true) wr.FontStyle  = System.Windows.FontStyles.Italic;
+            if (run.Style.Foreground is { } fg)
+                wr.Foreground = new WpfMedia.SolidColorBrush(
+                    WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+            tb.Inlines.Add(wr);
+        }
+
+        return tb;
     }
 
     internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null)
@@ -1534,18 +1645,6 @@ public static class FlowDocumentBuilder
 
         var marginTopDip    = MmToDip(shape.MarginTopMm);
         var marginBottomDip = MmToDip(shape.MarginBottomMm);
-
-        // 회전 시 상하 꼭짓점이 원본 레이아웃 박스 바깥으로 나오므로 마진을 보충해 잘리지 않게 한다.
-        if (Math.Abs(shape.RotationAngleDeg) > 0.01)
-        {
-            double rad   = shape.RotationAngleDeg * Math.PI / 180.0;
-            double cos   = Math.Abs(Math.Cos(rad));
-            double sin   = Math.Abs(Math.Sin(rad));
-            double rotH  = wDip * sin + hDip * cos;
-            double extra = (rotH - hDip) / 2.0;
-            marginTopDip    += extra;
-            marginBottomDip += extra;
-        }
 
         var imgHA = shape.HAlign switch
         {
