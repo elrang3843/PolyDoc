@@ -366,7 +366,20 @@ public static class FlowDocumentBuilder
 
                 case ContainerBlock box:
                     listStack.Clear();
-                    target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                    // flex-table 단독 ContainerBlock 특수 처리:
+                    // Wpf.Section { BUC(Grid) } 구조는 (1) Section.Background 가 렌더링되지 않고
+                    // (2) 인접 Paragraph 의 GetCharacterRect 가 Rect.Empty 를 반환하는 WPF 레이아웃
+                    // 퀵을 유발한다. BUC 를 직접 배출하고 박스 스타일을 Grid 래핑 Border 에 적용함으로써
+                    // Section 래퍼를 완전히 제거한다.
+                    if (box.Children.Count == 1
+                        && box.Children[0] is Table { IsFlexLayout: true } singleFlex)
+                    {
+                        target.Add(BuildFlexContainer(singleFlex, outlineStyles, box));
+                    }
+                    else
+                    {
+                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                    }
                     break;
             }
         }
@@ -614,7 +627,10 @@ public static class FlowDocumentBuilder
 
     // CSS flex/grid 컨테이너 전용 렌더러 — Wpf.Table 대신 BlockUIContainer(WPF Grid) 를 사용해
     // 회전 도형 등의 시각적 오버플로가 TableCell 렌더러의 기하 클리핑에 걸리지 않도록 한다.
-    private static Wpf.Block BuildFlexContainer(Table table, OutlineStyleSet? outlineStyles)
+    // boxStyle 이 non-null 이면 Grid 를 WPF Border 로 감싸 배경·테두리·패딩을 직접 적용한다
+    // (Wpf.Section.Background/BorderBrush 는 BUC 단독 자식 시 렌더링 안 되는 WPF 버그 우회).
+    private static Wpf.Block BuildFlexContainer(Table table, OutlineStyleSet? outlineStyles,
+        ContainerBlock? boxStyle = null)
     {
         int colCount = Math.Max(table.Columns.Count, 1);
 
@@ -670,14 +686,70 @@ public static class FlowDocumentBuilder
             }
         }
 
-        return new Wpf.BlockUIContainer(grid)
+        // boxStyle 이 있으면 Grid 를 Border 로 감싸 배경·테두리·패딩을 직접 렌더링.
+        // Wpf.Section.Background/BorderBrush 는 BUC 단독 자식 시 WPF FlowDocument 렌더러가
+        // 그려주지 않으므로 Section 래퍼 없이 BUC 안에서 직접 처리한다.
+        FrameworkElement content = grid;
+        if (boxStyle is not null)
+        {
+            var wrapBorder = new System.Windows.Controls.Border
+            {
+                Child        = grid,
+                ClipToBounds = false,
+            };
+
+            if (!string.IsNullOrEmpty(boxStyle.BackgroundColor))
+            {
+                try
+                {
+                    wrapBorder.Background = new WpfMedia.SolidColorBrush(
+                        (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(boxStyle.BackgroundColor));
+                }
+                catch { /* 잘못된 색 무시 */ }
+            }
+
+            bool anyBorder = boxStyle.BorderTopPt > 0 || boxStyle.BorderRightPt > 0
+                          || boxStyle.BorderBottomPt > 0 || boxStyle.BorderLeftPt > 0;
+            if (anyBorder)
+            {
+                string? colorStr = boxStyle.BorderTopColor ?? boxStyle.BorderRightColor
+                                ?? boxStyle.BorderBottomColor ?? boxStyle.BorderLeftColor;
+                WpfMedia.Brush brush;
+                if (!string.IsNullOrEmpty(colorStr))
+                {
+                    try { brush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(colorStr)); }
+                    catch { brush = WpfMedia.Brushes.DimGray; }
+                }
+                else brush = WpfMedia.Brushes.DimGray;
+
+                wrapBorder.BorderBrush     = brush;
+                wrapBorder.BorderThickness = new Thickness(
+                    boxStyle.BorderLeftPt   > 0 ? PtToDip(boxStyle.BorderLeftPt)   : 0,
+                    boxStyle.BorderTopPt    > 0 ? PtToDip(boxStyle.BorderTopPt)    : 0,
+                    boxStyle.BorderRightPt  > 0 ? PtToDip(boxStyle.BorderRightPt)  : 0,
+                    boxStyle.BorderBottomPt > 0 ? PtToDip(boxStyle.BorderBottomPt) : 0);
+            }
+
+            var pad = new Thickness(
+                MmToDip(boxStyle.PaddingLeftMm),  MmToDip(boxStyle.PaddingTopMm),
+                MmToDip(boxStyle.PaddingRightMm), MmToDip(boxStyle.PaddingBottomMm));
+            if (pad.Left != 0 || pad.Top != 0 || pad.Right != 0 || pad.Bottom != 0)
+                wrapBorder.Padding = pad;
+
+            content = wrapBorder;
+        }
+
+        double marginTop    = boxStyle is not null ? MmToDip(boxStyle.MarginTopMm)    : MmToDip(table.OuterMarginTopMm);
+        double marginBottom = boxStyle is not null ? MmToDip(boxStyle.MarginBottomMm) : MmToDip(table.OuterMarginBottomMm);
+
+        return new Wpf.BlockUIContainer(content)
         {
             Tag    = table,
             Margin = new Thickness(
                 MmToDip(table.OuterMarginLeftMm),
-                MmToDip(table.OuterMarginTopMm),
+                marginTop,
                 MmToDip(table.OuterMarginRightMm),
-                MmToDip(table.OuterMarginBottomMm)),
+                marginBottom),
         };
     }
 
