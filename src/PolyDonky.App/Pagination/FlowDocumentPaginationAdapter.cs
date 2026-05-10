@@ -523,6 +523,7 @@ public static class FlowDocumentPaginationAdapter
                         result.Add((nextSlot / colCount, nextSlot % colCount, frag2, Rect.Empty));
 
                         prevSlot = nextSlot;
+                        minSlot  = Math.Max(minSlot, nextSlot); // 분할 후에도 문서 순서 보장
                         if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
                         continue; // 아래 단일 블록 처리 생략
                     }
@@ -587,6 +588,7 @@ public static class FlowDocumentPaginationAdapter
             });
 
             prevSlot = slotTop;
+            minSlot  = Math.Max(minSlot, slotTop); // 문서 순서 보장: 이후 블록이 앞 슬롯으로 돌아가지 않도록
             // prevContBottom 갱신: BUC 폴백으로 blockH 가 커진 경우 bottomY(≈topY) 가 아닌
             // topY + blockH 를 사용해야 이후 cascade 보정이 올바른 기준점을 갖는다.
             if (!double.IsNaN(topY) && blockH > 0 && (double.IsNaN(bottomY) || bottomY - topY < blockH))
@@ -720,6 +722,73 @@ public static class FlowDocumentPaginationAdapter
                             };
                         }
                     }
+                }
+            }
+        }
+
+        // ── Y-span 사후 보정 ────────────────────────────────────────────────────
+        // off-screen RTB 에서 측정한 블록들의 Y 범위(maxBottomY - minTopY)가 bodyH 를 넘으면
+        // per-page RTB 에서 마지막 블록이 잘린다. slotFill 이 gap 리셋·ContainerBlock 마진 등으로
+        // 실제 높이를 과소평가하기 때문에 발생한다.
+        // 슬롯별 Y 범위를 직접 계산해 bodyH 초과 슬롯에서 마지막 블록을 다음 슬롯으로 cascade 한다.
+        // guard: ySpan > 2×bodyH 는 제목 이동 등으로 topY·bottomY 가 서로 다른 페이지에 걸쳐
+        // 수집된 경우로, 이 보정 대상이 아니다.
+        {
+            var slotMinTopY    = new Dictionary<int, double>();
+            var slotMaxBottomY = new Dictionary<int, double>();
+            foreach (var m in measurements)
+            {
+                if (double.IsNaN(m.TopY) || double.IsNaN(m.BottomY)) continue;
+                int s = m.SlotIdx;
+                if (!slotMinTopY.ContainsKey(s) || m.TopY < slotMinTopY[s])
+                    slotMinTopY[s] = m.TopY;
+                if (!slotMaxBottomY.ContainsKey(s) || m.BottomY > slotMaxBottomY[s])
+                    slotMaxBottomY[s] = m.BottomY;
+            }
+            foreach (int s in slotMinTopY.Keys.OrderBy(k => k))
+            {
+                double ySpan = slotMaxBottomY.GetValueOrDefault(s) - slotMinTopY[s];
+                if (ySpan <= bodyH || ySpan > 2.0 * bodyH) continue;
+
+                while (ySpan > bodyH)
+                {
+                    // 이 슬롯에 배정된 마지막 블록을 찾는다.
+                    int lastOnSlot = -1;
+                    for (int j = 0; j < result.Count; j++)
+                    {
+                        (int rPage, int rCol, Block _, Rect __) = result[j];
+                        if (rPage * colCount + rCol == s) lastOnSlot = j;
+                    }
+                    if (lastOnSlot < 0 || !resultFillContribs.TryGetValue(lastOnSlot, out var lc))
+                        break;
+
+                    int nextS = s + 1;
+                    slotFill[s]     = Math.Max(0.0, slotFill.GetValueOrDefault(s)     - lc.contribution);
+                    slotFill[nextS] = Math.Min(bodyH, slotFill.GetValueOrDefault(nextS) + lc.blockHOnly);
+                    (int pg, int col, Block cb, Rect r) = result[lastOnSlot];
+                    result[lastOnSlot] = (nextS / colCount, nextS % colCount, cb, r);
+                    resultFillContribs[lastOnSlot] = (nextS, lc.blockHOnly, lc.blockHOnly);
+
+                    if (resultToMeasurement.TryGetValue(lastOnSlot, out int mIdx))
+                    {
+                        var m = measurements[mIdx];
+                        measurements[mIdx] = new BlockMeasurementEntry
+                        {
+                            SlotIdx = nextS,
+                            Label   = m.Label + "↓",
+                            TopY    = m.TopY,
+                            BottomY = m.BottomY,
+                            BlockH  = m.BlockH,
+                            Gap     = 0,
+                        };
+                        // 이 슬롯의 maxBottomY 를 재계산해 while 조건을 갱신한다.
+                        slotMaxBottomY[s] = measurements
+                            .Where(mm => mm.SlotIdx == s && !double.IsNaN(mm.BottomY))
+                            .Select(mm => mm.BottomY)
+                            .DefaultIfEmpty(slotMinTopY[s])
+                            .Max();
+                    }
+                    ySpan = slotMaxBottomY.GetValueOrDefault(s) - slotMinTopY[s];
                 }
             }
         }
