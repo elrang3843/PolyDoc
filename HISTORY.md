@@ -66,7 +66,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
-- **BUC 높이 cascade 오류로 인한 페이지 역방향 배정**: `BlockUIContainer`(이미지·도형·flex 표) 가 off-screen RTB 에서 레이아웃 height ≈ 0 으로 측정돼, BUC 직후 블록의 RTB Y 가 BUC 시작 Y 로 붕괴되는 cascade 오류 발생. 이 블록의 `slotTop` 이 직전 BUC 가 overflow 해서 이동한 슬롯보다 작아져 더 앞 페이지에 배정되는 문제 수정. `prevSlot` 을 하한으로 적용(`slotTop = max(slotTop, prevSlot)`)해 항상 앞 방향으로만 이동하도록 강제. (`FlowDocumentPaginationAdapter.cs`)
+- **BUC 높이 cascade 오류로 인한 전체 페이지 오버플로 수정**: BUC(BlockUIContainer) 이후 블록의 `topY` 가 BUC 시작 Y 로 붕괴(cascade)되는 문제를 `prevSlot` 하한 방식이 아닌 `effectiveTopY = prevContBottom` 직접 보정 방식으로 대체. 기존 `prevSlot` 하한은 slotFill 정상 오버플로 이후 `prevSlot`이 N+1 로 이동하면 자연 슬롯 N 의 모든 후속 블록을 N+1 로 밀어 거의 모든 페이지가 넘치는 부작용이 있었음. 새 방식은 `topY < prevContBottom` 일 때만 cascade 로 판단해 `effectiveTopY`·`gap` 모두 보정하고, slotFill 과소평가도 동시에 해소. (`FlowDocumentPaginationAdapter.cs`)
 
 - **BUC 이전 제목 단락 고아 문제(orphan heading)**: BUC(이미지·flex 표) 가 overflow 해 slot N+1 로 이동할 때, 바로 앞 제목 단락은 그 이전에 처리되어 slot N 에 이미 배정된 상태. 결과적으로 제목은 페이지 N 에, 내용은 페이지 N+1 에 분리 배치되는 고아 문제 발생. `MapBodyBlocksToPages` 완료 후 역방향 스캔을 통해 `OutlineLevel != Body` 인 제목 단락이 직후 블록보다 앞 페이지에 있으면 직후 블록과 같은 페이지로 이동. 역방향 스캔으로 h1→h2→h3→content 체인도 한 번에 처리. (`FlowDocumentPaginationAdapter.cs`)
 

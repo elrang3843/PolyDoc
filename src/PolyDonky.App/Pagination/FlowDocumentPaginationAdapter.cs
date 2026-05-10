@@ -289,11 +289,8 @@ public static class FlowDocumentPaginationAdapter
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock, colWidth);
 
-            // 직전 블록과의 간격 (연속 레이아웃 기준). WPF 가 마진 붕괴를 이미 적용한 값이므로
-            // 이 gap 을 슬롯 커서에 더하면 페이지 내 실제 간격이 자동으로 반영된다.
-            double gap = (!double.IsNaN(prevContBottom) && !double.IsNaN(topY) && topY > prevContBottom)
-                ? topY - prevContBottom
-                : 0.0;
+            // gap 은 아래 cascade Y 보정 후에 확정된다.
+            double gap;
 
             // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
@@ -334,17 +331,27 @@ public static class FlowDocumentPaginationAdapter
             }
 
             double blockH  = (!double.IsNaN(bottomY) && bottomY > topY) ? (bottomY - topY) : 0.0;
+
+            // ── Cascade Y 보정 ────────────────────────────────────────────────────────
+            // BUC(BlockUIContainer) 는 off-screen RTB 에서 layout height ≈ 0 이므로
+            // BUC 이후 블록의 topY 가 BUC 시작 Y 부근으로 붕괴(collapse)된다.
+            // topY < prevContBottom 이면 cascade 오염으로 판단하고 prevContBottom 을
+            // 유효 시작 Y 로 사용한다. 이 보정은 slotTop 과 gap 모두에 적용되어
+            // slotFill 과소평가(블록이 0 높이로 쌓이는 현상)도 함께 해소한다.
+            // — prevSlot 을 하한으로 쓰는 이전 방식은 slotFill 오버플로 후 prevSlot
+            //   이 N+1 이 되면 자연 슬롯 N 블록까지 전부 N+1 로 밀어 버리는 부작용이 있었다.
+            double effectiveTopY = (!double.IsNaN(prevContBottom) && topY < prevContBottom)
+                ? prevContBottom
+                : topY;
+
+            gap = (!double.IsNaN(prevContBottom) && effectiveTopY > prevContBottom)
+                ? effectiveTopY - prevContBottom
+                : 0.0;
+
             // 연속 스크롤 공간에서 "단 슬롯" 인덱스 (단 슬롯 = 단 × 페이지).
             // minSlot 을 하한으로 적용해 강제 페이지 나누기 이후 블록이 이전 페이지로
             // 돌아가지 않도록 한다. 상한 클램프 없음 — 호출자(Paginate) 가 보정.
-            int slotTop = Math.Max(minSlot, (int)(topY / bodyH));
-
-            // BlockUIContainer(BUC) 높이 cascade 오류 보호:
-            // BUC 는 off-screen RTB 에서 layout height ≈ 0 이므로 BUC 이후 블록의 Y 가
-            // BUC 시작 Y 로 붕괴, slotTop 이 직전 블록(prevSlot)보다 작아질 수 있다.
-            // prevSlot 을 하한으로 적용해 항상 앞 방향으로만 이동하도록 강제한다.
-            if (prevSlot >= 0 && slotTop < prevSlot)
-                slotTop = prevSlot;
+            int slotTop = Math.Max(minSlot, (int)(effectiveTopY / bodyH));
 
             // ── 강제 페이지 나누기 처리 ─────────────────────────────────────────────
             // FlowDocumentBuilder 가 ForcePageBreakBefore=true 를 WPF 의 BreakPageBefore 로
