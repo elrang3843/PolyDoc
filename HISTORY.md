@@ -72,6 +72,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **`FillSafetyMarginDip` 15→25 증가**: SVG/이미지 figure, CSS 도형 표 등 BUC 요소 포함 페이지에서 off-screen 측정값과 on-screen 렌더 높이 사이 누적 오차(~20 DIP)가 safety margin 을 초과해 페이지 하단이 잘리던 문제. safety margin 을 25 DIP 로 상향해 흡수. (`FlowDocumentPaginationAdapter.cs`)
 
+- **BUC(이미지·SVG·flex) 높이 off-screen 측정 실패로 인한 slotFill 누적 과소평가 수정**: `BlockUIContainer` 는 off-screen RTB 에서 layout height ≈ 0 으로 측정돼 `blockH ≈ 0` → slotFill 기여 없음. 결과적으로 이미지(예: 100 DIP) 가 있는 페이지의 slotFill 이 실제보다 100 DIP 이상 작게 계산되고, 이후 블록들이 같은 페이지로 계속 밀려 오버플로가 페이지마다 누적되던 근본 원인. `blockH < 5 DIP` 이고 블록이 `BlockUIContainer` 일 때 `ImageBlock.HeightMm` · `ShapeObject.HeightMm` 을 DIP 로 변환한 폴백 높이를 사용하도록 수정. 폴백 적용 시 `prevContBottom` 도 `topY + blockH` 로 갱신해 후속 블록의 cascade Y 보정 기준점이 BUC 실제 바닥 Y 를 가리키도록 수정. BUC 오차가 직접 보정되므로 `FillSafetyMarginDip` 을 25→15 DIP 로 환원. (`FlowDocumentPaginationAdapter.cs`)
+
 - **BUC 이전 제목 단락 고아 문제(orphan heading)**: BUC(이미지·flex 표) 가 overflow 해 slot N+1 로 이동할 때, 바로 앞 제목 단락은 그 이전에 처리되어 slot N 에 이미 배정된 상태. 결과적으로 제목은 페이지 N 에, 내용은 페이지 N+1 에 분리 배치되는 고아 문제 발생. `MapBodyBlocksToPages` 완료 후 역방향 스캔을 통해 `OutlineLevel != Body` 인 제목 단락이 직후 블록보다 앞 페이지에 있으면 직후 블록과 같은 페이지로 이동. 역방향 스캔으로 h1→h2→h3→content 체인도 한 번에 처리. (`FlowDocumentPaginationAdapter.cs`)
 
 - **orphan heading 이동 후 target 페이지 overflow 수정**: 역방향 스캔이 제목을 page N→N+1 로 이동한 뒤 `slotFill` 을 갱신하지 않아, page N+1 의 누적 채움이 실제보다 과소평가되어 page N+1 콘텐츠가 시각적으로 넘치던 문제. 주 루프에서 `resultFillContribs` 에 각 블록의 `(slotIdx, gap+blockH, blockH)` 기여분을 기록하고, 역방향 스캔이 제목을 이동할 때 source 슬롯에서 `gap+blockH` 를 빼고 target 슬롯에 `blockH` 를 더해 `slotFill` 을 사후 보정. target 슬롯이 `bodyH - FillSafetyMarginDip` 를 초과하면 target 슬롯의 마지막 일반 블록을 다음 슬롯으로 cascade 해 overflow 를 추가 방지. (`FlowDocumentPaginationAdapter.cs`)

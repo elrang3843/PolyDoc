@@ -230,11 +230,11 @@ public static class FlowDocumentPaginationAdapter
         const double BoundaryTol = 2.0;
 
         // 페이지 하단에 남겨두는 최소 여유 공간 (DIP).
-        // 오프스크린 RTB 측정값과 실제 렌더 높이 사이의 누적 오차(Padding.Bottom 일부 미반영,
-        // 마진 붕괴 근사, 서브픽셀 반올림 누적 등)를 흡수하기 위한 safety margin.
-        // 이 값보다 작은 공간이 남으면 다음 블록을 다음 슬롯으로 밀어낸다.
-        // SVG/이미지 figure, CSS 도형 표 등의 측정 오차가 ~20 DIP 수준이므로 25 로 설정.
-        const double FillSafetyMarginDip = 25.0;
+        // 오프스크린 RTB 측정값과 실제 렌더 높이 사이의 누적 오차(서브픽셀 반올림, 마진 붕괴 근사,
+        // 폰트 어센더·디센더 미세 오차 등)를 흡수하기 위한 safety margin.
+        // BUC(이미지·SVG·flex) 높이 오차는 Core 모델 폴백(MinBucBlockH 분기)에서 직접 보정하므로
+        // 여기서 흡수할 필요가 없어졌다 — 텍스트 측정 잔여 오차 수준인 15 DIP 로 유지.
+        const double FillSafetyMarginDip = 15.0;
 
         // 단 슬롯별 누적 채움 높이 (DIP). 의미: 슬롯에 배정된 블록들의 "커서" —
         // 이전 블록 채움 + 블록 간 gap(WPF 마진 붕괴 반영) + 이 블록 높이 를 순차 누적한다.
@@ -392,6 +392,25 @@ public static class FlowDocumentPaginationAdapter
 
             double blockH  = (!double.IsNaN(bottomY) && bottomY > topY) ? (bottomY - topY) : 0.0;
 
+            // ── BUC 높이 폴백 ───────────────────────────────────────────────────────
+            // BlockUIContainer(이미지·SVG·flex 컨테이너) 는 off-screen RTB 에서
+            // layout 이 완료되지 않아 height ≈ 0 으로 측정된다.
+            // blockH ≈ 0 이면 slotFill 에 기여가 없어 해당 페이지의 채움이 실제보다
+            // 훨씬 작게 계산되고, 이후 블록이 계속 같은 페이지로 밀려 누적 오버플로가 발생한다.
+            // Core 모델에 치수가 있는 블록(ImageBlock·ShapeObject)은 HeightMm 을 폴백 높이로 사용한다.
+            const double MinBucBlockH = 5.0; // DIP — 이 이하면 측정 실패로 판단
+            if (blockH < MinBucBlockH && wpfBlock is WpfDocs.BlockUIContainer)
+            {
+                double fallbackH = coreBlock switch
+                {
+                    ImageBlock  img   when img.HeightMm > 0   => FlowDocumentBuilder.MmToDip(img.HeightMm),
+                    ShapeObject shape when shape.HeightMm > 0 => FlowDocumentBuilder.MmToDip(shape.HeightMm),
+                    _                                          => 0.0,
+                };
+                if (fallbackH > blockH)
+                    blockH = fallbackH;
+            }
+
             // ── Cascade Y 보정 ────────────────────────────────────────────────────────
             // BUC(BlockUIContainer) 는 off-screen RTB 에서 layout height ≈ 0 이므로
             // BUC 이후 블록의 topY 가 BUC 시작 Y 부근으로 붕괴(collapse)된다.
@@ -544,7 +563,12 @@ public static class FlowDocumentPaginationAdapter
             });
 
             prevSlot = slotTop;
-            if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
+            // prevContBottom 갱신: BUC 폴백으로 blockH 가 커진 경우 bottomY(≈topY) 가 아닌
+            // topY + blockH 를 사용해야 이후 cascade 보정이 올바른 기준점을 갖는다.
+            if (!double.IsNaN(topY) && blockH > 0 && (double.IsNaN(bottomY) || bottomY - topY < blockH))
+                prevContBottom = topY + blockH;
+            else if (!double.IsNaN(bottomY))
+                prevContBottom = bottomY;
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
