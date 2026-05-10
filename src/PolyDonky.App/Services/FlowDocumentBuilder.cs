@@ -431,6 +431,10 @@ public static class FlowDocumentBuilder
             && singleBuc.Child is FrameworkElement singleFe
             && (section.Background is not null || section.BorderBrush is not null))
         {
+            // singleFe 가 이미 singleBuc 의 논리 자식이므로 먼저 연결을 끊어야 한다.
+            // 연결을 끊지 않으면 Border.Child = singleFe 시 WPF 가
+            // "이미 다른 요소의 논리 자식" InvalidOperationException 을 던진다.
+            singleBuc.Child = null;
             var wrapBorder = new System.Windows.Controls.Border
             {
                 Child        = singleFe,
