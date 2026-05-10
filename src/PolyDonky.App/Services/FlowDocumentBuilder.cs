@@ -382,15 +382,11 @@ public static class FlowDocumentBuilder
                     if (box.Children.Count == 1
                         && box.Children[0] is Table { IsFlexLayout: true } singleFlex)
                     {
-                        // 회전 도형이 없으면 Wpf.Table 로 렌더 — AppendBlocks 재귀로 WPF List 보존.
-                        // 박스 스타일(배경·보더·패딩)은 BuildContainer 가 Wpf.Section 으로 적용.
-                        // 회전 도형이 있으면 기존 BuildFlexContainer(BUC+Grid) 로 ClipToBounds=false 유지.
-                        bool singleFlexHasRotated = singleFlex.Rows.Any(row => row.Cells.Any(cell =>
-                            cell.Blocks.Any(b => b is ShapeObject s && s.RotationAngleDeg != 0)));
-                        if (singleFlexHasRotated)
-                            target.Add(BuildFlexContainer(singleFlex, outlineStyles, box));
-                        else
-                            target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                        // ContainerBlock 이 박스 스타일(배경·테두리·패딩)을 갖고 있으므로
+                        // BuildFlexContainer 에서 boxStyle 파라미터로 직접 처리한다.
+                        // BuildContainer(Section 래퍼) 를 쓰면 Section.Background/BorderBrush 가
+                        // BUC 단독 자식 시 렌더링되지 않는 WPF FlowDocument 버그가 재발한다.
+                        target.Add(BuildFlexContainer(singleFlex, outlineStyles, box));
                     }
                     else
                     {
@@ -702,30 +698,44 @@ public static class FlowDocumentBuilder
             }
         }
 
-        // boxStyle 이 있으면 Grid 를 Border 로 감싸 배경·테두리·패딩을 직접 렌더링.
-        // Wpf.Section.Background/BorderBrush 는 BUC 단독 자식 시 WPF FlowDocument 렌더러가
-        // 그려주지 않으므로 Section 래퍼 없이 BUC 안에서 직접 처리한다.
+        // boxStyle 이 있으면 배경·테두리·패딩을 적용한다.
+        // 핵심 제약: Grid 의 ClipToBounds=false 때문에 도형이 Grid 레이아웃 경계 밖으로 시각적으로
+        // 넘쳐나올 수 있다. Border { Grid } 구조에서는 Grid 콘텐츠가 Border 그림 위에 덮여 그려지는
+        // WPF z-order 때문에 border 선(특히 오른쪽)이 도형에 가려진다.
+        // 해결: 래퍼 Grid 안에 contentGrid(아래)→borderOverlay(위) 순으로 배치해
+        // border 선이 항상 콘텐츠 위에 렌더링되도록 보장한다.
         FrameworkElement content = grid;
         if (boxStyle is not null)
         {
-            var wrapBorder = new System.Windows.Controls.Border
-            {
-                Child        = grid,
-                ClipToBounds = false,
-            };
+            double bL = boxStyle.BorderLeftPt   > 0 ? PtToDip(boxStyle.BorderLeftPt)   : 0;
+            double bT = boxStyle.BorderTopPt    > 0 ? PtToDip(boxStyle.BorderTopPt)    : 0;
+            double bR = boxStyle.BorderRightPt  > 0 ? PtToDip(boxStyle.BorderRightPt)  : 0;
+            double bB = boxStyle.BorderBottomPt > 0 ? PtToDip(boxStyle.BorderBottomPt) : 0;
+            double pL = MmToDip(boxStyle.PaddingLeftMm);
+            double pT = MmToDip(boxStyle.PaddingTopMm);
+            double pR = MmToDip(boxStyle.PaddingRightMm);
+            double pB = MmToDip(boxStyle.PaddingBottomMm);
 
+            // 콘텐츠 Grid 를 border+padding 만큼 안으로 들여쓴다.
+            grid.Margin = new Thickness(bL + pL, bT + pT, bR + pR, bB + pB);
+
+            var wrapperGrid = new System.Windows.Controls.Grid { ClipToBounds = false };
+
+            // 배경 — 래퍼 Grid 에 직접 설정해 padding 영역까지 채워짐.
             if (!string.IsNullOrEmpty(boxStyle.BackgroundColor))
             {
                 try
                 {
-                    wrapBorder.Background = new WpfMedia.SolidColorBrush(
+                    wrapperGrid.Background = new WpfMedia.SolidColorBrush(
                         (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(boxStyle.BackgroundColor));
                 }
                 catch { /* 잘못된 색 무시 */ }
             }
 
-            bool anyBorder = boxStyle.BorderTopPt > 0 || boxStyle.BorderRightPt > 0
-                          || boxStyle.BorderBottomPt > 0 || boxStyle.BorderLeftPt > 0;
+            wrapperGrid.Children.Add(grid); // ① 콘텐츠 (아래 레이어)
+
+            // 테두리 오버레이 — Grid 콘텐츠 위에 그려져 도형 오버플로에 가려지지 않는다.
+            bool anyBorder = bL > 0 || bT > 0 || bR > 0 || bB > 0;
             if (anyBorder)
             {
                 string? colorStr = boxStyle.BorderTopColor ?? boxStyle.BorderRightColor
@@ -738,21 +748,16 @@ public static class FlowDocumentBuilder
                 }
                 else brush = WpfMedia.Brushes.DimGray;
 
-                wrapBorder.BorderBrush     = brush;
-                wrapBorder.BorderThickness = new Thickness(
-                    boxStyle.BorderLeftPt   > 0 ? PtToDip(boxStyle.BorderLeftPt)   : 0,
-                    boxStyle.BorderTopPt    > 0 ? PtToDip(boxStyle.BorderTopPt)    : 0,
-                    boxStyle.BorderRightPt  > 0 ? PtToDip(boxStyle.BorderRightPt)  : 0,
-                    boxStyle.BorderBottomPt > 0 ? PtToDip(boxStyle.BorderBottomPt) : 0);
+                var borderOverlay = new System.Windows.Controls.Border
+                {
+                    BorderBrush      = brush,
+                    BorderThickness  = new Thickness(bL, bT, bR, bB),
+                    IsHitTestVisible = false,   // 인터랙션은 콘텐츠 Grid 에 위임
+                };
+                wrapperGrid.Children.Add(borderOverlay); // ② 테두리 오버레이 (위 레이어)
             }
 
-            var pad = new Thickness(
-                MmToDip(boxStyle.PaddingLeftMm),  MmToDip(boxStyle.PaddingTopMm),
-                MmToDip(boxStyle.PaddingRightMm), MmToDip(boxStyle.PaddingBottomMm));
-            if (pad.Left != 0 || pad.Top != 0 || pad.Right != 0 || pad.Bottom != 0)
-                wrapBorder.Padding = pad;
-
-            content = wrapBorder;
+            content = wrapperGrid;
         }
 
         double marginTop    = boxStyle is not null ? MmToDip(boxStyle.MarginTopMm)    : MmToDip(table.OuterMarginTopMm);
