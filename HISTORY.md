@@ -74,6 +74,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **BUC 이전 제목 단락 고아 문제(orphan heading)**: BUC(이미지·flex 표) 가 overflow 해 slot N+1 로 이동할 때, 바로 앞 제목 단락은 그 이전에 처리되어 slot N 에 이미 배정된 상태. 결과적으로 제목은 페이지 N 에, 내용은 페이지 N+1 에 분리 배치되는 고아 문제 발생. `MapBodyBlocksToPages` 완료 후 역방향 스캔을 통해 `OutlineLevel != Body` 인 제목 단락이 직후 블록보다 앞 페이지에 있으면 직후 블록과 같은 페이지로 이동. 역방향 스캔으로 h1→h2→h3→content 체인도 한 번에 처리. (`FlowDocumentPaginationAdapter.cs`)
 
+- **orphan heading 이동 후 target 페이지 overflow 수정**: 역방향 스캔이 제목을 page N→N+1 로 이동한 뒤 `slotFill` 을 갱신하지 않아, page N+1 의 누적 채움이 실제보다 과소평가되어 page N+1 콘텐츠가 시각적으로 넘치던 문제. 주 루프에서 `resultFillContribs` 에 각 블록의 `(slotIdx, gap+blockH, blockH)` 기여분을 기록하고, 역방향 스캔이 제목을 이동할 때 source 슬롯에서 `gap+blockH` 를 빼고 target 슬롯에 `blockH` 를 더해 `slotFill` 을 사후 보정. target 슬롯이 `bodyH - FillSafetyMarginDip` 를 초과하면 target 슬롯의 마지막 일반 블록을 다음 슬롯으로 cascade 해 overflow 를 추가 방지. (`FlowDocumentPaginationAdapter.cs`)
+
 - **flex ContainerBlock 의 Section 래퍼 제거 — h2/h3 제목 누락 및 회색 박스 미표시 근본 수정**: `Wpf.Section { BlockUIContainer(Grid) }` 구조 자체가 (1) 인접 `Wpf.Paragraph`(`h3`/`h2`)의 `ContentStart.GetCharacterRect` 를 `Rect.Empty` 로 만들어 제목이 엉뚱한 페이지에 배정되고 (2) `Wpf.Section.Background/BorderBrush` 가 WPF FlowDocument 렌더러에서 무시되어 회색 테두리 박스가 미표시되는 두 버그의 공통 근본 원인. `AppendBlocks` 에서 "단독 flex-table ContainerBlock" 을 탐지해 `BuildContainer`(→ Section 생성)를 우회, `BuildFlexContainer` 에 `boxStyle` 파라미터를 추가해 Grid 를 WPF `Border` 로 감싸 배경·테두리·패딩을 직접 적용. Section 래퍼 없이 `BlockUIContainer` 를 FlowDocument 에 직접 추가함으로써 인접 단락의 `GetCharacterRect` 신뢰성 회복 + 회색 박스 렌더링 모두 해결. (`FlowDocumentBuilder.cs`)
 
 - **flex 컨테이너 내 회전 도형(마름모 등) bbox 레이아웃 적용**: `BuildFlexContainer` 의 인라인 도형 호스트 생성 시 `useBboxLayout: true` 를 전달해 회전된 경계 박스 크기를 셀 레이아웃 점유 크기로 사용하도록 수정. 기존에는 원본 크기(CSS 방식)를 점유해 회전 꼭짓점이 인접 셀을 침범하던 문제 수정. (`FlowDocumentBuilder.cs`)

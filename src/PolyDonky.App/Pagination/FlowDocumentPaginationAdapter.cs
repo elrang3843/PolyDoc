@@ -243,6 +243,13 @@ public static class FlowDocumentPaginationAdapter
         // 페이지 경계 결정(fillOverflow), 단락 분할, 디버그 오버레이 표시에 사용된다.
         var slotFill = new System.Collections.Generic.Dictionary<int, double>();
 
+        // result[i] 에 해당하는 slotFill 기여량 — (슬롯 인덱스, gap+blockH, blockH 단독).
+        // 주 루프에서 일반 블록(line 525)의 기여분을 기록하고,
+        // 이후 orphan heading scan 이 제목을 다음 페이지로 이동할 때
+        // source/target 슬롯의 slotFill 을 사후 보정하는 데 사용한다.
+        // (리스트 아이템·NaN 블록 등은 기여분이 없거나 개별 추적이 불필요해 등록하지 않는다.)
+        var resultFillContribs = new System.Collections.Generic.Dictionary<int, (int slotIdx, double contribution, double blockHOnly)>();
+
         // 직전 블록이 최종 배정된 슬롯 인덱스. ForcePageBreakBefore 단락을 다음 페이지로
         // 강제 이동시킬 때 기준 페이지를 결정하는 데 사용. -1 = 첫 블록.
         int prevSlot = -1;
@@ -523,6 +530,7 @@ public static class FlowDocumentPaginationAdapter
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
+            resultFillContribs[result.Count - 1] = (slotTop, gap + blockH, blockH);
 
             // 진단: 블록 측정값 기록 (디버그 오버레이에 표시됨)
             measurements.Add(new BlockMeasurementEntry
@@ -546,6 +554,12 @@ public static class FlowDocumentPaginationAdapter
         // BUC(이미지·도형·flex 표) 높이 cascade 오류로 인해 제목 단락이
         // 직후 내용보다 앞 페이지에 배정되는 경우를 역방향 스캔으로 교정한다.
         // 역방향이면 연속된 제목 체인(h1→h2→h3→content)도 한 번의 패스로 처리된다.
+        //
+        // slotFill 사후 보정: 제목을 page N → N+1 으로 이동하면
+        //   - page N   slotFill -= (gap + blockH)  ← 제목 기여분 환원
+        //   - page N+1 slotFill += blockH          ← 제목이 실제 렌더할 높이
+        // target 슬롯이 bodyH - FillSafetyMarginDip 를 넘으면 target 마지막 블록을
+        // 다음 슬롯으로 cascade 해 overflow 를 방지한다.
         for (int oi = result.Count - 2; oi >= 0; oi--)
         {
             (int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect) curr = result[oi];
@@ -555,6 +569,49 @@ public static class FlowDocumentPaginationAdapter
                 && next.pageIdx > curr.pageIdx)
             {
                 result[oi] = (next.pageIdx, next.colIdx, curr.coreBlock, curr.bodyLocalRect);
+
+                if (resultFillContribs.TryGetValue(oi, out var hc))
+                {
+                    int oldSlot = curr.pageIdx * colCount + curr.colIdx;
+                    int newSlot = next.pageIdx * colCount + next.colIdx;
+
+                    // source 페이지: 제목 기여분(gap + blockH) 제거
+                    slotFill[oldSlot] = Math.Max(0.0,
+                        slotFill.GetValueOrDefault(oldSlot, 0.0) - hc.contribution);
+
+                    // target 페이지: 제목 높이만 추가 (gap 없음 — 새 페이지 시작)
+                    double newFill = slotFill.GetValueOrDefault(newSlot, 0.0) + hc.blockHOnly;
+                    slotFill[newSlot] = Math.Min(bodyH, newFill);
+                    resultFillContribs[oi] = (newSlot, hc.blockHOnly, hc.blockHOnly);
+
+                    // target 슬롯 overflow → 마지막 일반 블록을 다음 슬롯으로 cascade
+                    if (newFill > bodyH - FillSafetyMarginDip)
+                    {
+                        // target 슬롯의 마지막 블록 (forward scan; heading=oi 는 제외)
+                        int lastOnTarget = -1;
+                        for (int j = oi + 1; j < result.Count; j++)
+                        {
+                            (int rPage, int rCol, Block _, Rect __) = result[j];
+                            if (rPage == next.pageIdx && rCol == next.colIdx)
+                                lastOnTarget = j;
+                            else if (rPage > next.pageIdx)
+                                break;
+                        }
+                        if (lastOnTarget > oi
+                            && resultFillContribs.TryGetValue(lastOnTarget, out var lc))
+                        {
+                            int cascadeSlot = newSlot + 1;
+                            slotFill[newSlot] = Math.Max(0.0,
+                                slotFill.GetValueOrDefault(newSlot, 0.0) - lc.contribution);
+                            slotFill[cascadeSlot] = Math.Min(bodyH,
+                                slotFill.GetValueOrDefault(cascadeSlot, 0.0) + lc.blockHOnly);
+                            (int lrPage, int lrCol, Block lrCore, Rect lrRect) = result[lastOnTarget];
+                            result[lastOnTarget] = (cascadeSlot / colCount, cascadeSlot % colCount,
+                                lrCore, lrRect);
+                            resultFillContribs[lastOnTarget] = (cascadeSlot, lc.blockHOnly, lc.blockHOnly);
+                        }
+                    }
+                }
             }
         }
 
