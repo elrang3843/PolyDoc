@@ -68,6 +68,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **BUC 높이 cascade 오류로 인한 전체 페이지 오버플로 수정**: BUC(BlockUIContainer) 이후 블록의 `topY` 가 BUC 시작 Y 로 붕괴(cascade)되는 문제를 `prevSlot` 하한 방식이 아닌 `effectiveTopY = prevContBottom` 직접 보정 방식으로 대체. 기존 `prevSlot` 하한은 slotFill 정상 오버플로 이후 `prevSlot`이 N+1 로 이동하면 자연 슬롯 N 의 모든 후속 블록을 N+1 로 밀어 거의 모든 페이지가 넘치는 부작용이 있었음. 새 방식은 `topY < prevContBottom` 일 때만 cascade 로 판단해 `effectiveTopY`·`gap` 모두 보정하고, slotFill 과소평가도 동시에 해소. (`FlowDocumentPaginationAdapter.cs`)
 
+- **리스트 Y collapse 로 인한 페이지 오버플로 수정**: off-screen RTB 에서 `Wpf.List` 내 개별 `ListItem` 단락의 Y 좌표가 리스트 시작 Y 부근으로 collapse 되어 slotFill 이 리스트 전체 높이를 과소평가하던 문제. `FlattenBlocks` 에서 ListItem 개별 yield 를 제거하고, 메인 루프에서 `Wpf.List` 를 단위로 처리하도록 변경 — `ContentEnd.GetCharacterRect` 로 리스트 전체 높이를 한 번에 측정해 slotFill 에 반영하고 모든 ListItem CoreBlock 을 `AssignListCoreBlocks` 로 동일 슬롯에 일괄 배정. (`FlowDocumentPaginationAdapter.cs`)
+
+- **`FillSafetyMarginDip` 15→25 증가**: SVG/이미지 figure, CSS 도형 표 등 BUC 요소 포함 페이지에서 off-screen 측정값과 on-screen 렌더 높이 사이 누적 오차(~20 DIP)가 safety margin 을 초과해 페이지 하단이 잘리던 문제. safety margin 을 25 DIP 로 상향해 흡수. (`FlowDocumentPaginationAdapter.cs`)
+
 - **BUC 이전 제목 단락 고아 문제(orphan heading)**: BUC(이미지·flex 표) 가 overflow 해 slot N+1 로 이동할 때, 바로 앞 제목 단락은 그 이전에 처리되어 slot N 에 이미 배정된 상태. 결과적으로 제목은 페이지 N 에, 내용은 페이지 N+1 에 분리 배치되는 고아 문제 발생. `MapBodyBlocksToPages` 완료 후 역방향 스캔을 통해 `OutlineLevel != Body` 인 제목 단락이 직후 블록보다 앞 페이지에 있으면 직후 블록과 같은 페이지로 이동. 역방향 스캔으로 h1→h2→h3→content 체인도 한 번에 처리. (`FlowDocumentPaginationAdapter.cs`)
 
 - **flex ContainerBlock 의 Section 래퍼 제거 — h2/h3 제목 누락 및 회색 박스 미표시 근본 수정**: `Wpf.Section { BlockUIContainer(Grid) }` 구조 자체가 (1) 인접 `Wpf.Paragraph`(`h3`/`h2`)의 `ContentStart.GetCharacterRect` 를 `Rect.Empty` 로 만들어 제목이 엉뚱한 페이지에 배정되고 (2) `Wpf.Section.Background/BorderBrush` 가 WPF FlowDocument 렌더러에서 무시되어 회색 테두리 박스가 미표시되는 두 버그의 공통 근본 원인. `AppendBlocks` 에서 "단독 flex-table ContainerBlock" 을 탐지해 `BuildContainer`(→ Section 생성)를 우회, `BuildFlexContainer` 에 `boxStyle` 파라미터를 추가해 Grid 를 WPF `Border` 로 감싸 배경·테두리·패딩을 직접 적용. Section 래퍼 없이 `BlockUIContainer` 를 FlowDocument 에 직접 추가함으로써 인접 단락의 `GetCharacterRect` 신뢰성 회복 + 회색 박스 렌더링 모두 해결. (`FlowDocumentBuilder.cs`)

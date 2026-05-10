@@ -231,9 +231,10 @@ public static class FlowDocumentPaginationAdapter
 
         // 페이지 하단에 남겨두는 최소 여유 공간 (DIP).
         // 오프스크린 RTB 측정값과 실제 렌더 높이 사이의 누적 오차(Padding.Bottom 일부 미반영,
-        // 마진 붕괴 근사 등)를 흡수하기 위한 safety margin.
+        // 마진 붕괴 근사, 서브픽셀 반올림 누적 등)를 흡수하기 위한 safety margin.
         // 이 값보다 작은 공간이 남으면 다음 블록을 다음 슬롯으로 밀어낸다.
-        const double FillSafetyMarginDip = 15.0;
+        // SVG/이미지 figure, CSS 도형 표 등의 측정 오차가 ~20 DIP 수준이므로 25 로 설정.
+        const double FillSafetyMarginDip = 25.0;
 
         // 단 슬롯별 누적 채움 높이 (DIP). 의미: 슬롯에 배정된 블록들의 "커서" —
         // 이전 블록 채움 + 블록 간 gap(WPF 마진 붕괴 반영) + 이 블록 높이 를 순차 누적한다.
@@ -280,6 +281,58 @@ public static class FlowDocumentPaginationAdapter
                     slotFill[satSlot] = Math.Min(bodyH, satPrevFill + satGap + satBlockH);
                 }
                 if (!double.IsNaN(satBottomY)) prevContBottom = satBottomY;
+                continue;
+            }
+
+            // ── Wpf.List 전체 처리 ────────────────────────────────────────────────────────
+            // 리스트 내 개별 단락의 Y 좌표가 off-screen RTB 에서 collapse 되어 slotFill 이
+            // 심각하게 과소평가되는 문제를 방지한다. List 전체의 topY/bottomY 를 단번에 측정해
+            // slotFill 에 반영하고, 모든 ListItem CoreBlock 을 동일 슬롯에 일괄 배정한다.
+            // 제약: List 가 한 슬롯 높이를 초과할 경우 분할 없이 같은 페이지에 통째로 배정됨
+            // (단일 페이지를 넘는 리스트가 없는 현재 문서에서는 허용 가능한 단순화).
+            if (wpfBlock is WpfDocs.List listWpf && wpfBlock.Tag is not Block)
+            {
+                double listTopY    = TryGetTopY(listWpf);
+                double listBottomY = TryGetBottomY(listWpf, colWidth);
+                if (!double.IsNaN(listTopY))
+                {
+                    double effListTopY = (!double.IsNaN(prevContBottom) && listTopY < prevContBottom)
+                        ? prevContBottom : listTopY;
+                    double listGap = (!double.IsNaN(prevContBottom) && effListTopY > prevContBottom)
+                        ? effListTopY - prevContBottom : 0.0;
+                    double listH = (!double.IsNaN(listBottomY) && listBottomY > listTopY)
+                        ? listBottomY - listTopY : 0.0;
+
+                    int listSlot = Math.Max(minSlot, (int)(effListTopY / bodyH));
+
+                    if (listH > 0 && listH < bodyH)
+                    {
+                        while (slotFill.GetValueOrDefault(listSlot, 0.0) + listGap + listH > bodyH - FillSafetyMarginDip)
+                        {
+                            listSlot++;
+                            listGap = 0.0;
+                        }
+                    }
+                    if (listH > 0)
+                        slotFill[listSlot] = Math.Min(bodyH,
+                            slotFill.GetValueOrDefault(listSlot, 0.0) + listGap + listH);
+
+                    AssignListCoreBlocks(listWpf, listSlot, colCount, result);
+
+                    measurements.Add(new BlockMeasurementEntry
+                    {
+                        SlotIdx = listSlot,
+                        Label   = $"List({listWpf.ListItems.Count}items)",
+                        TopY    = listTopY,
+                        BottomY = listBottomY,
+                        BlockH  = listH,
+                        Gap     = listGap,
+                    });
+
+                    prevSlot = listSlot;
+                    minSlot  = Math.Max(minSlot, listSlot);
+                    if (!double.IsNaN(listBottomY)) prevContBottom = listBottomY;
+                }
                 continue;
             }
 
@@ -716,11 +769,43 @@ public static class FlowDocumentPaginationAdapter
             }
 
             yield return b;
-            if (b is WpfDocs.List list)
+            // Wpf.List 자식 단락은 MapBodyBlocksToPages 의 List 전용 핸들러에서 직접 처리.
+            // 여기서 개별 yield 하면 Y collapse 로 slotFill 이 과소평가되므로 재귀하지 않는다.
+        }
+    }
+
+    /// <summary>
+    /// Wpf.List 의 모든 ListItem CoreBlock 을 지정 슬롯에 재귀적으로 배정한다.
+    /// 중첩 List 와 Section 래퍼를 투명하게 처리한다.
+    /// </summary>
+    private static void AssignListCoreBlocks(
+        WpfDocs.List list,
+        int slot,
+        int colCount,
+        List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)> result)
+    {
+        foreach (var li in list.ListItems)
+        {
+            foreach (var block in li.Blocks)
             {
-                foreach (var li in list.ListItems)
-                    foreach (var nested in FlattenBlocks(li.Blocks))
-                        yield return nested;
+                if (block is WpfDocs.List nestedList)
+                {
+                    AssignListCoreBlocks(nestedList, slot, colCount, result);
+                }
+                else if (block is WpfDocs.Section sect)
+                {
+                    foreach (var sectBlock in sect.Blocks)
+                    {
+                        if (sectBlock is WpfDocs.List nestedList2)
+                            AssignListCoreBlocks(nestedList2, slot, colCount, result);
+                        else if (sectBlock.Tag is Block cb && !IsOverlayMode(cb))
+                            result.Add((slot / colCount, slot % colCount, cb, Rect.Empty));
+                    }
+                }
+                else if (block.Tag is Block coreBlock && !IsOverlayMode(coreBlock))
+                {
+                    result.Add((slot / colCount, slot % colCount, coreBlock, Rect.Empty));
+                }
             }
         }
     }
