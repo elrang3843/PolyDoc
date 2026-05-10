@@ -423,6 +423,41 @@ public static class FlowDocumentBuilder
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
 
+        // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
+        // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Border 로 감싸 배경·테두리·패딩을 직접 적용한다.
+        // ClipToBounds=false 로 회전 도형 등 시각적 오버플로를 허용한다.
+        if (section.Blocks.Count == 1
+            && section.Blocks.FirstBlock is Wpf.BlockUIContainer singleBuc
+            && singleBuc.Child is FrameworkElement singleFe
+            && (section.Background is not null || section.BorderBrush is not null))
+        {
+            var wrapBorder = new System.Windows.Controls.Border
+            {
+                Child        = singleFe,
+                ClipToBounds = false,
+            };
+            if (section.Background is not null)
+            {
+                wrapBorder.Background = section.Background;
+                section.Background = null;
+            }
+            if (section.BorderBrush is not null)
+            {
+                wrapBorder.BorderBrush     = section.BorderBrush;
+                wrapBorder.BorderThickness = section.BorderThickness;
+                section.BorderBrush     = null;
+                section.BorderThickness = new Thickness(0);
+            }
+            // Section.Padding 을 Border.Padding 으로 이전해 패딩 영역에도 배경색이 칠해지게 한다.
+            var spad = section.Padding;
+            if (spad.Left != 0 || spad.Top != 0 || spad.Right != 0 || spad.Bottom != 0)
+            {
+                wrapBorder.Padding = spad;
+                section.Padding    = new Thickness(0);
+            }
+            singleBuc.Child = wrapBorder;
+        }
+
         // WPF FlowDocument 에서 Section.Background 는 자식이 Wpf.Table 하나뿐일 때
         // 렌더링되지 않는 경우가 있다. 이 경우 배경을 Table 에 직접 설정하는 방식으로 우회한다.
         if (section.Background is not null

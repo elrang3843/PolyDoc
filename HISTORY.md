@@ -46,6 +46,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **CSS 도형 섹션 h2/h3 제목 누락**: flex 컨테이너(`IsFlexLayout=true`) 를 감싸는 `ContainerBlock`→`Wpf.Section`이 `BlockUIContainer(Grid)` 를 단독 자식으로 가질 때 오프스크린 RTB 에서 인접 `Wpf.Paragraph`(`h2`/`h3`)의 `ContentStart.GetCharacterRect` 가 `Rect.Empty` 를 반환하는 WPF 레이아웃 퀵. `MapBodyBlocksToPages`의 NaN-topY 폴백이 `minSlot=0`(1 페이지)으로 강제 배정해 제목이 엉뚱한 페이지에 숨겨지던 문제. 폴백 로직을 `prevSlot`(직전 유효 슬롯)으로 배정하도록 수정해 인접 제목이 같은 페이지 슬롯에 함께 배정됨. (`FlowDocumentPaginationAdapter.cs`)
+
+- **flex 컨테이너 회색 박스 배경·테두리 미표시**: `BuildContainer`가 `Wpf.Section { BlockUIContainer(Grid) }` 구조를 만들 때 `Wpf.Section.Background`/`BorderBrush` 가 WPF FlowDocument 렌더러에서 그려지지 않는 문제. 자식 BUC 의 `FrameworkElement`(Grid)를 WPF `Border`로 감싸고 Section의 Background·BorderBrush·BorderThickness·Padding 을 Border 에 이전하는 방식으로 우회. `ClipToBounds=false`를 유지해 회전 도형의 시각적 오버플로를 허용. (`FlowDocumentBuilder.cs`)
+
 - **flex/grid 컨테이너 박스 스타일(배경·테두리·패딩) 보존**: HTML `<div style="display:flex; background:#fafafa; border:1px solid #ddd; padding:20px">` 같은 flex/grid 컨테이너를 다단 Table 로 근사 변환할 때 컨테이너 자체의 시각 박스 속성을 모두 잃던 문제. `TryBuildGridAsTable` 가 박스 스타일이 있으면 생성된 Table 을 `ContainerBlock` 으로 감싸 배경·4면 테두리·padding·margin·class·`SpaceBefore/After` → margin 변환을 모두 보존하도록 수정. CSS 도형 그룹 등 flex 컨테이너의 회색 배경·테두리가 라운드트립에서 정확히 표시됨.
 
 - **반원(`HalfCircle`) 렌더링 방향 반전**: `BuildShapeGeometry` 의 `ArcSegment` 가 `SweepDirection.Counterclockwise` 로 설정돼 CSS `border-radius: R R 0 0` (위쪽이 둥근 반원) 과 반대 방향(아래쪽 호) 으로 그려지던 문제. `Clockwise` 로 수정해 WPF Y-down 좌표계에서 호가 위로 볼록하게 렌더링됨.

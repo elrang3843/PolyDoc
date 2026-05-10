@@ -309,11 +309,23 @@ public static class FlowDocumentPaginationAdapter
                 continue;
             }
 
-            // Y 를 측정할 수 없으면 minSlot 슬롯에 배정하고 다음 블록으로.
+            // Y 를 측정할 수 없으면 직전 블록과 같은 슬롯에 배정한다.
+            // prevSlot 이 유효하면 그것을 하한으로 사용해 minSlot 이 강제하는 최솟값도 존중한다.
+            // (이전에는 무조건 minSlot=0 에 배정해 이미지/도형 직후 h2/h3 가 1페이지로 떨어지는 버그 있었음.)
             if (double.IsNaN(topY))
             {
-                result.Add((minSlot / colCount, minSlot % colCount, coreBlock, Rect.Empty));
-                prevSlot = minSlot;
+                int nanSlot = prevSlot >= 0 ? Math.Max(minSlot, prevSlot) : minSlot;
+                result.Add((nanSlot / colCount, nanSlot % colCount, coreBlock, Rect.Empty));
+                measurements.Add(new BlockMeasurementEntry
+                {
+                    SlotIdx = nanSlot,
+                    Label   = MakeMeasurementLabel(coreBlock, wpfBlock) + "(noY)",
+                    TopY    = double.IsNaN(prevContBottom) ? double.NaN : prevContBottom,
+                    BottomY = double.NaN,
+                    BlockH  = 0,
+                    Gap     = 0,
+                });
+                prevSlot = nanSlot;
                 continue;
             }
 
