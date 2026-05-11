@@ -86,7 +86,17 @@ internal static class SliceRefiner
             var lastBlock = srcFd.Blocks.LastBlock;
             if (lastBlock is null) continue;
 
+            // 테이블 블록의 Tag (Core.Table 참조) 를 백업해 이동 후 복원한다.
+            // WPF 의 FlowDocument 이동 시 일부 메타데이터가 손실될 수 있으므로 명시적으로 보존.
+            object? savedTag = null;
+            if (lastBlock is Table wpfTable)
+                savedTag = wpfTable.Tag;
+
             srcFd.Blocks.Remove(lastBlock);
+
+            // 테이블의 Tag 복원.
+            if (lastBlock is Table table && savedTag is not null)
+                table.Tag = savedTag;
 
             var dstFd = slices[i + 1].FlowDocument;
             if (dstFd.Blocks.FirstBlock is { } firstDst)
