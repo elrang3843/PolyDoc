@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **ContainerBlock(figure 등) 오른쪽 테두리 선 RTB 클리핑으로 미표시**: WPF FlowDocument 에서 `Wpf.Section.BorderBrush` 의 오른쪽 border 가 RTB(`RichTextBox`) 의 `Width` 경계 위에 렌더링되어 RTB 클리핑에 잘리던 문제. SVG-to-image 변환 픽셀 손실이 아니라 WPF 레이아웃 경계 클리핑이 원인. `BuildContainer` 에서 `box.BorderRightPt > 0` 일 때 `section.Margin.Right` 를 `max(1, borderRightDip)` 로 설정해 오른쪽 border 선이 RTB 클립 경계 안쪽에 그려지도록 수정. (`FlowDocumentBuilder.cs`)
+
 - **flex 컨테이너 안 목록 글머리 기호(•, ○, ■, 1., A., i.) 미표시**: `BuildFlexContainer`(BUC+Grid+StackPanel)가 flex 셀 안의 `Paragraph` 블록을 `BuildFlexLabel`(단순 TextBlock)로 변환해 `ListMarker` 정보가 무시되고 WPF `List`/`ListItem` 구조가 생성되지 않던 문제. `AppendBlocks` 의 `case Table t:` 핸들러에서 `IsFlexLayout=true` 표를 렌더링할 때 회전 도형(`RotationAngleDeg ≠ 0`) 포함 여부를 검사: 회전 도형이 없으면 `BuildTable` + `AppendBlocks` 재귀 경로를 사용해 WPF `List` 구조를 올바르게 생성, 회전 도형이 있으면 기존 `BuildFlexContainer`(BUC+Grid, `ClipToBounds=false`) 경로 유지. `ContainerBlock` 단독 flex 감싸기 경로(`box.Children.Count==1 && IsFlexLayout`)는 박스 스타일(배경·테두리·패딩) 보존을 위해 항상 `BuildFlexContainer` 사용. (`FlowDocumentBuilder.cs`)
 
 - **flex 컨테이너 도형 오버플로가 오른쪽 테두리 선을 덮어쓰던 문제**: `BuildFlexContainer` 에서 `Border { Grid }` 구조를 사용해 WPF z-order 상 Grid 콘텐츠가 Border 선 위에 렌더링됐다. `ClipToBounds=false` 도형의 시각적 오버플로가 오른쪽 테두리 선을 가리는 원인. `Grid { contentGrid(아래), borderOverlay Border(위) }` 구조로 변경해 테두리가 항상 콘텐츠·오버플로 위에 렌더링되도록 수정. 콘텐츠 Grid 는 `border+padding` 만큼 `Margin` 으로 안으로 들여쓰고, 배경은 래퍼 Grid 에 직접 설정해 padding 영역까지 채움. (`FlowDocumentBuilder.cs`)
