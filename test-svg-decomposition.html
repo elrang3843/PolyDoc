@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SVG Decomposition Test</title>
+</head>
+<body>
+    <h1>SVG Decomposition Test</h1>
+
+    <h2>Multi-Shape SVG (should decompose into editable shapes)</h2>
+    <svg width="300" height="200" style="border: 1px solid #ccc;">
+        <!-- Rectangle -->
+        <rect x="10" y="10" width="80" height="60" fill="#FF6B6B" stroke="#000" stroke-width="2"/>
+        <!-- Circle -->
+        <circle cx="200" cy="40" r="30" fill="#4ECDC4" stroke="#000" stroke-width="2"/>
+        <!-- Triangle (polygon) -->
+        <polygon points="150,150 200,80 250,150" fill="#FFE66D" stroke="#000" stroke-width="2"/>
+        <!-- Line -->
+        <line x1="10" y1="150" x2="280" y2="150" stroke="#95E1D3" stroke-width="3"/>
+    </svg>
+
+    <h2>Single Shape SVG with Label</h2>
+    <svg width="150" height="150">
+        <rect x="10" y="10" width="130" height="130" fill="#A8E6CF" stroke="#000" stroke-width="2"/>
+        <text x="75" y="75" text-anchor="middle" dominant-baseline="middle">Label</text>
+    </svg>
+
+    <p>Test: The multi-shape SVG should be decomposed into individual shapes that can be edited.
+    Right-click on the shapes to see if you can ungroup them.</p>
+</body>
+</html>

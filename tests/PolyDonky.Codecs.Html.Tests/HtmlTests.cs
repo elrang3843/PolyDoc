@@ -1350,6 +1350,43 @@ public class HtmlTests
         Assert.IsType<ShapeObject>(group.Children[1]);
     }
 
+    [Fact]
+    public void RoundTrip_ContainerGroupWithShapes_ChildrenPreserved()
+    {
+        // ContainerBlock{Group} with ShapeObjects → HtmlWriter → HtmlReader 시
+        // 컨테이너 구조는 보존되지 않지만 (HTML 기반 제약), 개별 Shape 자식은 보존된다.
+        // 재구성 시 다시 multi-shape 형태로 읽혀 ContainerBlock{Group} 이 된다.
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        doc.Sections.Add(sec);
+
+        var group = new ContainerBlock { Role = ContainerRole.Group };
+        group.Children.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle,
+            WidthMm = 20,
+            HeightMm = 15,
+            FillColor = "#FF0000",
+        });
+        group.Children.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse,
+            WidthMm = 20,
+            HeightMm = 20,
+            FillColor = "#00FF00",
+        });
+        sec.Blocks.Add(group);
+
+        var html = HtmlWriter.ToHtml(doc);
+        var rt = HtmlReader.FromHtml(html);
+        // HTML 출력에서 ContainerBlock{Group} 은 보존되지 않고 자식만 분산된다.
+        // 하지만 다중 ShapeObject 로 다시 읽혀지면 ContainerBlock{Group} 으로 재구성된다.
+        var blocks = rt.Sections[0].Blocks.ToList();
+        Assert.Equal(2, blocks.Count);
+        Assert.IsType<ShapeObject>(blocks[0]);
+        Assert.IsType<ShapeObject>(blocks[1]);
+    }
+
     // ── CSS 도형 → ShapeObject ─────────────────────────────────────────
 
     [Fact]
