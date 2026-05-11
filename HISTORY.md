@@ -46,6 +46,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **HTML 파일 변환 표의 열 리사이즈 실패**: SliceRefiner가 페이지 오버플로 보정을 위해 테이블 블록을 슬라이스 간 이동할 때 Table.Tag (Core.Table 참조) 가 손실되는 버그. 이동 전후로 메타데이터를 보존하도록 수정하여 열 리사이즈가 올바른 Core.Table을 참조하도록 복구. (`SliceRefiner.cs`)
 - **HTML Flex 컨테이너 내 이미지 편집 가능화**: Flex row 안의 모든 셀이 단일 ShapeObject 또는 ImageBlock으로만 구성된 경우(기존엔 ShapeObject만), 이미지도 독립 InFrontOfText 오버레이로 변환. 이미지가 표 셀에 갇혀 이동 불가하던 문제 해결. (`HtmlReader.cs`)
 
 - **SVG 텍스트 레이블 → ShapeObject 편집 유지**: 단일 도형 + `<text>` 요소를 가진 SVG를 비트맵으로 변환하지 않고 `ShapeObject.LabelText`로 흡수해 편집 가능 상태를 유지. (`HtmlReader.cs`)
