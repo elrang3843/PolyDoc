@@ -294,7 +294,20 @@ public static class FlowDocumentBuilder
                         // <caption> 이 있으면 표 위에 가운데 정렬 단락으로 렌더링.
                         if (!string.IsNullOrEmpty(t.Caption))
                             target.Add(BuildTableCaption(t.Caption));
-                        target.Add(BuildTable(t, outlineStyles));
+                        // CSS flex/grid 에서 변환된 레이아웃 표:
+                        // - 회전 도형이 포함된 경우: BlockUIContainer(WPF Grid) → ClipToBounds=false 로 오버플로 허용.
+                        // - 텍스트/목록만 있는 경우: Wpf.Table → AppendBlocks 재귀로 WPF List 구조를 올바르게 생성.
+                        //   (BuildFlexContainer 의 BuildFlexLabel 은 ListMarker 를 TextBlock 으로 처리해 글머리 기호가 사라짐.)
+                        if (t.IsFlexLayout)
+                        {
+                            bool hasRotatedShape = t.Rows.Any(row => row.Cells.Any(cell =>
+                                cell.Blocks.Any(b => b is ShapeObject s && s.RotationAngleDeg != 0)));
+                            target.Add(hasRotatedShape
+                                ? BuildFlexContainer(t, outlineStyles)
+                                : BuildTable(t, outlineStyles));
+                        }
+                        else
+                            target.Add(BuildTable(t, outlineStyles));
                     }
                     else
                         target.Add(BuildTableAnchor(t));   // 오버레이 모드 — 앵커만 추가
@@ -361,7 +374,24 @@ public static class FlowDocumentBuilder
 
                 case ContainerBlock box:
                     listStack.Clear();
-                    target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                    // flex-table 단독 ContainerBlock 특수 처리:
+                    // Wpf.Section { BUC(Grid) } 구조는 (1) Section.Background 가 렌더링되지 않고
+                    // (2) 인접 Paragraph 의 GetCharacterRect 가 Rect.Empty 를 반환하는 WPF 레이아웃
+                    // 퀵을 유발한다. BUC 를 직접 배출하고 박스 스타일을 Grid 래핑 Border 에 적용함으로써
+                    // Section 래퍼를 완전히 제거한다.
+                    if (box.Children.Count == 1
+                        && box.Children[0] is Table { IsFlexLayout: true } singleFlex)
+                    {
+                        // ContainerBlock 이 박스 스타일(배경·테두리·패딩)을 갖고 있으므로
+                        // BuildFlexContainer 에서 boxStyle 파라미터로 직접 처리한다.
+                        // BuildContainer(Section 래퍼) 를 쓰면 Section.Background/BorderBrush 가
+                        // BUC 단독 자식 시 렌더링되지 않는 WPF FlowDocument 버그가 재발한다.
+                        target.Add(BuildFlexContainer(singleFlex, outlineStyles, box));
+                    }
+                    else
+                    {
+                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                    }
                     break;
             }
         }
@@ -417,6 +447,45 @@ public static class FlowDocumentBuilder
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
+
+        // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
+        // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Border 로 감싸 배경·테두리·패딩을 직접 적용한다.
+        // ClipToBounds=false 로 회전 도형 등 시각적 오버플로를 허용한다.
+        if (section.Blocks.Count == 1
+            && section.Blocks.FirstBlock is Wpf.BlockUIContainer singleBuc
+            && singleBuc.Child is FrameworkElement singleFe
+            && (section.Background is not null || section.BorderBrush is not null))
+        {
+            // singleFe 가 이미 singleBuc 의 논리 자식이므로 먼저 연결을 끊어야 한다.
+            // 연결을 끊지 않으면 Border.Child = singleFe 시 WPF 가
+            // "이미 다른 요소의 논리 자식" InvalidOperationException 을 던진다.
+            singleBuc.Child = null;
+            var wrapBorder = new System.Windows.Controls.Border
+            {
+                Child        = singleFe,
+                ClipToBounds = false,
+            };
+            if (section.Background is not null)
+            {
+                wrapBorder.Background = section.Background;
+                section.Background = null;
+            }
+            if (section.BorderBrush is not null)
+            {
+                wrapBorder.BorderBrush     = section.BorderBrush;
+                wrapBorder.BorderThickness = section.BorderThickness;
+                section.BorderBrush     = null;
+                section.BorderThickness = new Thickness(0);
+            }
+            // Section.Padding 을 Border.Padding 으로 이전해 패딩 영역에도 배경색이 칠해지게 한다.
+            var spad = section.Padding;
+            if (spad.Left != 0 || spad.Top != 0 || spad.Right != 0 || spad.Bottom != 0)
+            {
+                wrapBorder.Padding = spad;
+                section.Padding    = new Thickness(0);
+            }
+            singleBuc.Child = wrapBorder;
+        }
 
         // WPF FlowDocument 에서 Section.Background 는 자식이 Wpf.Table 하나뿐일 때
         // 렌더링되지 않는 경우가 있다. 이 경우 배경을 Table 에 직접 설정하는 방식으로 우회한다.
@@ -566,6 +635,180 @@ public static class FlowDocumentBuilder
         };
 
         return new Wpf.BlockUIContainer(border) { Tag = toc };
+    }
+
+    // CSS flex/grid 컨테이너 전용 렌더러 — Wpf.Table 대신 BlockUIContainer(WPF Grid) 를 사용해
+    // 회전 도형 등의 시각적 오버플로가 TableCell 렌더러의 기하 클리핑에 걸리지 않도록 한다.
+    // boxStyle 이 non-null 이면 Grid 를 WPF Border 로 감싸 배경·테두리·패딩을 직접 적용한다
+    // (Wpf.Section.Background/BorderBrush 는 BUC 단독 자식 시 렌더링 안 되는 WPF 버그 우회).
+    private static Wpf.Block BuildFlexContainer(Table table, OutlineStyleSet? outlineStyles,
+        ContainerBlock? boxStyle = null)
+    {
+        int colCount = Math.Max(table.Columns.Count, 1);
+
+        var grid = new System.Windows.Controls.Grid { ClipToBounds = false };
+        for (int c = 0; c < colCount; c++)
+            grid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition
+                { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition
+            { Height = GridLength.Auto });
+
+        if (table.Rows.Count > 0)
+        {
+            int colIdx = 0;
+            foreach (var cell in table.Rows[0].Cells)
+            {
+                double gapRight = cell.PaddingRightMm > 0 ? MmToDip(cell.PaddingRightMm) : 0;
+                var cellPanel = new System.Windows.Controls.StackPanel
+                {
+                    Orientation         = System.Windows.Controls.Orientation.Vertical,
+                    ClipToBounds        = false,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin              = new Thickness(0, 0, gapRight, 0),
+                };
+
+                foreach (var block in cell.Blocks)
+                {
+                    if (block is ShapeObject shape && shape.WrapMode != ImageWrapMode.InFrontOfText
+                                                   && shape.WrapMode != ImageWrapMode.BehindText)
+                    {
+                        double wDip = MmToDip(shape.WidthMm);
+                        double hDip = MmToDip(shape.HeightMm);
+                        var visual = BuildShapeVisual(shape, wDip, hDip);
+                        var imgHA = shape.HAlign switch
+                        {
+                            ImageHAlign.Center => HorizontalAlignment.Center,
+                            ImageHAlign.Right  => HorizontalAlignment.Right,
+                            _                  => HorizontalAlignment.Left,
+                        };
+                        visual.HorizontalAlignment = imgHA;
+                        var host = BuildInlineRotationHost(visual, shape.RotationAngleDeg, wDip, hDip, imgHA, useBboxLayout: true);
+                        host.Margin = new Thickness(0, MmToDip(shape.MarginTopMm), 0, MmToDip(shape.MarginBottomMm));
+                        cellPanel.Children.Add(host);
+                    }
+                    else if (block is Paragraph para)
+                    {
+                        cellPanel.Children.Add(BuildFlexLabel(para));
+                    }
+                }
+
+                System.Windows.Controls.Grid.SetColumn(cellPanel, colIdx);
+                grid.Children.Add(cellPanel);
+                colIdx++;
+            }
+        }
+
+        // boxStyle 이 있으면 배경·테두리·패딩을 적용한다.
+        // 핵심 제약: Grid 의 ClipToBounds=false 때문에 도형이 Grid 레이아웃 경계 밖으로 시각적으로
+        // 넘쳐나올 수 있다. Border { Grid } 구조에서는 Grid 콘텐츠가 Border 그림 위에 덮여 그려지는
+        // WPF z-order 때문에 border 선(특히 오른쪽)이 도형에 가려진다.
+        // 해결: 래퍼 Grid 안에 contentGrid(아래)→borderOverlay(위) 순으로 배치해
+        // border 선이 항상 콘텐츠 위에 렌더링되도록 보장한다.
+        FrameworkElement content = grid;
+        if (boxStyle is not null)
+        {
+            double bL = boxStyle.BorderLeftPt   > 0 ? PtToDip(boxStyle.BorderLeftPt)   : 0;
+            double bT = boxStyle.BorderTopPt    > 0 ? PtToDip(boxStyle.BorderTopPt)    : 0;
+            double bR = boxStyle.BorderRightPt  > 0 ? PtToDip(boxStyle.BorderRightPt)  : 0;
+            double bB = boxStyle.BorderBottomPt > 0 ? PtToDip(boxStyle.BorderBottomPt) : 0;
+            double pL = MmToDip(boxStyle.PaddingLeftMm);
+            double pT = MmToDip(boxStyle.PaddingTopMm);
+            double pR = MmToDip(boxStyle.PaddingRightMm);
+            double pB = MmToDip(boxStyle.PaddingBottomMm);
+
+            // 콘텐츠 Grid 를 border+padding 만큼 안으로 들여쓴다.
+            grid.Margin = new Thickness(bL + pL, bT + pT, bR + pR, bB + pB);
+
+            var wrapperGrid = new System.Windows.Controls.Grid { ClipToBounds = false };
+
+            // 배경 — 래퍼 Grid 에 직접 설정해 padding 영역까지 채워짐.
+            if (!string.IsNullOrEmpty(boxStyle.BackgroundColor))
+            {
+                try
+                {
+                    wrapperGrid.Background = new WpfMedia.SolidColorBrush(
+                        (WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(boxStyle.BackgroundColor));
+                }
+                catch { /* 잘못된 색 무시 */ }
+            }
+
+            wrapperGrid.Children.Add(grid); // ① 콘텐츠 (아래 레이어)
+
+            // 테두리 오버레이 — Grid 콘텐츠 위에 그려져 도형 오버플로에 가려지지 않는다.
+            bool anyBorder = bL > 0 || bT > 0 || bR > 0 || bB > 0;
+            if (anyBorder)
+            {
+                string? colorStr = boxStyle.BorderTopColor ?? boxStyle.BorderRightColor
+                                ?? boxStyle.BorderBottomColor ?? boxStyle.BorderLeftColor;
+                WpfMedia.Brush brush;
+                if (!string.IsNullOrEmpty(colorStr))
+                {
+                    try { brush = new WpfMedia.SolidColorBrush((WpfMedia.Color)WpfMedia.ColorConverter.ConvertFromString(colorStr)); }
+                    catch { brush = WpfMedia.Brushes.DimGray; }
+                }
+                else brush = WpfMedia.Brushes.DimGray;
+
+                var borderOverlay = new System.Windows.Controls.Border
+                {
+                    BorderBrush      = brush,
+                    BorderThickness  = new Thickness(bL, bT, bR, bB),
+                    IsHitTestVisible = false,   // 인터랙션은 콘텐츠 Grid 에 위임
+                };
+                wrapperGrid.Children.Add(borderOverlay); // ② 테두리 오버레이 (위 레이어)
+            }
+
+            content = wrapperGrid;
+        }
+
+        double marginTop    = boxStyle is not null ? MmToDip(boxStyle.MarginTopMm)    : MmToDip(table.OuterMarginTopMm);
+        double marginBottom = boxStyle is not null ? MmToDip(boxStyle.MarginBottomMm) : MmToDip(table.OuterMarginBottomMm);
+
+        return new Wpf.BlockUIContainer(content)
+        {
+            Tag    = table,
+            Margin = new Thickness(
+                MmToDip(table.OuterMarginLeftMm),
+                marginTop,
+                MmToDip(table.OuterMarginRightMm),
+                marginBottom),
+        };
+    }
+
+    // flex 셀 안의 텍스트 단락(레이블 등)을 WPF TextBlock 으로 변환.
+    private static System.Windows.Controls.TextBlock BuildFlexLabel(Paragraph para)
+    {
+        var ta = para.Style.Alignment switch
+        {
+            Alignment.Center  => TextAlignment.Center,
+            Alignment.Right   => TextAlignment.Right,
+            Alignment.Justify => TextAlignment.Justify,
+            _                 => TextAlignment.Center, // flex 셀은 기본 가운데
+        };
+        var tb = new System.Windows.Controls.TextBlock
+        {
+            TextAlignment = ta,
+            TextWrapping  = System.Windows.TextWrapping.Wrap,
+        };
+        if (para.Style.SpaceBeforePt > 0)
+            tb.Margin = new Thickness(0, PtToDip(para.Style.SpaceBeforePt), 0, 0);
+
+        foreach (var run in para.Runs)
+        {
+            if (run.Text is null) continue;
+            var wr = new System.Windows.Documents.Run(run.Text);
+            if (run.Style.FontSizePt > 0)
+                wr.FontSize = PtToDip(run.Style.FontSizePt);
+            if (!string.IsNullOrEmpty(run.Style.FontFamily))
+                wr.FontFamily = new WpfMedia.FontFamily(run.Style.FontFamily);
+            if (run.Style.Bold   == true) wr.FontWeight = System.Windows.FontWeights.Bold;
+            if (run.Style.Italic == true) wr.FontStyle  = System.Windows.FontStyles.Italic;
+            if (run.Style.Foreground is { } fg)
+                wr.Foreground = new WpfMedia.SolidColorBrush(
+                    WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+            tb.Inlines.Add(wr);
+        }
+
+        return tb;
     }
 
     internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null)
@@ -1725,39 +1968,51 @@ public static class FlowDocumentBuilder
         canvas.RenderTransform = new WpfMedia.RotateTransform(angleDeg);
     }
 
-    // 인라인 도형 회전 호스트 — 회전된 경계 박스 크기의 외부 Canvas 안에 오프셋 배치 후 회전.
-    // 외부 Canvas 에 Width/Height 를 명시하면 FrameworkElement.MeasureCore 가 그 값을 DesiredSize
-    // 로 반영해 BlockUIContainer / 셀 행 높이에 회전 bbox 만큼의 공간이 예약된다.
-    // ClipToBounds=false 로 회전된 모서리가 외부 Canvas 경계 바깥으로 잘리지 않게 한다.
-    // (Border 를 외부 컨테이너로 쓰면 자식을 콘텐츠 영역 안에 clip 해 모서리가 잘리는 문제 발생.)
+    // 인라인 도형 회전 호스트 — CSS transform:rotate() 와 동일하게 레이아웃 풋프린트는 원본 크기(wDip×hDip) 유지.
+    // 외부 Canvas 의 Width/Height 를 원본 크기로 고정하고 ClipToBounds=false 로 시각적 오버플로를 허용한다.
+    // 좁은 표 셀에서 회전 bounding-box 크기로 잘리는 문제를 방지하는 CSS-correct 접근.
+    // (BuildShape 에서 회전 오버플로만큼 상하 마진을 보충해 위아래 꼭짓점도 레이아웃 흐름 안에 들어온다.)
     private static FrameworkElement BuildInlineRotationHost(
         System.Windows.Controls.Canvas canvas,
         double angleDeg,
         double wDip,
         double hDip,
-        HorizontalAlignment hAlign)
+        HorizontalAlignment hAlign,
+        bool useBboxLayout = false)
     {
         if (Math.Abs(angleDeg) < 0.01) return canvas;
 
-        double rad  = angleDeg * Math.PI / 180.0;
-        double cos  = Math.Abs(Math.Cos(rad));
-        double sin  = Math.Abs(Math.Sin(rad));
-        double rotW = wDip * cos + hDip * sin;
-        double rotH = wDip * sin + hDip * cos;
+        double outerW, outerH;
+        if (useBboxLayout)
+        {
+            // flex/grid 셀 안에서는 회전 bounding-box 를 레이아웃 크기로 사용해
+            // 도형이 시각적으로 셀 영역 안에 담히도록 한다.
+            // 내부 캔버스(원본 크기)를 외부 bbox 캔버스 중앙에 배치하고 거기서 회전.
+            double rad  = angleDeg * Math.PI / 180.0;
+            double cosA = Math.Abs(Math.Cos(rad));
+            double sinA = Math.Abs(Math.Sin(rad));
+            outerW = cosA * wDip + sinA * hDip;
+            outerH = sinA * wDip + cosA * hDip;
+            System.Windows.Controls.Canvas.SetLeft(canvas, (outerW - wDip) / 2);
+            System.Windows.Controls.Canvas.SetTop(canvas,  (outerH - hDip) / 2);
+        }
+        else
+        {
+            // CSS transform:rotate() 는 레이아웃 풋프린트를 변경하지 않는다.
+            // 외부 Canvas 는 원본 크기(wDip×hDip)로 유지하고 ClipToBounds=false 로 시각적 오버플로를 허용.
+            outerW = wDip;
+            outerH = hDip;
+            System.Windows.Controls.Canvas.SetLeft(canvas, 0);
+            System.Windows.Controls.Canvas.SetTop(canvas, 0);
+        }
 
-        // 내부 캔버스를 외부 Canvas 중앙에 배치: 오프셋 = (rotW-wDip)/2, (rotH-hDip)/2
-        // → 내부 캔버스의 중심 = 외부 Canvas 의 중심 → RenderTransformOrigin(0.5,0.5) 이 외부 중심 기준으로 회전.
-        double offsetX = (rotW - wDip) / 2.0;
-        double offsetY = (rotH - hDip) / 2.0;
-        System.Windows.Controls.Canvas.SetLeft(canvas, offsetX);
-        System.Windows.Controls.Canvas.SetTop(canvas, offsetY);
         canvas.RenderTransformOrigin = new Point(0.5, 0.5);
         canvas.RenderTransform       = new WpfMedia.RotateTransform(angleDeg);
 
         var outer = new System.Windows.Controls.Canvas
         {
-            Width               = rotW,
-            Height              = rotH,
+            Width               = outerW,
+            Height              = outerH,
             ClipToBounds        = false,
             HorizontalAlignment = hAlign,
         };

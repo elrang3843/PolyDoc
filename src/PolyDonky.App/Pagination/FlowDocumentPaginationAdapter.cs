@@ -109,6 +109,10 @@ public static class FlowDocumentPaginationAdapter
             pageCount = Math.Max(pageCount, maxBodyPage);
         }
 
+        // 4a. CSS flex 도형 spacer 기반 오버레이 좌표 해결.
+        // HtmlReader 가 생성한 AnchorPageIndex=-2 ShapeObject 에 spacer 의 페이지·Y 를 반영한다.
+        ResolveFlexShapeOverlays(document, bodyAssignments, geo);
+
         // 4. 오버레이 블록(글상자·이미지·도형·오버레이 표) 수집 — AnchorPageIndex 기준
         var overlayAssignments = CollectOverlayBlocks(document);
 
@@ -226,9 +230,10 @@ public static class FlowDocumentPaginationAdapter
         const double BoundaryTol = 2.0;
 
         // 페이지 하단에 남겨두는 최소 여유 공간 (DIP).
-        // 오프스크린 RTB 측정값과 실제 렌더 높이 사이의 누적 오차(Padding.Bottom 일부 미반영,
-        // 마진 붕괴 근사 등)를 흡수하기 위한 safety margin.
-        // 이 값보다 작은 공간이 남으면 다음 블록을 다음 슬롯으로 밀어낸다.
+        // 오프스크린 RTB 측정값과 실제 렌더 높이 사이의 누적 오차(서브픽셀 반올림, 마진 붕괴 근사,
+        // 폰트 어센더·디센더 미세 오차 등)를 흡수하기 위한 safety margin.
+        // BUC(이미지·SVG·flex) 높이 오차는 Core 모델 폴백(MinBucBlockH 분기)에서 직접 보정하므로
+        // 여기서 흡수할 필요가 없어졌다 — 텍스트 측정 잔여 오차 수준인 15 DIP 로 유지.
         const double FillSafetyMarginDip = 15.0;
 
         // 단 슬롯별 누적 채움 높이 (DIP). 의미: 슬롯에 배정된 블록들의 "커서" —
@@ -237,6 +242,19 @@ public static class FlowDocumentPaginationAdapter
         // 이전 슬롯의 연속으로 이어지지 않도록 한다.
         // 페이지 경계 결정(fillOverflow), 단락 분할, 디버그 오버레이 표시에 사용된다.
         var slotFill = new System.Collections.Generic.Dictionary<int, double>();
+
+        // result[i] 에 해당하는 slotFill 기여량 — (슬롯 인덱스, gap+blockH, blockH 단독).
+        // 주 루프에서 일반 블록(line 525)의 기여분을 기록하고,
+        // 이후 orphan heading scan 이 제목을 다음 페이지로 이동할 때
+        // source/target 슬롯의 slotFill 을 사후 보정하는 데 사용한다.
+        // (리스트 아이템·NaN 블록 등은 기여분이 없거나 개별 추적이 불필요해 등록하지 않는다.)
+        var resultFillContribs = new System.Collections.Generic.Dictionary<int, (int slotIdx, double contribution, double blockHOnly)>();
+
+        // result[i] → measurements[j] 인덱스 매핑.
+        // orphan heading scan 이 result[i] 를 이동할 때 measurements[j].SlotIdx 도
+        // 함께 갱신해 디버그 오버레이가 실제 배정 페이지를 올바르게 표시하도록 한다.
+        // 리스트 아이템·분할 단락 등 measurements 항목이 없는 result 항목은 등록하지 않는다.
+        var resultToMeasurement = new System.Collections.Generic.Dictionary<int, int>();
 
         // 직전 블록이 최종 배정된 슬롯 인덱스. ForcePageBreakBefore 단락을 다음 페이지로
         // 강제 이동시킬 때 기준 페이지를 결정하는 데 사용. -1 = 첫 블록.
@@ -279,17 +297,83 @@ public static class FlowDocumentPaginationAdapter
                 continue;
             }
 
+            // ── Wpf.List 전체 처리 ────────────────────────────────────────────────────────
+            // 리스트 내 개별 단락의 Y 좌표가 off-screen RTB 에서 collapse 되어 slotFill 이
+            // 심각하게 과소평가되는 문제를 방지한다. List 전체의 topY/bottomY 를 단번에 측정해
+            // slotFill 에 반영하고, 모든 ListItem CoreBlock 을 동일 슬롯에 일괄 배정한다.
+            // 제약: List 가 한 슬롯 높이를 초과할 경우 분할 없이 같은 페이지에 통째로 배정됨
+            // (단일 페이지를 넘는 리스트가 없는 현재 문서에서는 허용 가능한 단순화).
+            if (wpfBlock is WpfDocs.List listWpf && wpfBlock.Tag is not Block)
+            {
+                double listTopY    = TryGetTopY(listWpf);
+                double listBottomY = TryGetBottomY(listWpf, colWidth);
+                if (!double.IsNaN(listTopY))
+                {
+                    double effListTopY = (!double.IsNaN(prevContBottom) && listTopY < prevContBottom)
+                        ? prevContBottom : listTopY;
+                    double listGap = (!double.IsNaN(prevContBottom) && effListTopY > prevContBottom)
+                        ? effListTopY - prevContBottom : 0.0;
+                    double listH = (!double.IsNaN(listBottomY) && listBottomY > listTopY)
+                        ? listBottomY - listTopY : 0.0;
+
+                    int listSlot = Math.Max(minSlot, (int)(effListTopY / bodyH));
+
+                    if (listH > 0 && listH < bodyH)
+                    {
+                        while (slotFill.GetValueOrDefault(listSlot, 0.0) + listGap + listH > bodyH - FillSafetyMarginDip)
+                        {
+                            listSlot++;
+                            listGap = 0.0;
+                        }
+                    }
+                    if (listH > 0)
+                        slotFill[listSlot] = Math.Min(bodyH,
+                            slotFill.GetValueOrDefault(listSlot, 0.0) + listGap + listH);
+
+                    int listResultFirst = result.Count;
+                    AssignListCoreBlocks(listWpf, listSlot, colCount, result);
+                    int listResultLast = result.Count - 1;
+
+                    // resultFillContribs 등록: cascade 가 리스트 아이템을 찾아 다음 슬롯으로
+                    // 밀 수 있도록 각 아이템에 기여분을 기록한다.
+                    // 첫 번째 아이템만 listGap+listH(전체 기여), 나머지는 0.
+                    // cascade 루프가 마지막→첫 번째 순으로 이동하다가 첫 번째 아이템을 옮길 때
+                    // slotFill 이 listH 만큼 실제로 감소하며, 리스트 전체가 한 단위로 다음 슬롯에 배정된다.
+                    for (int ri = listResultFirst; ri <= listResultLast; ri++)
+                    {
+                        if (ri == listResultFirst)
+                            resultFillContribs[ri] = (listSlot, listGap + listH, listH);
+                        else
+                            resultFillContribs[ri] = (listSlot, 0.0, 0.0);
+                        // 리스트 아이템은 모두 같은 measurements 항목(아래 Add 전)을 가리킨다.
+                        resultToMeasurement[ri] = measurements.Count;
+                    }
+
+                    measurements.Add(new BlockMeasurementEntry
+                    {
+                        SlotIdx = listSlot,
+                        Label   = $"List({listWpf.ListItems.Count}items)",
+                        TopY    = listTopY,
+                        BottomY = listBottomY,
+                        BlockH  = listH,
+                        Gap     = listGap,
+                    });
+
+                    prevSlot = listSlot;
+                    minSlot  = Math.Max(minSlot, listSlot);
+                    if (!double.IsNaN(listBottomY)) prevContBottom = listBottomY;
+                }
+                continue;
+            }
+
             if (wpfBlock.Tag is not Block coreBlock) continue;
             if (IsOverlayMode(coreBlock)) continue;
 
             double topY    = TryGetTopY(wpfBlock);
             double bottomY = TryGetBottomY(wpfBlock, colWidth);
 
-            // 직전 블록과의 간격 (연속 레이아웃 기준). WPF 가 마진 붕괴를 이미 적용한 값이므로
-            // 이 gap 을 슬롯 커서에 더하면 페이지 내 실제 간격이 자동으로 반영된다.
-            double gap = (!double.IsNaN(prevContBottom) && !double.IsNaN(topY) && topY > prevContBottom)
-                ? topY - prevContBottom
-                : 0.0;
+            // gap 은 아래 cascade Y 보정 후에 확정된다.
+            double gap;
 
             // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
@@ -309,19 +393,67 @@ public static class FlowDocumentPaginationAdapter
                 continue;
             }
 
-            // Y 를 측정할 수 없으면 minSlot 슬롯에 배정하고 다음 블록으로.
+            // Y 를 측정할 수 없으면 직전 블록과 같은 슬롯에 배정한다.
+            // prevSlot 이 유효하면 그것을 하한으로 사용해 minSlot 이 강제하는 최솟값도 존중한다.
+            // (이전에는 무조건 minSlot=0 에 배정해 이미지/도형 직후 h2/h3 가 1페이지로 떨어지는 버그 있었음.)
             if (double.IsNaN(topY))
             {
-                result.Add((minSlot / colCount, minSlot % colCount, coreBlock, Rect.Empty));
-                prevSlot = minSlot;
+                int nanSlot = prevSlot >= 0 ? Math.Max(minSlot, prevSlot) : minSlot;
+                result.Add((nanSlot / colCount, nanSlot % colCount, coreBlock, Rect.Empty));
+                measurements.Add(new BlockMeasurementEntry
+                {
+                    SlotIdx = nanSlot,
+                    Label   = MakeMeasurementLabel(coreBlock, wpfBlock) + "(noY)",
+                    TopY    = double.IsNaN(prevContBottom) ? double.NaN : prevContBottom,
+                    BottomY = double.NaN,
+                    BlockH  = 0,
+                    Gap     = 0,
+                });
+                prevSlot = nanSlot;
                 continue;
             }
 
             double blockH  = (!double.IsNaN(bottomY) && bottomY > topY) ? (bottomY - topY) : 0.0;
+
+            // ── BUC 높이 폴백 ───────────────────────────────────────────────────────
+            // BlockUIContainer(이미지·SVG·flex 컨테이너) 는 off-screen RTB 에서
+            // layout 이 완료되지 않아 height ≈ 0 으로 측정된다.
+            // blockH ≈ 0 이면 slotFill 에 기여가 없어 해당 페이지의 채움이 실제보다
+            // 훨씬 작게 계산되고, 이후 블록이 계속 같은 페이지로 밀려 누적 오버플로가 발생한다.
+            // Core 모델에 치수가 있는 블록(ImageBlock·ShapeObject)은 HeightMm 을 폴백 높이로 사용한다.
+            const double MinBucBlockH = 5.0; // DIP — 이 이하면 측정 실패로 판단
+            if (blockH < MinBucBlockH && wpfBlock is WpfDocs.BlockUIContainer)
+            {
+                double fallbackH = coreBlock switch
+                {
+                    ImageBlock  img   when img.HeightMm > 0   => FlowDocumentBuilder.MmToDip(img.HeightMm),
+                    ShapeObject shape when shape.HeightMm > 0 => FlowDocumentBuilder.MmToDip(shape.HeightMm),
+                    _                                          => 0.0,
+                };
+                if (fallbackH > blockH)
+                    blockH = fallbackH;
+            }
+
+            // ── Cascade Y 보정 ────────────────────────────────────────────────────────
+            // BUC(BlockUIContainer) 는 off-screen RTB 에서 layout height ≈ 0 이므로
+            // BUC 이후 블록의 topY 가 BUC 시작 Y 부근으로 붕괴(collapse)된다.
+            // topY < prevContBottom 이면 cascade 오염으로 판단하고 prevContBottom 을
+            // 유효 시작 Y 로 사용한다. 이 보정은 slotTop 과 gap 모두에 적용되어
+            // slotFill 과소평가(블록이 0 높이로 쌓이는 현상)도 함께 해소한다.
+            // — prevSlot 을 하한으로 쓰는 이전 방식은 slotFill 오버플로 후 prevSlot
+            //   이 N+1 이 되면 자연 슬롯 N 블록까지 전부 N+1 로 밀어 버리는 부작용이 있었다.
+            double effectiveTopY = (!double.IsNaN(prevContBottom) && topY < prevContBottom)
+                ? prevContBottom
+                : topY;
+
+            gap = (!double.IsNaN(prevContBottom) && effectiveTopY > prevContBottom)
+                ? effectiveTopY - prevContBottom
+                : 0.0;
+
             // 연속 스크롤 공간에서 "단 슬롯" 인덱스 (단 슬롯 = 단 × 페이지).
             // minSlot 을 하한으로 적용해 강제 페이지 나누기 이후 블록이 이전 페이지로
             // 돌아가지 않도록 한다. 상한 클램프 없음 — 호출자(Paginate) 가 보정.
-            int slotTop = Math.Max(minSlot, (int)(topY / bodyH));
+            int slotTop = Math.Max(minSlot, (int)(effectiveTopY / bodyH));
 
             // ── 강제 페이지 나누기 처리 ─────────────────────────────────────────────
             // FlowDocumentBuilder 가 ForcePageBreakBefore=true 를 WPF 의 BreakPageBefore 로
@@ -391,6 +523,7 @@ public static class FlowDocumentPaginationAdapter
                         result.Add((nextSlot / colCount, nextSlot % colCount, frag2, Rect.Empty));
 
                         prevSlot = nextSlot;
+                        minSlot  = Math.Max(minSlot, nextSlot); // 분할 후에도 문서 순서 보장
                         if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
                         continue; // 아래 단일 블록 처리 생략
                     }
@@ -440,6 +573,8 @@ public static class FlowDocumentPaginationAdapter
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
+            resultFillContribs[result.Count - 1]  = (slotTop, gap + blockH, blockH);
+            resultToMeasurement[result.Count - 1] = measurements.Count; // 아래 measurements.Add 직전
 
             // 진단: 블록 측정값 기록 (디버그 오버레이에 표시됨)
             measurements.Add(new BlockMeasurementEntry
@@ -453,11 +588,211 @@ public static class FlowDocumentPaginationAdapter
             });
 
             prevSlot = slotTop;
-            if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
+            minSlot  = Math.Max(minSlot, slotTop); // 문서 순서 보장: 이후 블록이 앞 슬롯으로 돌아가지 않도록
+            // prevContBottom 갱신: BUC 폴백으로 blockH 가 커진 경우 bottomY(≈topY) 가 아닌
+            // topY + blockH 를 사용해야 이후 cascade 보정이 올바른 기준점을 갖는다.
+            if (!double.IsNaN(topY) && blockH > 0 && (double.IsNaN(bottomY) || bottomY - topY < blockH))
+                prevContBottom = topY + blockH;
+            else if (!double.IsNaN(bottomY))
+                prevContBottom = bottomY;
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
         rtb.Document = new WpfDocs.FlowDocument();
+
+        // ── 고아 제목 방지 ──────────────────────────────────────────────────────
+        // BUC(이미지·도형·flex 표) 높이 cascade 오류로 인해 제목 단락이
+        // 직후 내용보다 앞 페이지에 배정되는 경우를 역방향 스캔으로 교정한다.
+        // 역방향이면 연속된 제목 체인(h1→h2→h3→content)도 한 번의 패스로 처리된다.
+        //
+        // slotFill 사후 보정: 제목을 page N → N+1 으로 이동하면
+        //   - page N   slotFill -= (gap + blockH)  ← 제목 기여분 환원
+        //   - page N+1 slotFill += blockH          ← 제목이 실제 렌더할 높이
+        // target 슬롯이 bodyH - FillSafetyMarginDip 를 넘으면 target 마지막 블록을
+        // 다음 슬롯으로 cascade 해 overflow 를 방지한다.
+        for (int oi = result.Count - 2; oi >= 0; oi--)
+        {
+            (int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect) curr = result[oi];
+            (int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect) next = result[oi + 1];
+            if (curr.coreBlock is Paragraph hp
+                && hp.Style.Outline != OutlineLevel.Body
+                && next.pageIdx > curr.pageIdx)
+            {
+                result[oi] = (next.pageIdx, next.colIdx, curr.coreBlock, curr.bodyLocalRect);
+
+                if (resultFillContribs.TryGetValue(oi, out var hc))
+                {
+                    int oldSlot = curr.pageIdx * colCount + curr.colIdx;
+                    int newSlot = next.pageIdx * colCount + next.colIdx;
+
+                    // source 페이지: 제목 기여분(gap + blockH) 제거
+                    slotFill[oldSlot] = Math.Max(0.0,
+                        slotFill.GetValueOrDefault(oldSlot, 0.0) - hc.contribution);
+
+                    // target 페이지: 제목 높이 + WPF 마진(SpaceBefore + SpaceAfter) 추가.
+                    // blockH 는 TranslatePoint 기반 콘텐츠 높이만이며, WPF 렌더 시
+                    // Paragraph.Margin.Top/Bottom 이 별도로 추가된다. 이 마진을 반영하지 않으면
+                    // 여러 제목이 같은 페이지에 쌓일 때 slotFill 이 실제보다 과소 계산되어 오버플로가 된다.
+                    double hSpaceBefore = FlowDocumentBuilder.PtToDip(
+                        hp.Style.SpaceBeforePt > 0 ? hp.Style.SpaceBeforePt :
+                        hp.Style.Outline switch
+                        {
+                            OutlineLevel.H1 => 12.0,
+                            OutlineLevel.H2 => 10.0,
+                            OutlineLevel.H3 =>  8.0,
+                            OutlineLevel.H4 =>  6.0,
+                            OutlineLevel.H5 =>  4.0,
+                            OutlineLevel.H6 =>  4.0,
+                            _               =>  0.0,
+                        });
+                    double hSpaceAfter = FlowDocumentBuilder.PtToDip(
+                        hp.Style.SpaceAfterPt > 0 ? hp.Style.SpaceAfterPt :
+                        hp.Style.Outline switch
+                        {
+                            OutlineLevel.H1 => 6.0,
+                            OutlineLevel.H2 => 4.0,
+                            OutlineLevel.H3 => 4.0,
+                            OutlineLevel.H4 => 2.0,
+                            OutlineLevel.H5 => 2.0,
+                            OutlineLevel.H6 => 2.0,
+                            _               => 0.0,
+                        });
+                    double headingMargin = hSpaceBefore + hSpaceAfter;
+                    double headingTotalH = hc.blockHOnly + headingMargin;
+
+                    slotFill[newSlot] = Math.Min(bodyH,
+                        slotFill.GetValueOrDefault(newSlot, 0.0) + headingTotalH);
+                    resultFillContribs[oi] = (newSlot, headingTotalH, headingTotalH);
+
+                    // measurements 도 실제 배정 슬롯으로 갱신 — 디버그 오버레이가
+                    // 이동된 제목을 올바른 페이지에 표시하도록 한다.
+                    if (resultToMeasurement.TryGetValue(oi, out int mIdx))
+                    {
+                        var om = measurements[mIdx];
+                        measurements[mIdx] = new BlockMeasurementEntry
+                        {
+                            SlotIdx = newSlot,
+                            Label   = om.Label + "→",   // 이동됨을 라벨로 표시
+                            TopY    = om.TopY,
+                            BottomY = om.BottomY,
+                            BlockH  = om.BlockH,
+                            Gap     = 0,  // 새 페이지 시작 — gap 0 으로 보정
+                        };
+                    }
+
+                    // target 슬롯 overflow → 마지막 블록을 다음 슬롯으로 반복 cascade.
+                    // 단일 if 대신 while 루프로 여러 블록이 밀려야 할 때도 처리한다.
+                    while (slotFill.GetValueOrDefault(newSlot, 0.0) > bodyH - FillSafetyMarginDip)
+                    {
+                        // target 슬롯의 마지막 비-제목 블록 (forward scan; heading=oi 는 제외)
+                        int lastOnTarget = -1;
+                        for (int j = oi + 1; j < result.Count; j++)
+                        {
+                            (int rPage, int rCol, Block _, Rect __) = result[j];
+                            if (rPage == next.pageIdx && rCol == next.colIdx)
+                                lastOnTarget = j;
+                            else if (rPage > next.pageIdx)
+                                break;
+                        }
+                        if (lastOnTarget <= oi
+                            || !resultFillContribs.TryGetValue(lastOnTarget, out var lc))
+                            break; // 더 밀 블록 없음
+
+                        int cascadeSlot = newSlot + 1;
+                        slotFill[newSlot] = Math.Max(0.0,
+                            slotFill.GetValueOrDefault(newSlot, 0.0) - lc.contribution);
+                        slotFill[cascadeSlot] = Math.Min(bodyH,
+                            slotFill.GetValueOrDefault(cascadeSlot, 0.0) + lc.blockHOnly);
+                        (int lrPage, int lrCol, Block lrCore, Rect lrRect) = result[lastOnTarget];
+                        result[lastOnTarget] = (cascadeSlot / colCount, cascadeSlot % colCount,
+                            lrCore, lrRect);
+                        resultFillContribs[lastOnTarget] = (cascadeSlot, lc.blockHOnly, lc.blockHOnly);
+                        // cascade 된 블록의 measurements 도 갱신
+                        if (resultToMeasurement.TryGetValue(lastOnTarget, out int cmIdx))
+                        {
+                            var cm = measurements[cmIdx];
+                            measurements[cmIdx] = new BlockMeasurementEntry
+                            {
+                                SlotIdx = cascadeSlot,
+                                Label   = cm.Label + "↓",
+                                TopY    = cm.TopY,
+                                BottomY = cm.BottomY,
+                                BlockH  = cm.BlockH,
+                                Gap     = 0,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Y-span 사후 보정 ────────────────────────────────────────────────────
+        // off-screen RTB 에서 측정한 블록들의 Y 범위(maxBottomY - minTopY)가 bodyH 를 넘으면
+        // per-page RTB 에서 마지막 블록이 잘린다. slotFill 이 gap 리셋·ContainerBlock 마진 등으로
+        // 실제 높이를 과소평가하기 때문에 발생한다.
+        // 슬롯별 Y 범위를 직접 계산해 bodyH 초과 슬롯에서 마지막 블록을 다음 슬롯으로 cascade 한다.
+        // guard: ySpan > 2×bodyH 는 제목 이동 등으로 topY·bottomY 가 서로 다른 페이지에 걸쳐
+        // 수집된 경우로, 이 보정 대상이 아니다.
+        {
+            var slotMinTopY    = new Dictionary<int, double>();
+            var slotMaxBottomY = new Dictionary<int, double>();
+            foreach (var m in measurements)
+            {
+                if (double.IsNaN(m.TopY) || double.IsNaN(m.BottomY)) continue;
+                int s = m.SlotIdx;
+                if (!slotMinTopY.ContainsKey(s) || m.TopY < slotMinTopY[s])
+                    slotMinTopY[s] = m.TopY;
+                if (!slotMaxBottomY.ContainsKey(s) || m.BottomY > slotMaxBottomY[s])
+                    slotMaxBottomY[s] = m.BottomY;
+            }
+            foreach (int s in slotMinTopY.Keys.OrderBy(k => k))
+            {
+                double ySpan = slotMaxBottomY.GetValueOrDefault(s) - slotMinTopY[s];
+                if (ySpan <= bodyH || ySpan > 2.0 * bodyH) continue;
+
+                while (ySpan > bodyH)
+                {
+                    // 이 슬롯에 배정된 마지막 블록을 찾는다.
+                    int lastOnSlot = -1;
+                    for (int j = 0; j < result.Count; j++)
+                    {
+                        (int rPage, int rCol, Block _, Rect __) = result[j];
+                        if (rPage * colCount + rCol == s) lastOnSlot = j;
+                    }
+                    if (lastOnSlot < 0 || !resultFillContribs.TryGetValue(lastOnSlot, out var lc))
+                        break;
+
+                    int nextS = s + 1;
+                    slotFill[s]     = Math.Max(0.0, slotFill.GetValueOrDefault(s)     - lc.contribution);
+                    slotFill[nextS] = Math.Min(bodyH, slotFill.GetValueOrDefault(nextS) + lc.blockHOnly);
+                    (int pg, int col, Block cb, Rect r) = result[lastOnSlot];
+                    result[lastOnSlot] = (nextS / colCount, nextS % colCount, cb, r);
+                    resultFillContribs[lastOnSlot] = (nextS, lc.blockHOnly, lc.blockHOnly);
+
+                    if (resultToMeasurement.TryGetValue(lastOnSlot, out int mIdx))
+                    {
+                        var m = measurements[mIdx];
+                        measurements[mIdx] = new BlockMeasurementEntry
+                        {
+                            SlotIdx = nextS,
+                            Label   = m.Label + "↓",
+                            TopY    = m.TopY,
+                            BottomY = m.BottomY,
+                            BlockH  = m.BlockH,
+                            Gap     = 0,
+                        };
+                        // 이 슬롯의 maxBottomY 를 재계산해 while 조건을 갱신한다.
+                        slotMaxBottomY[s] = measurements
+                            .Where(mm => mm.SlotIdx == s && !double.IsNaN(mm.BottomY))
+                            .Select(mm => mm.BottomY)
+                            .DefaultIfEmpty(slotMinTopY[s])
+                            .Max();
+                    }
+                    ySpan = slotMaxBottomY.GetValueOrDefault(s) - slotMinTopY[s];
+                }
+            }
+        }
+
         return (result, slotFill, measurements);
     }
 
@@ -669,11 +1004,43 @@ public static class FlowDocumentPaginationAdapter
             }
 
             yield return b;
-            if (b is WpfDocs.List list)
+            // Wpf.List 자식 단락은 MapBodyBlocksToPages 의 List 전용 핸들러에서 직접 처리.
+            // 여기서 개별 yield 하면 Y collapse 로 slotFill 이 과소평가되므로 재귀하지 않는다.
+        }
+    }
+
+    /// <summary>
+    /// Wpf.List 의 모든 ListItem CoreBlock 을 지정 슬롯에 재귀적으로 배정한다.
+    /// 중첩 List 와 Section 래퍼를 투명하게 처리한다.
+    /// </summary>
+    private static void AssignListCoreBlocks(
+        WpfDocs.List list,
+        int slot,
+        int colCount,
+        List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)> result)
+    {
+        foreach (var li in list.ListItems)
+        {
+            foreach (var block in li.Blocks)
             {
-                foreach (var li in list.ListItems)
-                    foreach (var nested in FlattenBlocks(li.Blocks))
-                        yield return nested;
+                if (block is WpfDocs.List nestedList)
+                {
+                    AssignListCoreBlocks(nestedList, slot, colCount, result);
+                }
+                else if (block is WpfDocs.Section sect)
+                {
+                    foreach (var sectBlock in sect.Blocks)
+                    {
+                        if (sectBlock is WpfDocs.List nestedList2)
+                            AssignListCoreBlocks(nestedList2, slot, colCount, result);
+                        else if (sectBlock.Tag is Block cb && !IsOverlayMode(cb))
+                            result.Add((slot / colCount, slot % colCount, cb, Rect.Empty));
+                    }
+                }
+                else if (block.Tag is Block coreBlock && !IsOverlayMode(coreBlock))
+                {
+                    result.Add((slot / colCount, slot % colCount, coreBlock, Rect.Empty));
+                }
             }
         }
     }
@@ -875,6 +1242,56 @@ public static class FlowDocumentPaginationAdapter
         catch
         {
             return Rect.Empty;
+        }
+    }
+
+    // ── flex 도형 오버레이 좌표 해결 ─────────────────────────────────────────
+
+    /// <summary>
+    /// HtmlReader 가 생성한 <c>AnchorPageIndex = -2</c> 도형(CSS flex 순수 도형)의
+    /// 페이지 인덱스와 절대 좌표를 spacer 단락의 body 배치 결과로 확정한다.
+    /// </summary>
+    private static void ResolveFlexShapeOverlays(
+        PolyDonkyument                                                              document,
+        List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)>  bodyAssignments,
+        PageGeometry                                                            geo)
+    {
+        if (bodyAssignments.Count == 0) return;
+
+        // Core Block → 배치 결과 룩업.
+        var lookup = new System.Collections.Generic.Dictionary<Block,
+            (int pageIdx, Rect bodyLocalRect)>(bodyAssignments.Count);
+        foreach (var a in bodyAssignments)
+            lookup.TryAdd(a.coreBlock, (a.pageIdx, a.bodyLocalRect));
+
+        double marginLeftMm = FlowDocumentBuilder.DipToMm(geo.PadLeftDip);
+        double marginTopMm  = FlowDocumentBuilder.DipToMm(geo.PadTopDip);
+
+        int    currentSpacerPage  = 0;
+        double currentSpacerYMm   = 0; // spacer 콘텐츠 상단의 body 내 Y (mm)
+
+        foreach (var section in document.Sections)
+        {
+            foreach (var block in section.Blocks)
+            {
+                if (block is Paragraph p && p.StyleId == "pd-flex-shape-spacer")
+                {
+                    if (lookup.TryGetValue(p, out var info)
+                        && info.bodyLocalRect != Rect.Empty)
+                    {
+                        currentSpacerPage = info.pageIdx;
+                        currentSpacerYMm  = FlowDocumentBuilder.DipToMm(info.bodyLocalRect.Top);
+                    }
+                    // bodyLocalRect 가 Rect.Empty 이면 이전 값 유지 (fallback).
+                }
+                else if (block is ShapeObject shape && shape.AnchorPageIndex == -2)
+                {
+                    shape.AnchorPageIndex = currentSpacerPage;
+                    // OverlayXMm/YMm 은 콘텐츠 영역 기준 상대값 → 페이지 절대 좌표로 변환.
+                    shape.OverlayXMm += marginLeftMm;
+                    shape.OverlayYMm += marginTopMm + currentSpacerYMm;
+                }
+            }
         }
     }
 
