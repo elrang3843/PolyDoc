@@ -44,6 +44,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+
+- **블록 그룹/해제 기능**: 여러 블록을 `ContainerBlock{Role=Group}`으로 묶는 "블록 그룹으로 묶기"와 그룹을 해제하는 "그룹 해제" 우클릭 메뉴 항목 추가. 캐럿이 그룹 안에 있을 때 "그룹 해제", 텍스트 선택이 2개 이상의 최상위 블록을 걸칠 때 "블록 그룹으로 묶기" 메뉴가 활성화된다. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
+- **복수 도형 SVG → 편집 가능한 ShapeObject 그룹으로 분해**: HTML 파일 안의 다중 도형 SVG (`<svg>` 내 rect/circle/ellipse/line/polyline/polygon/path 복수)를 `ImageBlock`(읽기 전용)이 아닌 개별 `ShapeObject`들로 분해하여 `ContainerBlock{Role=Group}`으로 묶어 가져온다. 그룹 해제 후 각 도형의 색상·크기·회전 등을 편집 가능. `<g>` 래퍼의 `transform="rotate()"` 도 전파. (`HtmlReader.cs`, `ContainerBlock.cs`)
+- **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
+
 ### Fixed
 
 - **표 열 리사이즈 커서가 잘못된 위치에서 나타나다 클릭 시 사라지는 문제**: 다중 RTB(페이지별 에디터) 환경에서 `TryHitTableColumnBorder`가 항상 `BodyEditor`(활성/첫 번째 RTB) 기준 좌표를 사용해 실제 마우스가 위치한 RTB와 좌표계가 달라 경계 감지가 틀리던 문제. 마우스 이벤트의 `sender` RTB를 기준으로 좌표 계산 및 hit-test를 수행하도록 수정. 마우스 캡처 대상도 `sender` RTB로 고정해 드래그 중 좌표 일관성 보장. (`MainWindow.xaml.cs`)

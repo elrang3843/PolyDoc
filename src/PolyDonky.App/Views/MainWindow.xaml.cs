@@ -3991,7 +3991,25 @@ public partial class MainWindow : Window
             menu.Items.Add(miHrDelete);
         }
 
-        // ④ 인라인 이미지/이모지 — 속성 항목
+        // ④ 그룹(ContainerBlock{Group}) 컨텍스트 — 해제 항목
+        var groupSec = FindAncestorGroupSection();
+        if (groupSec is not null)
+        {
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            menu.Items.Add(MakeMenuItem("그룹 해제(_U)", () => UngroupSection(groupSec)));
+        }
+        else
+        {
+            // 그룹 바깥: 선택 영역에 블록이 있으면 "그룹으로 묶기" 제공
+            var selBlocks = GetBlocksInSelection();
+            if (selBlocks is { Count: > 1 })
+            {
+                menu.Items.Add(new System.Windows.Controls.Separator());
+                menu.Items.Add(MakeMenuItem("블록 그룹으로 묶기(_G)", () => GroupBlocks(selBlocks)));
+            }
+        }
+
+        // ⑤ 인라인 이미지/이모지 — 속성 항목
         var pt = System.Windows.Input.Mouse.GetPosition(BodyEditor);
         if (FindEmbeddedObjectAt(e.OriginalSource, pt) is { } found)
         {
@@ -4029,6 +4047,141 @@ public partial class MainWindow : Window
             rtb.Document.Blocks.Remove(para);
             _viewModel?.MarkDirty();
         }
+    }
+
+    // ── 블록 그룹/해제 ────────────────────────────────────────────────────
+
+    /// <summary>캐럿의 조상 중 ContainerRole.Group 인 WPF Section 을 반환. 없으면 null.</summary>
+    private System.Windows.Documents.Section? FindAncestorGroupSection()
+    {
+        DependencyObject? cur = BodyEditor.CaretPosition.Paragraph;
+        while (cur is System.Windows.FrameworkContentElement fce)
+        {
+            if (cur is System.Windows.Documents.Section sec &&
+                sec.Tag is PolyDonky.Core.ContainerBlock { Role: PolyDonky.Core.ContainerRole.Group })
+                return sec;
+            cur = fce.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>현재 텍스트 선택이 걸친 최상위 블록들을 반환한다 (단, TableCell 내부 블록은 제외).</summary>
+    private IReadOnlyList<System.Windows.Documents.Block>? GetBlocksInSelection()
+    {
+        var sel = BodyEditor.Selection;
+        if (sel.IsEmpty) return null;
+
+        var fd = BodyEditor.Document;
+        var result = new List<System.Windows.Documents.Block>();
+        var startPara = sel.Start.Paragraph;
+        var endPara   = sel.End.Paragraph;
+        if (startPara is null || endPara is null) return null;
+
+        bool inRange = false;
+        foreach (var block in fd.Blocks)
+        {
+            if (BlockContainsParagraph(block, startPara)) inRange = true;
+            if (inRange) result.Add(block);
+            if (BlockContainsParagraph(block, endPara)) break;
+        }
+        return result.Count > 1 ? result : null;
+    }
+
+    private static bool BlockContainsParagraph(
+        System.Windows.Documents.Block block,
+        System.Windows.Documents.Paragraph para)
+    {
+        if (block == para) return true;
+        if (block is System.Windows.Documents.Section sec)
+            foreach (var b in sec.Blocks)
+                if (BlockContainsParagraph(b, para)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 지정한 WPF Block 목록을 ContainerBlock{Group} Section 으로 감싼다.
+    /// </summary>
+    private void GroupBlocks(IReadOnlyList<System.Windows.Documents.Block> blocks)
+    {
+        if (blocks.Count == 0) return;
+
+        var coreGroup = new PolyDonky.Core.ContainerBlock
+        {
+            Role = PolyDonky.Core.ContainerRole.Group,
+        };
+        var groupSec = PolyDonky.App.Services.FlowDocumentBuilder.BuildContainerSection(coreGroup);
+
+        // 첫 블록의 부모를 기준으로 삽입 위치 결정
+        var fd = BodyEditor.Document;
+        var topBlocks = fd.Blocks;
+
+        // 첫 번째 블록 앞에 Section 삽입
+        var firstBlock = blocks[0];
+        if (topBlocks.Contains(firstBlock))
+        {
+            topBlocks.InsertBefore(firstBlock, groupSec);
+            foreach (var b in blocks)
+            {
+                topBlocks.Remove(b);
+                groupSec.Blocks.Add(b);
+            }
+        }
+        _viewModel?.MarkDirty();
+    }
+
+    /// <summary>
+    /// ContainerBlock{Group} Section 을 해제해 자식 블록을 부모로 올린다.
+    /// </summary>
+    private void UngroupSection(System.Windows.Documents.Section section)
+    {
+        var children = section.Blocks.ToList();
+        if (children.Count == 0)
+        {
+            // 빈 그룹이면 그냥 제거
+            RemoveSectionFromParent(section, null);
+            _viewModel?.MarkDirty();
+            return;
+        }
+
+        // 부모가 FlowDocument 또는 Section 인 두 경우를 처리
+        if (section.Parent is System.Windows.Documents.FlowDocument fd)
+        {
+            var allBlocks = fd.Blocks.Cast<System.Windows.Documents.Block>().ToList();
+            int idx = allBlocks.IndexOf(section);
+            fd.Blocks.Remove(section);
+            for (int i = 0; i < children.Count; i++)
+            {
+                var insertAfter = allBlocks.ElementAtOrDefault(idx + i);
+                if (insertAfter is not null)
+                    fd.Blocks.InsertBefore(insertAfter, children[i]);
+                else
+                    fd.Blocks.Add(children[i]);
+            }
+        }
+        else if (section.Parent is System.Windows.Documents.Section parentSec)
+        {
+            var allBlocks = parentSec.Blocks.Cast<System.Windows.Documents.Block>().ToList();
+            int idx = allBlocks.IndexOf(section);
+            parentSec.Blocks.Remove(section);
+            for (int i = 0; i < children.Count; i++)
+            {
+                var insertAfter = allBlocks.ElementAtOrDefault(idx + i);
+                if (insertAfter is not null)
+                    parentSec.Blocks.InsertBefore(insertAfter, children[i]);
+                else
+                    parentSec.Blocks.Add(children[i]);
+            }
+        }
+
+        _viewModel?.MarkDirty();
+    }
+
+    private static void RemoveSectionFromParent(System.Windows.Documents.Section section, object? _)
+    {
+        if (section.Parent is System.Windows.Documents.FlowDocument fd)
+            fd.Blocks.Remove(section);
+        else if (section.Parent is System.Windows.Documents.Section ps)
+            ps.Blocks.Remove(section);
     }
 
     // ── 멀티 셀 선택 감지 ──────────────────────────────────────────────────
