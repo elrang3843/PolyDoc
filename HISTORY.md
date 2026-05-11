@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **페이지 오버플로 근본 수정 — 오프스크린 측정 오차 후처리 보정**: 오프스크린 RTB 측정값과 per-page RTB 실제 렌더 높이의 차이로 인해 마지막 블록이 페이지 하단을 넘쳐 잘리던 문제. `SliceRefiner`를 새로 추가해 `SetupPageEditors` 에서 슬라이스별 실제 높이를 오프스크린 측정(FlowDocumentPaginationAdapter 와 동일 패턴)으로 재확인하고, 오버플로 슬라이스의 마지막 WPF Block 을 다음 슬라이스 앞으로 이동, 수렴할 때까지 최대 4회 반복. (`Pagination/SliceRefiner.cs`, `Views/MainWindow.xaml.cs`)
+
 - **BUC(이미지) topY NaN 시 ContainerBlock 페이지 overflow 미탐지 수정**: `BlockUIContainer`(이미지 등) 의 `TryGetTopY` 가 NaN 을 반환하면 NaN 핸들러가 `slotContentStartY` 를 갱신하지 않아, 뒤에 오는 `ContainerBlock` 의 `actualFillOverflow` 2차 검사에서 `slotContentStartY.TryGetValue` 가 false — 오버플로가 감지되지 않던 문제. NaN 핸들러에 `prevContBottom` 대리값으로 `slotContentStartY[nanSlot]` 을 채우는 코드를 추가해 BUC 가 슬롯 최초 진입 블록이어도 검사가 발동되도록 수정. (`FlowDocumentPaginationAdapter.cs`)
 
 - **HTML `<br>` 줄바꿈이 WPF FlowDocument에서 무시되던 문제**: `HtmlReader`가 `<br>`을 `Run { Text = "\n" }`으로 변환하지만, WPF `FlowDocument`는 `Run` 안의 `\n`을 시각적 줄바꿈으로 렌더링하지 않는다. `BuildParagraph` 에서 `AppendRunInlines` 헬퍼를 통해 `\n` 이 포함된 Run 텍스트를 분할하고 조각 사이에 WPF `LineBreak` 인라인을 삽입하도록 수정. 코드 블록·수식·이모지·각주 등 특수 Run 은 기존 `BuildInline` 경로를 그대로 사용. (`FlowDocumentBuilder.cs`)

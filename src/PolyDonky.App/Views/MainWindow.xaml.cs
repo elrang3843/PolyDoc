@@ -1144,6 +1144,17 @@ public partial class MainWindow : Window
     {
         if (_currentPaginatedDoc is null || _pageGeometry is null) return;
         var slices = PerPageDocumentSplitter.Split(_currentPaginatedDoc);
+
+        // 오프스크린 측정 vs per-page 렌더 높이 차이로 인한 오버플로 후처리 보정.
+        // 오버플로 슬라이스의 마지막 블록을 다음 슬라이스로 이동, 수렴할 때까지 반복 (최대 4회).
+        const int maxRefinements = 4;
+        for (int iter = 0; iter < maxRefinements; iter++)
+        {
+            var heights = SliceRefiner.MeasureContentHeights(slices);
+            if (!SliceRefiner.RefineOnce(slices, heights))
+                break;
+        }
+
         _suppressTextChanged    = true;
         _suppressPasteCommand   = true;
         try
