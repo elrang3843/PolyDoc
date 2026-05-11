@@ -1265,36 +1265,40 @@ public class HtmlTests
         Assert.Contains(rt.Sections[0].Blocks, b => b is ShapeObject { Kind: ShapeKind.Rectangle });
     }
 
-    // ── 복합 SVG → ImageBlock ──────────────────────────────────────────
+    // ── 복합 SVG → ContainerBlock{Group} ──────────────────────────────────────────
 
     [Fact]
-    public void Reader_MultiShapeSvg_BecomesImageBlock()
+    public void Reader_MultiShapeSvg_BecomesContainerGroup()
     {
-        // 다중 도형 SVG 는 ShapeObject 가 아닌 ImageBlock (image/svg+xml) 으로 보존돼야 한다.
+        // 다중 도형 SVG 는 ContainerBlock{Group} 으로 분해되어 각 도형이 ShapeObject 로 편집 가능해진다.
         const string html = @"<svg width=""600"" height=""160"">
             <rect x=""20"" y=""30"" width=""100"" height=""80"" fill=""#4A90E2""></rect>
             <circle cx=""310"" cy=""70"" r=""40"" fill=""#F5A623""></circle>
         </svg>";
         var rt = HtmlReader.FromHtml(html);
         var block = Assert.Single(rt.Sections[0].Blocks);
-        var img = Assert.IsType<ImageBlock>(block);
-        Assert.Equal("image/svg+xml", img.MediaType);
-        Assert.True(img.Data.Length > 0);
-        Assert.InRange(img.WidthMm,  155, 160);
-        Assert.InRange(img.HeightMm,  41,  43);
+        var group = Assert.IsType<ContainerBlock>(block);
+        Assert.Equal(ContainerRole.Group, group.Role);
+        Assert.Equal(2, group.Children.Count);
+        var rect = Assert.IsType<ShapeObject>(group.Children[0]);
+        var circle = Assert.IsType<ShapeObject>(group.Children[1]);
+        Assert.Equal(ShapeKind.Rectangle, rect.Kind);
+        Assert.Equal(ShapeKind.Ellipse, circle.Kind);
     }
 
     [Fact]
-    public void Reader_SvgWithTextLabel_BecomesImageBlock()
+    public void Reader_SvgWithTextLabel_BecomesShapeWithLabel()
     {
-        // <text> 레이블이 있는 SVG 는 ImageBlock 으로 보존돼야 한다.
+        // 단일 도형 + <text> 레이블이 있는 SVG 는 ShapeObject 로 변환되고 text 는 LabelText 로 흡수된다.
         const string html = @"<svg width=""200"" height=""100"">
             <rect x=""10"" y=""10"" width=""80"" height=""60"" fill=""blue""></rect>
             <text x=""50"" y=""50"">레이블</text>
         </svg>";
         var rt    = HtmlReader.FromHtml(html);
         var block = Assert.Single(rt.Sections[0].Blocks);
-        Assert.IsType<ImageBlock>(block);
+        var shape = Assert.IsType<ShapeObject>(block);
+        Assert.Equal(ShapeKind.Rectangle, shape.Kind);
+        Assert.Equal("레이블", shape.LabelText);
     }
 
     [Fact]
@@ -1318,9 +1322,10 @@ public class HtmlTests
     }
 
     [Fact]
-    public void RoundTrip_SvgImageBlock_PreservesSvgContent()
+    public void RoundTrip_SvgImageBlock_DecomposedToGroup()
     {
-        // ImageBlock(image/svg+xml) → HtmlWriter → HtmlReader → 동일한 ImageBlock.
+        // ImageBlock(image/svg+xml) 의 다중 도형 SVG 는 → HtmlWriter → HtmlReader 시
+        // ContainerBlock{Group} 으로 분해된다 (각 도형 편집 가능).
         var doc   = new PolyDonkyument();
         var sec   = new Section();
         doc.Sections.Add(sec);
@@ -1338,9 +1343,11 @@ public class HtmlTests
 
         var rt    = HtmlReader.FromHtml(html);
         var block = Assert.Single(rt.Sections[0].Blocks);
-        var img   = Assert.IsType<ImageBlock>(block);
-        Assert.Equal("image/svg+xml", img.MediaType);
-        Assert.True(img.Data.Length > 0);
+        var group = Assert.IsType<ContainerBlock>(block);
+        Assert.Equal(ContainerRole.Group, group.Role);
+        Assert.Equal(2, group.Children.Count);
+        Assert.IsType<ShapeObject>(group.Children[0]);
+        Assert.IsType<ShapeObject>(group.Children[1]);
     }
 
     // ── CSS 도형 → ShapeObject ─────────────────────────────────────────
