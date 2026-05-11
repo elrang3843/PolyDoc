@@ -80,30 +80,36 @@ internal static class SvgRenderer
         foreach (var el in root.Elements())
             RenderElement(el, canvas, rootCtx);
 
-        // 루트 svg 의 style="border:..." 은 SVG 사양은 아니지만 HTML 안의 인라인 SVG 에서
-        // 자주 쓰여 시각적으로 의미가 있다. Canvas 자체에는 BorderBrush 가 없으므로
-        // Border 로 한 번 더 감싼다.
-        FrameworkElement svgRoot = canvas;
-        if (rootCtx.RootBorderBrush is { } bb && rootCtx.RootBorderThickness > 0)
-        {
-            svgRoot = new System.Windows.Controls.Border
-            {
-                Child           = canvas,
-                BorderBrush     = bb,
-                BorderThickness = new Thickness(rootCtx.RootBorderThickness),
-                Background      = rootCtx.RootBackground, // 테두리와 배경의 ViewBox 외 영역도 함께 칠해짐
-            };
-        }
+        // 루트 svg 의 style="border:..." — SVG 사양은 아니지만 HTML 인라인 SVG 에서 흔히 쓰임.
+        // 주의: Border 를 Viewbox 안에 넣으면 Viewbox 의 ScaleTransform 이 border 픽셀까지 함께
+        // 축소해 border 가 RTB/Viewbox 경계에 닿거나 잘리는 문제가 발생한다.
+        // 해결: border 를 Viewbox 바깥의 래퍼 Border 에 그리고, Viewbox 에는 테두리 두께만큼
+        // 안쪽으로 줄인 크기를 지정해 총 외곽 크기가 targetWidthDip × targetHeightDip 을 유지하도록 함.
+        double borderThk  = rootCtx.RootBorderBrush is not null && rootCtx.RootBorderThickness > 0
+                            ? rootCtx.RootBorderThickness : 0.0;
+        double vbTargetW  = targetWidthDip  > 0 ? Math.Max(1.0, targetWidthDip  - 2 * borderThk) : 0;
+        double vbTargetH  = targetHeightDip > 0 ? Math.Max(1.0, targetHeightDip - 2 * borderThk) : 0;
 
         var viewbox = new Viewbox
         {
             Stretch              = Stretch.Uniform,
             HorizontalAlignment  = HorizontalAlignment.Center,
             VerticalAlignment    = VerticalAlignment.Center,
-            Child                = svgRoot,
+            Child                = canvas,
         };
-        if (targetWidthDip  > 0) viewbox.Width  = targetWidthDip;
-        if (targetHeightDip > 0) viewbox.Height = targetHeightDip;
+        if (vbTargetW > 0) viewbox.Width  = vbTargetW;
+        if (vbTargetH > 0) viewbox.Height = vbTargetH;
+
+        if (borderThk > 0 && rootCtx.RootBorderBrush is { } bb)
+        {
+            return new System.Windows.Controls.Border
+            {
+                Child           = viewbox,
+                BorderBrush     = bb,
+                BorderThickness = new Thickness(borderThk),
+                Background      = rootCtx.RootBackground,
+            };
+        }
         return viewbox;
     }
 
