@@ -464,34 +464,48 @@ public static class FlowDocumentBuilder
             && (section.Background is not null || section.BorderBrush is not null))
         {
             // singleFe 가 이미 singleBuc 의 논리 자식이므로 먼저 연결을 끊어야 한다.
-            // 연결을 끊지 않으면 Border.Child = singleFe 시 WPF 가
-            // "이미 다른 요소의 논리 자식" InvalidOperationException 을 던진다.
             singleBuc.Child = null;
-            var wrapBorder = new System.Windows.Controls.Border
+
+            // 콘텐츠(SVG Viewbox 등)는 ClipToBounds=false Border 로 감싸 배경·패딩 적용.
+            var contentWrap = new System.Windows.Controls.Border
             {
                 Child        = singleFe,
                 ClipToBounds = false,
             };
             if (section.Background is not null)
             {
-                wrapBorder.Background = section.Background;
-                section.Background = null;
+                contentWrap.Background = section.Background;
+                section.Background     = null;
             }
-            if (section.BorderBrush is not null)
-            {
-                wrapBorder.BorderBrush     = section.BorderBrush;
-                wrapBorder.BorderThickness = section.BorderThickness;
-                section.BorderBrush     = null;
-                section.BorderThickness = new Thickness(0);
-            }
-            // Section.Padding 을 Border.Padding 으로 이전해 패딩 영역에도 배경색이 칠해지게 한다.
+            // Section.Padding 을 contentWrap.Padding 으로 이전해 패딩 영역에도 배경색이 칠해지게 한다.
             var spad = section.Padding;
             if (spad.Left != 0 || spad.Top != 0 || spad.Right != 0 || spad.Bottom != 0)
             {
-                wrapBorder.Padding = spad;
-                section.Padding    = new Thickness(0);
+                contentWrap.Padding = spad;
+                section.Padding     = new Thickness(0);
             }
-            singleBuc.Child = wrapBorder;
+
+            if (section.BorderBrush is not null)
+            {
+                // SVG 등 ClipToBounds=false 콘텐츠가 Border 선 위를 덮지 않도록
+                // Grid 에 ① contentWrap(z=0) + ② borderOverlay(z=1) 구조로 테두리를 위에 그린다.
+                var wrapperGrid = new System.Windows.Controls.Grid { ClipToBounds = false };
+                wrapperGrid.Children.Add(contentWrap);
+                var borderOverlay = new System.Windows.Controls.Border
+                {
+                    BorderBrush      = section.BorderBrush,
+                    BorderThickness  = section.BorderThickness,
+                    IsHitTestVisible = false,
+                };
+                wrapperGrid.Children.Add(borderOverlay);
+                section.BorderBrush     = null;
+                section.BorderThickness = new Thickness(0);
+                singleBuc.Child = wrapperGrid;
+            }
+            else
+            {
+                singleBuc.Child = contentWrap;
+            }
         }
 
         // WPF FlowDocument 에서 Section.Background 는 자식이 Wpf.Table 하나뿐일 때
