@@ -248,11 +248,37 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 
 ### MainWindow 부분 클래스 분리
 
-- `Views/MainWindow.xaml.cs` (~6,500 줄) — 문서 로드/저장, 오버레이 배치, 마우스 핸들러, 메뉴 빌더 전체
+- `Views/MainWindow.xaml.cs` (~6,600 줄) — 문서 로드/저장, 오버레이 배치, 마우스 핸들러, 메뉴 빌더 전체
 - `Views/MainWindow.ShapeEdit.cs` — 도형 편집 핸들(`_shapeEditHandles`, 정점/세그먼트) + `OnShapeEditHandleRightClicked`
 
 두 파일 모두 대형 파일이므로 수정 전 반드시 부분 읽기(`offset` / `limit`)로 해당 영역만 확인한다.
 도형 편집 코드 수정 시 두 파일을 함께 본다.
+
+### 글상자 다단 렌더링 서브시스템
+
+`TextBoxObject` 는 FloatingCanvas 위에 `TextBoxOverlay` (UserControl) 로 배치된다.
+내부 다단을 지원하며 세 클래스가 협력한다:
+
+- `TextBoxOverlay` — 글상자 컨테이너 UserControl. 외곽 테두리·그림자·회전·선택 핸들. 키보드/마우스 라우팅.
+- `TextBoxColumnHost` — 단(column)별 RichTextBox를 가로 배치하는 Canvas. `PerPageEditorHost` 의 단 내부 버전 (페이지 개념 없음).
+- `TextBoxColumnLayout` — 단 너비·간격 계산 헬퍼.
+
+글상자는 `FlowDocumentParser` 의 역직렬화 대상이 아니다 (본문 FlowDocument 에 anchor 없음). `ParseAllPageEditors` 이후 `_document` 의 `TextBoxObject` 목록을 직접 인계해 재삽입한다.
+
+### Undo / Redo 아키텍처
+
+`UndoRedoManager` (`Services/UndoRedoManager.cs`) — JSON 스냅샷 기반, 스택 깊이 100.
+
+텍스트 입력은 **burst** 단위로 묶인다 (1.5 초 idle = 새 burst):
+1. 첫 keypress: 현재 `_document` 를 `PushUndo` (pre-edit 스냅샷).
+2. idle 타이머 만료: `ParseAllPageEditors` → `_document` 동기화 (burst 종료).
+3. 비-텍스트 액션(오버레이 드래그·서식 변경 등): `BeginUndoableAction()` 직접 호출.
+4. Undo/Redo: settle → `UndoRedoManager.Undo/Redo` → `ApplyFlowDocument`.
+
+### 테마
+
+`Views/Themes/` 에 `Light.xaml` / `Dark.xaml` / `Soft.xaml` 세 테마가 있다.
+`ThemeService` 가 런타임에 교체한다. 새 테마 추가 시 세 파일에 모두 리소스 키를 정의해야 한다.
 
 ### 페이지네이션 파이프라인
 
@@ -265,10 +291,19 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 2. FlowDocumentPaginationAdapter.Paginate(doc)
    → PaginatedDocument (페이지별 블록 배정 테이블)
    ※ MaxBlocksForPreciseMapping = 2,500 초과 시 fast-path (모든 블록 → page 0 일괄 배정)
-   ※ FlattenBlocks: Wpf.List + Wpf.Section 재귀, Wpf.Table 은 TableRowSplitter 로 분할
+   ※ FlattenBlocks:
+       - Wpf.List → 개별 yield 없이 List 전용 핸들러가 통째로 처리 (Y collapse 방지)
+       - Wpf.Section with ContainerBlock tag → 자체 yield, Section 전용 핸들러가
+         전체 높이를 측정해 단일 단위로 슬롯에 배정 (페이지 경계 분산 방지)
+       - Tag 없는 Wpf.Section (스타일 래퍼) → 자식 재귀
+       - Wpf.Table → TableRowSplitter 로 행 단위 분할
+   ※ slotFill: 슬롯별 누적 채움 높이. bodyH - FillSafetyMarginDip(15 DIP) 초과 시
+      다음 슬롯으로 커서 이동. prevContBottom 으로 gap·cascade 보정.
 
 3. PerPageDocumentSplitter.Split(paginated)
    → IReadOnlyList<PerPageDocumentSlice>  (페이지·단별 Core 블록 목록)
+   ※ ReassembleContainerBlocks: 평탄화된 자식 블록들을 부모 ContainerBlock 스타일로 재감싸
+      배경·보더·패딩 복원
 
 4. PerPageEditorHost.LoadSlices(slices, geo, configure)
    → RichTextBox N개 (페이지당 단 수만큼) Canvas 배치
