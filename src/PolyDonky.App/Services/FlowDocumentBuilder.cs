@@ -442,8 +442,15 @@ public static class FlowDocumentBuilder
             MmToDip(box.PaddingTopMm),
             MmToDip(box.PaddingRightMm),
             MmToDip(box.PaddingBottomMm));
+
+        // 오른쪽 테두리 클리핑 방지: WPF FlowDocument 에서 Section 의 오른쪽 border 는
+        // RTB(RichTextBox) 의 Width 경계 위에 그려져 RTB 클리핑에 잘린다.
+        // 오른쪽 border 가 있을 때 최소 1 DIP 의 오른쪽 여백을 주어 border 선이
+        // RTB 클립 경계 안쪽에 렌더링되도록 보장한다.
+        double rightSafetyDip = box.BorderRightPt > 0
+            ? Math.Max(1.0, PtToDip(box.BorderRightPt)) : 0.0;
         section.Margin = new Thickness(0,
-            MmToDip(box.MarginTopMm), 0, MmToDip(box.MarginBottomMm));
+            MmToDip(box.MarginTopMm), rightSafetyDip, MmToDip(box.MarginBottomMm));
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
