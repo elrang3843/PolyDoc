@@ -262,6 +262,12 @@ public static class FlowDocumentPaginationAdapter
         // 리스트 아이템·분할 단락 등 measurements 항목이 없는 result 항목은 등록하지 않는다.
         var resultToMeasurement = new System.Collections.Generic.Dictionary<int, int>();
 
+        // 슬롯별 최초 배정된 블록의 off-screen RTB topY.
+        // minSlot 강제 배정으로 인해 자연 슬롯보다 높은 슬롯에 블록이 몰릴 때,
+        // slotFill 대신 "prevContBottom - slotContentStartY[slot]" 로 실제 시각 채움을
+        // 추정해 ContainerBlock overflow 검사에 사용한다.
+        var slotContentStartY = new System.Collections.Generic.Dictionary<int, double>();
+
         // 직전 블록이 최종 배정된 슬롯 인덱스. ForcePageBreakBefore 단락을 다음 페이지로
         // 강제 이동시킬 때 기준 페이지를 결정하는 데 사용. -1 = 첫 블록.
         int prevSlot = -1;
@@ -365,6 +371,8 @@ public static class FlowDocumentPaginationAdapter
                         Gap     = listGap,
                     });
 
+                    if (!double.IsNaN(listTopY) && !slotContentStartY.ContainsKey(listSlot))
+                        slotContentStartY[listSlot] = listTopY;
                     prevSlot = listSlot;
                     minSlot  = Math.Max(minSlot, listSlot);
                     // cascade 발생 시 effListTopY 를 기준으로 보정 — 개별 블록 갱신과 동일 원칙.
@@ -400,14 +408,29 @@ public static class FlowDocumentPaginationAdapter
                         //       effSectTopY 는 cascade 보정을 이미 반영한 값이므로
                         //       pageRelY = (현재 슬롯 안에서의 상대 Y).
                         double pageRelY = effSectTopY - (double)sectSlot * bodyH;
-                        if (pageRelY + sectH > bodyH - FillSafetyMarginDip)
+                        bool   yOverflow = pageRelY + sectH > bodyH - FillSafetyMarginDip;
+
+                        // 2차: 슬롯 실제 콘텐츠 시작 Y 기반 검사 — minSlot 강제 배정으로
+                        //       블록이 자연 슬롯보다 높은 슬롯에 몰릴 때 slotFill 이 실제
+                        //       시각 채움을 크게 과소평가하는 케이스를 잡는다.
+                        //       prevContBottom - slotFirstContentTopY = 이 슬롯에서 지금까지
+                        //       시각적으로 소비된 높이 추정치.
+                        bool actualFillOverflow = false;
+                        if (!double.IsNaN(prevContBottom) &&
+                            slotContentStartY.TryGetValue(sectSlot, out double slotStartContentY))
+                        {
+                            double slotActualFill = prevContBottom - slotStartContentY;
+                            actualFillOverflow = slotActualFill + sectGap + sectH > bodyH - FillSafetyMarginDip;
+                        }
+
+                        if (yOverflow || actualFillOverflow)
                         {
                             sectSlot++;
                             sectGap = 0.0;
                         }
                         else
                         {
-                            // 2차: slotFill 기반 검사 — cascade 로 effSectTopY 가 높아진 경우를 보완.
+                            // 3차: slotFill 기반 검사 — cascade 로 effSectTopY 가 높아진 경우 보완.
                             while (slotFill.GetValueOrDefault(sectSlot, 0.0) + sectGap + sectH > bodyH - FillSafetyMarginDip)
                             {
                                 sectSlot++;
@@ -415,6 +438,8 @@ public static class FlowDocumentPaginationAdapter
                             }
                         }
                     }
+                    if (!double.IsNaN(sectTopY) && !slotContentStartY.ContainsKey(sectSlot))
+                        slotContentStartY[sectSlot] = sectTopY;
                     if (sectH > 0)
                         slotFill[sectSlot] = Math.Min(bodyH,
                             slotFill.GetValueOrDefault(sectSlot, 0.0) + sectGap + sectH);
@@ -670,6 +695,8 @@ public static class FlowDocumentPaginationAdapter
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
+            if (!double.IsNaN(topY) && !slotContentStartY.ContainsKey(slotTop))
+                slotContentStartY[slotTop] = topY;
             resultFillContribs[result.Count - 1]  = (slotTop, gap + blockH, blockH);
             resultToMeasurement[result.Count - 1] = measurements.Count; // 아래 measurements.Add 직전
 
