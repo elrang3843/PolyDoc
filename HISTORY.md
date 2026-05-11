@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **표 열 리사이즈 커서가 잘못된 위치에서 나타나다 클릭 시 사라지는 문제**: 다중 RTB(페이지별 에디터) 환경에서 `TryHitTableColumnBorder`가 항상 `BodyEditor`(활성/첫 번째 RTB) 기준 좌표를 사용해 실제 마우스가 위치한 RTB와 좌표계가 달라 경계 감지가 틀리던 문제. 마우스 이벤트의 `sender` RTB를 기준으로 좌표 계산 및 hit-test를 수행하도록 수정. 마우스 캡처 대상도 `sender` RTB로 고정해 드래그 중 좌표 일관성 보장. (`MainWindow.xaml.cs`)
+- **표 WrapMode 변경/삭제가 다른 페이지 RTB의 표에 적용 안 되는 문제**: `표 속성` 다이얼로그에서 WrapMode를 변경하거나 표를 삭제할 때 `BodyEditor.Document`만 탐색하던 코드가 테이블이 있는 RTB를 찾지 못해 변경이 누락되던 문제. `FindRtbContaining()` 헬퍼를 추가해 전체 페이지 에디터에서 해당 블록을 소유한 RTB를 검색하고, 그 RTB의 FlowDocument에 변경을 적용하도록 수정. 멀티셀 선택 메뉴의 `표 속성`도 WrapMode 변경을 단일 셀 메뉴와 동일하게 처리하도록 수정. (`MainWindow.xaml.cs`)
 - **HTML 파일 변환 표의 열 리사이즈 실패**: SliceRefiner가 페이지 오버플로 보정을 위해 테이블 블록을 슬라이스 간 이동할 때 Table.Tag (Core.Table 참조) 가 손실되는 버그. 이동 전후로 메타데이터를 보존하도록 수정하여 열 리사이즈가 올바른 Core.Table을 참조하도록 복구. (`SliceRefiner.cs`)
 - **HTML Flex 컨테이너 내 이미지 편집 가능화**: Flex row 안의 모든 셀이 단일 ShapeObject 또는 ImageBlock으로만 구성된 경우(기존엔 ShapeObject만), 이미지도 독립 InFrontOfText 오버레이로 변환. 이미지가 표 셀에 갇혀 이동 불가하던 문제 해결. (`HtmlReader.cs`)
 

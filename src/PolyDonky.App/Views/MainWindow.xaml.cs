@@ -53,14 +53,17 @@ public partial class MainWindow : Window
         _embeddedDragActive = false;
 
         if (!_drawingTextBox) DeselectAllOverlays();
-        var pt = e.GetPosition(BodyEditor);
+        // sender 는 마우스 이벤트가 발생한 실제 RTB. BodyEditor(ActiveEditor) 와 다를 수 있으므로
+        // 좌표는 항상 sender 기준으로 계산한다.
+        var senderRtb = sender as RichTextBox;
+        var pt = e.GetPosition(senderRtb ?? BodyEditor);
 
         // 표 열 경계선 위: 열 너비 드래그 시작
         if (_tableColResizeHovering &&
-            TryHitTableColumnBorder(pt, out var rcWpf, out var rcCore, out int rcIdx, out _))
+            TryHitTableColumnBorder(pt, senderRtb, out var rcWpf, out var rcCore, out int rcIdx, out _))
         {
             _suppressEmbeddedObjectDrag = false;
-            StartTableColumnResize(rcWpf!, rcCore!, rcIdx, pt.X);
+            StartTableColumnResize(rcWpf!, rcCore!, rcIdx, pt.X, senderRtb);
             e.Handled = true;
             return;
         }
@@ -153,7 +156,10 @@ public partial class MainWindow : Window
 
     private void OnEditorPreviewMouseMoveBlockDrag(object sender, MouseEventArgs e)
     {
-        var pt = e.GetPosition(BodyEditor);
+        // sender 는 실제 마우스 이벤트가 발생한 RTB (캡처 중에는 캡처를 가진 RTB).
+        // 좌표는 항상 sender 기준으로 계산해 BodyEditor(ActiveEditor) 와 좌표계 불일치를 방지한다.
+        var senderRtb = sender as RichTextBox;
+        var pt = e.GetPosition(senderRtb ?? BodyEditor);
 
         // 우선순위 1: 표 열 너비 드래그 중
         if (_tableColResizeActive)
@@ -196,7 +202,7 @@ public partial class MainWindow : Window
         if (!_drawingShape_active && !_drawingPolyline_active && !_drawingTextBox &&
             e.LeftButton != MouseButtonState.Pressed)
         {
-            bool onBorder = TryHitTableColumnBorder(pt, out _, out _, out _, out _);
+            bool onBorder = TryHitTableColumnBorder(pt, senderRtb, out _, out _, out _, out _);
             if (onBorder != _tableColResizeHovering)
             {
                 _tableColResizeHovering = onBorder;
@@ -1777,6 +1783,7 @@ public partial class MainWindow : Window
     private const double TableColResizeMinDip = 18.0;
     private bool   _tableColResizeActive;
     private bool   _tableColResizeHovering;
+    private RichTextBox?                          _colRszRtb;     // 리사이즈를 시작한 RTB (마우스 캡처 대상)
     private System.Windows.Documents.Table?       _colRszWpf;
     private PolyDonky.Core.Table?                 _colRszCore;
     private System.Windows.Documents.TableColumn? _colRszLeftCol;
@@ -3493,6 +3500,7 @@ public partial class MainWindow : Window
     // ── 표 열 너비 드래그 리사이즈 ────────────────────────────────────────────
 
     private bool TryHitTableColumnBorder(Point pt,
+        RichTextBox? hitRtb,
         out System.Windows.Documents.Table? wpfTable,
         out PolyDonky.Core.Table? coreTable,
         out int leftColIdx,
@@ -3500,13 +3508,17 @@ public partial class MainWindow : Window
     {
         wpfTable = null; coreTable = null; leftColIdx = -1; borderX = 0;
 
+        // pt 와 GetCharacterRect 은 같은 RTB 기준 좌표계여야 한다.
+        // hitRtb 가 null 이면 BodyEditor(ActiveEditor) 로 폴백.
+        var rtb = hitRtb ?? BodyEditor;
+
         // FlowDocument 레이아웃이 검증되지 않은 상태(예: 행 삽입 직후 재빌드 중)
         // 에서는 GetPositionFromPoint / GetCharacterRect 가
         // InvalidOperationException("TextView 의 레이아웃 정보가 잘못되었습니다") 을 던진다.
         // hit-test 실패로 처리하면 다음 마우스 이벤트에서 정상 동작.
         try
         {
-            var tp = BodyEditor.GetPositionFromPoint(pt, true);
+            var tp = rtb.GetPositionFromPoint(pt, true);
             if (tp == null) return false;
 
             // Walk up to TableCell
@@ -3570,9 +3582,11 @@ public partial class MainWindow : Window
     private void StartTableColumnResize(
         System.Windows.Documents.Table wpfTable,
         PolyDonky.Core.Table coreTable,
-        int leftColIdx, double startX)
+        int leftColIdx, double startX,
+        RichTextBox? rtb = null)
     {
         _tableColResizeActive = true;
+        _colRszRtb     = rtb;
         _colRszWpf     = wpfTable;
         _colRszCore    = coreTable;
         _colRszLeftIdx = leftColIdx;
@@ -3609,7 +3623,7 @@ public partial class MainWindow : Window
         if (_colRszRightCol != null)
             _colRszRightCol.Width = new GridLength(_colRszInitRight);
 
-        BodyEditor.CaptureMouse();
+        (_colRszRtb ?? BodyEditor).CaptureMouse();
         Mouse.OverrideCursor = Cursors.SizeWE;
     }
 
@@ -3618,7 +3632,9 @@ public partial class MainWindow : Window
         if (!_tableColResizeActive) return;
         _tableColResizeActive   = false;
         _tableColResizeHovering = false;
-        if (BodyEditor.IsMouseCaptured) BodyEditor.ReleaseMouseCapture();
+        var capturedRtb = _colRszRtb ?? BodyEditor;
+        if (capturedRtb.IsMouseCaptured) capturedRtb.ReleaseMouseCapture();
+        _colRszRtb = null;
         Mouse.OverrideCursor = null;
 
         if (_colRszCore != null && _colRszLeftCol != null)
@@ -4011,6 +4027,20 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// <paramref name="block"/> 을 포함하는 페이지 RTB 를 반환한다.
+    /// 찾지 못하면 null (호출자는 BodyEditor 로 폴백할 것).
+    /// </summary>
+    private RichTextBox? FindRtbContaining(System.Windows.Documents.Block block)
+    {
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            if (rtb.Document.Blocks.Contains(block))
+                return rtb;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// WPF Table 의 Tag 에 PolyDonky.Core.Table 이 비어있으면(예: 클립보드 붙여넣기로 새로 만들어진 표),
     /// WPF 구조를 미러링한 신선한 Core.Table 을 만들어 부착해 반환한다. 이 헬퍼는 표 우클릭 메뉴·열
     /// 리사이즈·멀티셀 메뉴 등 모든 Tag 의존 코드 경로에서 호출되어 라운드트립 안전성을 보장한다.
@@ -4192,8 +4222,31 @@ public partial class MainWindow : Window
             var dlg = new TablePropertiesWindow(first.CoreTable) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                PolyDonky.App.Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(
-                    first.WpfTable, first.CoreTable);
+                if (first.CoreTable.WrapMode == PolyDonky.Core.TableWrapMode.Block)
+                {
+                    PolyDonky.App.Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(
+                        first.WpfTable, first.CoreTable);
+                }
+                else
+                {
+                    // 오버레이 모드로 전환 — 단일 셀 메뉴와 동일한 경로로 처리.
+                    var tableRtb = FindRtbContaining(first.WpfTable);
+                    var fd = tableRtb?.Document ?? BodyEditor.Document;
+                    var anchor = new System.Windows.Documents.Paragraph
+                    {
+                        Tag        = first.CoreTable,
+                        Margin     = new Thickness(0),
+                        FontSize   = 0.1,
+                        Foreground = System.Windows.Media.Brushes.Transparent,
+                        Background = System.Windows.Media.Brushes.Transparent,
+                    };
+                    if (fd.Blocks.Contains(first.WpfTable))
+                    {
+                        fd.Blocks.InsertBefore(first.WpfTable, anchor);
+                        fd.Blocks.Remove(first.WpfTable);
+                    }
+                    RebuildOverlayTables();
+                }
                 _viewModel?.MarkDirty();
             }
         }));
@@ -4342,7 +4395,11 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    // 오버레이 모드로 전환 — FlowDocument 내 WPF Table 을 앵커 단락으로 교체
+                    // 오버레이 모드로 전환 — wpfTable 이 속한 RTB 의 FlowDocument 에서 앵커 단락으로 교체.
+                    // BodyEditor.Document 는 다른 페이지의 RTB 를 가리킬 수 있으므로 FindRtbContaining 으로
+                    // 실제 포함 RTB 를 찾아야 한다.
+                    var tableRtb = FindRtbContaining(wpfTable);
+                    var fd = tableRtb?.Document ?? BodyEditor.Document;
                     var anchor = new System.Windows.Documents.Paragraph
                     {
                         Tag        = coreTable,
@@ -4351,8 +4408,11 @@ public partial class MainWindow : Window
                         Foreground = System.Windows.Media.Brushes.Transparent,
                         Background = System.Windows.Media.Brushes.Transparent,
                     };
-                    BodyEditor.Document.Blocks.InsertBefore(wpfTable, anchor);
-                    BodyEditor.Document.Blocks.Remove(wpfTable);
+                    if (fd.Blocks.Contains(wpfTable))
+                    {
+                        fd.Blocks.InsertBefore(wpfTable, anchor);
+                        fd.Blocks.Remove(wpfTable);
+                    }
                     RebuildOverlayTables();
                 }
                 _viewModel?.MarkDirty();
@@ -4584,9 +4644,11 @@ public partial class MainWindow : Window
 
     private void TableOp_DeleteTable(System.Windows.Documents.Table wpfTable)
     {
-        var block = BodyEditor.Document.Blocks
+        // wpfTable 이 속한 RTB 의 FlowDocument 를 찾아 제거. BodyEditor 는 다른 RTB 일 수 있다.
+        var tableRtb = FindRtbContaining(wpfTable) ?? BodyEditor;
+        var block = tableRtb.Document.Blocks
             .FirstOrDefault(b => ReferenceEquals(b, wpfTable));
-        if (block is not null) BodyEditor.Document.Blocks.Remove(block);
+        if (block is not null) tableRtb.Document.Blocks.Remove(block);
         _viewModel?.MarkDirty();
     }
 
@@ -5816,10 +5878,16 @@ public partial class MainWindow : Window
             var dlg = new TablePropertiesWindow(table) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                // WrapMode 변경 시 FlowDocument 앵커 블록을 교체해야 할 수 있음
-                var anchor = BodyEditor.Document.Blocks
-                    .FirstOrDefault(b => ReferenceEquals(b.Tag, table));
-                if (anchor is not null)
+                // WrapMode 변경 시 FlowDocument 앵커 블록을 교체해야 할 수 있음.
+                // 앵커는 여러 RTB 중 하나의 FlowDocument 에 있을 수 있으므로 전체 에디터에서 탐색한다.
+                System.Windows.Documents.Block? anchor = null;
+                System.Windows.Documents.FlowDocument? anchorFd = null;
+                foreach (var rtb in PageEditorHost.PageEditors)
+                {
+                    anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
+                    if (anchor is not null) { anchorFd = rtb.Document; break; }
+                }
+                if (anchor is not null && anchorFd is not null)
                 {
                     var newAnchor = table.WrapMode == PolyDonky.Core.TableWrapMode.Block
                         ? (System.Windows.Documents.Block)Services.FlowDocumentBuilder.BuildTable(table)
@@ -5831,8 +5899,8 @@ public partial class MainWindow : Window
                               Foreground = System.Windows.Media.Brushes.Transparent,
                               Background = System.Windows.Media.Brushes.Transparent,
                           };
-                    BodyEditor.Document.Blocks.InsertBefore(anchor, newAnchor);
-                    BodyEditor.Document.Blocks.Remove(anchor);
+                    anchorFd.Blocks.InsertBefore(anchor, newAnchor);
+                    anchorFd.Blocks.Remove(anchor);
                 }
                 RebuildOverlayTables();
                 _viewModel?.MarkDirty();
@@ -5842,10 +5910,12 @@ public partial class MainWindow : Window
         menu.Items.Add(MakeMenuItem("표 삭제(_X)", () =>
         {
             _viewModel?.RemoveOverlayBlock(table);
-            var anchor = BodyEditor.Document.Blocks
-                .FirstOrDefault(b => ReferenceEquals(b.Tag, table));
-            if (anchor is not null)
-                BodyEditor.Document.Blocks.Remove(anchor);
+            // 앵커는 여러 RTB 중 하나에 있을 수 있으므로 전체 에디터에서 탐색.
+            foreach (var rtb in PageEditorHost.PageEditors)
+            {
+                var anch = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
+                if (anch is not null) { rtb.Document.Blocks.Remove(anch); break; }
+            }
             RebuildOverlayTables();
         }));
         return menu;
