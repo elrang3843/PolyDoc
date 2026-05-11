@@ -470,37 +470,32 @@ public static class FlowDocumentBuilder
             // singleFe 가 이미 singleBuc 의 논리 자식이므로 먼저 연결을 끊어야 한다.
             singleBuc.Child = null;
 
-            // BuildFlexContainer 와 동일한 구조:
-            //   wrapperGrid.Background  = 박스 배경 (padding 영역까지 채움)
-            //   contentWrap.Margin      = border+padding (콘텐츠를 border 안쪽으로 들여씀)
-            //   borderOverlay(z=1)      = 테두리 선 (콘텐츠·오버플로 위에 렌더링)
-            double bL2 = box.BorderLeftPt   > 0 ? PtToDip(box.BorderLeftPt)   : 0;
-            double bT2 = box.BorderTopPt    > 0 ? PtToDip(box.BorderTopPt)    : 0;
-            double bR2 = box.BorderRightPt  > 0 ? PtToDip(box.BorderRightPt)  : 0;
-            double bB2 = box.BorderBottomPt > 0 ? PtToDip(box.BorderBottomPt) : 0;
-
+            // 배경·패딩은 contentWrap 에 적용.
+            // ClipToBounds=true: SVG 오버플로가 contentWrap 경계 밖(BUC 부모 공간)으로
+            // 올라가 borderOverlay(z=1) 를 덮는 현상을 방지한다.
             var contentWrap = new System.Windows.Controls.Border
             {
                 Child        = singleFe,
-                ClipToBounds = false,
-                Margin       = new Thickness(
-                    bL2 + MmToDip(box.PaddingLeftMm),
-                    bT2 + MmToDip(box.PaddingTopMm),
-                    bR2 + MmToDip(box.PaddingRightMm),
-                    bB2 + MmToDip(box.PaddingBottomMm)),
+                ClipToBounds = true,
             };
-            section.Padding = new Thickness(0); // Margin 으로 흡수됨
-
-            var wrapperGrid = new System.Windows.Controls.Grid { ClipToBounds = false };
             if (section.Background is not null)
             {
-                wrapperGrid.Background = section.Background;
+                contentWrap.Background = section.Background;
                 section.Background     = null;
             }
-            wrapperGrid.Children.Add(contentWrap);
+            var spad = section.Padding;
+            if (spad.Left != 0 || spad.Top != 0 || spad.Right != 0 || spad.Bottom != 0)
+            {
+                contentWrap.Padding = spad;
+                section.Padding     = new Thickness(0);
+            }
 
             if (section.BorderBrush is not null)
             {
+                // SVG/도형 콘텐츠가 ClipToBounds=false 오버플로로 Border 선을 덮지 않도록
+                // Grid 에 ① contentWrap(z=0) + ② borderOverlay(z=1) 구조로 테두리를 위에 그린다.
+                var wrapperGrid = new System.Windows.Controls.Grid { ClipToBounds = false };
+                wrapperGrid.Children.Add(contentWrap);
                 wrapperGrid.Children.Add(new System.Windows.Controls.Border
                 {
                     BorderBrush      = section.BorderBrush,
@@ -509,8 +504,12 @@ public static class FlowDocumentBuilder
                 });
                 section.BorderBrush     = null;
                 section.BorderThickness = new Thickness(0);
+                singleBuc.Child = wrapperGrid;
             }
-            singleBuc.Child = wrapperGrid;
+            else
+            {
+                singleBuc.Child = contentWrap;
+            }
         }
 
         // WPF FlowDocument 에서 Section.Background 는 자식이 Wpf.Table 하나뿐일 때
