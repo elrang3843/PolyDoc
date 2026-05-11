@@ -550,13 +550,26 @@ public static class FlowDocumentPaginationAdapter
             }
 
             // 슬롯 커서(이 슬롯에 이미 배정된 누적 채움) + gap + blockH 가 슬롯 높이를 넘으면
-            // 다음 슬롯으로 밀어낸다. bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
-            if (blockH > 0 && blockH < bodyH)
+            // 다음 슬롯으로 밀어낸다.
+            // bodyH 미만 블록: 들어갈 슬롯이 나올 때까지 반복 이동.
+            // bodyH 이상 블록(분할 불가): 현재 슬롯에 이미 내용이 있을 때만 한 번 이동.
+            //   — 같은 페이지에 작은 블록 + 큰 BUC(SVG/flex 등)가 함께 배정되면
+            //     per-page RTB(bodyH+2) 를 초과해 시각적으로 잘리는 문제를 방지한다.
+            if (blockH > 0)
             {
-                while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH - FillSafetyMarginDip)
+                if (blockH < bodyH)
                 {
+                    while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH - FillSafetyMarginDip)
+                    {
+                        slotTop += 1;
+                        gap = 0.0;
+                    }
+                }
+                else if (slotFill.GetValueOrDefault(slotTop, 0.0) + gap > FillSafetyMarginDip)
+                {
+                    // 이미 채워진 슬롯에 bodyH 이상 블록이 오면 다음 슬롯으로 이동.
                     slotTop += 1;
-                    gap = 0.0; // 슬롯 이동 시 간격 리셋
+                    gap = 0.0;
                 }
             }
 

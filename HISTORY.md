@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **페이지 경계에서 콘텐츠 잘림 — 대형 BUC 블록(SVG/flex 등) 복수 배정 버그**: `blockH >= bodyH` 인 분할 불가 블록(SVG 이미지·flex 컨테이너 등)이 슬롯 오버플로 체크를 완전히 건너뛰어, 이미 작은 블록이 채워진 슬롯에 대형 블록까지 함께 배정되던 문제. per-page RTB 높이(bodyH + 2 DIP)를 초과해 콘텐츠가 시각적으로 잘렸다. 수정: 대형 블록도 현재 슬롯에 이미 내용이 있으면(`slotFill > FillSafetyMarginDip`) 다음 슬롯으로 한 번 이동하도록 처리 추가(무한 루프 방지를 위해 단회만 이동). (`FlowDocumentPaginationAdapter.cs`)
+
 - **인라인 SVG 오른쪽 테두리 미표시 — Viewbox 안에서 border 가 스케일·클립되던 문제**: `SvgRenderer.TryRender` 가 SVG 의 `style="border:1px solid #ddd"` 를 `Viewbox { Border { Canvas } }` 구조로 렌더링할 때 `Viewbox` 의 `ScaleTransform` 이 border 픽셀까지 함께 스케일링해 오른쪽 border 가 Viewbox 경계에 닿거나 RTB 에 클리핑되던 문제. border 를 Viewbox 바깥의 래퍼 `Border { Viewbox { Canvas } }` 구조로 이동하고 Viewbox 크기를 `targetWidthDip - 2×borderThk` 로 줄여 총 외곽 크기를 유지. (`SvgRenderer.cs`)
 
 - **ContainerBlock(figure 등) 오른쪽 테두리 선 미표시 — SVG 오버플로 + RTB 클립 이중 수정**: `BuildContainer` 의 단독 BUC(BlockUIContainer) 경로에서 `Border { Child=SVG, ClipToBounds=false }` 구조 시 SVG 콘텐츠가 Border 선 위에 렌더링돼 가리던 문제와, RTB(`RichTextBox`) 폭 경계에서 오른쪽 선이 클리핑되던 문제를 함께 수정. 해결책: ① `section.Margin.Right = max(1, borderRightDip)` 를 단독 BUC 경로에서만 적용해 RTB 클립 회피(다중-자식 경로에서는 `Section.BorderBrush` 가 Margin.Right > 0 시 렌더링 안 되는 WPF 버그로 적용 금지). ② `Grid { contentWrap Border(z=0, background+padding), borderOverlay Border(z=1, border-only, IsHitTestVisible=false) }` 구조로 테두리를 콘텐츠·오버플로 위에 렌더링. (`FlowDocumentBuilder.cs`)
