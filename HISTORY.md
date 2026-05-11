@@ -44,7 +44,27 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 > 다음 릴리스에 들어갈 변경 사항을 여기에 기록합니다.
 
+### Added
+
+- **블록 그룹/해제 기능**: 여러 블록을 `ContainerBlock{Role=Group}`으로 묶는 "블록 그룹으로 묶기"와 그룹을 해제하는 "그룹 해제" 우클릭 메뉴 항목 추가. 캐럿이 그룹 안에 있을 때 "그룹 해제", 텍스트 선택이 2개 이상의 최상위 블록을 걸칠 때 "블록 그룹으로 묶기" 메뉴가 활성화된다. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
+- **복수 도형 SVG → 편집 가능한 ShapeObject 그룹으로 분해**: HTML 파일 안의 다중 도형 SVG (`<svg>` 내 rect/circle/ellipse/line/polyline/polygon/path 복수)를 `ImageBlock`(읽기 전용)이 아닌 개별 `ShapeObject`들로 분해하여 `ContainerBlock{Role=Group}`으로 묶어 가져온다. 그룹 해제 후 각 도형의 색상·크기·회전 등을 편집 가능. `<g>` 래퍼의 `transform="rotate()"` 도 전파. (`HtmlReader.cs`, `ContainerBlock.cs`)
+- **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
+
 ### Fixed
+
+- **표 열 리사이즈 커서가 잘못된 위치에서 나타나다 클릭 시 사라지는 문제**: 다중 RTB(페이지별 에디터) 환경에서 `TryHitTableColumnBorder`가 항상 `BodyEditor`(활성/첫 번째 RTB) 기준 좌표를 사용해 실제 마우스가 위치한 RTB와 좌표계가 달라 경계 감지가 틀리던 문제. 마우스 이벤트의 `sender` RTB를 기준으로 좌표 계산 및 hit-test를 수행하도록 수정. 마우스 캡처 대상도 `sender` RTB로 고정해 드래그 중 좌표 일관성 보장. (`MainWindow.xaml.cs`)
+- **표 WrapMode 변경/삭제가 다른 페이지 RTB의 표에 적용 안 되는 문제**: `표 속성` 다이얼로그에서 WrapMode를 변경하거나 표를 삭제할 때 `BodyEditor.Document`만 탐색하던 코드가 테이블이 있는 RTB를 찾지 못해 변경이 누락되던 문제. `FindRtbContaining()` 헬퍼를 추가해 전체 페이지 에디터에서 해당 블록을 소유한 RTB를 검색하고, 그 RTB의 FlowDocument에 변경을 적용하도록 수정. 멀티셀 선택 메뉴의 `표 속성`도 WrapMode 변경을 단일 셀 메뉴와 동일하게 처리하도록 수정. (`MainWindow.xaml.cs`)
+- **HR(수평선)의 복사/붙여넣기 및 우클릭 메뉴 미지원 문제**: HTML 등에서 `<hr>` 요소를 `ThematicBreakBlock`으로 변환한 수평선을 복사/붙여넣기할 수 없고, 우클릭으로 삭제하거나 편집할 수 있는 방법이 없던 문제. `BuildThematicBreak` 메서드를 `internal static`으로 변경해 `MainWindow.BuildWpfBlockFromCore()`에서 접근 가능하게 하고, `ThematicBreakBlock` 케이스를 switch문에 추가해 복사/붙여넣기 지원. `OnEmbeddedObjectContextMenuOpening`에서 카레트 위치의 HR을 감지하는 `FindThematicBreakBlockAtCaret()` 헬퍼와 삭제 처리 `DeleteThematicBreakBlock()` 메서드를 추가해 우클릭 메뉴에 "선 삭제" 항목 추가. (`FlowDocumentBuilder.cs`, `MainWindow.xaml.cs`)
+- **HTML 파일 변환 표의 열 리사이즈 실패**: SliceRefiner가 페이지 오버플로 보정을 위해 테이블 블록을 슬라이스 간 이동할 때 Table.Tag (Core.Table 참조) 가 손실되는 버그. 이동 전후로 메타데이터를 보존하도록 수정하여 열 리사이즈가 올바른 Core.Table을 참조하도록 복구. (`SliceRefiner.cs`)
+- **HTML Flex 컨테이너 내 이미지 편집 가능화**: Flex row 안의 모든 셀이 단일 ShapeObject 또는 ImageBlock으로만 구성된 경우(기존엔 ShapeObject만), 이미지도 독립 InFrontOfText 오버레이로 변환. 이미지가 표 셀에 갇혀 이동 불가하던 문제 해결. (`HtmlReader.cs`)
+
+- **SVG 텍스트 레이블 → ShapeObject 편집 유지**: 단일 도형 + `<text>` 요소를 가진 SVG를 비트맵으로 변환하지 않고 `ShapeObject.LabelText`로 흡수해 편집 가능 상태를 유지. (`HtmlReader.cs`)
+
+- **HTML 이미지 편집 가능화 — block-level 이미지를 InFrontOfText 오버레이로 변환**: 외부 HTML 파일을 열었을 때 `<figure><img>` 및 단독 `<img>` 이미지가 본문 흐름에 갇혀 이동·크기 조정이 불가능하던 문제. `HtmlReader.AppendBlockImageWithSpacer()`를 추가해 block-level 이미지를 `InFrontOfText` 오버레이로 변환하고 `image-spacer` 단락으로 수직 공간 예약. `FlowDocumentPaginationAdapter.ResolveFlexShapeOverlays()`에 `ImageBlock` 처리를 추가해 spacer 위치로 페이지·좌표 확정. `HtmlWriter.WriteImage()`에 오버레이 이미지의 `data-pd-wrap-mode/anchor-page/overlay-x/y` 직렬화 추가해 저장 후 재로드 시 복원. (`HtmlReader.cs`, `HtmlWriter.cs`, `FlowDocumentPaginationAdapter.cs`)
+
+- **페이지 오버플로 근본 수정 — 오프스크린 측정 오차 후처리 보정**: 오프스크린 RTB 측정값과 per-page RTB 실제 렌더 높이의 차이로 인해 마지막 블록이 페이지 하단을 넘쳐 잘리던 문제. `SliceRefiner`를 새로 추가해 `SetupPageEditors` 에서 슬라이스별 실제 높이를 오프스크린 측정(FlowDocumentPaginationAdapter 와 동일 패턴)으로 재확인하고, 오버플로 슬라이스의 마지막 WPF Block 을 다음 슬라이스 앞으로 이동, 수렴할 때까지 최대 4회 반복. (`Pagination/SliceRefiner.cs`, `Views/MainWindow.xaml.cs`)
+
+- **BUC(이미지) topY NaN 시 ContainerBlock 페이지 overflow 미탐지 수정**: `BlockUIContainer`(이미지 등) 의 `TryGetTopY` 가 NaN 을 반환하면 NaN 핸들러가 `slotContentStartY` 를 갱신하지 않아, 뒤에 오는 `ContainerBlock` 의 `actualFillOverflow` 2차 검사에서 `slotContentStartY.TryGetValue` 가 false — 오버플로가 감지되지 않던 문제. NaN 핸들러에 `prevContBottom` 대리값으로 `slotContentStartY[nanSlot]` 을 채우는 코드를 추가해 BUC 가 슬롯 최초 진입 블록이어도 검사가 발동되도록 수정. (`FlowDocumentPaginationAdapter.cs`)
 
 - **HTML `<br>` 줄바꿈이 WPF FlowDocument에서 무시되던 문제**: `HtmlReader`가 `<br>`을 `Run { Text = "\n" }`으로 변환하지만, WPF `FlowDocument`는 `Run` 안의 `\n`을 시각적 줄바꿈으로 렌더링하지 않는다. `BuildParagraph` 에서 `AppendRunInlines` 헬퍼를 통해 `\n` 이 포함된 Run 텍스트를 분할하고 조각 사이에 WPF `LineBreak` 인라인을 삽입하도록 수정. 코드 블록·수식·이모지·각주 등 특수 Run 은 기존 `BuildInline` 경로를 그대로 사용. (`FlowDocumentBuilder.cs`)
 

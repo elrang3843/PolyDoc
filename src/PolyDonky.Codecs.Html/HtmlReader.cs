@@ -384,7 +384,7 @@ public sealed class HtmlReader : IDocumentReader
 
             case "img":
             {
-                target.Add(BuildImage(el));
+                AppendBlockImageWithSpacer(BuildImage(el), target);
                 break;
             }
 
@@ -465,11 +465,20 @@ public sealed class HtmlReader : IDocumentReader
 
             case "svg":
             {
-                // PolyDonky 자체 출력 (단일 도형, 텍스트 레이블 없음) → ShapeObject.
-                // 복합 SVG (텍스트·복수 도형 포함 다이어그램) → ImageBlock 으로 보존.
-                bool isSingleShape = CountSvgShapeElements(el) == 1 && !SvgHasTextElements(el);
+                // 단일 도형 SVG → ShapeObject (텍스트 레이블 포함 가능).
+                // 복수 도형 SVG (편집 가능한 경우) → ContainerBlock{Group} of ShapeObjects.
+                // 그 외 복수 도형 SVG (다이어그램 등) → ImageBlock 으로 보존.
+                bool isSingleShape = CountSvgShapeElements(el) == 1;
                 if (isSingleShape && TryParseShapeFromSvgElement(el, out var shapeFromSvg))
+                {
+                    // <text> 요소가 있으면 LabelText 로 흡수해 ShapeObject 편집 가능 상태 유지.
+                    var svgText = el.QuerySelector("text");
+                    if (svgText is not null && string.IsNullOrEmpty(shapeFromSvg!.LabelText))
+                        shapeFromSvg.LabelText = svgText.TextContent.Trim();
                     target.Add(shapeFromSvg!);
+                }
+                else if (TryDecomposeMultiShapeSvg(el, out var svgGroup) && svgGroup is not null)
+                    target.Add(svgGroup);
                 else
                     target.Add(BuildImageFromSvg(el));
                 break;
@@ -1002,6 +1011,31 @@ public sealed class HtmlReader : IDocumentReader
         return img;
     }
 
+    /// <summary>
+    /// block-level 이미지를 InFrontOfText 오버레이로 변환해 <paramref name="target"/> 에 추가한다.
+    /// 이미지 높이만큼의 spacer 단락을 먼저 삽입해 본문 흐름에서 수직 공간을 확보하고,
+    /// AnchorPageIndex=-2 sentinel 로 페이지네이션 후 실제 페이지를 확정한다.
+    /// </summary>
+    private static void AppendBlockImageWithSpacer(ImageBlock img, IList<PdBlock> target)
+    {
+        img.WrapMode        = ImageWrapMode.InFrontOfText;
+        img.AnchorPageIndex = -2;
+        img.OverlayXMm      = 0; // 페이지 좌측 여백 기준 — ResolveFlexShapeOverlays 가 보정
+        img.OverlayYMm      = 0; // spacer 상단 기준 — ResolveFlexShapeOverlays 가 보정
+
+        // spacer: 이미지 높이 + 마진을 본문 흐름에 예약 (FlowDocumentPaginationAdapter 기준)
+        double heightMm = img.HeightMm > 0 ? img.HeightMm : 50.0;
+        var spacer = new Paragraph { StyleId = "image-spacer" };
+        spacer.Style.SpaceBeforePt = img.MarginTopMm    * (72.0 / 25.4);
+        spacer.Style.SpaceAfterPt  = (heightMm + img.MarginBottomMm) * (72.0 / 25.4);
+        spacer.Runs.Add(new Run { Text = "​", Style = new RunStyle { FontSizePt = 0.1 } });
+        target.Add(spacer);
+
+        img.MarginTopMm    = 0; // spacer 가 처리
+        img.MarginBottomMm = 0;
+        target.Add(img);
+    }
+
     private static void BuildFigure(IElement figEl, IList<PdBlock> target, InlineCtx ctx)
     {
         // pd-shape: PolyDonky ShapeObject 복원
@@ -1038,7 +1072,28 @@ public sealed class HtmlReader : IDocumentReader
                 img.TitlePosition = ImageTitlePosition.Below;
                 ApplyImageCaptionStyle(caption, img);
             }
-            target.Add(img);
+
+            // PolyDonky 가 저장한 오버레이 이미지 복원 (data-pd-wrap-mode 있을 때).
+            var pdWrap = figEl.GetAttribute("data-pd-wrap-mode");
+            if (pdWrap is "InFrontOfText" or "BehindText")
+            {
+                img.WrapMode = pdWrap == "BehindText"
+                    ? ImageWrapMode.BehindText
+                    : ImageWrapMode.InFrontOfText;
+                if (int.TryParse(figEl.GetAttribute("data-pd-anchor-page"), out var ap))
+                    img.AnchorPageIndex = ap;
+                if (TryParseCssMm(figEl.GetAttribute("data-pd-overlay-x"), out var ox))
+                    img.OverlayXMm = ox;
+                if (TryParseCssMm(figEl.GetAttribute("data-pd-overlay-y"), out var oy))
+                    img.OverlayYMm = oy;
+                target.Add(img);
+            }
+            else
+            {
+                // 외부 HTML / 일반 figure → block-level 이미지를 InFrontOfText 오버레이로 변환.
+                // AnchorPageIndex=-2 sentinel 을 사용해 페이지네이션 후 spacer 위치로 확정.
+                AppendBlockImageWithSpacer(img, target);
+            }
 
             // figure 의 다른 자식 처리.
             foreach (var n in figEl.ChildNodes)
@@ -2136,14 +2191,14 @@ public sealed class HtmlReader : IDocumentReader
         }).ToList();
 
         // ── 순수 CSS 도형 flex 감지 ──────────────────────────────────────────────
-        // 모든 셀이 ShapeObject 하나로만 이루어진 flex row 는 편집 가능한 오버레이 ShapeObject 로 변환한다.
-        // 본문 흐름에는 수직 공간 확보용 spacer 단락만 남기고,
-        // 도형은 InFrontOfText 오버레이로 배치해 드래그·크기 조절·컨텍스트 메뉴가 동작하게 한다.
-        bool isPureShapeFlex = isFlex
+        // 모든 셀이 ShapeObject 또는 ImageBlock 하나로만 이루어진 flex row 는
+        // 편집 가능한 오버레이로 변환한다 (도형·이미지 모두 InFrontOfText 배치).
+        // 본문 흐름에는 수직 공간 확보용 spacer 단락만 남긴다.
+        bool isPureObjectFlex = isFlex
             && allCellContent.Count >= 2
-            && allCellContent.All(cb => cb.Count == 1 && cb[0] is ShapeObject);
+            && allCellContent.All(cb => cb.Count == 1 && cb[0] is (ShapeObject or ImageBlock));
 
-        if (isPureShapeFlex)
+        if (isPureObjectFlex)
         {
             // 컨테이너 padding 파싱 (px → mm).
             double padLeftMm = 0, padTopMm = 0, padRightMm = 0, padBottomMm = 0;
@@ -2174,30 +2229,43 @@ public sealed class HtmlReader : IDocumentReader
             if (StyleProp(style, "margin-top")    is { } mtv && TryParseCssMm(mtv, out var mtr)) marginTopMm    = mtr;
             if (StyleProp(style, "margin-bottom") is { } mbv && TryParseCssMm(mbv, out var mbr)) marginBottomMm = mbr;
 
-            double maxShapeH = allCellContent.Max(cb => ((ShapeObject)cb[0]).HeightMm);
-            double containerH = padTopMm + maxShapeH + padBottomMm;
+            double maxObjH    = allCellContent.Max(cb => cb[0] is ShapeObject s ? s.HeightMm
+                                                                                 : ((ImageBlock)cb[0]).HeightMm);
+            double containerH = padTopMm + maxObjH + padBottomMm;
 
             // spacer 단락: 컨테이너 시각 높이를 본문 흐름에 예약.
-            // FontSizePt=0.1 로 자연 행높이를 최소화하고 SpaceAfterPt 로 전체 높이를 확보.
             var spacer = new Paragraph { StyleId = "pd-flex-shape-spacer" };
             spacer.Style.SpaceBeforePt = marginTopMm * (72.0 / 25.4);
             spacer.Style.SpaceAfterPt  = (containerH + marginBottomMm) * (72.0 / 25.4);
             spacer.Runs.Add(new Run { Text = "​", Style = new RunStyle { FontSizePt = 0.1 } });
             target.Add(spacer);
 
-            // 각 CSS 도형을 InFrontOfText 오버레이로 변환.
+            // 각 도형/이미지를 InFrontOfText 오버레이로 변환.
             // AnchorPageIndex = -2 : 페이지네이션 후 spacer 기준으로 해결되는 sentinel.
-            // OverlayXMm / OverlayYMm 은 콘텐츠 영역 기준 상대값이며 해결 단계에서 여백이 더해진다.
             double curX = padLeftMm;
             foreach (var cb in allCellContent)
             {
-                var shape = (ShapeObject)cb[0];
-                shape.WrapMode        = ImageWrapMode.InFrontOfText;
-                shape.AnchorPageIndex = -2;
-                shape.OverlayXMm      = curX;
-                shape.OverlayYMm      = padTopMm;
-                target.Add(shape);
-                curX += shape.WidthMm + gapMm;
+                double objW;
+                if (cb[0] is ShapeObject shape)
+                {
+                    shape.WrapMode        = ImageWrapMode.InFrontOfText;
+                    shape.AnchorPageIndex = -2;
+                    shape.OverlayXMm      = curX;
+                    shape.OverlayYMm      = padTopMm;
+                    target.Add(shape);
+                    objW = shape.WidthMm;
+                }
+                else
+                {
+                    var img = (ImageBlock)cb[0];
+                    img.WrapMode        = ImageWrapMode.InFrontOfText;
+                    img.AnchorPageIndex = -2;
+                    img.OverlayXMm      = curX;
+                    img.OverlayYMm      = padTopMm;
+                    target.Add(img);
+                    objW = img.WidthMm;
+                }
+                curX += objW + gapMm;
             }
             return true;
         }
@@ -2955,6 +3023,169 @@ public sealed class HtmlReader : IDocumentReader
     /// <summary>SVG 내 &lt;text&gt; 요소 존재 여부 — true 면 레이블이 있는 복합 도면.</summary>
     private static bool SvgHasTextElements(IElement svgEl)
         => svgEl.QuerySelector("text") is not null;
+
+    // ── 복수 도형 SVG → ContainerBlock{Group} 분해 ─────────────────────────
+
+    /// <summary>
+    /// 복수 도형 SVG 를 개별 <see cref="ShapeObject"/> 들로 분해해
+    /// <see cref="ContainerRole.Group"/> ContainerBlock 으로 묶는다.
+    /// 하나 이상의 도형이 파싱되면 <c>true</c>; 인식 불가 구조면 <c>false</c>.
+    /// </summary>
+    private static bool TryDecomposeMultiShapeSvg(IElement svgEl, out ContainerBlock? group)
+    {
+        group = null;
+        var shapes = new List<ShapeObject>();
+
+        void Collect(IElement parent)
+        {
+            foreach (var child in parent.Children)
+            {
+                if (child.LocalName == "g")
+                {
+                    // <g transform> 의 회전을 자식 도형에 전파
+                    var gRotAttr = child.GetAttribute("transform");
+                    double gRotDeg = 0;
+                    if (gRotAttr is not null)
+                        TryParseSvgRotate(gRotAttr, out gRotDeg);
+
+                    foreach (var gc in child.Children)
+                    {
+                        if (TryParseIndividualSvgShape(gc, out var gcs) && gcs is not null)
+                        {
+                            if (gRotDeg != 0) gcs.RotationAngleDeg = gRotDeg;
+                            shapes.Add(gcs);
+                        }
+                    }
+                    continue;
+                }
+                if (TryParseIndividualSvgShape(child, out var s) && s is not null)
+                    shapes.Add(s);
+            }
+        }
+        Collect(svgEl);
+
+        if (shapes.Count == 0) return false;
+
+        var box = new ContainerBlock { Role = ContainerRole.Group };
+        foreach (var s in shapes)
+            box.Children.Add(s);
+        group = box;
+        return true;
+    }
+
+    /// <summary>
+    /// SVG 자식 도형 요소 하나를 <see cref="ShapeObject"/> 로 파싱한다.
+    /// 지원: rect, circle, ellipse, line, polyline, polygon, path.
+    /// 인식 불가 구조면 <c>false</c>.
+    /// </summary>
+    private static bool TryParseIndividualSvgShape(IElement el, out ShapeObject? shape)
+    {
+        const double Px2Mm = 25.4 / 96.0;
+        shape = null;
+
+        switch (el.LocalName)
+        {
+            case "rect":
+            {
+                if (!TryAttrDouble(el, "width",  out var w) || w <= 0) return false;
+                if (!TryAttrDouble(el, "height", out var h) || h <= 0) return false;
+                var s = new ShapeObject { WidthMm = w * Px2Mm, HeightMm = h * Px2Mm };
+                if (TryAttrDouble(el, "rx", out var rx) && rx > 0)
+                { s.Kind = ShapeKind.RoundedRect; s.CornerRadiusMm = rx * Px2Mm; }
+                else
+                    s.Kind = ShapeKind.Rectangle;
+                ParseSvgPaintAttrs(el, s);
+                var xfRect = el.GetAttribute("transform");
+                if (xfRect is not null && TryParseSvgRotate(xfRect, out var rotRect))
+                    s.RotationAngleDeg = rotRect;
+                shape = s;
+                return true;
+            }
+            case "circle":
+            {
+                if (!TryAttrDouble(el, "r", out var r) || r <= 0) return false;
+                var s = new ShapeObject
+                {
+                    Kind = ShapeKind.Ellipse,
+                    WidthMm = r * 2 * Px2Mm, HeightMm = r * 2 * Px2Mm,
+                };
+                ParseSvgPaintAttrs(el, s);
+                shape = s;
+                return true;
+            }
+            case "ellipse":
+            {
+                if (!TryAttrDouble(el, "rx", out var rx) || rx <= 0) return false;
+                if (!TryAttrDouble(el, "ry", out var ry) || ry <= 0) return false;
+                var s = new ShapeObject
+                {
+                    Kind = ShapeKind.Ellipse,
+                    WidthMm = rx * 2 * Px2Mm, HeightMm = ry * 2 * Px2Mm,
+                };
+                ParseSvgPaintAttrs(el, s);
+                shape = s;
+                return true;
+            }
+            case "line":
+            {
+                if (!TryAttrDouble(el, "x1", out var x1)) return false;
+                if (!TryAttrDouble(el, "y1", out var y1)) return false;
+                if (!TryAttrDouble(el, "x2", out var x2)) return false;
+                if (!TryAttrDouble(el, "y2", out var y2)) return false;
+                var s = new ShapeObject
+                {
+                    Kind     = ShapeKind.Line,
+                    WidthMm  = Math.Max(Math.Abs(x2 - x1) * Px2Mm, 1),
+                    HeightMm = Math.Max(Math.Abs(y2 - y1) * Px2Mm, 1),
+                };
+                s.Points.Add(new ShapePoint { X = x1 * Px2Mm, Y = y1 * Px2Mm });
+                s.Points.Add(new ShapePoint { X = x2 * Px2Mm, Y = y2 * Px2Mm });
+                ParseSvgPaintAttrs(el, s);
+                shape = s;
+                return true;
+            }
+            case "polyline":
+            case "polygon":
+            {
+                var pointsAttr = el.GetAttribute("points");
+                if (string.IsNullOrWhiteSpace(pointsAttr)) return false;
+                var s = new ShapeObject
+                {
+                    Kind = el.LocalName == "polygon" ? ShapeKind.Polygon : ShapeKind.Polyline,
+                };
+                ParseSvgPointsList(pointsAttr, s.Points);
+                if (s.Points.Count < 2) return false;
+                if (s.Kind == ShapeKind.Polygon && s.Points.Count == 3)
+                    s.Kind = ShapeKind.Triangle;
+                // 바운딩 박스로 크기 설정
+                double minX = s.Points.Min(p => p.X), maxX = s.Points.Max(p => p.X);
+                double minY = s.Points.Min(p => p.Y), maxY = s.Points.Max(p => p.Y);
+                s.WidthMm  = Math.Max(maxX - minX, 1);
+                s.HeightMm = Math.Max(maxY - minY, 1);
+                ParseSvgPaintAttrs(el, s);
+                shape = s;
+                return true;
+            }
+            case "path":
+            {
+                var d = el.GetAttribute("d");
+                if (string.IsNullOrWhiteSpace(d)) return false;
+                var s = new ShapeObject();
+                bool closed = ParseSvgPath(d, s.Points);
+                if (s.Points.Count < 2) return false;
+                s.Kind = closed ? ShapeKind.ClosedSpline : ShapeKind.Spline;
+                double minX2 = s.Points.Min(p => p.X), maxX2 = s.Points.Max(p => p.X);
+                double minY2 = s.Points.Min(p => p.Y), maxY2 = s.Points.Max(p => p.Y);
+                s.WidthMm  = Math.Max(maxX2 - minX2, 1);
+                s.HeightMm = Math.Max(maxY2 - minY2, 1);
+                ParseSvgPaintAttrs(el, s);
+                shape = s;
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
 
     // ── CSS 도형 파서 ────────────────────────────────────────────────────────
 

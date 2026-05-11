@@ -397,6 +397,10 @@ public static class FlowDocumentBuilder
         }
     }
 
+    /// <summary>MainWindow 에서 그룹 묶기 등 수동 그룹 생성에 사용. 자식 없는 빈 Section 반환.</summary>
+    internal static Wpf.Section BuildContainerSection(ContainerBlock box)
+        => BuildContainer(box, outlineStyles: null);
+
     /// <summary>박스 스타일을 가진 <see cref="ContainerBlock"/> 을 WPF FlowDocument 의 <see cref="Wpf.Section"/>
     /// 으로 빌드한다 — Section 은 BorderBrush/BorderThickness/Background/Padding 을 모두 지원하며 Block 트리를 그대로 품을 수 있다.
     /// 자식 블록은 본문과 동일한 dispatch 를 거쳐 Section.Blocks 에 추가된다.</summary>
@@ -450,6 +454,18 @@ public static class FlowDocumentBuilder
             ? Math.Max(1.0, PtToDip(box.BorderRightPt)) : 0.0;
         section.Margin = new Thickness(0,
             MmToDip(box.MarginTopMm), rightSafetyDip, MmToDip(box.MarginBottomMm));
+
+        // Group 역할: 별도 테두리 지정 없이 얇은 점선 테두리로 시각 구분.
+        if (box.Role == ContainerRole.Group && !anyBorder)
+        {
+            section.BorderBrush     = new WpfMedia.SolidColorBrush(
+                WpfMedia.Color.FromRgb(0x80, 0x80, 0xCC));
+            section.BorderThickness = new Thickness(1);
+            section.Padding         = new Thickness(Math.Max(section.Padding.Left,  4),
+                                                    Math.Max(section.Padding.Top,   4),
+                                                    Math.Max(section.Padding.Right,  4),
+                                                    Math.Max(section.Padding.Bottom, 4));
+        }
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
@@ -1052,7 +1068,7 @@ public static class FlowDocumentBuilder
     /// 바인딩이 visual tree 부착 후 동작하므로, 초기 0 폭 측정 문제를 우회한다.
     /// </para>
     /// </summary>
-    private static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
+    internal static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
         if (!string.IsNullOrEmpty(thb.LineColor))

@@ -518,6 +518,11 @@ public static class FlowDocumentPaginationAdapter
                     BlockH  = 0,
                     Gap     = 0,
                 });
+                // BUC(이미지) 등 topY 측정 불가 블록이 슬롯 최초 콘텐츠일 때,
+                // slotContentStartY 가 누락되어 ContainerBlock actualFillOverflow 검사가
+                // 발동하지 않는 문제를 방지한다. prevContBottom 을 슬롯 진입 위치 대리값으로 사용.
+                if (!double.IsNaN(prevContBottom) && !slotContentStartY.ContainsKey(nanSlot))
+                    slotContentStartY[nanSlot] = prevContBottom;
                 prevSlot = nanSlot;
                 continue;
             }
@@ -1430,7 +1435,8 @@ public static class FlowDocumentPaginationAdapter
         {
             foreach (var block in section.Blocks)
             {
-                if (block is Paragraph p && p.StyleId == "pd-flex-shape-spacer")
+                if (block is Paragraph p &&
+                    (p.StyleId == "pd-flex-shape-spacer" || p.StyleId == "image-spacer"))
                 {
                     if (lookup.TryGetValue(p, out var info)
                         && info.bodyLocalRect != Rect.Empty)
@@ -1446,6 +1452,12 @@ public static class FlowDocumentPaginationAdapter
                     // OverlayXMm/YMm 은 콘텐츠 영역 기준 상대값 → 페이지 절대 좌표로 변환.
                     shape.OverlayXMm += marginLeftMm;
                     shape.OverlayYMm += marginTopMm + currentSpacerYMm;
+                }
+                else if (block is ImageBlock imgBlock && imgBlock.AnchorPageIndex == -2)
+                {
+                    imgBlock.AnchorPageIndex = currentSpacerPage;
+                    imgBlock.OverlayXMm     += marginLeftMm;
+                    imgBlock.OverlayYMm     += marginTopMm + currentSpacerYMm;
                 }
             }
         }
