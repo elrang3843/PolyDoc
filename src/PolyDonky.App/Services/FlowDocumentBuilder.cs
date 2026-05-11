@@ -1052,7 +1052,7 @@ public static class FlowDocumentBuilder
     /// 바인딩이 visual tree 부착 후 동작하므로, 초기 0 폭 측정 문제를 우회한다.
     /// </para>
     /// </summary>
-    private static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
+    internal static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
         if (!string.IsNullOrEmpty(thb.LineColor))

@@ -920,6 +920,8 @@ public partial class MainWindow : Window
                 => PolyDonky.App.Services.FlowDocumentBuilder.BuildShape(sh),
             PolyDonky.Core.Paragraph p
                 => PolyDonky.App.Services.FlowDocumentBuilder.BuildParagraph(p),
+            PolyDonky.Core.ThematicBreakBlock thb
+                => PolyDonky.App.Services.FlowDocumentBuilder.BuildThematicBreak(thb),
             PolyDonky.Core.TocBlock toc
                 => PolyDonky.App.Services.FlowDocumentBuilder.BuildTocBlock(toc),
             _ => null,
@@ -3979,7 +3981,17 @@ public partial class MainWindow : Window
             AppendTablePropertyMenuItems(menu, wpfTable, wpfRow, wpfCell, coreTable);
         }
 
-        // ③ 인라인 이미지/이모지 — 속성 항목
+        // ③ HR(ThematicBreakBlock) 컨텍스트 — 삭제 항목
+        var hrAtCaret = FindThematicBreakBlockAtCaret();
+        if (hrAtCaret is not null)
+        {
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            var miHrDelete = new System.Windows.Controls.MenuItem { Header = "선 삭제(_D)" };
+            miHrDelete.Click += (_, _) => DeleteThematicBreakBlock(hrAtCaret);
+            menu.Items.Add(miHrDelete);
+        }
+
+        // ④ 인라인 이미지/이모지 — 속성 항목
         var pt = System.Windows.Input.Mouse.GetPosition(BodyEditor);
         if (FindEmbeddedObjectAt(e.OriginalSource, pt) is { } found)
         {
@@ -4000,6 +4012,23 @@ public partial class MainWindow : Window
         var rowGroup = wpfRow?.Parent as System.Windows.Documents.TableRowGroup;
         wpfTable = rowGroup?.Parent as System.Windows.Documents.Table;
         return wpfTable is not null;
+    }
+
+    private PolyDonky.Core.ThematicBreakBlock? FindThematicBreakBlockAtCaret()
+    {
+        var para = BodyEditor.CaretPosition.Paragraph;
+        return para?.Tag as PolyDonky.Core.ThematicBreakBlock;
+    }
+
+    private void DeleteThematicBreakBlock(PolyDonky.Core.ThematicBreakBlock thb)
+    {
+        var para = BodyEditor.CaretPosition.Paragraph;
+        if (para?.Tag is PolyDonky.Core.ThematicBreakBlock)
+        {
+            var rtb = FindRtbContaining(para) ?? BodyEditor;
+            rtb.Document.Blocks.Remove(para);
+            _viewModel?.MarkDirty();
+        }
     }
 
     // ── 멀티 셀 선택 감지 ──────────────────────────────────────────────────
