@@ -442,31 +442,35 @@ public static class FlowDocumentBuilder
             MmToDip(box.PaddingTopMm),
             MmToDip(box.PaddingRightMm),
             MmToDip(box.PaddingBottomMm));
-
-        // 오른쪽 테두리 클리핑 방지: WPF FlowDocument 에서 Section 의 오른쪽 border 는
-        // RTB(RichTextBox) 의 Width 경계 위에 그려져 RTB 클리핑에 잘린다.
-        // 오른쪽 border 가 있을 때 최소 1 DIP 의 오른쪽 여백을 주어 border 선이
-        // RTB 클립 경계 안쪽에 렌더링되도록 보장한다.
-        double rightSafetyDip = box.BorderRightPt > 0
-            ? Math.Max(1.0, PtToDip(box.BorderRightPt)) : 0.0;
         section.Margin = new Thickness(0,
-            MmToDip(box.MarginTopMm), rightSafetyDip, MmToDip(box.MarginBottomMm));
+            MmToDip(box.MarginTopMm), 0, MmToDip(box.MarginBottomMm));
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
 
         // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
-        // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Border 로 감싸 배경·테두리·패딩을 직접 적용한다.
-        // ClipToBounds=false 로 회전 도형 등 시각적 오버플로를 허용한다.
+        // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Grid 로 감싸 배경·테두리·패딩을 직접 적용한다.
+        // ※ rightSafetyDip 은 이 경로에서만 section.Margin.Right 에 추가한다.
+        //   Section.BorderBrush 를 쓰는 다중-자식 경로에서 Margin.Right > 0 이면
+        //   WPF FlowDocument 가 오른쪽 테두리를 렌더링하지 않는 버그가 있기 때문이다.
         if (section.Blocks.Count == 1
             && section.Blocks.FirstBlock is Wpf.BlockUIContainer singleBuc
             && singleBuc.Child is FrameworkElement singleFe
             && (section.Background is not null || section.BorderBrush is not null))
         {
+            // RTB 클립 방지: 오른쪽 테두리가 있을 때 최소 1 DIP 의 오른쪽 여백을 주어
+            // wrapperGrid 의 borderOverlay 오른쪽 선이 RTB 클립 경계 안쪽에 그려지도록 보장.
+            if (box.BorderRightPt > 0)
+            {
+                var m = section.Margin;
+                section.Margin = new Thickness(m.Left, m.Top,
+                    Math.Max(1.0, PtToDip(box.BorderRightPt)), m.Bottom);
+            }
+
             // singleFe 가 이미 singleBuc 의 논리 자식이므로 먼저 연결을 끊어야 한다.
             singleBuc.Child = null;
 
-            // 콘텐츠(SVG Viewbox 등)는 ClipToBounds=false Border 로 감싸 배경·패딩 적용.
+            // 배경·패딩은 contentWrap 에 적용. ClipToBounds=false 로 시각적 오버플로 허용.
             var contentWrap = new System.Windows.Controls.Border
             {
                 Child        = singleFe,
@@ -477,7 +481,6 @@ public static class FlowDocumentBuilder
                 contentWrap.Background = section.Background;
                 section.Background     = null;
             }
-            // Section.Padding 을 contentWrap.Padding 으로 이전해 패딩 영역에도 배경색이 칠해지게 한다.
             var spad = section.Padding;
             if (spad.Left != 0 || spad.Top != 0 || spad.Right != 0 || spad.Bottom != 0)
             {
@@ -487,17 +490,16 @@ public static class FlowDocumentBuilder
 
             if (section.BorderBrush is not null)
             {
-                // SVG 등 ClipToBounds=false 콘텐츠가 Border 선 위를 덮지 않도록
+                // SVG/도형 콘텐츠가 ClipToBounds=false 오버플로로 Border 선을 덮지 않도록
                 // Grid 에 ① contentWrap(z=0) + ② borderOverlay(z=1) 구조로 테두리를 위에 그린다.
                 var wrapperGrid = new System.Windows.Controls.Grid { ClipToBounds = false };
                 wrapperGrid.Children.Add(contentWrap);
-                var borderOverlay = new System.Windows.Controls.Border
+                wrapperGrid.Children.Add(new System.Windows.Controls.Border
                 {
                     BorderBrush      = section.BorderBrush,
                     BorderThickness  = section.BorderThickness,
                     IsHitTestVisible = false,
-                };
-                wrapperGrid.Children.Add(borderOverlay);
+                });
                 section.BorderBrush     = null;
                 section.BorderThickness = new Thickness(0);
                 singleBuc.Child = wrapperGrid;

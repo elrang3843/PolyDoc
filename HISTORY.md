@@ -46,7 +46,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
-- **ContainerBlock(figure 등) 오른쪽 테두리 선 SVG 콘텐츠에 덮이던 문제**: `BuildContainer` 에서 단독 `BlockUIContainer` 자식을 `Border { Child=SVG Viewbox, ClipToBounds=false }` 로 감쌀 때 WPF z-order 상 SVG 콘텐츠가 Border 선 위에 렌더링돼 오른쪽 테두리 선을 가리던 문제. `Grid { contentWrap(z=0, background+padding), borderOverlay Border(z=1, border-only, IsHitTestVisible=false) }` 구조로 변경해 테두리가 항상 콘텐츠·오버플로 위에 렌더링되도록 수정. `section.Margin.Right` 의 `rightSafetyDip` 는 그대로 유지해 RTB 클립 경계 문제도 함께 방어. (`FlowDocumentBuilder.cs`)
+- **ContainerBlock(figure 등) 오른쪽 테두리 선 미표시 — SVG 오버플로 + RTB 클립 이중 수정**: `BuildContainer` 의 단독 BUC(BlockUIContainer) 경로에서 `Border { Child=SVG, ClipToBounds=false }` 구조 시 SVG 콘텐츠가 Border 선 위에 렌더링돼 가리던 문제와, RTB(`RichTextBox`) 폭 경계에서 오른쪽 선이 클리핑되던 문제를 함께 수정. 해결책: ① `section.Margin.Right = max(1, borderRightDip)` 를 단독 BUC 경로에서만 적용해 RTB 클립 회피(다중-자식 경로에서는 `Section.BorderBrush` 가 Margin.Right > 0 시 렌더링 안 되는 WPF 버그로 적용 금지). ② `Grid { contentWrap Border(z=0, background+padding), borderOverlay Border(z=1, border-only, IsHitTestVisible=false) }` 구조로 테두리를 콘텐츠·오버플로 위에 렌더링. (`FlowDocumentBuilder.cs`)
 
 - **flex 컨테이너 안 목록 글머리 기호(•, ○, ■, 1., A., i.) 미표시**: `BuildFlexContainer`(BUC+Grid+StackPanel)가 flex 셀 안의 `Paragraph` 블록을 `BuildFlexLabel`(단순 TextBlock)로 변환해 `ListMarker` 정보가 무시되고 WPF `List`/`ListItem` 구조가 생성되지 않던 문제. `AppendBlocks` 의 `case Table t:` 핸들러에서 `IsFlexLayout=true` 표를 렌더링할 때 회전 도형(`RotationAngleDeg ≠ 0`) 포함 여부를 검사: 회전 도형이 없으면 `BuildTable` + `AppendBlocks` 재귀 경로를 사용해 WPF `List` 구조를 올바르게 생성, 회전 도형이 있으면 기존 `BuildFlexContainer`(BUC+Grid, `ClipToBounds=false`) 경로 유지. `ContainerBlock` 단독 flex 감싸기 경로(`box.Children.Count==1 && IsFlexLayout`)는 박스 스타일(배경·테두리·패딩) 보존을 위해 항상 `BuildFlexContainer` 사용. (`FlowDocumentBuilder.cs`)
 
