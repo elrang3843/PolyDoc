@@ -46,6 +46,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **HTML Flex 컨테이너 내 이미지 편집 가능화**: Flex row 안의 모든 셀이 단일 ShapeObject 또는 ImageBlock으로만 구성된 경우(기존엔 ShapeObject만), 이미지도 독립 InFrontOfText 오버레이로 변환. 이미지가 표 셀에 갇혀 이동 불가하던 문제 해결. (`HtmlReader.cs`)
+
+- **SVG 텍스트 레이블 → ShapeObject 편집 유지**: 단일 도형 + `<text>` 요소를 가진 SVG를 비트맵으로 변환하지 않고 `ShapeObject.LabelText`로 흡수해 편집 가능 상태를 유지. (`HtmlReader.cs`)
+
 - **HTML 이미지 편집 가능화 — block-level 이미지를 InFrontOfText 오버레이로 변환**: 외부 HTML 파일을 열었을 때 `<figure><img>` 및 단독 `<img>` 이미지가 본문 흐름에 갇혀 이동·크기 조정이 불가능하던 문제. `HtmlReader.AppendBlockImageWithSpacer()`를 추가해 block-level 이미지를 `InFrontOfText` 오버레이로 변환하고 `image-spacer` 단락으로 수직 공간 예약. `FlowDocumentPaginationAdapter.ResolveFlexShapeOverlays()`에 `ImageBlock` 처리를 추가해 spacer 위치로 페이지·좌표 확정. `HtmlWriter.WriteImage()`에 오버레이 이미지의 `data-pd-wrap-mode/anchor-page/overlay-x/y` 직렬화 추가해 저장 후 재로드 시 복원. (`HtmlReader.cs`, `HtmlWriter.cs`, `FlowDocumentPaginationAdapter.cs`)
 
 - **페이지 오버플로 근본 수정 — 오프스크린 측정 오차 후처리 보정**: 오프스크린 RTB 측정값과 per-page RTB 실제 렌더 높이의 차이로 인해 마지막 블록이 페이지 하단을 넘쳐 잘리던 문제. `SliceRefiner`를 새로 추가해 `SetupPageEditors` 에서 슬라이스별 실제 높이를 오프스크린 측정(FlowDocumentPaginationAdapter 와 동일 패턴)으로 재확인하고, 오버플로 슬라이스의 마지막 WPF Block 을 다음 슬라이스 앞으로 이동, 수렴할 때까지 최대 4회 반복. (`Pagination/SliceRefiner.cs`, `Views/MainWindow.xaml.cs`)

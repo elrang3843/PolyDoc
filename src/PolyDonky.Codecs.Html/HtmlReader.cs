@@ -465,11 +465,17 @@ public sealed class HtmlReader : IDocumentReader
 
             case "svg":
             {
-                // PolyDonky 자체 출력 (단일 도형, 텍스트 레이블 없음) → ShapeObject.
-                // 복합 SVG (텍스트·복수 도형 포함 다이어그램) → ImageBlock 으로 보존.
-                bool isSingleShape = CountSvgShapeElements(el) == 1 && !SvgHasTextElements(el);
+                // 단일 도형 SVG → ShapeObject (텍스트 레이블 포함 가능).
+                // 복수 도형 SVG (아이콘·다이어그램 등) → ImageBlock 으로 보존.
+                bool isSingleShape = CountSvgShapeElements(el) == 1;
                 if (isSingleShape && TryParseShapeFromSvgElement(el, out var shapeFromSvg))
+                {
+                    // <text> 요소가 있으면 LabelText 로 흡수해 ShapeObject 편집 가능 상태 유지.
+                    var svgText = el.QuerySelector("text");
+                    if (svgText is not null && string.IsNullOrEmpty(shapeFromSvg!.LabelText))
+                        shapeFromSvg.LabelText = svgText.TextContent.Trim();
                     target.Add(shapeFromSvg!);
+                }
                 else
                     target.Add(BuildImageFromSvg(el));
                 break;
@@ -2182,14 +2188,14 @@ public sealed class HtmlReader : IDocumentReader
         }).ToList();
 
         // ── 순수 CSS 도형 flex 감지 ──────────────────────────────────────────────
-        // 모든 셀이 ShapeObject 하나로만 이루어진 flex row 는 편집 가능한 오버레이 ShapeObject 로 변환한다.
-        // 본문 흐름에는 수직 공간 확보용 spacer 단락만 남기고,
-        // 도형은 InFrontOfText 오버레이로 배치해 드래그·크기 조절·컨텍스트 메뉴가 동작하게 한다.
-        bool isPureShapeFlex = isFlex
+        // 모든 셀이 ShapeObject 또는 ImageBlock 하나로만 이루어진 flex row 는
+        // 편집 가능한 오버레이로 변환한다 (도형·이미지 모두 InFrontOfText 배치).
+        // 본문 흐름에는 수직 공간 확보용 spacer 단락만 남긴다.
+        bool isPureObjectFlex = isFlex
             && allCellContent.Count >= 2
-            && allCellContent.All(cb => cb.Count == 1 && cb[0] is ShapeObject);
+            && allCellContent.All(cb => cb.Count == 1 && cb[0] is (ShapeObject or ImageBlock));
 
-        if (isPureShapeFlex)
+        if (isPureObjectFlex)
         {
             // 컨테이너 padding 파싱 (px → mm).
             double padLeftMm = 0, padTopMm = 0, padRightMm = 0, padBottomMm = 0;
@@ -2220,30 +2226,43 @@ public sealed class HtmlReader : IDocumentReader
             if (StyleProp(style, "margin-top")    is { } mtv && TryParseCssMm(mtv, out var mtr)) marginTopMm    = mtr;
             if (StyleProp(style, "margin-bottom") is { } mbv && TryParseCssMm(mbv, out var mbr)) marginBottomMm = mbr;
 
-            double maxShapeH = allCellContent.Max(cb => ((ShapeObject)cb[0]).HeightMm);
-            double containerH = padTopMm + maxShapeH + padBottomMm;
+            double maxObjH    = allCellContent.Max(cb => cb[0] is ShapeObject s ? s.HeightMm
+                                                                                 : ((ImageBlock)cb[0]).HeightMm);
+            double containerH = padTopMm + maxObjH + padBottomMm;
 
             // spacer 단락: 컨테이너 시각 높이를 본문 흐름에 예약.
-            // FontSizePt=0.1 로 자연 행높이를 최소화하고 SpaceAfterPt 로 전체 높이를 확보.
             var spacer = new Paragraph { StyleId = "pd-flex-shape-spacer" };
             spacer.Style.SpaceBeforePt = marginTopMm * (72.0 / 25.4);
             spacer.Style.SpaceAfterPt  = (containerH + marginBottomMm) * (72.0 / 25.4);
             spacer.Runs.Add(new Run { Text = "​", Style = new RunStyle { FontSizePt = 0.1 } });
             target.Add(spacer);
 
-            // 각 CSS 도형을 InFrontOfText 오버레이로 변환.
+            // 각 도형/이미지를 InFrontOfText 오버레이로 변환.
             // AnchorPageIndex = -2 : 페이지네이션 후 spacer 기준으로 해결되는 sentinel.
-            // OverlayXMm / OverlayYMm 은 콘텐츠 영역 기준 상대값이며 해결 단계에서 여백이 더해진다.
             double curX = padLeftMm;
             foreach (var cb in allCellContent)
             {
-                var shape = (ShapeObject)cb[0];
-                shape.WrapMode        = ImageWrapMode.InFrontOfText;
-                shape.AnchorPageIndex = -2;
-                shape.OverlayXMm      = curX;
-                shape.OverlayYMm      = padTopMm;
-                target.Add(shape);
-                curX += shape.WidthMm + gapMm;
+                double objW;
+                if (cb[0] is ShapeObject shape)
+                {
+                    shape.WrapMode        = ImageWrapMode.InFrontOfText;
+                    shape.AnchorPageIndex = -2;
+                    shape.OverlayXMm      = curX;
+                    shape.OverlayYMm      = padTopMm;
+                    target.Add(shape);
+                    objW = shape.WidthMm;
+                }
+                else
+                {
+                    var img = (ImageBlock)cb[0];
+                    img.WrapMode        = ImageWrapMode.InFrontOfText;
+                    img.AnchorPageIndex = -2;
+                    img.OverlayXMm      = curX;
+                    img.OverlayYMm      = padTopMm;
+                    target.Add(img);
+                    objW = img.WidthMm;
+                }
+                curX += objW + gapMm;
             }
             return true;
         }
