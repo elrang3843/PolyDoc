@@ -384,7 +384,7 @@ public sealed class HtmlReader : IDocumentReader
 
             case "img":
             {
-                target.Add(BuildImage(el));
+                AppendBlockImageWithSpacer(BuildImage(el), target);
                 break;
             }
 
@@ -1002,6 +1002,31 @@ public sealed class HtmlReader : IDocumentReader
         return img;
     }
 
+    /// <summary>
+    /// block-level 이미지를 InFrontOfText 오버레이로 변환해 <paramref name="target"/> 에 추가한다.
+    /// 이미지 높이만큼의 spacer 단락을 먼저 삽입해 본문 흐름에서 수직 공간을 확보하고,
+    /// AnchorPageIndex=-2 sentinel 로 페이지네이션 후 실제 페이지를 확정한다.
+    /// </summary>
+    private static void AppendBlockImageWithSpacer(ImageBlock img, IList<PdBlock> target)
+    {
+        img.WrapMode        = ImageWrapMode.InFrontOfText;
+        img.AnchorPageIndex = -2;
+        img.OverlayXMm      = 0; // 페이지 좌측 여백 기준 — ResolveFlexShapeOverlays 가 보정
+        img.OverlayYMm      = 0; // spacer 상단 기준 — ResolveFlexShapeOverlays 가 보정
+
+        // spacer: 이미지 높이 + 마진을 본문 흐름에 예약 (FlowDocumentPaginationAdapter 기준)
+        double heightMm = img.HeightMm > 0 ? img.HeightMm : 50.0;
+        var spacer = new Paragraph { StyleId = "image-spacer" };
+        spacer.Style.SpaceBeforePt = img.MarginTopMm    * (72.0 / 25.4);
+        spacer.Style.SpaceAfterPt  = (heightMm + img.MarginBottomMm) * (72.0 / 25.4);
+        spacer.Runs.Add(new Run { Text = "​", Style = new RunStyle { FontSizePt = 0.1 } });
+        target.Add(spacer);
+
+        img.MarginTopMm    = 0; // spacer 가 처리
+        img.MarginBottomMm = 0;
+        target.Add(img);
+    }
+
     private static void BuildFigure(IElement figEl, IList<PdBlock> target, InlineCtx ctx)
     {
         // pd-shape: PolyDonky ShapeObject 복원
@@ -1038,7 +1063,28 @@ public sealed class HtmlReader : IDocumentReader
                 img.TitlePosition = ImageTitlePosition.Below;
                 ApplyImageCaptionStyle(caption, img);
             }
-            target.Add(img);
+
+            // PolyDonky 가 저장한 오버레이 이미지 복원 (data-pd-wrap-mode 있을 때).
+            var pdWrap = figEl.GetAttribute("data-pd-wrap-mode");
+            if (pdWrap is "InFrontOfText" or "BehindText")
+            {
+                img.WrapMode = pdWrap == "BehindText"
+                    ? ImageWrapMode.BehindText
+                    : ImageWrapMode.InFrontOfText;
+                if (int.TryParse(figEl.GetAttribute("data-pd-anchor-page"), out var ap))
+                    img.AnchorPageIndex = ap;
+                if (TryParseCssMm(figEl.GetAttribute("data-pd-overlay-x"), out var ox))
+                    img.OverlayXMm = ox;
+                if (TryParseCssMm(figEl.GetAttribute("data-pd-overlay-y"), out var oy))
+                    img.OverlayYMm = oy;
+                target.Add(img);
+            }
+            else
+            {
+                // 외부 HTML / 일반 figure → block-level 이미지를 InFrontOfText 오버레이로 변환.
+                // AnchorPageIndex=-2 sentinel 을 사용해 페이지네이션 후 spacer 위치로 확정.
+                AppendBlockImageWithSpacer(img, target);
+            }
 
             // figure 의 다른 자식 처리.
             foreach (var n in figEl.ChildNodes)

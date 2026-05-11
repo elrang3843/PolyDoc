@@ -1435,7 +1435,8 @@ public static class FlowDocumentPaginationAdapter
         {
             foreach (var block in section.Blocks)
             {
-                if (block is Paragraph p && p.StyleId == "pd-flex-shape-spacer")
+                if (block is Paragraph p &&
+                    (p.StyleId == "pd-flex-shape-spacer" || p.StyleId == "image-spacer"))
                 {
                     if (lookup.TryGetValue(p, out var info)
                         && info.bodyLocalRect != Rect.Empty)
@@ -1451,6 +1452,12 @@ public static class FlowDocumentPaginationAdapter
                     // OverlayXMm/YMm 은 콘텐츠 영역 기준 상대값 → 페이지 절대 좌표로 변환.
                     shape.OverlayXMm += marginLeftMm;
                     shape.OverlayYMm += marginTopMm + currentSpacerYMm;
+                }
+                else if (block is ImageBlock imgBlock && imgBlock.AnchorPageIndex == -2)
+                {
+                    imgBlock.AnchorPageIndex = currentSpacerPage;
+                    imgBlock.OverlayXMm     += marginLeftMm;
+                    imgBlock.OverlayYMm     += marginTopMm + currentSpacerYMm;
                 }
             }
         }
