@@ -442,30 +442,25 @@ public static class FlowDocumentBuilder
             MmToDip(box.PaddingTopMm),
             MmToDip(box.PaddingRightMm),
             MmToDip(box.PaddingBottomMm));
+        // RTB 클립 방지: 오른쪽 테두리가 있을 때 최소 1 DIP 의 오른쪽 여백을 주어
+        // Section.BorderBrush 및 borderOverlay 오른쪽 선이 RTB 클립 경계 안쪽에 그려지도록 보장.
+        // Section.Margin.Right > 0 이면 WPF Section.BorderBrush 오른쪽 선이 안 그려지는 버그가
+        // 있으나, 다중-자식(ShapeObject 등) 경로에서 발생하는 RTB 클립 문제가 더 크므로 허용한다.
+        double rightSafetyDip = box.BorderRightPt > 0
+            ? Math.Max(1.0, PtToDip(box.BorderRightPt)) : 0.0;
         section.Margin = new Thickness(0,
-            MmToDip(box.MarginTopMm), 0, MmToDip(box.MarginBottomMm));
+            MmToDip(box.MarginTopMm), rightSafetyDip, MmToDip(box.MarginBottomMm));
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
         AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
 
         // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
         // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Grid 로 감싸 배경·테두리·패딩을 직접 적용한다.
-        // ※ rightSafetyDip 은 이 경로에서만 section.Margin.Right 에 추가한다.
-        //   Section.BorderBrush 를 쓰는 다중-자식 경로에서 Margin.Right > 0 이면
-        //   WPF FlowDocument 가 오른쪽 테두리를 렌더링하지 않는 버그가 있기 때문이다.
         if (section.Blocks.Count == 1
             && section.Blocks.FirstBlock is Wpf.BlockUIContainer singleBuc
             && singleBuc.Child is FrameworkElement singleFe
             && (section.Background is not null || section.BorderBrush is not null))
         {
-            // RTB 클립 방지: 오른쪽 테두리가 있을 때 최소 1 DIP 의 오른쪽 여백을 주어
-            // wrapperGrid 의 borderOverlay 오른쪽 선이 RTB 클립 경계 안쪽에 그려지도록 보장.
-            if (box.BorderRightPt > 0)
-            {
-                var m = section.Margin;
-                section.Margin = new Thickness(m.Left, m.Top,
-                    Math.Max(1.0, PtToDip(box.BorderRightPt)), m.Bottom);
-            }
 
             // singleFe 가 이미 singleBuc 의 논리 자식이므로 먼저 연결을 끊어야 한다.
             singleBuc.Child = null;
