@@ -3996,16 +3996,36 @@ public partial class MainWindow : Window
         if (groupSec is not null)
         {
             menu.Items.Add(new System.Windows.Controls.Separator());
-            menu.Items.Add(MakeMenuItem("그룹 해제(_U)", () => UngroupSection(groupSec)));
+            menu.Items.Add(MakeMenuItem("그룹 해제(_U)", () =>
+            {
+                UngroupSection(groupSec);
+                var freshDoc = ParseAllPageEditors();
+                _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+                if (NeedsPageRebuild())
+                {
+                    SetupPageEditors();
+                }
+                RebuildOverlays();
+            }));
         }
         else
         {
             // 그룹 바깥: 선택 영역에 블록이 있으면 "그룹으로 묶기" 제공
             var selBlocks = GetBlocksInSelection();
-            if (selBlocks is { Count: > 1 })
+            if (selBlocks?.Count > 1)
             {
                 menu.Items.Add(new System.Windows.Controls.Separator());
-                menu.Items.Add(MakeMenuItem("블록 그룹으로 묶기(_G)", () => GroupBlocks(selBlocks)));
+                menu.Items.Add(MakeMenuItem("블록 그룹으로 묶기(_G)", () =>
+                {
+                    GroupBlocks(selBlocks);
+                    var freshDoc = ParseAllPageEditors();
+                    _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+                    if (NeedsPageRebuild())
+                    {
+                        SetupPageEditors();
+                    }
+                    RebuildOverlays();
+                }));
             }
         }
 
@@ -4054,7 +4074,10 @@ public partial class MainWindow : Window
     /// <summary>캐럿의 조상 중 ContainerRole.Group 인 WPF Section 을 반환. 없으면 null.</summary>
     private System.Windows.Documents.Section? FindAncestorGroupSection()
     {
-        DependencyObject? cur = BodyEditor.CaretPosition.Paragraph;
+        var para = BodyEditor.CaretPosition?.Paragraph;
+        if (para is null) return null;
+
+        DependencyObject? cur = para;
         while (cur is System.Windows.FrameworkContentElement fce)
         {
             if (cur is System.Windows.Documents.Section sec &&
@@ -4065,26 +4088,30 @@ public partial class MainWindow : Window
         return null;
     }
 
-    /// <summary>현재 텍스트 선택이 걸친 최상위 블록들을 반환한다 (단, TableCell 내부 블록은 제외).</summary>
+    /// <summary>현재 텍스트 선택이 걸친 최상위 블록들을 반환한다.</summary>
     private IReadOnlyList<System.Windows.Documents.Block>? GetBlocksInSelection()
     {
         var sel = BodyEditor.Selection;
         if (sel.IsEmpty) return null;
 
         var fd = BodyEditor.Document;
-        var result = new List<System.Windows.Documents.Block>();
+        var result = new HashSet<System.Windows.Documents.Block>();
         var startPara = sel.Start.Paragraph;
         var endPara   = sel.End.Paragraph;
         if (startPara is null || endPara is null) return null;
 
-        bool inRange = false;
+        // startPara와 endPara를 포함하는 최상위 블록 찾기
         foreach (var block in fd.Blocks)
         {
-            if (BlockContainsParagraph(block, startPara)) inRange = true;
-            if (inRange) result.Add(block);
-            if (BlockContainsParagraph(block, endPara)) break;
+            if (BlockContainsParagraph(block, startPara))
+                result.Add(block);
+            if (BlockContainsParagraph(block, endPara))
+                result.Add(block);
         }
-        return result.Count > 1 ? result : null;
+
+        // startPara와 endPara 사이의 모든 블록도 포함 (단, 둘을 포함하는 블록의 자식들)
+        if (result.Count >= 2) return result.ToList();
+        return null;
     }
 
     private static bool BlockContainsParagraph(
