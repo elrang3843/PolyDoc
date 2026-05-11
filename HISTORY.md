@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **HTML `<br>` 줄바꿈이 WPF FlowDocument에서 무시되던 문제**: `HtmlReader`가 `<br>`을 `Run { Text = "\n" }`으로 변환하지만, WPF `FlowDocument`는 `Run` 안의 `\n`을 시각적 줄바꿈으로 렌더링하지 않는다. `BuildParagraph` 에서 `AppendRunInlines` 헬퍼를 통해 `\n` 이 포함된 Run 텍스트를 분할하고 조각 사이에 WPF `LineBreak` 인라인을 삽입하도록 수정. 코드 블록·수식·이모지·각주 등 특수 Run 은 기존 `BuildInline` 경로를 그대로 사용. (`FlowDocumentBuilder.cs`)
+
 - **페이지 경계에서 콘텐츠 잘림 — 대형 BUC 블록(SVG/flex 등) 복수 배정 버그**: `blockH >= bodyH` 인 분할 불가 블록(SVG 이미지·flex 컨테이너 등)이 슬롯 오버플로 체크를 완전히 건너뛰어, 이미 작은 블록이 채워진 슬롯에 대형 블록까지 함께 배정되던 문제. per-page RTB 높이(bodyH + 2 DIP)를 초과해 콘텐츠가 시각적으로 잘렸다. 수정: 대형 블록도 현재 슬롯에 이미 내용이 있으면(`slotFill > FillSafetyMarginDip`) 다음 슬롯으로 한 번 이동하도록 처리 추가(무한 루프 방지를 위해 단회만 이동). (`FlowDocumentPaginationAdapter.cs`)
 
 - **인라인 SVG 오른쪽 테두리 미표시 — Viewbox 안에서 border 가 스케일·클립되던 문제**: `SvgRenderer.TryRender` 가 SVG 의 `style="border:1px solid #ddd"` 를 `Viewbox { Border { Canvas } }` 구조로 렌더링할 때 `Viewbox` 의 `ScaleTransform` 이 border 픽셀까지 함께 스케일링해 오른쪽 border 가 Viewbox 경계에 닿거나 RTB 에 클리핑되던 문제. border 를 Viewbox 바깥의 래퍼 `Border { Viewbox { Canvas } }` 구조로 이동하고 Viewbox 크기를 `targetWidthDip - 2×borderThk` 로 줄여 총 외곽 크기를 유지. (`SvgRenderer.cs`)
