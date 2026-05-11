@@ -4151,32 +4151,35 @@ public partial class MainWindow : Window
         }
 
         // 부모가 FlowDocument 또는 Section 인 두 경우를 처리
+        // 핵심: Remove(section) 전에 '다음 형제'만 기억해두고, 자식들을 모두 그 앞에 삽입.
+        // Remove 후 allBlocks[idx] 는 이미 컬렉션에서 빠진 section 을 가리키므로
+        // InsertBefore 의 기준 노드로 쓰면 "속하지 않습니다" 예외가 발생한다.
         if (section.Parent is System.Windows.Documents.FlowDocument fd)
         {
             var allBlocks = fd.Blocks.Cast<System.Windows.Documents.Block>().ToList();
             int idx = allBlocks.IndexOf(section);
+            var nextBlock = allBlocks.ElementAtOrDefault(idx + 1); // section 다음 블록
             fd.Blocks.Remove(section);
-            for (int i = 0; i < children.Count; i++)
+            foreach (var child in children)
             {
-                var insertAfter = allBlocks.ElementAtOrDefault(idx + i);
-                if (insertAfter is not null)
-                    fd.Blocks.InsertBefore(insertAfter, children[i]);
+                if (nextBlock is not null)
+                    fd.Blocks.InsertBefore(nextBlock, child);
                 else
-                    fd.Blocks.Add(children[i]);
+                    fd.Blocks.Add(child);
             }
         }
         else if (section.Parent is System.Windows.Documents.Section parentSec)
         {
             var allBlocks = parentSec.Blocks.Cast<System.Windows.Documents.Block>().ToList();
             int idx = allBlocks.IndexOf(section);
+            var nextBlock = allBlocks.ElementAtOrDefault(idx + 1); // section 다음 블록
             parentSec.Blocks.Remove(section);
-            for (int i = 0; i < children.Count; i++)
+            foreach (var child in children)
             {
-                var insertAfter = allBlocks.ElementAtOrDefault(idx + i);
-                if (insertAfter is not null)
-                    parentSec.Blocks.InsertBefore(insertAfter, children[i]);
+                if (nextBlock is not null)
+                    parentSec.Blocks.InsertBefore(nextBlock, child);
                 else
-                    parentSec.Blocks.Add(children[i]);
+                    parentSec.Blocks.Add(child);
             }
         }
 
