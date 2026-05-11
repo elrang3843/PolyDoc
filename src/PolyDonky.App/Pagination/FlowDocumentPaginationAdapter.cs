@@ -361,7 +361,9 @@ public static class FlowDocumentPaginationAdapter
 
                     prevSlot = listSlot;
                     minSlot  = Math.Max(minSlot, listSlot);
-                    if (!double.IsNaN(listBottomY)) prevContBottom = listBottomY;
+                    // cascade 발생 시 effListTopY 를 기준으로 보정 — 개별 블록 갱신과 동일 원칙.
+                    if (!double.IsNaN(listBottomY)) prevContBottom = effListTopY + listH;
+                    else if (!double.IsNaN(listTopY)) prevContBottom = effListTopY;
                 }
                 continue;
             }
