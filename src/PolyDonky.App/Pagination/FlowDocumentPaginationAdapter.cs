@@ -602,12 +602,14 @@ public static class FlowDocumentPaginationAdapter
 
             prevSlot = slotTop;
             minSlot  = Math.Max(minSlot, slotTop); // 문서 순서 보장: 이후 블록이 앞 슬롯으로 돌아가지 않도록
-            // prevContBottom 갱신: BUC 폴백으로 blockH 가 커진 경우 bottomY(≈topY) 가 아닌
-            // topY + blockH 를 사용해야 이후 cascade 보정이 올바른 기준점을 갖는다.
+            // prevContBottom 갱신: effectiveTopY 를 기준으로 보정.
+            // cascade 가 발생(effectiveTopY > topY)했을 때 원래 topY 를 쓰면 이후 블록의
+            // cascade 체인이 끊어져 slotFill 이 과소평가된다. effectiveTopY 를 기준으로 해야
+            // "List → BUC HR → 일반 단락" 같은 연속 cascade 시퀀스가 끊기지 않는다.
             if (!double.IsNaN(topY) && blockH > 0 && (double.IsNaN(bottomY) || bottomY - topY < blockH))
-                prevContBottom = topY + blockH;
+                prevContBottom = effectiveTopY + blockH;
             else if (!double.IsNaN(bottomY))
-                prevContBottom = bottomY;
+                prevContBottom = effectiveTopY + (bottomY - topY);
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
