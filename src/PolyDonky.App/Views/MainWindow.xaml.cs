@@ -3991,26 +3991,9 @@ public partial class MainWindow : Window
             menu.Items.Add(miHrDelete);
         }
 
-        // ④ 그룹(ContainerBlock{Group}) 컨텍스트 — 해제 항목
-        var groupSec = FindAncestorGroupSection();
-        if (groupSec is not null)
+        // ④ 선택 영역이 여러 블록에 걸치면 "그룹으로 묶기" 제공
+        // (그룹 해제는 OnPaperPreviewMouseRightButtonDown ④-b 에서 처리)
         {
-            menu.Items.Add(new System.Windows.Controls.Separator());
-            menu.Items.Add(MakeMenuItem("그룹 해제(_U)", () =>
-            {
-                UngroupSection(groupSec);
-                var freshDoc = ParseAllPageEditors();
-                _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
-                if (NeedsPageRebuild())
-                {
-                    SetupPageEditors();
-                }
-                RebuildOverlays();
-            }));
-        }
-        else
-        {
-            // 그룹 바깥: 선택 영역에 블록이 있으면 "그룹으로 묶기" 제공
             var selBlocks = GetBlocksInSelection();
             if (selBlocks?.Count > 1)
             {
@@ -4018,12 +4001,9 @@ public partial class MainWindow : Window
                 menu.Items.Add(MakeMenuItem("블록 그룹으로 묶기(_G)", () =>
                 {
                     GroupBlocks(selBlocks);
-                    var freshDoc = ParseAllPageEditors();
-                    _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
-                    if (NeedsPageRebuild())
-                    {
-                        SetupPageEditors();
-                    }
+                    var fdGrp = ParseAllPageEditors();
+                    _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(fdGrp);
+                    SetupPageEditors();
                     RebuildOverlays();
                 }));
             }
@@ -5789,7 +5769,65 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ④-b 인라인 그룹(ContainerBlock{Group}) — 클릭 위치의 RTB 에서 조상 탐색
+        {
+            var clickedRtb = FindRtbAtPoint(pt);
+            if (clickedRtb is not null)
+            {
+                var ptInRtb  = e.GetPosition(clickedRtb);
+                var tp       = clickedRtb.GetPositionFromPoint(ptInRtb, snapToText: true);
+                var groupSec = FindGroupSectionFromPointer(tp);
+                if (groupSec is not null)
+                {
+                    OpenContextMenu(BuildInlineGroupMenu(groupSec, clickedRtb));
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
         // ⑤ BodyEditor 내 컨텐츠 — ContextMenuOpening 이 처리 (e.Handled = false)
+    }
+
+    private RichTextBox? FindRtbAtPoint(Point ptInPageEditorHost)
+    {
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            double left = Canvas.GetLeft(rtb);
+            double top  = Canvas.GetTop(rtb);
+            if (new Rect(left, top, rtb.ActualWidth, rtb.ActualHeight).Contains(ptInPageEditorHost))
+                return rtb;
+        }
+        return null;
+    }
+
+    private static System.Windows.Documents.Section? FindGroupSectionFromPointer(
+        System.Windows.Documents.TextPointer? tp)
+    {
+        if (tp is null) return null;
+        DependencyObject? cur = tp.Paragraph;
+        while (cur is System.Windows.FrameworkContentElement fce)
+        {
+            if (cur is System.Windows.Documents.Section sec &&
+                sec.Tag is PolyDonky.Core.ContainerBlock { Role: PolyDonky.Core.ContainerRole.Group })
+                return sec;
+            cur = fce.Parent;
+        }
+        return null;
+    }
+
+    private ContextMenu BuildInlineGroupMenu(System.Windows.Documents.Section groupSec, RichTextBox _rtb)
+    {
+        var menu = new ContextMenu();
+        menu.Items.Add(MakeMenuItem("그룹 해제(_U)", () =>
+        {
+            UngroupSection(groupSec);
+            var fdUng = ParseAllPageEditors();
+            _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(fdUng);
+            SetupPageEditors();
+            RebuildOverlays();
+        }));
+        return menu;
     }
 
     private void OpenPolylineInputMenu()
