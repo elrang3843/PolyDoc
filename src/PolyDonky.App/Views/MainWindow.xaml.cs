@@ -4151,17 +4151,18 @@ public partial class MainWindow : Window
         }
 
         // 부모가 FlowDocument 또는 Section 인 두 경우를 처리
-        // 핵심: Remove(section) 전에 '다음 형제'만 기억해두고, 자식들을 모두 그 앞에 삽입.
-        // Remove 후 allBlocks[idx] 는 이미 컬렉션에서 빠진 section 을 가리키므로
-        // InsertBefore 의 기준 노드로 쓰면 "속하지 않습니다" 예외가 발생한다.
+        // 핵심: 각 자식을 section 에서 제거한 후 부모에 삽입
+        // (WPF 에서는 Block 이 두 컬렉션에 동시에 속할 수 없음)
         if (section.Parent is System.Windows.Documents.FlowDocument fd)
         {
             var allBlocks = fd.Blocks.Cast<System.Windows.Documents.Block>().ToList();
             int idx = allBlocks.IndexOf(section);
             var nextBlock = allBlocks.ElementAtOrDefault(idx + 1); // section 다음 블록
             fd.Blocks.Remove(section);
+
             foreach (var child in children)
             {
+                section.Blocks.Remove(child); // 먼저 section 에서 제거
                 if (nextBlock is not null)
                     fd.Blocks.InsertBefore(nextBlock, child);
                 else
@@ -4174,8 +4175,10 @@ public partial class MainWindow : Window
             int idx = allBlocks.IndexOf(section);
             var nextBlock = allBlocks.ElementAtOrDefault(idx + 1); // section 다음 블록
             parentSec.Blocks.Remove(section);
+
             foreach (var child in children)
             {
+                section.Blocks.Remove(child); // 먼저 section 에서 제거
                 if (nextBlock is not null)
                     parentSec.Blocks.InsertBefore(nextBlock, child);
                 else
