@@ -395,10 +395,24 @@ public static class FlowDocumentPaginationAdapter
 
                     if (sectH > 0 && sectH < bodyH)
                     {
-                        while (slotFill.GetValueOrDefault(sectSlot, 0.0) + sectGap + sectH > bodyH - FillSafetyMarginDip)
+                        // 1차: Y 좌표 기반 검사 — slotFill 과소평가(NaN 블록 등)와 무관하게
+                        //       오프스크린 RTB 의 실제 레이아웃 좌표로 경계를 판단한다.
+                        //       effSectTopY 는 cascade 보정을 이미 반영한 값이므로
+                        //       pageRelY = (현재 슬롯 안에서의 상대 Y).
+                        double pageRelY = effSectTopY - (double)sectSlot * bodyH;
+                        if (pageRelY + sectH > bodyH - FillSafetyMarginDip)
                         {
                             sectSlot++;
                             sectGap = 0.0;
+                        }
+                        else
+                        {
+                            // 2차: slotFill 기반 검사 — cascade 로 effSectTopY 가 높아진 경우를 보완.
+                            while (slotFill.GetValueOrDefault(sectSlot, 0.0) + sectGap + sectH > bodyH - FillSafetyMarginDip)
+                            {
+                                sectSlot++;
+                                sectGap = 0.0;
+                            }
                         }
                     }
                     if (sectH > 0)
