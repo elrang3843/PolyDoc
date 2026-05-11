@@ -200,6 +200,12 @@ public static class FlowDocumentPaginationAdapter
         {
             foreach (var wpfBlock in flat)
             {
+                // fast-path: ContainerBlock Section 은 자식 코어 블록을 직접 추가.
+                if (wpfBlock is WpfDocs.Section fastSect && fastSect.Tag is ContainerBlock)
+                {
+                    AssignSectionCoreBlocks(fastSect, 0, colCount, result);
+                    continue;
+                }
                 if (wpfBlock.Tag is not Block coreBlock) continue;
                 if (IsOverlayMode(coreBlock)) continue;
                 result.Add((0, 0, coreBlock, Rect.Empty));
@@ -361,7 +367,71 @@ public static class FlowDocumentPaginationAdapter
 
                     prevSlot = listSlot;
                     minSlot  = Math.Max(minSlot, listSlot);
-                    if (!double.IsNaN(listBottomY)) prevContBottom = listBottomY;
+                    // cascade 발생 시 effListTopY 를 기준으로 보정 — 개별 블록 갱신과 동일 원칙.
+                    if (!double.IsNaN(listBottomY)) prevContBottom = effListTopY + listH;
+                    else if (!double.IsNaN(listTopY)) prevContBottom = effListTopY;
+                }
+                continue;
+            }
+
+            // ── Wpf.Section (ContainerBlock) 전체 처리 ──────────────────────────────────
+            // ContainerBlock 전체의 topY/bottomY 를 단번에 측정해 단일 단위로 슬롯에 배정.
+            // 단일 페이지 이내의 ContainerBlock 이 페이지 경계에 걸리면 통째로 다음 슬롯으로 이동.
+            // Wpf.List 전용 핸들러와 동일한 패턴 — 자식 CoreBlock 들은 모두 같은 슬롯에 할당.
+            if (wpfBlock is WpfDocs.Section sectWpf && sectWpf.Tag is ContainerBlock)
+            {
+                double sectTopY    = TryGetTopY(sectWpf);
+                double sectBottomY = TryGetBottomY(sectWpf, colWidth);
+                if (!double.IsNaN(sectTopY))
+                {
+                    double effSectTopY = (!double.IsNaN(prevContBottom) && sectTopY < prevContBottom)
+                        ? prevContBottom : sectTopY;
+                    double sectGap = (!double.IsNaN(prevContBottom) && effSectTopY > prevContBottom)
+                        ? effSectTopY - prevContBottom : 0.0;
+                    double sectH = (!double.IsNaN(sectBottomY) && sectBottomY > sectTopY)
+                        ? sectBottomY - sectTopY : 0.0;
+
+                    int sectSlot = Math.Max(minSlot, (int)(effSectTopY / bodyH));
+
+                    if (sectH > 0 && sectH < bodyH)
+                    {
+                        while (slotFill.GetValueOrDefault(sectSlot, 0.0) + sectGap + sectH > bodyH - FillSafetyMarginDip)
+                        {
+                            sectSlot++;
+                            sectGap = 0.0;
+                        }
+                    }
+                    if (sectH > 0)
+                        slotFill[sectSlot] = Math.Min(bodyH,
+                            slotFill.GetValueOrDefault(sectSlot, 0.0) + sectGap + sectH);
+
+                    int sectResultFirst = result.Count;
+                    AssignSectionCoreBlocks(sectWpf, sectSlot, colCount, result);
+                    int sectResultLast = result.Count - 1;
+
+                    for (int ri = sectResultFirst; ri <= sectResultLast; ri++)
+                    {
+                        if (ri == sectResultFirst)
+                            resultFillContribs[ri] = (sectSlot, sectGap + sectH, sectH);
+                        else
+                            resultFillContribs[ri] = (sectSlot, 0.0, 0.0);
+                        resultToMeasurement[ri] = measurements.Count;
+                    }
+
+                    measurements.Add(new BlockMeasurementEntry
+                    {
+                        SlotIdx = sectSlot,
+                        Label   = $"Container({sectWpf.Blocks.Count}blocks)",
+                        TopY    = sectTopY,
+                        BottomY = sectBottomY,
+                        BlockH  = sectH,
+                        Gap     = sectGap,
+                    });
+
+                    prevSlot = sectSlot;
+                    minSlot  = Math.Max(minSlot, sectSlot);
+                    if (!double.IsNaN(sectBottomY)) prevContBottom = effSectTopY + sectH;
+                    else if (!double.IsNaN(sectTopY)) prevContBottom = effSectTopY;
                 }
                 continue;
             }
@@ -550,13 +620,26 @@ public static class FlowDocumentPaginationAdapter
             }
 
             // 슬롯 커서(이 슬롯에 이미 배정된 누적 채움) + gap + blockH 가 슬롯 높이를 넘으면
-            // 다음 슬롯으로 밀어낸다. bodyH 이상인 블록은 분할 불가이므로 채움 추적 대상에서 제외.
-            if (blockH > 0 && blockH < bodyH)
+            // 다음 슬롯으로 밀어낸다.
+            // bodyH 미만 블록: 들어갈 슬롯이 나올 때까지 반복 이동.
+            // bodyH 이상 블록(분할 불가): 현재 슬롯에 이미 내용이 있을 때만 한 번 이동.
+            //   — 같은 페이지에 작은 블록 + 큰 BUC(SVG/flex 등)가 함께 배정되면
+            //     per-page RTB(bodyH+2) 를 초과해 시각적으로 잘리는 문제를 방지한다.
+            if (blockH > 0)
             {
-                while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH - FillSafetyMarginDip)
+                if (blockH < bodyH)
                 {
+                    while (slotFill.GetValueOrDefault(slotTop, 0.0) + gap + blockH > bodyH - FillSafetyMarginDip)
+                    {
+                        slotTop += 1;
+                        gap = 0.0;
+                    }
+                }
+                else if (slotFill.GetValueOrDefault(slotTop, 0.0) + gap > FillSafetyMarginDip)
+                {
+                    // 이미 채워진 슬롯에 bodyH 이상 블록이 오면 다음 슬롯으로 이동.
                     slotTop += 1;
-                    gap = 0.0; // 슬롯 이동 시 간격 리셋
+                    gap = 0.0;
                 }
             }
 
@@ -589,12 +672,14 @@ public static class FlowDocumentPaginationAdapter
 
             prevSlot = slotTop;
             minSlot  = Math.Max(minSlot, slotTop); // 문서 순서 보장: 이후 블록이 앞 슬롯으로 돌아가지 않도록
-            // prevContBottom 갱신: BUC 폴백으로 blockH 가 커진 경우 bottomY(≈topY) 가 아닌
-            // topY + blockH 를 사용해야 이후 cascade 보정이 올바른 기준점을 갖는다.
+            // prevContBottom 갱신: effectiveTopY 를 기준으로 보정.
+            // cascade 가 발생(effectiveTopY > topY)했을 때 원래 topY 를 쓰면 이후 블록의
+            // cascade 체인이 끊어져 slotFill 이 과소평가된다. effectiveTopY 를 기준으로 해야
+            // "List → BUC HR → 일반 단락" 같은 연속 cascade 시퀀스가 끊기지 않는다.
             if (!double.IsNaN(topY) && blockH > 0 && (double.IsNaN(bottomY) || bottomY - topY < blockH))
-                prevContBottom = topY + blockH;
+                prevContBottom = effectiveTopY + blockH;
             else if (!double.IsNaN(bottomY))
-                prevContBottom = bottomY;
+                prevContBottom = effectiveTopY + (bottomY - topY);
         }
 
         // RichTextBox 분리 (FlowDocument 재사용을 위해)
@@ -991,13 +1076,16 @@ public static class FlowDocumentPaginationAdapter
     {
         foreach (var b in blocks)
         {
-            // Section(=ContainerBlock 렌더 결과) 은 자체를 yield 하지 않고 자식만 재귀.
-            // 그래야 Section 안의 단락/표/이미지가 Section 의 단일 Y 좌표 한 점이 아닌
-            // 각자의 Y 로 페이지에 배정돼 컨테이너가 길어도 페이지를 넘어 분산된다.
-            // 페이지 단위 box 시각화는 같은 페이지에 모든 자식이 들어갔을 때만 보장 — Section 이
-            // 페이지 경계를 넘으면 box framing 이 끊긴다 (현재 단계의 trade-off).
+            // ContainerBlock 으로 태깅된 Section 은 자체를 yield — 주 루프의
+            // Section 전용 핸들러가 단일 단위로 측정/배정한다.
+            // Tag 가 없는 일반 Section(스타일 래퍼 등)은 종전처럼 재귀.
             if (b is WpfDocs.Section sect)
             {
+                if (sect.Tag is ContainerBlock)
+                {
+                    yield return sect;
+                    continue;
+                }
                 foreach (var nested in FlattenBlocks(sect.Blocks))
                     yield return nested;
                 continue;
@@ -1041,6 +1129,33 @@ public static class FlowDocumentPaginationAdapter
                 {
                     result.Add((slot / colCount, slot % colCount, coreBlock, Rect.Empty));
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wpf.Section (ContainerBlock 렌더 결과) 의 모든 직계·재귀 CoreBlock 을 지정 슬롯에 배정한다.
+    /// 중첩 Section 과 List 를 투명하게 처리한다.
+    /// </summary>
+    private static void AssignSectionCoreBlocks(
+        WpfDocs.Section sect,
+        int slot,
+        int colCount,
+        List<(int pageIdx, int colIdx, Block coreBlock, Rect bodyLocalRect)> result)
+    {
+        foreach (var child in sect.Blocks)
+        {
+            if (child is WpfDocs.Section nestedSect)
+            {
+                AssignSectionCoreBlocks(nestedSect, slot, colCount, result);
+            }
+            else if (child is WpfDocs.List nestedList)
+            {
+                AssignListCoreBlocks(nestedList, slot, colCount, result);
+            }
+            else if (child.Tag is Block cb && !IsOverlayMode(cb))
+            {
+                result.Add((slot / colCount, slot % colCount, cb, Rect.Empty));
             }
         }
     }

@@ -2511,11 +2511,42 @@ public static class FlowDocumentBuilder
             BuildCodeBlockWithLineNumbers(wpfPara, p.Runs);
         else
             foreach (var run in p.Runs)
-                wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
+                AppendRunInlines(wpfPara, run, fnNums, enNums);
 
         // 원본 PolyDonky.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
         return wpfPara;
+    }
+
+    /// HTML &lt;br&gt; 에서 변환된 '\n' 런을 WPF LineBreak 인라인으로 분리·삽입한다.
+    /// WPF FlowDocument 의 Run 은 '\n' 문자를 시각적 줄바꿈으로 렌더링하지 않으므로
+    /// '\n' 이 포함된 Run 텍스트를 분할해 LineBreak 요소를 사이에 끼워야 한다.
+    /// LatexSource·EmojiKey 등 특수 Run 은 BuildInline 에 그대로 위임한다.
+    private static void AppendRunInlines(Wpf.Paragraph wpfPara, Run run,
+        IReadOnlyDictionary<string, int>? fnNums, IReadOnlyDictionary<string, int>? enNums)
+    {
+        // 특수 런(수식·이모지·각주 등)이나 '\n' 없는 일반 런은 직접 위임.
+        if (run.LatexSource is not null || run.EmojiKey is not null
+            || run.FootnoteId is not null || run.EndnoteId is not null
+            || run.Field is not null
+            || !run.Text.Contains('\n'))
+        {
+            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
+            return;
+        }
+
+        // '\n' 분리: 각 조각을 원본 Run 의 스타일로 빌드, 조각 사이에 WPF LineBreak 삽입.
+        var parts = run.Text.Split('\n');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (i > 0)
+                wpfPara.Inlines.Add(new Wpf.LineBreak());
+            if (parts[i].Length > 0)
+            {
+                var sub = new Run { Text = parts[i], Style = run.Style, Url = run.Url };
+                wpfPara.Inlines.Add(BuildInline(sub, fnNums, enNums));
+            }
+        }
     }
 
     /// <summary>
