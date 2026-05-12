@@ -1200,9 +1200,9 @@ public partial class MainWindow : Window
         rtb.PreviewKeyDown    += OnPreviewKeyDownMaster;
         rtb.PreviewTextInput  += OnEditorPreviewTextInput;
 
-        rtb.PreviewMouseLeftButtonDown += OnEditorPreviewMouseDownTrackDrag;
+        rtb.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDownMaster;
         rtb.PreviewMouseMove           += OnEditorPreviewMouseMoveBlockDrag;
-        rtb.PreviewMouseLeftButtonUp   += OnEditorPreviewMouseUpEmbedded;
+        rtb.PreviewMouseLeftButtonUp   += OnPreviewMouseLeftButtonUpMaster;
         // RTB 내부 ScrollViewer 가 휠 이벤트를 소비해 본문만 내부 스크롤되는 것을 막고
         // 외부 EditorScrollViewer 로 전달 — 본문·오버레이가 함께 스크롤되도록 한다.
         rtb.PreviewMouseWheel          += OnPageRtbPreviewMouseWheel;
@@ -5587,6 +5587,400 @@ public partial class MainWindow : Window
             next.CaretPosition = moveToEnd ? next.Document.ContentEnd : next.Document.ContentStart;
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// 통합 마우스 LEFT BUTTON DOWN 마스터 핸들러.
+    /// 모든 PreviewMouseLeftButtonDown 을 단일 진입점으로 수렴하고 sender 타입에 따라 분기한다.
+    /// </summary>
+    private void OnPreviewMouseLeftButtonDownMaster(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled) return;
+
+        // 1순위: PaperHost 주요 기능 (폴리선 그리기, 마퀴 선택, Ctrl+클릭 멀티-선택, 컬럼 나누기 등)
+        if (sender is Canvas paperCanvas && paperCanvas.Name == "PaperHost")
+        {
+            HandlePaperHostMouseDown(e);
+            return;
+        }
+
+        // 2순위: 페이지 에디터 RTB (이미지 드래그, 표 열 너비 조정 시작, embedded 개체)
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            HandlePageEditorMouseDown(rtb, e);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// 통합 마우스 LEFT BUTTON UP 마스터 핸들러.
+    /// 모든 PreviewMouseLeftButtonUp 을 단일 진입점으로 수렴한다.
+    /// </summary>
+    private void OnPreviewMouseLeftButtonUpMaster(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled) return;
+
+        // 1순위: PaperHost (마퀴 드래그 완료, 컬럼 나누기 완료)
+        if (sender is Canvas paperCanvas && paperCanvas.Name == "PaperHost")
+        {
+            HandlePaperHostMouseUp(e);
+            return;
+        }
+
+        // 2순위: 페이지 에디터 RTB (embedded 이미지 드래그 완료, 도형/글상자 그리기 완료)
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            HandlePageEditorMouseUp(rtb, e);
+            return;
+        }
+    }
+
+    /// <summary>PaperHost PreviewMouseLeftButtonDown 처리.</summary>
+    private void HandlePaperHostMouseDown(MouseButtonEventArgs e)
+    {
+        // 직선 자동마감 직후 ClickCount==2 억제
+        if (_suppressNextClickAfterLineFinish)
+        {
+            _suppressNextClickAfterLineFinish = false;
+            if (e.ClickCount >= 2)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // ── 폴리선/스플라인 클릭 입력 모드 ──────────────────────────────────
+        if (_drawingPolyline_active)
+        {
+            var pos = e.GetPosition(PaperHost);
+            pos.X = Math.Clamp(pos.X, 0, PaperHost.ActualWidth);
+            pos.Y = Math.Clamp(pos.Y, 0, PaperHost.ActualHeight);
+
+            if (e.ClickCount >= 2)
+            {
+                int need = _drawingPolyline_kind is ShapeKind.Polygon or ShapeKind.ClosedSpline ? 3 : 2;
+                if (_drawingPolyline_points.Count >= need)
+                    FinishPolylineShape();
+                else
+                    EndDrawingMode();
+            }
+            else
+            {
+                _drawingPolyline_points.Add(pos);
+                UpdatePolylinePreview(pos);
+
+                if (_drawingPolyline_kind == ShapeKind.Line && _drawingPolyline_points.Count >= 2)
+                {
+                    FinishPolylineShape();
+                    _suppressNextClickAfterLineFinish = true;
+                }
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        // ── Ctrl+클릭 → 오버레이 개체 멀티-선택 토글 ──────────────────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active &&
+            (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
+            (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
+        {
+            var ptForHit = e.GetPosition(PageEditorHost);
+            var hitOverlay = FindAnyOverlayControlAt(ptForHit);
+            if (hitOverlay != null)
+            {
+                ToggleMultiSelectControl(hitOverlay);
+                Focus();
+                Keyboard.Focus(this);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // ── 일반 클릭 — 멀티-선택된 개체 유지, 그 외 해제 ──────────────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active &&
+            (Keyboard.Modifiers & ModifierKeys.Control) == 0 &&
+            _multiSelectedControls.Count > 0)
+        {
+            var ptForHit = e.GetPosition(PageEditorHost);
+            var hitOverlay = FindAnyOverlayControlAt(ptForHit);
+            if (hitOverlay == null || !_multiSelectedControls.Contains(hitOverlay))
+                ClearMultiSelect();
+        }
+
+        // ── 단 너비 드래그 시작 ──────────────────────────────────────────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active && _colDivHovering)
+        {
+            var ptPaper = e.GetPosition(PaperHost);
+            if (TryHitColumnDivider(ptPaper, out int divLeftIdx))
+            {
+                _colDivDragging       = true;
+                _colDivDragLeftIdx    = divLeftIdx;
+                _colDivDragStartX     = ptPaper.X;
+                _colDivDragStartWidths = (double[])_pageGeometry!.ColWidthsDip.Clone();
+                PaperHost.CaptureMouse();
+                Mouse.OverrideCursor = Cursors.SizeWE;
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // ── 마퀴(범위 드래그) 시작 ──────────────────────────────────────────────
+        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active)
+        {
+            bool alt   = (Keyboard.Modifiers & ModifierKeys.Alt)   != 0;
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+            bool ctrl  = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+
+            if (!alt && !shift)
+            {
+                var ptDoc    = e.GetPosition(PageEditorHost);
+                var ptPaper2 = e.GetPosition(PaperHost);
+                var hitCtrl2 = FindAnyOverlayControlAt(ptDoc);
+
+                double stride2    = _pageGeometry?.PageStrideDip ?? 1.0;
+                double pageLocalY = stride2 > 0 ? ptDoc.Y % stride2 : ptDoc.Y;
+                bool inMargin = _pageGeometry != null
+                    && (ptDoc.X < _pageGeometry.PadLeftDip
+                    ||  ptDoc.X > _pageGeometry.PageWidthDip - _pageGeometry.PadRightDip
+                    ||  pageLocalY < _pageGeometry.PadTopDip
+                    ||  pageLocalY > _pageGeometry.PageHeightDip - _pageGeometry.PadBottomDip);
+
+                bool startMarquee = hitCtrl2 == null && (inMargin || ctrl);
+
+                if (startMarquee)
+                {
+                    if (!ctrl) ClearMultiSelect();
+
+                    ptPaper2.X = Math.Clamp(ptPaper2.X, 0, PaperHost.ActualWidth);
+                    ptPaper2.Y = Math.Clamp(ptPaper2.Y, 0, PaperHost.ActualHeight);
+
+                    _drawStart = ptPaper2;
+                    _marqueeSelecting = true;
+
+                    Canvas.SetLeft(DrawPreviewRect, ptPaper2.X);
+                    Canvas.SetTop(DrawPreviewRect, ptPaper2.Y);
+                    DrawPreviewRect.Width = 0;
+                    DrawPreviewRect.Height = 0;
+                    DrawPreviewRect.Visibility = Visibility.Visible;
+
+                    PaperHost.CaptureMouse();
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
+        if (!_drawingTextBox && !_drawingShape_active) return;
+
+        var startPos = e.GetPosition(PaperHost);
+        startPos.X = Math.Clamp(startPos.X, 0, PaperHost.ActualWidth);
+        startPos.Y = Math.Clamp(startPos.Y, 0, PaperHost.ActualHeight);
+
+        _drawStart = startPos;
+        _drawingInProgress = true;
+
+        Canvas.SetLeft(DrawPreviewRect, startPos.X);
+        Canvas.SetTop(DrawPreviewRect, startPos.Y);
+        DrawPreviewRect.Width = 0;
+        DrawPreviewRect.Height = 0;
+        DrawPreviewRect.Visibility = Visibility.Visible;
+
+        PaperHost.CaptureMouse();
+        e.Handled = true;
+    }
+
+    /// <summary>페이지 에디터 RTB PreviewMouseLeftButtonDown 처리.</summary>
+    private void HandlePageEditorMouseDown(RichTextBox rtb, MouseButtonEventArgs e)
+    {
+        _embeddedDragModel  = null;
+        _embeddedDragBlock  = null;
+        _embeddedDragActive = false;
+
+        if (!_drawingTextBox) DeselectAllOverlays();
+
+        var senderRtb = rtb;
+        var pt = e.GetPosition(senderRtb ?? BodyEditor);
+
+        // 표 열 경계선 위: 열 너비 드래그 시작
+        if (_tableColResizeHovering &&
+            TryHitTableColumnBorder(pt, senderRtb, out var rcWpf, out var rcCore, out int rcIdx, out _))
+        {
+            _suppressEmbeddedObjectDrag = false;
+            StartTableColumnResize(rcWpf!, rcCore!, rcIdx, pt.X, senderRtb);
+            e.Handled = true;
+            return;
+        }
+
+        // Alt + 클릭 → BehindText 그림 드래그 시작
+        if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0 &&
+            FindCanvasChildAt(UnderlayImageCanvas, pt) is { } underlayCtrl)
+        {
+            StartUnderlayImageDrag(underlayCtrl, e);
+            e.Handled = true;
+            return;
+        }
+
+        var found = FindEmbeddedObjectAt(e.OriginalSource as System.Windows.DependencyObject, pt);
+        if (found is { container: System.Windows.Documents.Block blk } &&
+            GetImageBlockFromBlock(blk) is { } imgModel)
+        {
+            _suppressEmbeddedObjectDrag = true;
+            _embeddedDragModel  = imgModel;
+            _embeddedDragBlock  = blk;
+            _embeddedDragOrigin = pt;
+        }
+        else
+        {
+            _suppressEmbeddedObjectDrag = false;
+        }
+    }
+
+    /// <summary>PaperHost PreviewMouseLeftButtonUp 처리.</summary>
+    private void HandlePaperHostMouseUp(MouseButtonEventArgs e)
+    {
+        // ── 단 너비 드래그 완료 ───────────────────────────────────────────────
+        if (_colDivDragging) { FinishColDivDrag(e); return; }
+
+        // ── 마퀴 드래그 완료: 사각형 안의 모든 개체 선택 ──
+        if (_marqueeSelecting)
+        {
+            _marqueeSelecting = false;
+            DrawPreviewRect.Visibility = Visibility.Collapsed;
+            if (PaperHost.IsMouseCaptured) PaperHost.ReleaseMouseCapture();
+
+            var mPos = e.GetPosition(PaperHost);
+            mPos.X = Math.Clamp(mPos.X, 0, PaperHost.ActualWidth);
+            mPos.Y = Math.Clamp(mPos.Y, 0, PaperHost.ActualHeight);
+
+            double mx = Math.Min(_drawStart.X, mPos.X);
+            double my = Math.Min(_drawStart.Y, mPos.Y);
+            double mw = Math.Abs(mPos.X - _drawStart.X);
+            double mh = Math.Abs(mPos.Y - _drawStart.Y);
+
+            if (mw >= 4 && mh >= 4)
+            {
+                bool addMode = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+                ApplyMarqueeSelection(new Rect(mx, my, mw, mh), addMode);
+            }
+            e.Handled = true;
+            return;
+        }
+
+        // ── 도형/글상자 그리기 완료 ────────────────────────────────────────
+        if (!_drawingInProgress) return;
+
+        var pos = e.GetPosition(PaperHost);
+        pos.X = Math.Clamp(pos.X, 0, PaperHost.ActualWidth);
+        pos.Y = Math.Clamp(pos.Y, 0, PaperHost.ActualHeight);
+
+        double x = Math.Min(_drawStart.X, pos.X);
+        double y = Math.Min(_drawStart.Y, pos.Y);
+        double w = Math.Abs(pos.X - _drawStart.X);
+        double h = Math.Abs(pos.Y - _drawStart.Y);
+
+        bool wasShape = _drawingShape_active;
+        EndDrawingMode();
+
+        const double minDip = 10;
+        if (w < minDip || h < minDip)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (wasShape)
+        {
+            FinishShapeDraw(x, y, w, h);
+            e.Handled = true;
+            return;
+        }
+
+        // 글상자 생성
+        var model = new TextBoxObject
+        {
+            Shape    = _drawingShape,
+            WidthMm  = w / TextBoxOverlay.DipsPerMm,
+            HeightMm = h / TextBoxOverlay.DipsPerMm,
+            Status   = NodeStatus.Modified,
+        };
+        model.ApplyDefaultPaddingForShape(_drawingShape);
+        CommitOverlayDragPosition(model, x, y);
+        _viewModel?.AddOverlayBlockToCurrentSection(model);
+        var overlay = AddTextBoxOverlay(model);
+        SelectOverlay(overlay);
+        overlay.BeginEditing();
+
+        e.Handled = true;
+    }
+
+    /// <summary>페이지 에디터 RTB PreviewMouseLeftButtonUp 처리.</summary>
+    private void HandlePageEditorMouseUp(RichTextBox rtb, MouseButtonEventArgs e)
+    {
+        // ── 표 열 너비 드래그 완료 ───────────────────────────────────────────
+        if (_tableColResizeActive)
+        {
+            FinishTableColumnResize();
+            e.Handled = true;
+            return;
+        }
+
+        Mouse.OverrideCursor = null;
+        _suppressEmbeddedObjectDrag = false;
+
+        if (!_embeddedDragActive) { _embeddedDragActive = false; return; }
+
+        bool   wasActive = _embeddedDragActive;
+        var    model     = _embeddedDragModel;
+        var    oldBlock  = _embeddedDragBlock;
+        _embeddedDragActive = false;
+        _embeddedDragModel  = null;
+        _embeddedDragBlock  = null;
+
+        if (!wasActive || model is null || oldBlock is null) return;
+
+        var currentMode = model.WrapMode;
+        if (currentMode is PolyDonky.Core.ImageWrapMode.InFrontOfText
+                        or PolyDonky.Core.ImageWrapMode.BehindText
+                        or PolyDonky.Core.ImageWrapMode.AsText)
+            return;
+
+        var    pt      = e.GetPosition(BodyEditor);
+        double editorW = BodyEditor.ActualWidth;
+        double third   = editorW / 3.0;
+
+        if (currentMode == PolyDonky.Core.ImageWrapMode.Inline)
+        {
+            model.HAlign = pt.X < third          ? PolyDonky.Core.ImageHAlign.Left
+                         : pt.X > third * 2      ? PolyDonky.Core.ImageHAlign.Right
+                         :                         PolyDonky.Core.ImageHAlign.Center;
+        }
+        else
+        {
+            if (pt.X < third)
+            {
+                model.WrapMode = PolyDonky.Core.ImageWrapMode.WrapLeft;
+                model.HAlign   = PolyDonky.Core.ImageHAlign.Left;
+            }
+            else if (pt.X > third * 2)
+            {
+                model.WrapMode = PolyDonky.Core.ImageWrapMode.WrapRight;
+                model.HAlign   = PolyDonky.Core.ImageHAlign.Right;
+            }
+            else
+            {
+                model.WrapMode = PolyDonky.Core.ImageWrapMode.Inline;
+                model.HAlign   = PolyDonky.Core.ImageHAlign.Center;
+            }
+        }
+
+        var newBlock = Services.FlowDocumentBuilder.BuildImage(model);
+        var doc      = BodyEditor.Document;
+        doc.Blocks.InsertBefore(oldBlock, newBlock);
+        doc.Blocks.Remove(oldBlock);
+        RebuildOverlayImages();
+        _viewModel?.MarkDirty();
+        e.Handled = true;
     }
 
     private void OnDragOver(object sender, DragEventArgs e)

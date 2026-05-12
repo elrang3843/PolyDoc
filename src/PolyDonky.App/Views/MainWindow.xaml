@@ -396,9 +396,9 @@
                      크기 = pageWidth × (pageHeight × pageCount + gap × (pageCount-1)) -->
                 <Grid x:Name="PaperHost"
                       Background="Transparent"
-                      PreviewMouseLeftButtonDown="OnPaperPreviewMouseLeftButtonDown"
+                      PreviewMouseLeftButtonDown="OnPreviewMouseLeftButtonDownMaster"
                       PreviewMouseMove="OnPaperPreviewMouseMove"
-                      PreviewMouseLeftButtonUp="OnPaperPreviewMouseLeftButtonUp"
+                      PreviewMouseLeftButtonUp="OnPreviewMouseLeftButtonUpMaster"
                       PreviewMouseRightButtonDown="OnPaperPreviewMouseRightButtonDown">
                     <!-- 레이어 0: 페이지 배경 — 페이지 별 흰 Border + 그림자 + 점선 여백 가이드.
                          code-behind RebuildPageFrames() 가 이 캔버스에 페이지마다 동적으로 추가. -->
