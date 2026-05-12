@@ -328,8 +328,10 @@ static bool LooksBinary(byte[] bytes)
 /// <summary>
 /// 입력 바이트에서 HTML 인코딩 감지:
 ///   1. BOM (UTF-8 / UTF-16 LE/BE / UTF-32 LE/BE)
-///   2. 첫 4KB 안에서 &lt;meta charset="X"&gt; 또는 http-equiv Content-Type charset
-///   3. 위 모두 실패 → UTF-8 (HTML5 기본)
+///   2. 파일 전체가 유효한 UTF-8이면 meta charset 선언과 관계없이 UTF-8 우선 (HTML5 권고)
+///      — EUC-KR 을 선언했더라도 실제로 UTF-8로 저장된 파일이 많음.
+///   3. 첫 4KB 안에서 &lt;meta charset="X"&gt; 또는 http-equiv Content-Type charset
+///   4. 위 모두 실패 → UTF-8 (HTML5 기본)
 /// 감지된 .NET <see cref="Encoding"/> 와 사람이 읽는 라벨을 함께 반환.
 /// </summary>
 static (Encoding enc, string label) DetectEncoding(byte[] bytes)
@@ -348,6 +350,12 @@ static (Encoding enc, string label) DetectEncoding(byte[] bytes)
         if (bytes[0] == 0xFE && bytes[1] == 0xFF) return (Encoding.BigEndianUnicode, "UTF-16 BE (BOM)");
         if (bytes[0] == 0xFF && bytes[1] == 0xFE) return (Encoding.Unicode,           "UTF-16 LE (BOM)");
     }
+
+    // BOM 이 없으면 먼저 전체 바이트가 유효한 UTF-8인지 검사한다.
+    // 유효하고 non-ASCII 바이트(멀티바이트 시퀀스)를 하나라도 포함하면 UTF-8 로 확정한다.
+    // meta charset 이 다른 인코딩을 선언하더라도 실제 바이트가 UTF-8이면 UTF-8이 맞다.
+    if (IsValidUtf8WithNonAscii(bytes))
+        return (new UTF8Encoding(false), "UTF-8 (자동 감지)");
 
     int sniffLen = Math.Min(bytes.Length, 4096);
     // ASCII 로 1차 디코딩해 <meta> 만 찾는다 — 이 단계에선 비-ASCII 바이트는 모두 '?' 로 보여도 괜찮다.
@@ -370,6 +378,52 @@ static (Encoding enc, string label) DetectEncoding(byte[] bytes)
     }
 
     return (new UTF8Encoding(false), "UTF-8 (기본값)");
+}
+
+/// <summary>
+/// 바이트 배열이 유효한 UTF-8이고 ASCII 아닌 멀티바이트 문자를 하나 이상 포함하면 true.
+/// 순수 ASCII 파일은 EUC-KR/Shift-JIS 등과 구별 불가이므로 false 를 반환한다.
+/// </summary>
+static bool IsValidUtf8WithNonAscii(byte[] bytes)
+{
+    bool hasNonAscii = false;
+    int i = 0;
+    while (i < bytes.Length)
+    {
+        byte b = bytes[i];
+        int seqLen;
+        if (b < 0x80)           { seqLen = 1; }                                          // ASCII
+        else if (b < 0xC2)      { return false; }                                         // 연속 바이트 단독 or over-long
+        else if (b < 0xE0)      { seqLen = 2; hasNonAscii = true; }
+        else if (b < 0xF0)      { seqLen = 3; hasNonAscii = true; }
+        else if (b <= 0xF4)     { seqLen = 4; hasNonAscii = true; }
+        else                    { return false; }                                         // 유효하지 않은 바이트
+
+        for (int j = 1; j < seqLen; j++)
+        {
+            if (i + j >= bytes.Length) return false;
+            if ((bytes[i + j] & 0xC0) != 0x80) return false;                             // 연속 바이트 아님
+        }
+
+        // Over-long sequence 추가 검사.
+        if (seqLen == 2 && (b & 0x1E) == 0) return false;
+        if (seqLen == 3)
+        {
+            // 최소값: 0xE0 0xA0 이상이어야 함.
+            if (b == 0xE0 && i + 1 < bytes.Length && bytes[i + 1] < 0xA0) return false;
+            // Surrogate: U+D800~U+DFFF 금지.
+            if (b == 0xED && i + 1 < bytes.Length && bytes[i + 1] >= 0xA0) return false;
+        }
+        if (seqLen == 4)
+        {
+            // 최소값: 0xF0 0x90 이상, 최대: U+10FFFF.
+            if (b == 0xF0 && i + 1 < bytes.Length && bytes[i + 1] < 0x90) return false;
+            if (b == 0xF4 && i + 1 < bytes.Length && bytes[i + 1] > 0x8F) return false;
+        }
+
+        i += seqLen;
+    }
+    return hasNonAscii;
 }
 
 /// <summary>
@@ -790,7 +844,8 @@ static void ResolveFirstLetter(IDocument document, List<(string Selector, ICssSt
         var letter    = text.Substring(firstNonWs, letterEnd - firstNonWs);
         var remainder = text.Substring(letterEnd);
 
-        var owner = el.Owner!;
+        var owner = el.Owner;
+        if (owner is null) continue;
         var span = owner.CreateElement("span");
         span.SetAttribute("data-pd-pseudo", "first-letter");
         span.TextContent = letter;
@@ -805,7 +860,8 @@ static void ResolveFirstLetter(IDocument document, List<(string Selector, ICssSt
         // 텍스트 노드 분할: prefix(텍스트) → span → remainder(텍스트). InsertBefore + NextSibling 으로
         // 정확히 firstText 바로 뒤에 삽입한다 (DOM 표준).
         firstText.Data = prefix;
-        var parent = firstText.Parent!;
+        var parent = firstText.Parent;
+        if (parent is null) continue;   // 부모가 없으면(detached node) 조용히 건너뜀
         var anchor = firstText.NextSibling;
         if (anchor is not null) parent.InsertBefore(span, anchor);
         else                    parent.AppendChild(span);

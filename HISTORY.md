@@ -52,6 +52,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **HTML 파일 열기 시 빈 문서 표시 (인코딩 오감지 버그 수정)**: EUC-KR 등 레거시 인코딩을 선언하는 `<meta charset>` 이 있지만 실제로 UTF-8로 저장된 HTML 파일을 EUC-KR로 잘못 디코딩해, AngleSharp HTML 파서가 빈 `<body>`를 반환하고 IWPF 변환 결과가 완전히 공백이 되던 문제. `DetectEncoding` 에 BOM 이후 단계로 전체 바이트의 UTF-8 유효성 검사를 추가해 — non-ASCII 멀티바이트 시퀀스가 하나 이상 포함되면 meta charset 선언 무관하게 UTF-8 로 처리한다. 실제 EUC-KR 파일(유효한 EUC-KR 바이트 시퀀스이지만 동시에 유효한 UTF-8이 아닌 파일)은 기존과 동일하게 선언된 인코딩으로 처리된다. (`tools/PolyDonky.Convert.Html/Program.cs`)
+
 - **오버레이 표 행·열 드래그 기반 크기 조정 구현**: 오버레이 모드 표의 열 너비 및 행 높이를 마우스 드래그로 조정 가능하도록 구현. 우클릭 메뉴에서 표 셀 위치를 자동 감지해 행·열 인덱스를 전달. 마우스 호버 시 커서 변경(SizeWE/SizeNS) 및 경계선 강조. 오버레이 표의 분리선(`BorderBrush` 또는 동적 계산) 위에서 5 DIP 내 hit-test로 경계 감지. 드래그 중 실시간 셀 크기 반영 후 Core 모델 업데이트. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
 
 - **블록 모드 표 행 높이 드래그 조정 구현**: Block-mode FlowDocument 표의 행 높이를 마우스 드래그로 조정 가능하도록 구현. WPF TableRow는 MinHeight 속성이 없으므로 행의 모든 셀의 Padding.Bottom을 균등하게 조정하여 행 높이 증감 수행. 마우스 호버 시 SizeNS 커서 표시, 경계 감지 시 색상 변경으로 시각 피드백 제공. 드래그 종료 후 Core 모델의 셀 내용물 크기 재계산. (`MainWindow.xaml.cs`)
