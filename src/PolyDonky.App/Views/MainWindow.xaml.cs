@@ -46,56 +46,6 @@ public partial class MainWindow : Window
     private readonly List<FrameworkElement> _multiSelectedControls = new();
     private bool _marqueeSelecting;
 
-    private void OnEditorPreviewMouseDownTrackDrag(object sender, MouseButtonEventArgs e)
-    {
-        _embeddedDragModel  = null;
-        _embeddedDragBlock  = null;
-        _embeddedDragActive = false;
-
-        if (!_drawingTextBox) DeselectAllOverlays();
-        // sender 는 마우스 이벤트가 발생한 실제 RTB. BodyEditor(ActiveEditor) 와 다를 수 있으므로
-        // 좌표는 항상 sender 기준으로 계산한다.
-        var senderRtb = sender as RichTextBox;
-        var pt = e.GetPosition(senderRtb ?? BodyEditor);
-
-        // 표 열 경계선 위: 열 너비 드래그 시작
-        if (_tableColResizeHovering &&
-            TryHitTableColumnBorder(pt, senderRtb, out var rcWpf, out var rcCore, out int rcIdx, out _))
-        {
-            _suppressEmbeddedObjectDrag = false;
-            StartTableColumnResize(rcWpf!, rcCore!, rcIdx, pt.X, senderRtb);
-            e.Handled = true;
-            return;
-        }
-
-        // Alt + 클릭 → BehindText 그림(BodyEditor 뒤 UnderlayImageCanvas) 드래그 시작.
-        // 일반 클릭은 본문 텍스트 선택을 위해 양보 — 텍스트 위에 그림이 깔린 영역에서도 편집 가능.
-        if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0 &&
-            FindCanvasChildAt(UnderlayImageCanvas, pt) is { } underlayCtrl)
-        {
-            StartUnderlayImageDrag(underlayCtrl, e);
-            e.Handled = true;
-            return;
-        }
-
-        // (Ctrl+클릭 오버레이 토글·멀티-선택 해제는 PaperHost.PreviewMouseLeftButtonDown
-        //  통합 핸들러가 처리 — 오버레이 컨트롤은 BodyEditor 의 형제라 여기로는 안 옴.)
-
-        var found = FindEmbeddedObjectAt(e.OriginalSource as System.Windows.DependencyObject, pt);
-        if (found is { container: System.Windows.Documents.Block blk } &&
-            GetImageBlockFromBlock(blk) is { } imgModel)
-        {
-            _suppressEmbeddedObjectDrag = true;
-            _embeddedDragModel  = imgModel;
-            _embeddedDragBlock  = blk;
-            _embeddedDragOrigin = pt;
-        }
-        else
-        {
-            _suppressEmbeddedObjectDrag = false;
-        }
-    }
-
     // ── BehindText 그림 Alt+드래그 ───────────────────────────────────────
     // UnderlayImageCanvas 자식은 BodyEditor 뒤에 있어 일반적으로 마우스를 받을 수 없다.
     // BodyEditor 가 mouse capture 를 가지고 이벤트를 underlay 그림에 직접 라우팅한다.
@@ -152,134 +102,6 @@ public partial class MainWindow : Window
             _viewModel?.MarkDirty();
         }
         e.Handled = true;
-    }
-
-    private void OnEditorPreviewMouseMoveBlockDrag(object sender, MouseEventArgs e)
-    {
-        // sender 는 실제 마우스 이벤트가 발생한 RTB (캡처 중에는 캡처를 가진 RTB).
-        // 좌표는 항상 sender 기준으로 계산해 BodyEditor(ActiveEditor) 와 좌표계 불일치를 방지한다.
-        var senderRtb = sender as RichTextBox;
-        var pt = e.GetPosition(senderRtb ?? BodyEditor);
-
-        // 우선순위 1: 표 열 너비 드래그 중
-        if (_tableColResizeActive)
-        {
-            if (e.LeftButton != MouseButtonState.Pressed) { FinishTableColumnResize(); return; }
-            double delta    = pt.X - _colRszStartX;
-            double newLeft  = Math.Max(_colRszInitLeft  + delta, TableColResizeMinDip);
-            double newRight = _colRszRightCol != null
-                            ? Math.Max(_colRszInitRight - delta, TableColResizeMinDip)
-                            : 0;
-            _colRszLeftCol!.Width = new GridLength(newLeft);
-            if (_colRszRightCol != null)
-                _colRszRightCol.Width = new GridLength(newRight);
-            e.Handled = true;
-            return;
-        }
-
-        // 우선순위 2: 임베드 오브젝트(이미지) 드래그 억제
-        if (_suppressEmbeddedObjectDrag)
-        {
-            if (e.LeftButton != MouseButtonState.Pressed)
-            {
-                _embeddedDragActive = false;
-                _suppressEmbeddedObjectDrag = false;
-                Mouse.OverrideCursor = null;
-                return;
-            }
-            e.Handled = true;
-            if (!_embeddedDragActive &&
-                (Math.Abs(pt.X - _embeddedDragOrigin.X) > 8 ||
-                 Math.Abs(pt.Y - _embeddedDragOrigin.Y) > 8))
-            {
-                _embeddedDragActive  = true;
-                Mouse.OverrideCursor = Cursors.SizeAll;
-            }
-            return;
-        }
-
-        // 우선순위 3: 아무 드래그도 없을 때 — 표 열 경계선 커서 표시
-        if (!_drawingShape_active && !_drawingPolyline_active && !_drawingTextBox &&
-            e.LeftButton != MouseButtonState.Pressed)
-        {
-            bool onBorder = TryHitTableColumnBorder(pt, senderRtb, out _, out _, out _, out _);
-            if (onBorder != _tableColResizeHovering)
-            {
-                _tableColResizeHovering = onBorder;
-                Mouse.OverrideCursor    = (onBorder || _colDivHovering) ? Cursors.SizeWE : null;
-            }
-        }
-    }
-
-    private void OnEditorPreviewMouseUpEmbedded(object sender, MouseButtonEventArgs e)
-    {
-        // 표 열 너비 드래그 완료
-        if (_tableColResizeActive)
-        {
-            FinishTableColumnResize();
-            e.Handled = true;
-            return;
-        }
-
-        Mouse.OverrideCursor = null;
-        _suppressEmbeddedObjectDrag = false;
-
-        if (!_embeddedDragActive) { _embeddedDragActive = false; return; }
-
-        bool   wasActive = _embeddedDragActive;
-        var    model     = _embeddedDragModel;
-        var    oldBlock  = _embeddedDragBlock;
-        _embeddedDragActive = false;
-        _embeddedDragModel  = null;
-        _embeddedDragBlock  = null;
-
-        if (!wasActive || model is null || oldBlock is null) return;
-
-        // InFrontOfText / BehindText 는 Canvas 드래그가 처리. AsText / Inline 에서 WrapLeft/WrapRight
-        // 로의 전환 또는 WrapLeft ↔ WrapRight 전환을 드롭 X 위치로 결정한다.
-        var currentMode = model.WrapMode;
-        if (currentMode is PolyDonky.Core.ImageWrapMode.InFrontOfText
-                        or PolyDonky.Core.ImageWrapMode.BehindText
-                        or PolyDonky.Core.ImageWrapMode.AsText)
-            return;
-
-        var    pt      = e.GetPosition(BodyEditor);
-        double editorW = BodyEditor.ActualWidth;
-        double third   = editorW / 3.0;
-
-        if (currentMode == PolyDonky.Core.ImageWrapMode.Inline)
-        {
-            // Inline: 가로 위치에 따라 HAlign 만 바꾼다 (WrapMode 유지).
-            model.HAlign = pt.X < third          ? PolyDonky.Core.ImageHAlign.Left
-                         : pt.X > third * 2      ? PolyDonky.Core.ImageHAlign.Right
-                         :                         PolyDonky.Core.ImageHAlign.Center;
-        }
-        else
-        {
-            // WrapLeft / WrapRight: 왼쪽 1/3 → WrapLeft, 중앙 1/3 → Inline 가운데, 오른쪽 1/3 → WrapRight.
-            if (pt.X < third)
-            {
-                model.WrapMode = PolyDonky.Core.ImageWrapMode.WrapLeft;
-                model.HAlign   = PolyDonky.Core.ImageHAlign.Left;
-            }
-            else if (pt.X > third * 2)
-            {
-                model.WrapMode = PolyDonky.Core.ImageWrapMode.WrapRight;
-                model.HAlign   = PolyDonky.Core.ImageHAlign.Right;
-            }
-            else
-            {
-                model.WrapMode = PolyDonky.Core.ImageWrapMode.Inline;
-                model.HAlign   = PolyDonky.Core.ImageHAlign.Center;
-            }
-        }
-
-        var newBlock = Services.FlowDocumentBuilder.BuildImage(model);
-        var doc      = BodyEditor.Document;
-        doc.Blocks.InsertBefore(oldBlock, newBlock);
-        doc.Blocks.Remove(oldBlock);
-        RebuildOverlayImages();
-        _viewModel?.MarkDirty();
     }
 
     // ── 도형 드래그 생성 / 오버레이 상태 ──────────────────────────
@@ -1230,18 +1052,6 @@ public partial class MainWindow : Window
     /// 처리: e.Handled = true 로 RTB 의 처리를 차단하고, 동일 Delta 의 새 MouseWheelEventArgs 를
     /// EditorScrollViewer 로 RaiseEvent 해서 페이지·오버레이가 함께 스크롤되도록 한다.
     /// </summary>
-    private void OnPageRtbPreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (EditorScrollViewer is null) return;
-        e.Handled = true;
-        var newArgs = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
-        {
-            RoutedEvent = UIElement.MouseWheelEvent,
-            Source      = sender,
-        };
-        EditorScrollViewer.RaiseEvent(newArgs);
-    }
-
     /// <summary>
     /// 모든 페이지 RTB 를 파싱해 본문 블록을 결합하고, _viewModel.Document 의 오버레이 블록을 추가한 뒤
     /// 새로운 PolyDonkyument 를 반환한다.
@@ -3750,13 +3560,6 @@ public partial class MainWindow : Window
     /// RTB 포커스 변경 시 — 비-Shift 원인(클릭 등)이면 단 교차 선택을 모두 해제한다.
     /// _inCrossSelNavigation 플래그가 설정된 프로그래매틱 이동은 무시.
     /// </summary>
-    private void OnPageRtbGotFocusClearCrossSel(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (_inCrossSelNavigation) return;
-        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) return;
-        ClearCrossColumnSelection();
-    }
-
     /// <summary>
     /// 모든 비활성 RTB 의 선택을 해제하고 교차 선택 상태를 초기화한다.
     /// </summary>
@@ -5073,72 +4876,6 @@ public partial class MainWindow : Window
         BodyEditor.Focus();
     }
 
-    // 쓰기 보호: IsReadOnly 가 켜져 있으면 RichTextBox 가 자체적으로 입력을 막지만,
-    // 사용자에게 "왜 안 되지?" 의 침묵 대신 비밀번호 프롬프트를 띄워 즉시 잠금 해제 흐름으로 안내한다.
-    // 검증 성공 시 ViewModel 이 IsWriteProtected=false 로 풀고, 다음 키부터 바로 편집된다.
-    private void OnEditorPreviewTextInput(object sender, TextCompositionEventArgs e)
-    {
-        // 텍스트 입력은 활성 RTB 에만 적용 — 비활성 RTB 의 교차 선택을 해제한다.
-        if (_crossSelActive) ClearCrossColumnSelection();
-
-        if (_viewModel?.IsWriteProtected != true) return;
-        e.Handled = true;
-        _viewModel.TryUnlockForEditing();
-    }
-
-    private void OnEditorPreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (sender is not RichTextBox rtb) return;
-
-        // 쓰기 보호 모드 — 편집 의도 키를 잠금 해제 트리거로 사용
-        if (_viewModel?.IsWriteProtected == true && IsEditingIntent(e))
-        {
-            e.Handled = true;
-            _viewModel.TryUnlockForEditing();
-            return;
-        }
-
-        // Shift 없는 탐색키 → 단 교차 선택 해제 (경계 내 이동 포함).
-        // TryHandlePageBoundaryNavigation 의 비-Shift 경계 분기도 ClearCrossColumnSelection
-        // 을 직접 호출하므로 중복 호출이 되지만 이중 호출은 무해하다.
-        if (_crossSelActive && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
-        {
-            if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down
-                      or Key.Home or Key.End or Key.PageDown or Key.PageUp)
-                ClearCrossColumnSelection();
-        }
-
-        // Ctrl+Enter → 페이지 나누기 삽입
-        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-        {
-            InsertPageBreakAtCaret();
-            e.Handled = true;
-            return;
-        }
-
-        // Ctrl+Z → Undo, Ctrl+Y / Ctrl+Shift+Z → Redo.
-        // RichTextBox 자체 Undo 는 페이지별 RTB 단위로만 작동해 오버레이·페이지 분포 변경 등을
-        // 되돌리지 못하므로 모델 스냅샷 기반 Undo 를 사용한다.
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-        {
-            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
-            if (e.Key == Key.Z && !shift) { PerformUndo(); e.Handled = true; return; }
-            if (e.Key == Key.Y)           { PerformRedo(); e.Handled = true; return; }
-            if (e.Key == Key.Z &&  shift) { PerformRedo(); e.Handled = true; return; }
-        }
-
-        // Del 키: 표 셀 끝에서 기본 WPF 동작(다음 셀 내용 끌어오기)을 차단.
-        // TryHandlePageBoundaryNavigation 이전에 검사해야 한다 — boundary 판정 전에
-        // e.Handled 를 세워야 WPF 기본 Delete 처리가 실행되지 않는다.
-        if (e.Key == Key.Delete
-            && (Keyboard.Modifiers & ModifierKeys.Control) == 0
-            && BlockDeleteAtTableCellBoundary(rtb, e))
-            return;
-
-        // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동을 직접 처리.
-        TryHandlePageBoundaryNavigation(rtb, e);
-    }
-
     /// <summary>
     /// per-page 편집기에서 RTB 간 캐럿/포커스 이동.
     /// PgUp/PgDn: 항상 인접 페이지로 이동.
@@ -5991,7 +5728,24 @@ public partial class MainWindow : Window
 
         if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
         {
-            OnEditorPreviewMouseMoveBlockDrag(sender, e);
+            // 임베드 이미지 드래그: 임계거리 초과 시 active 상태로 전환, 커서 변경
+            if (_suppressEmbeddedObjectDrag && _embeddedDragModel is not null)
+            {
+                var pt = e.GetPosition(rtb);
+                double dx = pt.X - _embeddedDragOrigin.X;
+                double dy = pt.Y - _embeddedDragOrigin.Y;
+                double dist = Math.Sqrt(dx * dx + dy * dy);
+                if (!_embeddedDragActive && dist > 5)
+                {
+                    _embeddedDragActive = true;
+                    Mouse.SetCursor(Cursors.Hand);
+                }
+                else if (_embeddedDragActive)
+                {
+                    Mouse.SetCursor(Cursors.Hand);
+                }
+                e.Handled = true;
+            }
             return;
         }
     }
@@ -6186,180 +5940,6 @@ public partial class MainWindow : Window
         foreach (var pt in _drawingPolyline_points)
             _polylinePreview.Points.Add(pt);
         _polylinePreview.Points.Add(mousePos);
-    }
-
-    private void OnPaperPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        // 직선 자동마감 직후 ClickCount==2 이벤트 억제
-        // (끝점에서 더블클릭 시 ClickCount==1 로 선이 완성되고, ClickCount==2 가 뒤따라 발생하므로 무시)
-        if (_suppressNextClickAfterLineFinish)
-        {
-            _suppressNextClickAfterLineFinish = false;
-            if (e.ClickCount >= 2)
-            {
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // ── 폴리선/스플라인 클릭 입력 모드 ──────────────────────────────
-        if (_drawingPolyline_active)
-        {
-            var pos = e.GetPosition(PaperHost);
-            pos.X = Math.Clamp(pos.X, 0, PaperHost.ActualWidth);
-            pos.Y = Math.Clamp(pos.Y, 0, PaperHost.ActualHeight);
-
-            if (e.ClickCount >= 2)
-            {
-                // 더블클릭: ClickCount==1 단계에서 이미 그 위치에 점이 추가되었으므로
-                // 그대로 마감하면 더블클릭 위치가 마지막 점이 된다.
-                int need = _drawingPolyline_kind is ShapeKind.Polygon or ShapeKind.ClosedSpline ? 3 : 2;
-                if (_drawingPolyline_points.Count >= need)
-                    FinishPolylineShape();
-                else
-                    EndDrawingMode();
-            }
-            else
-            {
-                // 단일 클릭: 점 추가
-                _drawingPolyline_points.Add(pos);
-                UpdatePolylinePreview(pos);
-
-                // 직선은 2점 도달 시 자동 마감 (사용자: 시작점 클릭 → 끝점 클릭 → 끝)
-                // 자동마감 직후 ClickCount==2 이벤트가 뒤따르므로 억제 플래그 설정.
-                if (_drawingPolyline_kind == ShapeKind.Line && _drawingPolyline_points.Count >= 2)
-                {
-                    FinishPolylineShape();
-                    _suppressNextClickAfterLineFinish = true;
-                }
-            }
-
-            e.Handled = true;
-            return;
-        }
-
-        // ── Ctrl+클릭 → 오버레이 개체 멀티-선택 토글 (그리기 모드 아닐 때) ──────────
-        // 오버레이(이미지/도형/표/글상자) 컨트롤은 BodyEditor 의 형제(같은 Grid)이므로
-        // BodyEditor.PreviewMouseLeftButtonDown 으로는 잡히지 않는다. PaperHost 의
-        // tunneling preview 가 부모이므로 여기서 가로채야 한다.
-        // e.Handled = true 로 마킹하면 오버레이 자신의 bubbling MouseLeftButtonDown 핸들러
-        // (드래그 시작 등) 가 호출되지 않는다 — `+=` 로 등록된 핸들러 기본 동작.
-        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active &&
-            (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
-            (Keyboard.Modifiers & ModifierKeys.Alt) == 0)
-        {
-            var ptForHit = e.GetPosition(PageEditorHost);
-            var hitOverlay = FindAnyOverlayControlAt(ptForHit);
-            if (hitOverlay != null)
-            {
-                ToggleMultiSelectControl(hitOverlay);
-                Focus();
-                Keyboard.Focus(this);
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // ── 일반 클릭 — 멀티-선택된 개체를 클릭하면 유지, 그 외엔 해제 ──────────────
-        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active &&
-            (Keyboard.Modifiers & ModifierKeys.Control) == 0 &&
-            _multiSelectedControls.Count > 0)
-        {
-            var ptForHit = e.GetPosition(PageEditorHost);
-            var hitOverlay = FindAnyOverlayControlAt(ptForHit);
-            // 멀티-선택된 개체 위 클릭: 유지(드래그 등 일반 동작 양보)
-            // 멀티-선택 외 영역 클릭: 멀티-선택 해제
-            if (hitOverlay == null || !_multiSelectedControls.Contains(hitOverlay))
-                ClearMultiSelect();
-        }
-
-        // ── 단 너비 드래그 시작 ──────────────────────────────────────────────────
-        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active && _colDivHovering)
-        {
-            var ptPaper = e.GetPosition(PaperHost);
-            if (TryHitColumnDivider(ptPaper, out int divLeftIdx))
-            {
-                _colDivDragging       = true;
-                _colDivDragLeftIdx    = divLeftIdx;
-                _colDivDragStartX     = ptPaper.X;
-                _colDivDragStartWidths = (double[])_pageGeometry!.ColWidthsDip.Clone();
-                PaperHost.CaptureMouse();
-                Mouse.OverrideCursor = Cursors.SizeWE;
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // ── 마퀴(범위 드래그) 시작 — 그리기 모드 아닐 때 ──────────────────────────
-        // 마퀴가 시작되는 조건:
-        //   A) 용지 여백(Padding) 안쪽이고 오버레이 개체가 없을 때 (무수정자 클릭)
-        //   B) Ctrl+드래그로 오버레이 개체가 없는 곳 (Ctrl 없이 텍스트 영역 드래그는 텍스트 선택으로 양보)
-        // Shift·Alt 조합은 텍스트 확장선택·BehindText 드래그에 양보.
-        if (!_drawingTextBox && !_drawingShape_active && !_drawingPolyline_active)
-        {
-            bool alt   = (Keyboard.Modifiers & ModifierKeys.Alt)   != 0;
-            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-            bool ctrl  = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
-
-            if (!alt && !shift)
-            {
-                // per-page 모드: PageEditorHost 기준 절대 좌표 사용 — 오버레이 Canvas 와 동일 좌표계.
-                var ptDoc    = e.GetPosition(PageEditorHost);
-                var ptPaper2 = e.GetPosition(PaperHost);
-                var hitCtrl2 = FindAnyOverlayControlAt(ptDoc);
-
-                // 용지 여백 영역: 페이지 Padding 의 바깥쪽.
-                // Y 는 페이지 로컬 좌표로 변환해 모든 페이지에 동일하게 적용.
-                double stride2    = _pageGeometry?.PageStrideDip ?? 1.0;
-                double pageLocalY = stride2 > 0 ? ptDoc.Y % stride2 : ptDoc.Y;
-                bool inMargin = _pageGeometry != null
-                    && (ptDoc.X < _pageGeometry.PadLeftDip
-                    ||  ptDoc.X > _pageGeometry.PageWidthDip - _pageGeometry.PadRightDip
-                    ||  pageLocalY < _pageGeometry.PadTopDip
-                    ||  pageLocalY > _pageGeometry.PageHeightDip - _pageGeometry.PadBottomDip);
-
-                bool startMarquee = hitCtrl2 == null && (inMargin || ctrl);
-
-                if (startMarquee)
-                {
-                    if (!ctrl) ClearMultiSelect();
-
-                    ptPaper2.X = Math.Clamp(ptPaper2.X, 0, PaperHost.ActualWidth);
-                    ptPaper2.Y = Math.Clamp(ptPaper2.Y, 0, PaperHost.ActualHeight);
-
-                    _drawStart = ptPaper2;
-                    _marqueeSelecting = true;
-
-                    Canvas.SetLeft(DrawPreviewRect, ptPaper2.X);
-                    Canvas.SetTop(DrawPreviewRect, ptPaper2.Y);
-                    DrawPreviewRect.Width = 0;
-                    DrawPreviewRect.Height = 0;
-                    DrawPreviewRect.Visibility = Visibility.Visible;
-
-                    PaperHost.CaptureMouse();
-                    e.Handled = true;
-                    return;
-                }
-            }
-        }
-
-        if (!_drawingTextBox && !_drawingShape_active) return;
-
-        var startPos = e.GetPosition(PaperHost);
-        startPos.X = Math.Clamp(startPos.X, 0, PaperHost.ActualWidth);
-        startPos.Y = Math.Clamp(startPos.Y, 0, PaperHost.ActualHeight);
-
-        _drawStart = startPos;
-        _drawingInProgress = true;
-
-        Canvas.SetLeft(DrawPreviewRect, startPos.X);
-        Canvas.SetTop(DrawPreviewRect, startPos.Y);
-        DrawPreviewRect.Width = 0;
-        DrawPreviewRect.Height = 0;
-        DrawPreviewRect.Visibility = Visibility.Visible;
-
-        PaperHost.CaptureMouse();
-        e.Handled = true;
     }
 
     private void OnPaperPreviewMouseMove(object sender, MouseEventArgs e)
