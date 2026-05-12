@@ -84,6 +84,9 @@ public partial class TablePropertiesWindow : Window
         // 페이지 분할
         RepeatHeaderRowsCheck.IsChecked = _table.RepeatHeaderRowsOnBreak;
         HeaderColumnCountBox.Text       = _table.HeaderColumnCount.ToString();
+
+        // 테두리 병합
+        BorderCollapseCheck.IsChecked = _table.BorderCollapse;
     }
 
     private void OnPerSideToggleClick(object sender, RoutedEventArgs e)
@@ -222,6 +225,9 @@ public partial class TablePropertiesWindow : Window
         // 페이지 분할
         _table.RepeatHeaderRowsOnBreak = RepeatHeaderRowsCheck.IsChecked == true;
         _table.HeaderColumnCount       = headerColCount;
+
+        // 테두리 병합
+        _table.BorderCollapse = BorderCollapseCheck.IsChecked == true;
 
         DialogResult = true;
         Close();
