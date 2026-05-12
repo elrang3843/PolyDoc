@@ -6188,31 +6188,9 @@ public partial class MainWindow : Window
             var dlg = new TablePropertiesWindow(table) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                // WrapMode 변경 시 FlowDocument 앵커 블록을 교체해야 할 수 있음.
-                // 앵커는 여러 RTB 중 하나의 FlowDocument 에 있을 수 있으므로 전체 에디터에서 탐색한다.
-                System.Windows.Documents.Block? anchor = null;
-                System.Windows.Documents.FlowDocument? anchorFd = null;
-                foreach (var rtb in PageEditorHost.PageEditors)
-                {
-                    anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
-                    if (anchor is not null) { anchorFd = rtb.Document; break; }
-                }
-                if (anchor is not null && anchorFd is not null)
-                {
-                    var newAnchor = table.WrapMode == PolyDonky.Core.TableWrapMode.Block
-                        ? (System.Windows.Documents.Block)Services.FlowDocumentBuilder.BuildTable(table)
-                        : new System.Windows.Documents.Paragraph
-                          {
-                              Tag        = table,
-                              Margin     = new Thickness(0),
-                              FontSize   = 0.1,
-                              Foreground = System.Windows.Media.Brushes.Transparent,
-                              Background = System.Windows.Media.Brushes.Transparent,
-                          };
-                    anchorFd.Blocks.InsertBefore(anchor, newAnchor);
-                    anchorFd.Blocks.Remove(anchor);
-                }
-                RebuildOverlayTables();
+                _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+                // 모든 속성 변경(테두리, 정렬, 여백 등)을 FlowDocument에 반영하기 위해 재구성
+                RefreshTableInFlowDocument(table);
                 _viewModel?.MarkDirty();
             }
         }));
@@ -6241,10 +6219,25 @@ public partial class MainWindow : Window
             var anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
             if (anchor is not null)
             {
+                // 모든 WrapMode에서 표를 재빌드하고 렌더링을 업데이트한다.
                 if (table.WrapMode == PolyDonky.Core.TableWrapMode.Block)
                 {
                     var newTable = Services.FlowDocumentBuilder.BuildTable(table);
                     rtb.Document.Blocks.InsertBefore(anchor, newTable);
+                    rtb.Document.Blocks.Remove(anchor);
+                }
+                else
+                {
+                    // 오버레이 모드에서도 Tag를 유지해서 오버레이 재구성
+                    var newAnchor = new System.Windows.Documents.Paragraph
+                    {
+                        Tag = table,
+                        Margin = new Thickness(0),
+                        FontSize = 0.1,
+                        Foreground = System.Windows.Media.Brushes.Transparent,
+                        Background = System.Windows.Media.Brushes.Transparent,
+                    };
+                    rtb.Document.Blocks.InsertBefore(anchor, newAnchor);
                     rtb.Document.Blocks.Remove(anchor);
                 }
                 break;
