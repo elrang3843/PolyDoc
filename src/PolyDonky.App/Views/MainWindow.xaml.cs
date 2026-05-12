@@ -5728,10 +5728,35 @@ public partial class MainWindow : Window
 
         if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
         {
-            // 임베드 이미지 드래그: 임계거리 초과 시 active 상태로 전환, 커서 변경
+            var pt = e.GetPosition(rtb);
+
+            // ── 표 열 너비 드래그 중: 실시간 열 너비 조정 ──
+            if (_tableColResizeActive)
+            {
+                double delta    = pt.X - _colRszStartX;
+                double newLeft  = Math.Max(TableColResizeMinDip, _colRszInitLeft  + delta);
+                double newRight = Math.Max(TableColResizeMinDip, _colRszInitRight - delta);
+                if (_colRszLeftCol  is not null) _colRszLeftCol.Width  = new GridLength(newLeft);
+                if (_colRszRightCol is not null) _colRszRightCol.Width = new GridLength(newRight);
+                e.Handled = true;
+                return;
+            }
+
+            // ── 표 열 경계선 hover 감지 → 커서 변경 ──
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                bool onBorder = TryHitTableColumnBorder(
+                    pt, rtb, out _, out _, out _, out _);
+                if (onBorder != _tableColResizeHovering)
+                {
+                    _tableColResizeHovering = onBorder;
+                    Mouse.OverrideCursor = onBorder ? Cursors.SizeWE : null;
+                }
+            }
+
+            // ── 임베드 이미지 드래그: 임계거리 초과 시 active 상태로 전환, 커서 변경 ──
             if (_suppressEmbeddedObjectDrag && _embeddedDragModel is not null)
             {
-                var pt = e.GetPosition(rtb);
                 double dx = pt.X - _embeddedDragOrigin.X;
                 double dy = pt.Y - _embeddedDragOrigin.Y;
                 double dist = Math.Sqrt(dx * dx + dy * dy);
