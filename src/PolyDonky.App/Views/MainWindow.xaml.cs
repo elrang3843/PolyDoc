@@ -977,13 +977,19 @@ public partial class MainWindow : Window
         var slices = PerPageDocumentSplitter.Split(_currentPaginatedDoc);
 
         // 오프스크린 측정 vs per-page 렌더 높이 차이로 인한 오버플로 후처리 보정.
-        // 오버플로 슬라이스의 마지막 블록을 다음 슬라이스로 이동, 수렴할 때까지 반복 (최대 4회).
-        const int maxRefinements = 4;
-        for (int iter = 0; iter < maxRefinements; iter++)
+        // fast-path(MaxBlocksForPreciseMapping 초과) 는 블록별 Y 측정을 수행하지 않으므로
+        // SliceRefiner 오프스크린 측정도 건너뛴다: 단일 슬라이스에 수천 개 블록이 들어있을 경우
+        // UpdateLayout() 이 분 단위로 멈추며 fast-path 의 목적(즉시 표시)을 완전히 무효화한다.
+        bool isFastPath = _currentPaginatedDoc.SlotMeasuredFillDip.Count == 0;
+        if (!isFastPath)
         {
-            var heights = SliceRefiner.MeasureContentHeights(slices);
-            if (!SliceRefiner.RefineOnce(slices, heights))
-                break;
+            const int maxRefinements = 4;
+            for (int iter = 0; iter < maxRefinements; iter++)
+            {
+                var heights = SliceRefiner.MeasureContentHeights(slices);
+                if (!SliceRefiner.RefineOnce(slices, heights))
+                    break;
+            }
         }
 
         _suppressTextChanged    = true;

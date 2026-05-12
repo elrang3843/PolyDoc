@@ -198,17 +198,27 @@ public static class FlowDocumentPaginationAdapter
         var flat = FlattenBlocks(fd.Blocks).ToList();
         if (flat.Count > MaxBlocksForPreciseMapping)
         {
+            // 블록을 page 0 에 일괄 배정하는 대신 pageCount 에 균등 분배한다.
+            // 이렇게 하면 PerPageDocumentSplitter 가 N 개의 슬라이스를 만들고,
+            // 각 슬라이스당 블록 수가 적어 SetupPageEditors → PageEditorHost RTB 생성이 빠르다.
+            int totalFlatCount = flat.Count;
+            int fastBlockIdx = 0;
             foreach (var wpfBlock in flat)
             {
+                int fastPageIdx = pageCount <= 1 ? 0
+                    : Math.Min(fastBlockIdx * pageCount / totalFlatCount, pageCount - 1);
+                int fastSlot = fastPageIdx * colCount;
                 // fast-path: ContainerBlock Section 은 자식 코어 블록을 직접 추가.
                 if (wpfBlock is WpfDocs.Section fastSect && fastSect.Tag is ContainerBlock)
                 {
-                    AssignSectionCoreBlocks(fastSect, 0, colCount, result);
+                    AssignSectionCoreBlocks(fastSect, fastSlot, colCount, result);
+                    fastBlockIdx++;
                     continue;
                 }
+                fastBlockIdx++;
                 if (wpfBlock.Tag is not Block coreBlock) continue;
                 if (IsOverlayMode(coreBlock)) continue;
-                result.Add((0, 0, coreBlock, Rect.Empty));
+                result.Add((fastPageIdx, 0, coreBlock, Rect.Empty));
             }
             return (result, new System.Collections.Generic.Dictionary<int, double>(), measurements);
         }
