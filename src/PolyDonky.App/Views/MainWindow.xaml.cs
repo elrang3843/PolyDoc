@@ -331,7 +331,8 @@ public partial class MainWindow : Window
         // 페이지 텍스트 변경 이벤트 — SetupPages 가 각 RTB 에 연결한 뒤 여기로 집결.
         PageEditorHost.PageTextChanged += OnEditorTextChanged;
         // 상태 표시줄 Insert/CapsLock/NumLock 갱신을 위해 윈도우 레벨 키 입력 가로채기.
-        PreviewKeyDown += OnPreviewKeyDown;
+        // 통합 키보드 마스터 핸들러로 모든 키 입력 처리
+        PreviewKeyDown += OnPreviewKeyDownMaster;
 
         // IME(한글 등) 조합 중에는 RTB 재구성을 미룬다 — 조합 도중 SetupPageEditors 가
         // RTB 를 새로 만들면 IME 조합 상태(ㅈ + ㅏ → 자)가 끊겨 한 글자가 둘로 갈라진다.
@@ -1196,7 +1197,7 @@ public partial class MainWindow : Window
         rtb.IsInactiveSelectionHighlightEnabled = true;
         rtb.GotKeyboardFocus += OnPageRtbGotFocusClearCrossSel;
 
-        rtb.PreviewKeyDown    += OnEditorPreviewKeyDown;
+        rtb.PreviewKeyDown    += OnPreviewKeyDownMaster;
         rtb.PreviewTextInput  += OnEditorPreviewTextInput;
 
         rtb.PreviewMouseLeftButtonDown += OnEditorPreviewMouseDownTrackDrag;
@@ -5344,6 +5345,248 @@ public partial class MainWindow : Window
             Key.V or Key.X when ctrl                       => true,  // 붙여넣기 / 잘라내기
             _                                              => false,
         };
+    }
+
+    /// <summary>
+    /// 통합 키보드 이벤트 마스터 핸들러. 모든 PreviewKeyDown 을 단일 진입점으로 수렴하고
+    /// sender 타입에 따라 적절한 핸들러로 분기한다.
+    /// </summary>
+    private void OnPreviewKeyDownMaster(object sender, KeyEventArgs e)
+    {
+        if (e.Handled) return;
+
+        // 1순위: 전역 매크로 (위도우 레벨, Escape/Delete 등)
+        if (sender is MainWindow)
+        {
+            HandleMainWindowKeyDown(e);
+            return;
+        }
+
+        // 2순위: 페이지 에디터 RTB (본문 다단, 표, 페이지 경계 이동)
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            HandlePageEditorKeyDown(rtb, e);
+            return;
+        }
+
+        // 3순위: 글상자 다단 RTB (단 경계 화살표 이동)
+        if (sender is RichTextBox colRtb && IsTextBoxColumnRtb(colRtb))
+        {
+            HandleTextBoxColumnKeyDown(colRtb, e);
+            return;
+        }
+    }
+
+    /// <summary>sender RTB 가 PerPageEditorHost.PageEditors 에 속하는가?</summary>
+    private bool IsPageEditorRtb(RichTextBox rtb)
+    {
+        return PageEditorHost?.PageEditors?.Contains(rtb) == true;
+    }
+
+    /// <summary>sender RTB 가 TextBoxColumnHost 의 RTB 인가?</summary>
+    private bool IsTextBoxColumnRtb(RichTextBox rtb)
+    {
+        // 선택된 글상자 오버레이에서 공유 TextBoxColumnHost 접근
+        return _selectedOverlay is TextBoxOverlay tbo && tbo.MultiColHost?.Editors.Contains(rtb) == true;
+    }
+
+    /// <summary>윈도우 레벨 전역 키보드 단축키 처리.</summary>
+    private void HandleMainWindowKeyDown(KeyEventArgs e)
+    {
+        // Ctrl+Shift+F8 → 조판 기호 표시 토글
+        if (e.Key == Key.F8
+            && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            ToggleTypesettingMarks();
+            e.Handled = true;
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Insert:
+                _viewModel?.ToggleInsertMode();
+                break;
+            case Key.CapsLock:
+            case Key.NumLock:
+                Dispatcher.BeginInvoke(new Action(() => _viewModel?.RefreshSystemKeys()),
+                    DispatcherPriority.Input);
+                break;
+            case Key.Escape:
+                if (_marqueeSelecting)
+                {
+                    _marqueeSelecting = false;
+                    DrawPreviewRect.Visibility = Visibility.Collapsed;
+                    if (PaperHost.IsMouseCaptured) PaperHost.ReleaseMouseCapture();
+                    e.Handled = true;
+                }
+                else if (_drawingTextBox || _drawingShape_active || _drawingPolyline_active)
+                {
+                    EndDrawingMode();
+                    e.Handled = true;
+                }
+                else if (_selectedShape is not null)
+                {
+                    DeselectShape();
+                    e.Handled = true;
+                }
+                else if (_multiSelectedControls.Count > 0)
+                {
+                    ClearMultiSelect();
+                    e.Handled = true;
+                }
+                else if (_selectedOverlay is not null)
+                {
+                    if (_selectedOverlay.IsEditorFocusWithin)
+                    {
+                        _selectedOverlay.Focus();
+                        Keyboard.Focus(_selectedOverlay);
+                    }
+                    else
+                    {
+                        DeselectAllOverlays();
+                    }
+                    e.Handled = true;
+                }
+                break;
+
+            case Key.Delete:
+                if (TryDeleteSelectedObject()) e.Handled = true;
+                break;
+
+            case Key.A when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (_selectedOverlay?.IsEditorFocusWithin == true) break;
+                SelectAllIncludingOverlays();
+                e.Handled = true;
+                break;
+
+            case Key.Return:
+            {
+                int need = (_drawingPolyline_active &&
+                            _drawingPolyline_kind is ShapeKind.Polygon or ShapeKind.ClosedSpline) ? 3 : 2;
+                if (_drawingPolyline_active && _drawingPolyline_points.Count >= need)
+                {
+                    FinishPolylineShape();
+                    e.Handled = true;
+                }
+                break;
+            }
+
+            case Key.C when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryCopySelectedObject()) e.Handled = true;
+                break;
+            case Key.X when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryCutSelectedObject()) e.Handled = true;
+                break;
+            case Key.V when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                if (TryPasteSelectedObject()) e.Handled = true;
+                break;
+
+            case Key.K when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
+                OnInsertHyperlink(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Key.L when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
+                OnFormatChar(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Key.T when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
+                OnFormatPara(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Key.P when (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control:
+                OnPreviewClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+        }
+    }
+
+    /// <summary>페이지 에디터 RTB 키보드 처리 (Ctrl+Z, 페이지 경계 이동, 표 셀 경계 삭제 등).</summary>
+    private void HandlePageEditorKeyDown(RichTextBox rtb, KeyEventArgs e)
+    {
+        // 쓰기 보호 모드 — 편집 의도 키를 잠금 해제 트리거로 사용
+        if (_viewModel?.IsWriteProtected == true && IsEditingIntent(e))
+        {
+            e.Handled = true;
+            _viewModel.TryUnlockForEditing();
+            return;
+        }
+
+        // Shift 없는 탐색키 → 단 교차 선택 해제
+        if (_crossSelActive && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        {
+            if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down
+                      or Key.Home or Key.End or Key.PageDown or Key.PageUp)
+                ClearCrossColumnSelection();
+        }
+
+        // Ctrl+Enter → 페이지 나누기 삽입
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            InsertPageBreakAtCaret();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Z/Y/Shift+Z → Undo/Redo
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
+            if (e.Key == Key.Z && !shift) { PerformUndo(); e.Handled = true; return; }
+            if (e.Key == Key.Y)           { PerformRedo(); e.Handled = true; return; }
+            if (e.Key == Key.Z &&  shift) { PerformRedo(); e.Handled = true; return; }
+        }
+
+        // Del 키: 표 셀 끝에서 기본 WPF 동작 차단
+        if (e.Key == Key.Delete
+            && (Keyboard.Modifiers & ModifierKeys.Control) == 0
+            && BlockDeleteAtTableCellBoundary(rtb, e))
+            return;
+
+        // per-page RTB 모델에서 페이지 경계를 넘는 캐럿 이동
+        TryHandlePageBoundaryNavigation(rtb, e);
+    }
+
+    /// <summary>글상자 다단 RTB 키보드 처리 (단 경계 화살표 이동).</summary>
+    private void HandleTextBoxColumnKeyDown(RichTextBox rtb, KeyEventArgs e)
+    {
+        if (_selectedOverlay is not TextBoxOverlay tbo) return;
+        int idx = tbo.MultiColHost.IndexOf(rtb);
+        if (idx < 0) return;
+
+        int targetIdx = -1;
+        bool moveToEnd = false;
+
+        if (e.Key == Key.Right || e.Key == Key.Down)
+        {
+            if (rtb.CaretPosition.GetNextInsertionPosition(WpfDocs.LogicalDirection.Forward) is null
+                && idx + 1 < tbo.MultiColHost.Editors.Count)
+            {
+                targetIdx = idx + 1;
+                moveToEnd = false;
+            }
+        }
+        else if (e.Key == Key.Left || e.Key == Key.Up)
+        {
+            if (rtb.CaretPosition.GetNextInsertionPosition(WpfDocs.LogicalDirection.Backward) is null
+                && idx - 1 >= 0)
+            {
+                targetIdx = idx - 1;
+                moveToEnd = true;
+            }
+        }
+
+        if (targetIdx >= 0)
+        {
+            var next = tbo.MultiColHost.Editors[targetIdx];
+            next.Focus();
+            Keyboard.Focus(next);
+            next.CaretPosition = moveToEnd ? next.Document.ContentEnd : next.Document.ContentStart;
+            e.Handled = true;
+        }
     }
 
     private void OnDragOver(object sender, DragEventArgs e)
