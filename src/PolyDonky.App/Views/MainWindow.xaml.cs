@@ -4588,8 +4588,8 @@ public partial class MainWindow : Window
                     bool isHeader = rowIdx >= 0 && coreTable.Rows[rowIdx].IsHeader;
                     bool atTopEdge = rowIdx == 0;
                     bool atBottomEdge = rowIdx == coreTable.Rows.Count - 1;
-                    bool atLeftEdge = colIdx == 0;
-                    bool atRightEdge = colIdx == Services.TableOperationHelpers.GetActualColumnCount(coreTable) - 1;
+                    bool atLeftEdge = cellIdx == 0;
+                    bool atRightEdge = cellIdx == Services.TableOperationHelpers.GetActualColumnCount(coreTable) - 1;
                     PolyDonky.App.Services.FlowDocumentBuilder.ApplyCellPropertiesToWpf(
                         wpfCell, coreCell, isHeader, coreTable, atTopEdge, atBottomEdge, atLeftEdge, atRightEdge);
                     _viewModel?.MarkDirty();
@@ -6314,11 +6314,13 @@ public partial class MainWindow : Window
                                 {
                                     var coreCell = coreRow.Cells[c];
                                     var wpfCell = wpfRow.Cells[c];
-                                    bool isEdgeRow = (r == 0 || r == coreTable.Rows.Count - 1);
-                                    bool isEdgeCol = (c == 0 || c == coreRow.Cells.Count - 1);
+                                    bool atTopEdge = r == 0;
+                                    bool atBottomEdge = r == coreTable.Rows.Count - 1;
+                                    bool atLeftEdge = c == 0;
+                                    bool atRightEdge = c == Services.TableOperationHelpers.GetActualColumnCount(coreTable) - 1;
                                     Services.FlowDocumentBuilder.ApplyCellPropertiesToWpf(
-                                        wpfCell, coreCell, coreRow.IsHeader,
-                                        coreTable.BorderCollapse, isEdgeRow, isEdgeCol, coreTable);
+                                        wpfCell, coreCell, coreRow.IsHeader, coreTable,
+                                        atTopEdge, atBottomEdge, atLeftEdge, atRightEdge);
                                 }
                             }
                         }
@@ -6402,8 +6404,7 @@ public partial class MainWindow : Window
                 bool atRightEdge = c == Services.TableOperationHelpers.GetActualColumnCount(coreTable) - 1;
 
                 Services.FlowDocumentBuilder.ApplyCellPropertiesToWpf(
-                    wpfCell, coreCell, isHeader, coreTable,
-                    atTopEdge, atBottomEdge, atLeftEdge, atRightEdge);
+                    wpfCell, coreCell, isHeader, coreTable, atTopEdge, atBottomEdge, atLeftEdge, atRightEdge);
             }
         }
     }
