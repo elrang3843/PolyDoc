@@ -3450,26 +3450,23 @@ public partial class MainWindow : Window
                 return rect.Bottom + maxPadBottom;
             }
 
-            // 이 행의 아래 경계선
-            if (rowIdx < rowGroup.Rows.Count - 1)
+            // 이 행의 아래 경계선 (마지막 행도 테이블 아래쪽 경계 드래그 가능)
+            var y = RowBottomY(row);
+            if (y.HasValue && Math.Abs(pt.Y - y.Value) <= TableRowResizeHitDip)
             {
-                var y = RowBottomY(row);
-                if (y.HasValue && Math.Abs(pt.Y - y.Value) <= TableRowResizeHitDip)
-                {
-                    wpfTable = wTable; coreTable = cTable;
-                    aboveRowIdx = rowIdx; borderY = y.Value;
-                    return true;
-                }
+                wpfTable = wTable; coreTable = cTable;
+                aboveRowIdx = rowIdx; borderY = y.Value;
+                return true;
             }
 
             // 이 행의 위 경계선 = 바로 위 행의 아래 경계선
             if (rowIdx > 0)
             {
-                var y = RowBottomY(rowGroup.Rows[rowIdx - 1]);
-                if (y.HasValue && Math.Abs(pt.Y - y.Value) <= TableRowResizeHitDip)
+                var yPrev = RowBottomY(rowGroup.Rows[rowIdx - 1]);
+                if (yPrev.HasValue && Math.Abs(pt.Y - yPrev.Value) <= TableRowResizeHitDip)
                 {
                     wpfTable = wTable; coreTable = cTable;
-                    aboveRowIdx = rowIdx - 1; borderY = y.Value;
+                    aboveRowIdx = rowIdx - 1; borderY = yPrev.Value;
                     return true;
                 }
             }
@@ -4302,6 +4299,8 @@ public partial class MainWindow : Window
             if (excludeEndCell)
             {
                 endCellIdx = Math.Max(minCell, endCellIdx - 1);
+                // endCellIdx 조정 후 minCell도 재계산 (역방향 선택 등 엣지케이스 대비)
+                minCell = Math.Min(startCellIdx, endCellIdx);
                 maxCell = Math.Max(startCellIdx, endCellIdx);
             }
         }
