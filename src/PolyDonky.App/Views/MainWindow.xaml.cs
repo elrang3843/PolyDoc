@@ -6213,22 +6213,30 @@ public partial class MainWindow : Window
 
     private void RefreshTableInFlowDocument(PolyDonky.Core.Table table)
     {
-        // 현재 FlowDocument에서 표 앵커를 찾아 재빌드한다.
-        foreach (var rtb in PageEditorHost.PageEditors)
+        if (table.WrapMode == PolyDonky.Core.TableWrapMode.Block)
         {
-            var anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
-            if (anchor is not null)
+            // Block 모드: 전체 표를 재빌드
+            foreach (var rtb in PageEditorHost.PageEditors)
             {
-                // 모든 WrapMode에서 표를 재빌드하고 렌더링을 업데이트한다.
-                if (table.WrapMode == PolyDonky.Core.TableWrapMode.Block)
+                var anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
+                if (anchor is System.Windows.Documents.Table wpfTable)
                 {
                     var newTable = Services.FlowDocumentBuilder.BuildTable(table);
                     rtb.Document.Blocks.InsertBefore(anchor, newTable);
                     rtb.Document.Blocks.Remove(anchor);
+                    return;
                 }
-                else
+            }
+        }
+        else
+        {
+            // Overlay 모드: 앵커 단락만 유지하고 오버레이 재구성
+            foreach (var rtb in PageEditorHost.PageEditors)
+            {
+                var anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
+                if (anchor is not null)
                 {
-                    // 오버레이 모드에서도 Tag를 유지해서 오버레이 재구성
+                    // 기존 앵커를 새 앵커로 교체 (Tag 유지)
                     var newAnchor = new System.Windows.Documents.Paragraph
                     {
                         Tag = table,
@@ -6239,11 +6247,12 @@ public partial class MainWindow : Window
                     };
                     rtb.Document.Blocks.InsertBefore(anchor, newAnchor);
                     rtb.Document.Blocks.Remove(anchor);
+                    break;
                 }
-                break;
             }
+            // Overlay 표 컨트롤 재구성
+            RebuildOverlayTables();
         }
-        RebuildOverlayTables();
     }
 
     private void OpenRowPropertiesDialog(PolyDonky.Core.Table table)
