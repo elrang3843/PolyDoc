@@ -63,34 +63,54 @@ public static class FlowDocumentPaginationAdapter
         // sentinel 블록(PageBreakPadder 삽입 잔존물)이 있으면 제거
         PageBreakPadder.RemoveAll(fd.Blocks);
 
-        // 2. DocumentPaginator 로 정확한 페이지 수 산출.
-        // ComputePageCountSync 내부에서 모든 페이지를 GetPage(n) 으로 강제 레이아웃하므로
-        // 반환 시점에 paginator 는 완전한 페이지 배치 정보를 갖고 있다.
-        var paginator = (WpfDocs.DynamicDocumentPaginator)
-            ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
-        int pageCount = ComputePageCountSync(fd, geo, paginator);
+        // ── 조기 fast-path 감지 ────────────────────────────────────────────────
+        // FlattenBlocks 로 블록 수를 먼저 확인한다. 임계 초과 시 이후의
+        // ComputePageCountSync 와 tableFragmentMap 구성을 완전히 건너뛴다.
+        // 두 작업 모두 WPF paginator 레이아웃을 전체 문서에 대해 수행하므로
+        // 대용량 문서에서 분 단위로 UI 스레드를 멈출 수 있다.
+        int earlyBlockCount = FlattenBlocks(fd.Blocks).Count();
+        bool isFastPathDoc  = earlyBlockCount > MaxBlocksForPreciseMapping;
 
-        // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
-        // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
-        // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
-        // Y 좌표 측정 방식은 오프스크린 RTB 에서 표 셀 내부 rect 를 신뢰할 수 없어 여러 번
-        // 실패했으므로 paginator 의 확정 값으로 대체한다.
+        // 2. 페이지 수 산출: 정밀(paginator) 또는 추정(fast-path).
         var tableFragmentMap =
             new System.Collections.Generic.Dictionary<
                 WpfDocs.Table,
                 System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>();
-        foreach (var b in FlattenBlocks(fd.Blocks))
+        int pageCount;
+
+        if (isFastPathDoc)
         {
-            if (b is not WpfDocs.Table wpfTbl) continue;
-            if (b.Tag is not Core.Table coreTbl) continue;
-            if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+            // 정밀 레이아웃 없이 블록 수 기반으로 페이지 수를 추정한다.
+            // A4 기준 경험치: ~200 블록/페이지 (텍스트·이미지 혼합 기준).
+            const int EstimatedBlocksPerPage = 200;
+            pageCount = Math.Max(1,
+                (earlyBlockCount + EstimatedBlocksPerPage - 1) / EstimatedBlocksPerPage);
+        }
+        else
+        {
+            // DocumentPaginator 로 정확한 페이지 수 산출.
+            // ComputePageCountSync 내부에서 모든 페이지를 GetPage(n) 으로 강제 레이아웃하므로
+            // 반환 시점에 paginator 는 완전한 페이지 배치 정보를 갖고 있다.
+            var paginator = (WpfDocs.DynamicDocumentPaginator)
+                ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
+            pageCount = ComputePageCountSync(fd, geo, paginator);
 
-            var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
-            var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+            // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
+            // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
+            // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
+            foreach (var b in FlattenBlocks(fd.Blocks))
+            {
+                if (b is not WpfDocs.Table wpfTbl) continue;
+                if (b.Tag is not Core.Table coreTbl) continue;
+                if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
 
-            tableFragmentMap[wpfTbl] = fragments
-                .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
-                .ToList();
+                var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
+                var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+
+                tableFragmentMap[wpfTbl] = fragments
+                    .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                    .ToList();
+            }
         }
 
         // 3. 오프스크린 RichTextBox 에서 본문 블록 Y 좌표 측정 → (페이지, 단) 배정.
