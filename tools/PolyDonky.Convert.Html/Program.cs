@@ -467,7 +467,6 @@ static bool IsExternalUrl(string path) =>
     path.StartsWith("mailto:",  StringComparison.OrdinalIgnoreCase);
 static void TryEmbedImageFromDisk(ImageBlock img, string baseDir)
 {
-    const long MaxEmbedImageSizeBytes = 5_000_000;  // 5MB 제한 — OOM 방지.
     try
     {
         // 쿼리스트링/프래그먼트 제거 후 경로 정규화.
@@ -480,11 +479,6 @@ static void TryEmbedImageFromDisk(ImageBlock img, string baseDir)
 
         var fullPath = Path.GetFullPath(Path.Combine(baseDir, resourcePath));
         if (!File.Exists(fullPath)) return;
-
-        // 파일 크기 확인 — 너무 크면 ResourcePath로 유지 (OOM 방지).
-        var fileInfo = new FileInfo(fullPath);
-        if (fileInfo.Length > MaxEmbedImageSizeBytes)
-            return;  // 내장하지 않음, ResourcePath 유지.
 
         img.Data         = File.ReadAllBytes(fullPath);
         img.ResourcePath = null;
