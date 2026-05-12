@@ -3439,7 +3439,15 @@ public partial class MainWindow : Window
                 if (r.Cells.Count == 0) return null;
                 var rect = r.Cells[0].ContentEnd
                             .GetCharacterRect(System.Windows.Documents.LogicalDirection.Backward);
-                return rect.IsEmpty ? null : rect.Bottom;
+                if (rect.IsEmpty) return null;
+
+                // ContentEnd의 Bottom + 이 행의 모든 셀 중 최대 PaddingBottom
+                // 패딩 조정으로 변경된 행 높이를 반영하기 위함
+                double maxPadBottom = r.Cells
+                    .Cast<System.Windows.Documents.TableCell>()
+                    .Max(c => c.Padding.Bottom);
+
+                return rect.Bottom + maxPadBottom;
             }
 
             // 이 행의 아래 경계선
