@@ -6134,14 +6134,18 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertRowAbove(table, 0);
-            RefreshTableInFlowDocument(table);
+            ParseAllPageEditors();
+            SetupPageEditors();
+            RebuildOverlayTables();
             _viewModel?.MarkDirty();
         }));
         rowMenu.Items.Add(MakeMenuItem("아래에 삽입(_B)", () =>
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertRowBelow(table, table.Rows.Count - 1);
-            RefreshTableInFlowDocument(table);
+            ParseAllPageEditors();
+            SetupPageEditors();
+            RebuildOverlayTables();
             _viewModel?.MarkDirty();
         }));
         rowMenu.Items.Add(new System.Windows.Controls.Separator());
@@ -6157,14 +6161,18 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertColumnLeft(table, 0);
-            RefreshTableInFlowDocument(table);
+            ParseAllPageEditors();
+            SetupPageEditors();
+            RebuildOverlayTables();
             _viewModel?.MarkDirty();
         }));
         colMenu.Items.Add(MakeMenuItem("오른쪽에 삽입(_R)", () =>
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertColumnRight(table, table.Columns.Count - 1);
-            RefreshTableInFlowDocument(table);
+            ParseAllPageEditors();
+            SetupPageEditors();
+            RebuildOverlayTables();
             _viewModel?.MarkDirty();
         }));
         colMenu.Items.Add(new System.Windows.Controls.Separator());
@@ -6185,13 +6193,22 @@ public partial class MainWindow : Window
         menu.Items.Add(new System.Windows.Controls.Separator());
         menu.Items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
+            // Undo 스냅샷을 먼저 저장 (다이얼로그 열기 전)
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+
             var dlg = new TablePropertiesWindow(table) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-                // 모든 속성 변경(테두리, 정렬, 여백 등)을 FlowDocument에 반영하기 위해 재구성
-                RefreshTableInFlowDocument(table);
+                // 속성이 이미 table에 적용됨 — FlowDocument 갱신하고 화면 새로고침
+                ParseAllPageEditors();
+                SetupPageEditors();
+                RebuildOverlayTables();
                 _viewModel?.MarkDirty();
+            }
+            else
+            {
+                // 취소되면 Undo 실행 (변경사항 되돌림)
+                _viewModel?.UndoRedo.Undo();
             }
         }));
         menu.Items.Add(new System.Windows.Controls.Separator());
@@ -6286,13 +6303,19 @@ public partial class MainWindow : Window
             if (int.TryParse(rowIndexBox.Text, out int rowIdx) && rowIdx >= 0 && rowIdx < table.Rows.Count)
             {
                 selectDlg.Close();
+                _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
                 // 행 속성 다이얼로그 열기
                 var dlg = new RowPropertiesWindow(table, rowIdx) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
-                    _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-                    RefreshTableInFlowDocument(table);
+                    ParseAllPageEditors();
+                    SetupPageEditors();
+                    RebuildOverlayTables();
                     _viewModel?.MarkDirty();
+                }
+                else
+                {
+                    _viewModel?.UndoRedo.Undo();
                 }
             }
         };
@@ -6332,13 +6355,19 @@ public partial class MainWindow : Window
             if (int.TryParse(colIndexBox.Text, out int colIdx) && colIdx >= 0 && colIdx < table.Columns.Count)
             {
                 selectDlg.Close();
+                _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
                 // 열 속성 다이얼로그 열기
                 var dlg = new ColumnPropertiesWindow(table, colIdx) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
-                    _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-                    RefreshTableInFlowDocument(table);
+                    ParseAllPageEditors();
+                    SetupPageEditors();
+                    RebuildOverlayTables();
                     _viewModel?.MarkDirty();
+                }
+                else
+                {
+                    _viewModel?.UndoRedo.Undo();
                 }
             }
         };
@@ -6385,13 +6414,19 @@ public partial class MainWindow : Window
                 if (cell is not null)
                 {
                     selectDlg.Close();
+                    _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
                     // 셀 속성 다이얼로그 열기
                     var dlg = new CellPropertiesWindow(cell) { Owner = this };
                     if (dlg.ShowDialog() == true)
                     {
-                        _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-                        RefreshTableInFlowDocument(table);
+                        ParseAllPageEditors();
+                        SetupPageEditors();
+                        RebuildOverlayTables();
                         _viewModel?.MarkDirty();
+                    }
+                    else
+                    {
+                        _viewModel?.UndoRedo.Undo();
                     }
                     return;
                 }
