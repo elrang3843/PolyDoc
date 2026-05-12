@@ -5332,7 +5332,7 @@ public partial class MainWindow : Window
         if (e.Handled) return;
 
         // 1순위: PaperHost 주요 기능 (폴리선 그리기, 마퀴 선택, Ctrl+클릭 멀티-선택, 컬럼 나누기 등)
-        if (sender is Canvas paperCanvas && paperCanvas.Name == "PaperHost")
+        if (sender is FrameworkElement paperCanvas && paperCanvas.Name == "PaperHost")
         {
             HandlePaperHostMouseDown(e);
             return;
@@ -5355,7 +5355,7 @@ public partial class MainWindow : Window
         if (e.Handled) return;
 
         // 1순위: PaperHost (마퀴 드래그 완료, 컬럼 나누기 완료)
-        if (sender is Canvas paperCanvas && paperCanvas.Name == "PaperHost")
+        if (sender is FrameworkElement paperCanvas && paperCanvas.Name == "PaperHost")
         {
             HandlePaperHostMouseUp(e);
             return;
@@ -5720,7 +5720,7 @@ public partial class MainWindow : Window
     /// <summary>통합 마우스 MOVE 마스터 핸들러.</summary>
     private void OnPreviewMouseMoveMaster(object sender, MouseEventArgs e)
     {
-        if (sender is Canvas paperCanvas && paperCanvas.Name == "PaperHost")
+        if (sender is FrameworkElement paperCanvas && paperCanvas.Name == "PaperHost")
         {
             OnPaperPreviewMouseMove(sender, e);
             return;
