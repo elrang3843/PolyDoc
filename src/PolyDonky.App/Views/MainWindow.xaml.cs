@@ -6726,7 +6726,7 @@ public partial class MainWindow : Window
             if (child is not System.Windows.Controls.Border border) continue;
             var borderRect = new Rect(border.RenderSize);
             var borderPt = border.TransformToVisual(grid).Transform(new Point(0, 0));
-            borderRect.Offset(borderPt);
+            borderRect.Offset((Vector)borderPt);
 
             if (borderRect.Contains(ptInGrid) && border.Tag is (int r, int c))
                 return (r, c);
