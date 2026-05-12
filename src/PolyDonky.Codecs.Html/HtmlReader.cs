@@ -63,7 +63,7 @@ public sealed class HtmlReader : IDocumentReader
         pd.Sections.Add(section);
 
         // 편집용지 설정 복원 — <meta name="pd-page-*"> + @page CSS 파싱.
-        ApplyPageSettings(doc, section);
+        ApplyPageSettings(doc, section, pd);
 
         // CSS 규칙 (<style> 블록의 .class / #id / tag 셀렉터) 을 인라인 style 속성으로 머지.
         // 이후 단계의 모든 style 파싱이 자동으로 반영함.
@@ -1018,6 +1018,13 @@ public sealed class HtmlReader : IDocumentReader
     /// </summary>
     private static void AppendBlockImageWithSpacer(ImageBlock img, IList<PdBlock> target)
     {
+        // CSS float 이 지정된 이미지(WrapLeft/WrapRight)는 float 오버레이로 남겨 spacer 없이 인라인 흐름에 배치.
+        if (img.WrapMode is ImageWrapMode.WrapLeft or ImageWrapMode.WrapRight)
+        {
+            target.Add(img);
+            return;
+        }
+
         img.WrapMode        = ImageWrapMode.InFrontOfText;
         img.AnchorPageIndex = -2;
         img.OverlayXMm      = 0; // 페이지 좌측 여백 기준 — ResolveFlexShapeOverlays 가 보정
@@ -1352,6 +1359,66 @@ public sealed class HtmlReader : IDocumentReader
                 foreach (var n in el.ChildNodes) AppendInlineNode(p, n, ls, parentUrl);
                 return;
             }
+
+            case "ruby":
+            {
+                // <ruby>베이스<rt>루비주석</rt></ruby> — 루비 주석을 Run.RubyText 에 보존.
+                // AngleSharp 은 <ruby> 파싱 시 <rb> 를 암묵적으로 생성하지 않으므로
+                // <rt> 를 먼저 찾아 텍스트를 추출하고, <rt> 를 제거한 뒤 나머지 텍스트를 베이스로 사용.
+                var rt = el.QuerySelector("rt");
+                if (rt is not null)
+                {
+                    var rtText = rt.TextContent.Trim();
+                    rt.Remove();
+                    var baseText = el.TextContent;
+                    if (baseText.Length > 0)
+                    {
+                        var rubyStyle = MergeStyle(parentStyle, el);
+                        p.Runs.Add(new Run
+                        {
+                            Text     = NormalizeWhitespace(baseText),
+                            Style    = rubyStyle,
+                            RubyText = rtText.Length > 0 ? rtText : null,
+                            Url      = parentUrl,
+                        });
+                    }
+                }
+                else
+                {
+                    var rs = MergeStyle(parentStyle, el);
+                    foreach (var n in el.ChildNodes) AppendInlineNode(p, n, rs, parentUrl);
+                }
+                return;
+            }
+
+            case "time":
+            {
+                // <time datetime="..."> — 텍스트 콘텐츠만 렌더, datetime 속성은 현재 모델에 저장 안 함.
+                var timeStyle = MergeStyle(parentStyle, el);
+                foreach (var n in el.ChildNodes) AppendInlineNode(p, n, timeStyle, parentUrl);
+                return;
+            }
+
+            case "picture":
+            {
+                // <picture>: <source> 중 첫 번째 또는 <img> 폴백을 사용.
+                var imgEl = el.QuerySelector("img");
+                if (imgEl is not null)
+                    AppendInlineElement(p, imgEl, parentStyle, parentUrl);
+                return;
+            }
+
+            case "wbr":
+                // 줄바꿈 힌트 — 렌더링 무시.
+                return;
+
+            case "bdi": case "bdo":
+            {
+                // 양방향 텍스트 힌트 — 스타일 계승해 자식 처리.
+                var bds = MergeStyle(parentStyle, el);
+                foreach (var n in el.ChildNodes) AppendInlineNode(p, n, bds, parentUrl);
+                return;
+            }
         }
 
         var s = MergeStyle(parentStyle, el);
@@ -1416,8 +1483,11 @@ public sealed class HtmlReader : IDocumentReader
         if (inline.Superscript)   s.Superscript   = true;
         if (inline.Foreground is { } fg) s.Foreground = fg;
         if (inline.Background is { } bg) s.Background = bg;
-        if (Math.Abs(inline.WidthPercent - 100) > 0.5)  s.WidthPercent    = inline.WidthPercent;
-        if (Math.Abs(inline.LetterSpacingPx) > 0.01)    s.LetterSpacingPx = inline.LetterSpacingPx;
+        if (Math.Abs(inline.WidthPercent - 100) > 0.5)  s.WidthPercent       = inline.WidthPercent;
+        if (Math.Abs(inline.LetterSpacingPx) > 0.01)    s.LetterSpacingPx    = inline.LetterSpacingPx;
+        if (inline.TextTransform != TextTransform.None)  s.TextTransform      = inline.TextTransform;
+        if (Math.Abs(inline.WordSpacingPx) > 0.01)       s.WordSpacingPx      = inline.WordSpacingPx;
+        if (inline.FontVariantSmallCaps)                 s.FontVariantSmallCaps = true;
         // Explicit reset — font-weight:normal / font-style:normal can unset inherited flags.
         var fwVal = StyleProp(styleAttr, "font-weight");
         if (fwVal is not null && (fwVal.Equals("normal", StringComparison.OrdinalIgnoreCase)
@@ -1477,6 +1547,36 @@ public sealed class HtmlReader : IDocumentReader
                 case "vertical-align":
                     if (val.Equals("sub",   StringComparison.OrdinalIgnoreCase)) s.Subscript   = true;
                     if (val.Equals("super", StringComparison.OrdinalIgnoreCase)) s.Superscript = true;
+                    break;
+                case "text-transform":
+                    s.TextTransform = val.ToLowerInvariant() switch
+                    {
+                        "uppercase"  => TextTransform.Uppercase,
+                        "lowercase"  => TextTransform.Lowercase,
+                        "capitalize" => TextTransform.Capitalize,
+                        _            => TextTransform.None,
+                    };
+                    break;
+                case "word-spacing":
+                {
+                    var ws = val.Trim();
+                    if (ws.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                        && double.TryParse(ws[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var wsPx))
+                        s.WordSpacingPx = wsPx;
+                    else if (ws.EndsWith("pt", StringComparison.OrdinalIgnoreCase)
+                        && double.TryParse(ws[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var wsPt))
+                        s.WordSpacingPx = wsPt * 96.0 / 72.0;
+                    else if (ws.EndsWith("em", StringComparison.OrdinalIgnoreCase)
+                        && double.TryParse(ws[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var wsEm))
+                        s.WordSpacingPx = wsEm * (s.FontSizePt > 0 ? s.FontSizePt : 11) * 96.0 / 72.0;
+                    break;
+                }
+                case "font-variant":
+                case "font-variant-caps":
+                    if (val.Contains("small-caps", StringComparison.OrdinalIgnoreCase))
+                        s.FontVariantSmallCaps = true;
+                    else if (val.Equals("normal", StringComparison.OrdinalIgnoreCase))
+                        s.FontVariantSmallCaps = false;
                     break;
                 case "transform":
                     // scaleX(v) → WidthPercent. 값이 복합 transform 이어도 scaleX 만 추출.
@@ -2954,23 +3054,30 @@ public sealed class HtmlReader : IDocumentReader
     /// 호출 시점은 <see cref="InlineCssClassRules"/> 직후 — 클래스 규칙이 inline style 로 머지된 뒤.
     /// 상속되는 속성: text-align (목록은 향후 확장 가능 — color/font-family 등).
     /// </summary>
-    private static void PropagateInheritableStyles(IElement el, string? parentTextAlign,
-        string? parentColor, string? parentLineHeight)
+    private static void PropagateInheritableStyles(IElement el,
+        string? parentTextAlign, string? parentColor, string? parentLineHeight,
+        string? parentFontFamily = null, string? parentTextTransform = null)
     {
-        var style         = el.GetAttribute("style") ?? "";
-        var ownTa         = StyleProp(style, "text-align");
-        var ownColor      = StyleProp(style, "color");
-        var ownLineHeight = StyleProp(style, "line-height");
+        var style            = el.GetAttribute("style") ?? "";
+        var ownTa            = StyleProp(style, "text-align");
+        var ownColor         = StyleProp(style, "color");
+        var ownLineHeight    = StyleProp(style, "line-height");
+        var ownFontFamily    = StyleProp(style, "font-family");
+        var ownTextTransform = StyleProp(style, "text-transform");
 
-        var effTa         = ownTa         ?? parentTextAlign;
-        var effColor      = ownColor      ?? parentColor;
-        var effLineHeight = ownLineHeight ?? parentLineHeight;
+        var effTa            = ownTa            ?? parentTextAlign;
+        var effColor         = ownColor         ?? parentColor;
+        var effLineHeight    = ownLineHeight     ?? parentLineHeight;
+        var effFontFamily    = ownFontFamily     ?? parentFontFamily;
+        var effTextTransform = ownTextTransform  ?? parentTextTransform;
 
         // 자체 값이 없고 부모로부터 상속받은 값이 있으면 inline style 에 추가.
         var toAdd = new StringBuilder();
-        if (ownTa         is null && parentTextAlign  is not null) toAdd.Append("text-align:").Append(parentTextAlign).Append(';');
-        if (ownColor      is null && parentColor      is not null) toAdd.Append("color:").Append(parentColor).Append(';');
-        if (ownLineHeight is null && parentLineHeight is not null) toAdd.Append("line-height:").Append(parentLineHeight).Append(';');
+        if (ownTa            is null && parentTextAlign     is not null) toAdd.Append("text-align:").Append(parentTextAlign).Append(';');
+        if (ownColor         is null && parentColor         is not null) toAdd.Append("color:").Append(parentColor).Append(';');
+        if (ownLineHeight    is null && parentLineHeight    is not null) toAdd.Append("line-height:").Append(parentLineHeight).Append(';');
+        if (ownFontFamily    is null && parentFontFamily    is not null) toAdd.Append("font-family:").Append(parentFontFamily).Append(';');
+        if (ownTextTransform is null && parentTextTransform is not null) toAdd.Append("text-transform:").Append(parentTextTransform).Append(';');
 
         if (toAdd.Length > 0)
         {
@@ -2981,7 +3088,7 @@ public sealed class HtmlReader : IDocumentReader
         }
 
         foreach (var child in el.Children)
-            PropagateInheritableStyles(child, effTa, effColor, effLineHeight);
+            PropagateInheritableStyles(child, effTa, effColor, effLineHeight, effFontFamily, effTextTransform);
     }
 
     private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)
@@ -3490,7 +3597,7 @@ public sealed class HtmlReader : IDocumentReader
     /// <paramref name="section"/>.Page 에 반영한다.
     /// 아무 설정도 없으면 기본값(A4 세로, 기본 여백)이 그대로 유지된다.
     /// </summary>
-    private static void ApplyPageSettings(AngleSharp.Html.Dom.IHtmlDocument doc, Section section)
+    private static void ApplyPageSettings(AngleSharp.Html.Dom.IHtmlDocument doc, Section section, PolyDonkyument pd)
     {
         var head = doc.Head;
         if (head is null) return;
@@ -3524,7 +3631,7 @@ public sealed class HtmlReader : IDocumentReader
         // 3b. BookEditor Pro / 외부 HTML 편집기 'be-*' 메타 태그 지원.
         // pd-* 가 없는 외부 HTML 에서 원본 편집 설정을 복원한다.
         // pd-* 가 이미 설정됐으면 be-* 는 무시 (pd-* 가 PolyDonky 원본 설정).
-        ApplyBeMetaTags(head, page, hasPdSize: sizeMeta is not null);
+        ApplyBeMetaTags(head, page, pd, hasPdSize: sizeMeta is not null);
 
         // 4. @page CSS 규칙 — EffectiveWidth/Height + 여백. meta 보다 낮은 우선순위이므로
         //    메타로 이미 설정된 크기가 없을 때만 치수를 덮어쓴다.
@@ -3536,10 +3643,90 @@ public sealed class HtmlReader : IDocumentReader
 
         // 5. 추가 페이지 설정 meta — 다단·페이지번호·머리/꼬리 여백·텍스트 방향 등.
         ApplyExtraPageMeta(head, page);
+
+        // 6. <body> CSS → DocumentMetadata 기본값. InlineCssClassRules 실행 전이라
+        //    <style> 에서 body 규칙을 직접 파싱해 추출한다.
+        ExtractBodyCssDefaults(head, doc, pd);
     }
 
-    /// <summary>BookEditor Pro 'be-*' 메타 태그에서 PageSettings 를 복원한다.</summary>
-    private static void ApplyBeMetaTags(IElement head, PageSettings page, bool hasPdSize)
+    private static void ExtractBodyCssDefaults(IElement head, AngleSharp.Html.Dom.IHtmlDocument htmlDoc, PolyDonkyument pd)
+    {
+        // <style> 블록에서 'body' / ':root' 에 적용된 font-family / font-size / line-height 추출.
+        // 이미 be-* 에서 채워진 경우(DefaultFontSizePt > 0 등) 는 덮어쓰지 않는다.
+        foreach (var styleEl in head.QuerySelectorAll("style"))
+        {
+            var css = styleEl.TextContent;
+            // body { ... } 블록 추출 (단순 파서 — 중첩 @ 규칙 제외).
+            ExtractBodyBlock(css, "body", pd);
+            ExtractBodyBlock(css, ":root", pd);
+        }
+
+        // <body> 태그의 인라인 style 속성도 확인 (be-* 없는 HTML 에서 유용).
+        var bodyStyle = htmlDoc.Body?.GetAttribute("style") ?? "";
+        if (!string.IsNullOrEmpty(bodyStyle))
+            ApplyBodyStyleString(bodyStyle, pd);
+    }
+
+    private static void ExtractBodyBlock(string css, string selector, PolyDonkyument pd)
+    {
+        // 단순 검색: selector { ... } 블록의 첫 번째 매치만 사용.
+        var idx = css.IndexOf(selector, StringComparison.OrdinalIgnoreCase);
+        while (idx >= 0)
+        {
+            int open  = css.IndexOf('{', idx);
+            if (open < 0) break;
+            // selector 와 { 사이에 다른 문자(결합자 등)가 있으면 아닌 규칙일 수 있지만
+            // 단순 근사로 처리.
+            int close = css.IndexOf('}', open);
+            if (close < 0) break;
+            var block = css[(open + 1)..close];
+            ApplyBodyStyleString(block, pd);
+            idx = css.IndexOf(selector, close, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void ApplyBodyStyleString(string styleBlock, PolyDonkyument pd)
+    {
+        foreach (var decl in styleBlock.Split(';'))
+        {
+            int colon = decl.IndexOf(':');
+            if (colon <= 0) continue;
+            var prop = decl[..colon].Trim().ToLowerInvariant();
+            var val  = decl[(colon + 1)..].Trim();
+            switch (prop)
+            {
+                case "font-family":
+                    if (string.IsNullOrEmpty(pd.Metadata.DefaultFontFamily))
+                        pd.Metadata.DefaultFontFamily = val.Trim().Trim('"', '\'').Split(',')[0].Trim().Trim('"', '\'');
+                    break;
+                case "font-size":
+                    if (pd.Metadata.DefaultFontSizePt <= 0)
+                    {
+                        var fs = val.Trim();
+                        if (fs.EndsWith("pt", StringComparison.OrdinalIgnoreCase)
+                            && double.TryParse(fs[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var fsPt) && fsPt > 0)
+                            pd.Metadata.DefaultFontSizePt = fsPt;
+                        else if (fs.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                            && double.TryParse(fs[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var fsPx) && fsPx > 0)
+                            pd.Metadata.DefaultFontSizePt = fsPx * 72.0 / 96.0;
+                    }
+                    break;
+                case "line-height":
+                    if (pd.Metadata.DefaultLineHeightFactor <= 0)
+                    {
+                        var lh = val.Trim();
+                        if (lh.EndsWith('%') && double.TryParse(lh[..^1], NumberStyles.Any, CultureInfo.InvariantCulture, out var lhPct) && lhPct > 0)
+                            pd.Metadata.DefaultLineHeightFactor = lhPct / 100.0;
+                        else if (double.TryParse(lh, NumberStyles.Any, CultureInfo.InvariantCulture, out var lhFactor) && lhFactor > 0)
+                            pd.Metadata.DefaultLineHeightFactor = lhFactor;
+                    }
+                    break;
+            }
+        }
+    }
+
+    /// <summary>BookEditor Pro 'be-*' 메타 태그에서 PageSettings 및 문서 기본값을 복원한다.</summary>
+    private static void ApplyBeMetaTags(IElement head, PageSettings page, PolyDonkyument pd, bool hasPdSize)
     {
         string? Get(string name) => head.QuerySelector($"meta[name='{name}']")?.GetAttribute("content");
         bool TryDouble(string name, out double val)
@@ -3587,6 +3774,40 @@ public sealed class HtmlReader : IDocumentReader
         // 페이지 번호 시작
         if (TryDouble("be-page-start-number", out var psn) && psn >= 1)
             page.PageNumberStart = (int)psn;
+
+        // 문서 기본 글꼴 설정 — pd.Metadata 에 저장해 FlowDocumentBuilder 가 참조.
+        var beFontFamily = Get("be-font-family");
+        if (!string.IsNullOrWhiteSpace(beFontFamily) && string.IsNullOrEmpty(pd.Metadata.DefaultFontFamily))
+            pd.Metadata.DefaultFontFamily = beFontFamily.Trim().Trim('"', '\'');
+
+        // be-font-size: 숫자(px 가정) 또는 "12px"/"12pt" 형식.
+        var beFontSizeStr = Get("be-font-size");
+        if (!string.IsNullOrWhiteSpace(beFontSizeStr) && pd.Metadata.DefaultFontSizePt <= 0)
+        {
+            var fsv = beFontSizeStr.Trim();
+            if (fsv.EndsWith("pt", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(fsv[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var fsPt)
+                && fsPt > 0)
+                pd.Metadata.DefaultFontSizePt = fsPt;
+            else if (fsv.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                && double.TryParse(fsv[..^2], NumberStyles.Any, CultureInfo.InvariantCulture, out var fsPx)
+                && fsPx > 0)
+                pd.Metadata.DefaultFontSizePt = fsPx * 72.0 / 96.0;
+            else if (double.TryParse(fsv, NumberStyles.Any, CultureInfo.InvariantCulture, out var fsNum)
+                && fsNum > 0)
+                pd.Metadata.DefaultFontSizePt = fsNum * 72.0 / 96.0; // 단위 없음 → px 가정
+        }
+
+        // be-line-height: 배율(1.5) 또는 "150%".
+        var beLineHeightStr = Get("be-line-height");
+        if (!string.IsNullOrWhiteSpace(beLineHeightStr) && pd.Metadata.DefaultLineHeightFactor <= 0)
+        {
+            var lhv = beLineHeightStr.Trim();
+            if (lhv.EndsWith('%') && double.TryParse(lhv[..^1], NumberStyles.Any, CultureInfo.InvariantCulture, out var lhPct) && lhPct > 0)
+                pd.Metadata.DefaultLineHeightFactor = lhPct / 100.0;
+            else if (double.TryParse(lhv, NumberStyles.Any, CultureInfo.InvariantCulture, out var lhFactor) && lhFactor > 0)
+                pd.Metadata.DefaultLineHeightFactor = lhFactor;
+        }
     }
 
     private static void ApplyExtraPageMeta(IElement head, PageSettings page)

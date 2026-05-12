@@ -114,6 +114,20 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **HTML CSS `text-transform` / `word-spacing` / `font-variant: small-caps` 지원**: Core 모델 `RunStyle` 에 `TextTransform`, `WordSpacingPx`, `FontVariantSmallCaps` 필드 추가. `HtmlReader.ParseInlineStyle` 에서 CSS `text-transform`(uppercase/lowercase/capitalize), `word-spacing`, `font-variant`/`font-variant-caps` (small-caps)를 파싱해 저장. `FlowDocumentBuilder.BuildInline` 에서 `TextTransform` 을 텍스트 변환으로 렌더, `FontVariantSmallCaps` 를 WPF `Typography.SetCapitals(SmallCaps)` 로 렌더. (`Run.cs`, `HtmlReader.cs`, `FlowDocumentBuilder.cs`)
+
+- **HTML `<ruby>/<rt>` 루비 주석 지원**: Core 모델 `Run` 에 `RubyText` 필드 추가. `HtmlReader.AppendInlineElement` 에서 `<ruby>` 요소의 베이스 텍스트를 `Run.Text`, `<rt>` 내용을 `Run.RubyText` 에 저장. `FlowDocumentBuilder.BuildInline` 에서 루비 주석이 있으면 `BuildRubyInline` 을 호출해 상단 소형 텍스트 + 하단 본문 텍스트 스택 구조의 `InlineUIContainer` 로 렌더링. CJK 한자·한국어 루비 주석(후리가나 등) 보존 가능. (`Run.cs`, `HtmlReader.cs`, `FlowDocumentBuilder.cs`)
+
+- **`<time>`, `<wbr>`, `<bdi>`, `<bdo>`, `<picture>` 인라인 요소 처리 추가**: `HtmlReader.AppendInlineElement` 에 `<time>`(텍스트만 추출), `<wbr>`(무시), `<bdi>`/`<bdo>`(스타일 계승 통과), `<picture>`(`<img>` 폴백 처리) 케이스 추가. (`HtmlReader.cs`)
+
+- **HTML `be-font-family` / `be-font-size` / `be-line-height` 메타 태그 → 문서 기본값 보존**: BookEditor Pro HTML 의 글꼴 기본값 메타 태그를 `DocumentMetadata.DefaultFontFamily` / `DefaultFontSizePt` / `DefaultLineHeightFactor` 에 저장. `FlowDocumentBuilder.Build` 가 이 값을 `FlowDocument.FontFamily` / `FontSize` 기본값으로 적용해 문서 전체 글꼴이 올바르게 표시됨. Core 모델 `DocumentMetadata` 에 세 필드 추가. (`Document.cs`, `HtmlReader.cs`, `FlowDocumentBuilder.cs`)
+
+- **`<body>` / `:root` CSS 에서 문서 기본 글꼴 자동 추출**: `<style>` 블록 안의 `body { font-family, font-size, line-height }` 규칙 및 `<body style="...">` 인라인 스타일을 파싱해 `DocumentMetadata` 기본값으로 저장. be-* 메타 태그가 이미 설정된 경우 덮어쓰지 않음. (`HtmlReader.cs`)
+
+- **CSS `font-family` / `text-transform` 상속 전파 추가**: `PropagateInheritableStyles` 가 `text-align` / `color` / `line-height` 외에 `font-family` 와 `text-transform` 도 부모에서 자식으로 전파. 컨테이너 div 에 설정된 글꼴이 자식 단락들에 자동으로 반영됨. (`HtmlReader.cs`)
+
+- **CSS `float:left/right` 이미지 오버레이 변환 제외 (pre-existing 버그 수정)**: `AppendBlockImageWithSpacer` 가 `WrapMode.WrapLeft` / `WrapMode.WrapRight` 이미지를 `InFrontOfText` 로 강제 덮어쓰던 문제 수정. float 이미지는 기존 WrapMode 를 유지하고 spacer 없이 직접 블록 목록에 추가. (`HtmlReader.cs`)
+
 - **CSS flex 컨테이너 내 순수 CSS 도형을 편집 가능한 오버레이 ShapeObject 로 변환**: `TryBuildGridAsTable` 가 모든 셀이 단일 ShapeObject 로만 구성된 flex 컨테이너를 감지해 `BlockUIContainer(WPF Grid)` 대신 `WrapMode=InFrontOfText` 오버레이 ShapeObject 로 변환. 본문 흐름에는 수직 공간 예약용 spacer 단락(`StyleId="pd-flex-shape-spacer"`)을 삽입하고, 페이지네이션 후 `ResolveFlexShapeOverlays` 가 `AnchorPageIndex=-2` 센티널을 spacer 의 body 배치 좌표(페이지 인덱스·Y)로 확정. 오버레이로 배치된 도형은 드래그·크기 조절·컨텍스트 메뉴 등 기존 오버레이 편집 기능을 그대로 사용 가능. (`HtmlReader.cs`, `FlowDocumentPaginationAdapter.cs`)
 
 ### Fixed

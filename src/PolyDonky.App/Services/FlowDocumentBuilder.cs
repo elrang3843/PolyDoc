@@ -58,10 +58,17 @@ public static class FlowDocumentBuilder
         // 모든 우측 정렬 객체가 '우측 여백' 만큼 오른쪽으로 밀려 클리핑된다.
         double contentWDip = ComputeContentWidthDip(page);
 
+        var defaultFontFamily = !string.IsNullOrWhiteSpace(document.Metadata.DefaultFontFamily)
+            ? document.Metadata.DefaultFontFamily + ", 맑은 고딕, Malgun Gothic, Segoe UI"
+            : "맑은 고딕, Malgun Gothic, Segoe UI";
+        var defaultFontSizePt = document.Metadata.DefaultFontSizePt > 0
+            ? document.Metadata.DefaultFontSizePt
+            : 11.0;
+
         var fd = new Wpf.FlowDocument
         {
-            FontFamily  = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
-            FontSize    = PtToDip(11),
+            FontFamily  = new WpfMedia.FontFamily(defaultFontFamily),
+            FontSize    = PtToDip(defaultFontSizePt),
             PageWidth   = contentWDip,
             PagePadding = new Thickness(0),
         };
@@ -2912,11 +2919,15 @@ public static class FlowDocumentBuilder
         if (run.EmojiKey is { Length: > 0 } emojiKey)
             return BuildEmojiInline(run, emojiKey);
 
+        if (run.RubyText is { Length: > 0 })
+            return BuildRubyInline(run);
+
         var s = run.Style;
         if (NeedsContainer(s))
             return BuildScaledContainer(run);
 
-        var wpfRun = new Wpf.Run(run.Text);
+        var displayText = ApplyTextTransform(run.Text, s.TextTransform);
+        var wpfRun = new Wpf.Run(displayText);
 
         if (!string.IsNullOrEmpty(s.FontFamily))
             wpfRun.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
@@ -2943,6 +2954,9 @@ public static class FlowDocumentBuilder
             wpfRun.BaselineAlignment = BaselineAlignment.Superscript;
         else if (s.Subscript)
             wpfRun.BaselineAlignment = BaselineAlignment.Subscript;
+
+        if (s.FontVariantSmallCaps)
+            Wpf.Typography.SetCapitals(wpfRun, System.Windows.FontCapitals.SmallCaps);
 
         wpfRun.Tag = run;
 
@@ -3020,6 +3034,58 @@ public static class FlowDocumentBuilder
             },
         };
     }
+
+    private static Wpf.Inline BuildRubyInline(Run run)
+    {
+        var s        = run.Style;
+        double baseFontSize = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 11);
+        double rubyFontSize = baseFontSize * 0.55;
+
+        var baseText = ApplyTextTransform(run.Text, s.TextTransform);
+        var rubyText = run.RubyText!;
+
+        var baseTb = new System.Windows.Controls.TextBlock
+        {
+            Text          = baseText,
+            FontSize      = baseFontSize,
+            TextAlignment = TextAlignment.Center,
+        };
+        ApplyStyleToTextBlock(baseTb, s);
+
+        var rubyTb = new System.Windows.Controls.TextBlock
+        {
+            Text          = rubyText,
+            FontSize      = rubyFontSize,
+            TextAlignment = TextAlignment.Center,
+            Foreground    = s.Foreground is { } rfg
+                ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(rfg.A, rfg.R, rfg.G, rfg.B))
+                : System.Windows.SystemColors.ControlTextBrush,
+        };
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            rubyTb.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+
+        var panel = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Vertical,
+        };
+        panel.Children.Add(rubyTb);
+        panel.Children.Add(baseTb);
+
+        return new Wpf.InlineUIContainer(panel)
+        {
+            Tag               = run,
+            BaselineAlignment = BaselineAlignment.Baseline,
+        };
+    }
+
+    private static string ApplyTextTransform(string text, TextTransform transform) => transform switch
+    {
+        TextTransform.Uppercase  => text.ToUpperInvariant(),
+        TextTransform.Lowercase  => text.ToLowerInvariant(),
+        TextTransform.Capitalize => System.Text.RegularExpressions.Regex.Replace(
+            text, @"(?:^|\s)\S", m => m.Value.ToUpperInvariant()),
+        _ => text,
+    };
 
     /// <summary>
     /// EmojiKey ("{Section}_{name}") → pack URI Image. 키가 잘못됐거나 리소스가 없으면 null.
@@ -3118,7 +3184,7 @@ public static class FlowDocumentBuilder
         var fontSize = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 11);
         var span = new Wpf.Span { Tag = run };
 
-        var text = run.Text.Length > 0 ? run.Text : " ";
+        var text = ApplyTextTransform(run.Text.Length > 0 ? run.Text : " ", s.TextTransform);
         bool hasSpacing = Math.Abs(s.LetterSpacingPx) > 0.01;
         for (int i = 0; i < text.Length; i++)
         {
@@ -3165,5 +3231,7 @@ public static class FlowDocumentBuilder
             tb.Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
         if (s.Background is { } bg)
             tb.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+        if (s.FontVariantSmallCaps)
+            Wpf.Typography.SetCapitals(tb, System.Windows.FontCapitals.SmallCaps);
     }
 }

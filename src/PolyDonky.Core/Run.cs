@@ -36,6 +36,11 @@ public sealed class Run
     /// <summary>인라인 필드 종류. null 이면 필드가 아닌 일반 텍스트 Run.</summary>
     public FieldType? Field { get; set; }
 
+    /// <summary>루비 주석 텍스트 (한자 위 후리가나 등). null 이면 루비 없음.
+    /// HTML <c>&lt;ruby&gt;&lt;rb&gt;base&lt;/rb&gt;&lt;rt&gt;annotation&lt;/rt&gt;&lt;/ruby&gt;</c>
+    /// 에서 rt 콘텐츠를 여기에 저장, 베이스 텍스트는 Text 에 저장.</summary>
+    public string? RubyText { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본 — Style 도 새 인스턴스로.</summary>
     public Run Clone() => new()
     {
@@ -49,6 +54,7 @@ public sealed class Run
         FootnoteId        = FootnoteId,
         EndnoteId         = EndnoteId,
         Field             = Field,
+        RubyText          = RubyText,
     };
 }
 
@@ -92,23 +98,44 @@ public sealed class RunStyle
     /// <summary>한글 조판: 자간 (px 단위). 0 = 표준.</summary>
     public double LetterSpacingPx { get; set; }
 
+    /// <summary>CSS text-transform. None = 변환 없음.</summary>
+    public TextTransform TextTransform { get; set; } = TextTransform.None;
+
+    /// <summary>CSS word-spacing (px 단위). 0 = 표준.</summary>
+    public double WordSpacingPx { get; set; }
+
+    /// <summary>CSS font-variant: small-caps. true 이면 소형 대문자 표시.</summary>
+    public bool FontVariantSmallCaps { get; set; }
+
     /// <summary>모든 필드를 복사한 깊은 복제본.</summary>
     public RunStyle Clone() => new()
     {
-        FontFamily      = FontFamily,
-        FontSizePt      = FontSizePt,
-        Bold            = Bold,
-        Italic          = Italic,
-        Underline       = Underline,
-        Strikethrough   = Strikethrough,
-        Overline        = Overline,
-        Superscript     = Superscript,
-        Subscript       = Subscript,
-        Foreground      = Foreground,
-        Background      = Background,
-        WidthPercent    = WidthPercent,
-        LetterSpacingPx = LetterSpacingPx,
+        FontFamily           = FontFamily,
+        FontSizePt           = FontSizePt,
+        Bold                 = Bold,
+        Italic               = Italic,
+        Underline            = Underline,
+        Strikethrough        = Strikethrough,
+        Overline             = Overline,
+        Superscript          = Superscript,
+        Subscript            = Subscript,
+        Foreground           = Foreground,
+        Background           = Background,
+        WidthPercent         = WidthPercent,
+        LetterSpacingPx      = LetterSpacingPx,
+        TextTransform        = TextTransform,
+        WordSpacingPx        = WordSpacingPx,
+        FontVariantSmallCaps = FontVariantSmallCaps,
     };
+}
+
+/// <summary>CSS text-transform 변환 종류.</summary>
+public enum TextTransform
+{
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
 }
 
 public readonly record struct Color(byte R, byte G, byte B, byte A = 255)
