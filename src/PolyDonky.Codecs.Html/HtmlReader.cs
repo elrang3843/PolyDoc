@@ -1709,6 +1709,43 @@ public sealed class HtmlReader : IDocumentReader
             p.Style.LineHeightFactor = lh;
     }
 
+    /// <summary>CSS 그라디언트 값에서 첫 번째 색상 정류장을 추출해 solid 색 근사값으로 반환한다.
+    /// 예) "linear-gradient(135deg, #0d1b4b 0%, #1a3a8f 100%)" → "#0d1b4b"</summary>
+    private static string? ExtractFirstGradientColor(string gradient)
+    {
+        int paren = gradient.IndexOf('(');
+        int close = gradient.LastIndexOf(')');
+        if (paren < 0 || close <= paren) return null;
+
+        // 괄호 안의 콤마 구분 인자를 토큰화 — 중첩 괄호를 고려.
+        var body = gradient[(paren + 1)..close];
+        var parts = new List<string>();
+        int depth = 0, start = 0;
+        for (int i = 0; i < body.Length; i++)
+        {
+            if (body[i] == '(') depth++;
+            else if (body[i] == ')') depth--;
+            else if (body[i] == ',' && depth == 0)
+            {
+                parts.Add(body[start..i].Trim());
+                start = i + 1;
+            }
+        }
+        parts.Add(body[start..].Trim());
+
+        // 첫 인자가 방향(deg, to top 등)이면 건너뛴다.
+        foreach (var part in parts)
+        {
+            var tok = part.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (tok is null) continue;
+            if (tok.EndsWith("deg", StringComparison.OrdinalIgnoreCase)
+             || tok.StartsWith("to ", StringComparison.OrdinalIgnoreCase)
+             || tok.Equals("to", StringComparison.OrdinalIgnoreCase)) continue;
+            if (TryParseCssColor(tok, out _)) return tok;
+        }
+        return null;
+    }
+
     /// <summary>data: URI 문자열에서 ImageBlock 을 생성한다. base64 디코딩 포함.
     /// 성공하면 ImageBlock, 실패하면 null.</summary>
     private static ImageBlock? TryExtractDataUriImage(string dataUri)
@@ -1978,9 +2015,20 @@ public sealed class HtmlReader : IDocumentReader
         var bgVal = StyleProp(style, "background-color");
         if (bgVal is null && StyleProp(style, "background") is { } bgShort)
         {
-            // background shorthand 의 첫 토큰이 색상인 경우만 추출.
-            var firstTok = bgShort.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-            if (firstTok is not null && TryParseCssColor(firstTok, out _)) bgVal = firstTok;
+            var bg = bgShort.TrimStart();
+            if (bg.StartsWith("linear-gradient(", StringComparison.OrdinalIgnoreCase)
+             || bg.StartsWith("radial-gradient(",  StringComparison.OrdinalIgnoreCase))
+            {
+                // 그라디언트: 첫 번째 색상 정류장을 solid 색으로 근사 추출.
+                // 예) linear-gradient(135deg, #0d1b4b, #1a3a8f) → "#0d1b4b"
+                bgVal = ExtractFirstGradientColor(bg);
+            }
+            else
+            {
+                // 단순 background shorthand: 첫 토큰이 색상이면 추출.
+                var firstTok = bgShort.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (firstTok is not null && TryParseCssColor(firstTok, out _)) bgVal = firstTok;
+            }
         }
         if (bgVal is not null && TryParseCssColor(bgVal, out var bgColor))
             p.Style.BackgroundColor = ColorToHex(bgColor);
@@ -3473,14 +3521,72 @@ public sealed class HtmlReader : IDocumentReader
                 page.Orientation = PageOrientation.Portrait;
         }
 
+        // 3b. BookEditor Pro / 외부 HTML 편집기 'be-*' 메타 태그 지원.
+        // pd-* 가 없는 외부 HTML 에서 원본 편집 설정을 복원한다.
+        // pd-* 가 이미 설정됐으면 be-* 는 무시 (pd-* 가 PolyDonky 원본 설정).
+        ApplyBeMetaTags(head, page, hasPdSize: sizeMeta is not null);
+
         // 4. @page CSS 규칙 — EffectiveWidth/Height + 여백. meta 보다 낮은 우선순위이므로
         //    메타로 이미 설정된 크기가 없을 때만 치수를 덮어쓴다.
-        bool hasSizeMeta = sizeMeta is not null;
+        bool hasSizeMeta = sizeMeta is not null
+            || head.QuerySelector("meta[name='be-paper-size']") is not null
+            || head.QuerySelector("meta[name='be-custom-paper-w']") is not null;
         foreach (var styleEl in head.QuerySelectorAll("style"))
             ParseAtPageRule(styleEl.TextContent, page, applySize: !hasSizeMeta);
 
         // 5. 추가 페이지 설정 meta — 다단·페이지번호·머리/꼬리 여백·텍스트 방향 등.
         ApplyExtraPageMeta(head, page);
+    }
+
+    /// <summary>BookEditor Pro 'be-*' 메타 태그에서 PageSettings 를 복원한다.</summary>
+    private static void ApplyBeMetaTags(IElement head, PageSettings page, bool hasPdSize)
+    {
+        string? Get(string name) => head.QuerySelector($"meta[name='{name}']")?.GetAttribute("content");
+        bool TryDouble(string name, out double val)
+            => double.TryParse(Get(name), System.Globalization.NumberStyles.Any,
+                               System.Globalization.CultureInfo.InvariantCulture, out val);
+
+        // 용지 크기 (pd-* 가 없을 때만)
+        if (!hasPdSize)
+        {
+            var bePaperSize = Get("be-paper-size");
+            if (bePaperSize is not null
+                && Enum.TryParse<PaperSizeKind>(bePaperSize, ignoreCase: true, out var beKind))
+            {
+                page.ApplySizeKind(beKind);
+            }
+            else
+            {
+                // be-custom-paper-w/h 가 있으면 Custom 크기
+                if (TryDouble("be-custom-paper-w", out var beW) && beW > 0
+                 && TryDouble("be-custom-paper-h", out var beH) && beH > 0)
+                {
+                    page.SizeKind  = PaperSizeKind.Custom;
+                    page.WidthMm   = beW;
+                    page.HeightMm  = beH;
+                }
+            }
+
+            // 방향
+            var beOrient = Get("be-orientation");
+            if (beOrient is not null)
+            {
+                if (beOrient.Equals("landscape", StringComparison.OrdinalIgnoreCase))
+                    page.Orientation = PageOrientation.Landscape;
+                else if (beOrient.Equals("portrait", StringComparison.OrdinalIgnoreCase))
+                    page.Orientation = PageOrientation.Portrait;
+            }
+        }
+
+        // 여백 (be-margin-* 값은 mm 단위 숫자)
+        if (TryDouble("be-margin-top",    out var mt) && mt >= 0) page.MarginTopMm    = mt;
+        if (TryDouble("be-margin-bottom", out var mb) && mb >= 0) page.MarginBottomMm = mb;
+        if (TryDouble("be-margin-left",   out var ml) && ml >= 0) page.MarginLeftMm   = ml;
+        if (TryDouble("be-margin-right",  out var mr) && mr >= 0) page.MarginRightMm  = mr;
+
+        // 페이지 번호 시작
+        if (TryDouble("be-page-start-number", out var psn) && psn >= 1)
+            page.PageNumberStart = (int)psn;
     }
 
     private static void ApplyExtraPageMeta(IElement head, PageSettings page)

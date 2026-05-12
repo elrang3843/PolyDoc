@@ -58,6 +58,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **HTML CSS background-image 미지원 (이미지 누락 수정)**: HTML의 CSS `background-image: url(data:image/...)` 로 지정된 이미지(주로 배경 또는 장식 이미지)가 IWPF로 변환되지 않던 문제. `HtmlReader.TryWrapAsContainer` 에 data URI 배경 이미지 감지 및 추출 로직 추가 — `background-image` CSS 파싱 후 `url(data:...)` 에서 이미지 데이터를 추출해 `ImageBlock` 생성하고 ContainerBlock의 첫 자식으로 삽입. 별도 헬퍼 `TryExtractDataUriImage` 로 base64 디코딩 처리. 컨테이너의 width/height CSS 가 있으면 이미지 크기에 반영. (`HtmlReader.cs`)
 
+- **BookEditor Pro `be-*` 메타 태그 용지 설정 미지원 수정**: BookEditor Pro 가 생성한 HTML의 `be-paper-size`, `be-custom-paper-w/h`, `be-orientation`, `be-margin-*`, `be-page-start-number` 메타 태그가 무시되어 용지 크기·여백이 기본값(A4/25mm)으로 설정되던 문제. `ApplyPageSettings`에 `ApplyBeMetaTags` 헬퍼를 추가해 be-* 태그를 PageSettings에 반영. pd-* 태그가 이미 있으면 be-* 는 무시(PolyDonky 원본 우선). A5 용지를 A5로, 여백을 올바른 값으로 저장. (`HtmlReader.cs`)
+
+- **CSS `linear-gradient` 배경색 미추출 수정**: `.toc-page { background: linear-gradient(150deg, #0d1b4b 0%, #1a3a8f 100%); }` 같은 그라디언트 배경이 ContainerBlock.BackgroundColor에 반영되지 않아 배경색이 누락되던 문제. `ApplyBlockStyle`의 background shorthand 파싱에 그라디언트 감지를 추가해 첫 번째 색상 정류장을 solid 색으로 근사 추출 (`ExtractFirstGradientColor`). (`HtmlReader.cs`)
+
 - **오버레이 표 행·열 드래그 기반 크기 조정 구현**: 오버레이 모드 표의 열 너비 및 행 높이를 마우스 드래그로 조정 가능하도록 구현. 우클릭 메뉴에서 표 셀 위치를 자동 감지해 행·열 인덱스를 전달. 마우스 호버 시 커서 변경(SizeWE/SizeNS) 및 경계선 강조. 오버레이 표의 분리선(`BorderBrush` 또는 동적 계산) 위에서 5 DIP 내 hit-test로 경계 감지. 드래그 중 실시간 셀 크기 반영 후 Core 모델 업데이트. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
 
 - **블록 모드 표 행 높이 드래그 조정 구현**: Block-mode FlowDocument 표의 행 높이를 마우스 드래그로 조정 가능하도록 구현. WPF TableRow는 MinHeight 속성이 없으므로 행의 모든 셀의 Padding.Bottom을 균등하게 조정하여 행 높이 증감 수행. 마우스 호버 시 SizeNS 커서 표시, 경계 감지 시 색상 변경으로 시각 피드백 제공. 드래그 종료 후 Core 모델의 셀 내용물 크기 재계산. (`MainWindow.xaml.cs`)
