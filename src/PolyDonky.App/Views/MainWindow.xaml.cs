@@ -1627,16 +1627,16 @@ public partial class MainWindow : Window
     private readonly List<WpfShapes.Line> _columnDividerLines = new();
 
     // ── 표 셀 범위 선택 상태 ─────────────────────────────────────────────
-    // WPF Selection 의 오버슈트(다음 셀로 밀려남) 문제를 피하기 위해
+    // WPF Selection 의 오버슈트 문제를 피하기 위해
     // 마우스 클릭/드래그 시점에 셀의 (row, col) 인덱스를 직접 기록한다.
-    // Ctrl+Click 으로 비연속 사각형 범위를 누적할 수 있다.
+    // Ctrl+Click 으로 개별 셀을 비연속 선택할 수 있다.
     private System.Windows.Documents.Table?         _cellSelWpfTable;
     private System.Windows.Documents.TableRowGroup? _cellSelRowGroup;
     private PolyDonky.Core.Table?                   _cellSelCoreTable;
     private int _cellSelAnchorRow = -1, _cellSelAnchorCol = -1; // 선택 앵커(드래그 시작)
     private int _cellSelFocusRow  = -1, _cellSelFocusCol  = -1; // 선택 포커스(드래그 끝)
-    // Ctrl+Click 으로 추가된 이전 사각형 범위들 (같은 표 기준)
-    private readonly List<(int MinRow, int MaxRow, int MinCol, int MaxCol)> _cellCtrlRects = [];
+    // Ctrl+Click 으로 추가된 개별 셀들 (비연속 선택)
+    private readonly HashSet<(int row, int col)> _cellCtrlSelections = [];
 
     // ── 단 경계 교차 텍스트 선택 상태 ────────────────────────────────────
     // Shift+방향키로 단 경계를 넘을 때 비활성 RTB 의 선택을 유지(IsInactiveSelectionHighlightEnabled)
@@ -4259,37 +4259,42 @@ public partial class MainWindow : Window
         int maxCol = Math.Max(_cellSelAnchorCol, _cellSelFocusCol);
 
         // 단일 셀 + Ctrl 누적 없으면 개별 셀 컨텍스트 메뉴로 넘긴다
-        if (_cellCtrlRects.Count == 0 && minRow == maxRow && minCol == maxCol)
+        if (_cellCtrlSelections.Count == 0 && minRow == maxRow && minCol == maxCol)
             return null;
 
-        // 현재 앵커-포커스 사각형 + Ctrl 누적 사각형 전체에서 중복 없이 셀 수집
+        // 현재 앵커-포커스 사각형 + Ctrl 누적 개별 셀 전체에서 중복 없이 셀 수집
         var wTable    = _cellSelWpfTable;
         var rg        = _cellSelRowGroup;
         var coreTable = _cellSelCoreTable;
 
-        var rects = new List<(int MinRow, int MaxRow, int MinCol, int MaxCol)>(_cellCtrlRects)
-        {
-            (minRow, maxRow, minCol, maxCol)
-        };
-
         var result = new List<SelectedCell>();
         var added  = new HashSet<(int, int)>();
 
-        foreach (var rect in rects)
+        // 앵커-포커스 범위의 모든 셀 추가
+        for (int r = minRow; r <= maxRow; r++)
         {
-            for (int r = rect.MinRow; r <= rect.MaxRow; r++)
+            if (r >= rg.Rows.Count || r >= coreTable.Rows.Count) continue;
+            var wRow  = rg.Rows[r];
+            var coRow = coreTable.Rows[r];
+            for (int c = minCol; c <= maxCol; c++)
             {
-                if (r >= rg.Rows.Count || r >= coreTable.Rows.Count) continue;
-                var wRow  = rg.Rows[r];
-                var coRow = coreTable.Rows[r];
-                for (int c = rect.MinCol; c <= rect.MaxCol; c++)
-                {
-                    if (c >= wRow.Cells.Count || c >= coRow.Cells.Count) continue;
-                    if (added.Add((r, c)))
-                        result.Add(new SelectedCell(wTable, rg, wRow, wRow.Cells[c],
-                                                    coreTable, coRow.Cells[c], r, c));
-                }
+                if (c >= wRow.Cells.Count || c >= coRow.Cells.Count) continue;
+                if (added.Add((r, c)))
+                    result.Add(new SelectedCell(wTable, rg, wRow, wRow.Cells[c],
+                                                coreTable, coRow.Cells[c], r, c));
             }
+        }
+
+        // Ctrl+Click 으로 추가된 개별 셀들 추가
+        foreach (var (r, c) in _cellCtrlSelections)
+        {
+            if (r >= rg.Rows.Count || r >= coreTable.Rows.Count) continue;
+            var wRow  = rg.Rows[r];
+            var coRow = coreTable.Rows[r];
+            if (c >= wRow.Cells.Count || c >= coRow.Cells.Count) continue;
+            if (added.Add((r, c)))
+                result.Add(new SelectedCell(wTable, rg, wRow, wRow.Cells[c],
+                                            coreTable, coRow.Cells[c], r, c));
         }
 
         return result.Count > 1 ? result : null;
@@ -5717,33 +5722,19 @@ public partial class MainWindow : Window
             if (isCtrl && _cellSelWpfTable is not null
                        && ReferenceEquals(_cellSelWpfTable, clickTable))
             {
-                // Ctrl+Click: 현재 앵커-포커스 범위를 누적에 추가하고 새 단일-셀 앵커 설정
-                CommitCurrentCellSelToCtrlRects();
-                _cellSelAnchorRow = clickRow; _cellSelAnchorCol = clickCol;
-                _cellSelFocusRow  = clickRow; _cellSelFocusCol  = clickCol;
+                // Ctrl+Click: 클릭한 셀을 선택 목록에 추가
+                _cellCtrlSelections.Add((clickRow, clickCol));
             }
             else if (isAlt && _cellSelWpfTable is not null
                            && ReferenceEquals(_cellSelWpfTable, clickTable))
             {
-                // Alt+Click: 클릭한 셀을 포함하는 Ctrl 누적 범위를 제거
-                _cellCtrlRects.RemoveAll(r =>
-                    clickRow >= r.MinRow && clickRow <= r.MaxRow &&
-                    clickCol >= r.MinCol && clickCol <= r.MaxCol);
-                // 현재 앵커-포커스 범위에도 해당 셀이 속하면 선택 초기화
-                int aR = Math.Min(_cellSelAnchorRow, _cellSelFocusRow);
-                int bR = Math.Max(_cellSelAnchorRow, _cellSelFocusRow);
-                int aC = Math.Min(_cellSelAnchorCol, _cellSelFocusCol);
-                int bC = Math.Max(_cellSelAnchorCol, _cellSelFocusCol);
-                if (clickRow >= aR && clickRow <= bR && clickCol >= aC && clickCol <= bC)
-                {
-                    _cellSelAnchorRow = -1; _cellSelAnchorCol = -1;
-                    _cellSelFocusRow  = -1; _cellSelFocusCol  = -1;
-                }
+                // Alt+Click: 클릭한 셀을 선택 목록에서 제거
+                _cellCtrlSelections.Remove((clickRow, clickCol));
             }
             else
             {
                 // 일반 클릭 or 다른 표: 상태 초기화 후 새 앵커
-                _cellCtrlRects.Clear();
+                _cellCtrlSelections.Clear();
                 _cellSelWpfTable  = clickTable;
                 _cellSelRowGroup  = clickRg;
                 _cellSelCoreTable = clickCoreTable;
@@ -5757,7 +5748,7 @@ public partial class MainWindow : Window
             _cellSelWpfTable = null; _cellSelRowGroup = null; _cellSelCoreTable = null;
             _cellSelAnchorRow = -1; _cellSelAnchorCol = -1;
             _cellSelFocusRow  = -1; _cellSelFocusCol  = -1;
-            _cellCtrlRects.Clear();
+            _cellCtrlSelections.Clear();
         }
     }
 
@@ -5784,16 +5775,6 @@ public partial class MainWindow : Window
         catch (System.InvalidOperationException) { return null; }
     }
 
-    /// <summary>현재 앵커-포커스 범위를 Ctrl 누적 리스트로 이동한다.</summary>
-    private void CommitCurrentCellSelToCtrlRects()
-    {
-        if (_cellSelAnchorRow < 0) return;
-        int minR = Math.Min(_cellSelAnchorRow, _cellSelFocusRow);
-        int maxR = Math.Max(_cellSelAnchorRow, _cellSelFocusRow);
-        int minC = Math.Min(_cellSelAnchorCol, _cellSelFocusCol);
-        int maxC = Math.Max(_cellSelAnchorCol, _cellSelFocusCol);
-        _cellCtrlRects.Add((minR, maxR, minC, maxC));
-    }
 
     /// <summary>PaperHost PreviewMouseLeftButtonUp 처리.</summary>
     private void HandlePaperHostMouseUp(MouseButtonEventArgs e)
