@@ -4414,13 +4414,13 @@ public partial class MainWindow : Window
         items.Add(new System.Windows.Controls.Separator());
         items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             var dlg = new TablePropertiesWindow(first.CoreTable) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
                 if (first.CoreTable.WrapMode == PolyDonky.Core.TableWrapMode.Block)
                 {
-                    PolyDonky.App.Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(
-                        first.WpfTable, first.CoreTable);
+                    UpdateWpfTablePropertiesInPlace(first.WpfTable, first.CoreTable);
                 }
                 else
                 {
@@ -4443,6 +4443,19 @@ public partial class MainWindow : Window
                     RebuildOverlayTables();
                 }
                 _viewModel?.MarkDirty();
+            }
+            else
+            {
+                if (_viewModel is not null)
+                {
+                    var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                    if (prev is not null)
+                    {
+                        _viewModel.ReplaceDocumentForUndo(prev);
+                        _viewModel.MarkDirty();
+                        ApplyFlowDocument(_viewModel.FlowDocument);
+                    }
+                }
             }
         }));
 
@@ -4568,25 +4581,44 @@ public partial class MainWindow : Window
         {
             items.Add(MakeMenuItem("셀 속성(_P)...", () =>
             {
+                _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
                 var dlg = new CellPropertiesWindow(coreCell) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
                     bool isHeader = rowIdx >= 0 && coreTable.Rows[rowIdx].IsHeader;
+                    bool atTopEdge = rowIdx == 0;
+                    bool atBottomEdge = rowIdx == coreTable.Rows.Count - 1;
+                    bool atLeftEdge = colIdx == 0;
+                    bool atRightEdge = colIdx == Services.TableOperationHelpers.GetActualColumnCount(coreTable) - 1;
                     PolyDonky.App.Services.FlowDocumentBuilder.ApplyCellPropertiesToWpf(
-                        wpfCell, coreCell, isHeader);
+                        wpfCell, coreCell, isHeader, coreTable, atTopEdge, atBottomEdge, atLeftEdge, atRightEdge);
                     _viewModel?.MarkDirty();
+                }
+                else
+                {
+                    if (_viewModel is not null)
+                    {
+                        var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                        if (prev is not null)
+                        {
+                            _viewModel.ReplaceDocumentForUndo(prev);
+                            _viewModel.MarkDirty();
+                            ApplyFlowDocument(_viewModel.FlowDocument);
+                        }
+                    }
                 }
             }));
         }
         items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             var dlg = new TablePropertiesWindow(coreTable) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
                 if (coreTable.WrapMode == PolyDonky.Core.TableWrapMode.Block)
                 {
                     // Block 모드 유지 → WPF Table 에 직접 적용
-                    PolyDonky.App.Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(wpfTable, coreTable);
+                    UpdateWpfTablePropertiesInPlace(wpfTable, coreTable);
                 }
                 else
                 {
@@ -4611,6 +4643,19 @@ public partial class MainWindow : Window
                     RebuildOverlayTables();
                 }
                 _viewModel?.MarkDirty();
+            }
+            else
+            {
+                if (_viewModel is not null)
+                {
+                    var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                    if (prev is not null)
+                    {
+                        _viewModel.ReplaceDocumentForUndo(prev);
+                        _viewModel.MarkDirty();
+                        ApplyFlowDocument(_viewModel.FlowDocument);
+                    }
+                }
             }
         }));
         items.Add(MakeMenuItem("표 삭제(_X)", () => TableOp_DeleteTable(wpfTable)));
@@ -6134,6 +6179,7 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertRowAbove(table, 0);
+            UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6142,6 +6188,7 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertRowBelow(table, table.Rows.Count - 1);
+            UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6159,6 +6206,7 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertColumnLeft(table, 0);
+            UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6167,6 +6215,7 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertColumnRight(table, table.Columns.Count - 1);
+            UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6195,8 +6244,9 @@ public partial class MainWindow : Window
             var dlg = new TablePropertiesWindow(table) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                // 속성이 이미 table에 적용됨 — SetupPageEditors로 FlowDocument 재구성
+                // 속성이 이미 table에 적용됨 — UpdatePaginatedDoc로 캐시 갱신 후 SetupPageEditors로 FlowDocument 재구성
                 // (ParseAllPageEditors 불가 - old 속성으로 Core 모델 덮어쓰기 때문)
+                UpdatePaginatedDoc();
                 SetupPageEditors();
                 RebuildOverlayTables();
                 _viewModel?.MarkDirty();
@@ -6232,6 +6282,57 @@ public partial class MainWindow : Window
     }
 
     // ── 표 편집 헬퍼 메서드 ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 기존 WPF 테이블의 속성을 Core.Table의 속성으로 업데이트한다.
+    /// SetupPageEditors 대신 사용 - cascade 로직 우회.
+    /// </summary>
+    private void UpdateWpfTableProperties(PolyDonky.Core.Table coreTable)
+    {
+        // Block 모드: FlowDocument에서 기존 WPF 테이블을 찾아 속성만 업데이트
+        if (coreTable.WrapMode == PolyDonky.Core.TableWrapMode.Block)
+        {
+            foreach (var rtb in PageEditorHost.PageEditors)
+            {
+                var blocks = rtb.Document.Blocks.OfType<System.Windows.Documents.Table>();
+                foreach (var wpfTable in blocks)
+                {
+                    if (ReferenceEquals(wpfTable.Tag, coreTable))
+                    {
+                        // 테이블 레벨 속성 업데이트
+                        Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(wpfTable, coreTable);
+
+                        // 셀 레벨 속성 업데이트
+                        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+                        if (rowGroup != null)
+                        {
+                            for (int r = 0; r < coreTable.Rows.Count && r < rowGroup.Rows.Count; r++)
+                            {
+                                var coreRow = coreTable.Rows[r];
+                                var wpfRow = rowGroup.Rows[r];
+                                for (int c = 0; c < coreRow.Cells.Count && c < wpfRow.Cells.Count; c++)
+                                {
+                                    var coreCell = coreRow.Cells[c];
+                                    var wpfCell = wpfRow.Cells[c];
+                                    bool isEdgeRow = (r == 0 || r == coreTable.Rows.Count - 1);
+                                    bool isEdgeCol = (c == 0 || c == coreRow.Cells.Count - 1);
+                                    Services.FlowDocumentBuilder.ApplyCellPropertiesToWpf(
+                                        wpfCell, coreCell, coreRow.IsHeader,
+                                        coreTable.BorderCollapse, isEdgeRow, isEdgeCol, coreTable);
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Overlay 모드: 오버레이 컨트롤 재구성
+            RebuildOverlayTables();
+        }
+    }
 
     private void RefreshTableInFlowDocument(PolyDonky.Core.Table table)
     {
@@ -6277,6 +6378,36 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdateWpfTablePropertiesInPlace(System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable)
+    {
+        Services.FlowDocumentBuilder.ApplyTableLevelPropertiesToWpf(wpfTable, coreTable);
+
+        var rowGroup = wpfTable.RowGroups.FirstOrDefault();
+        if (rowGroup is null) return;
+
+        for (int r = 0; r < coreTable.Rows.Count && r < rowGroup.Rows.Count; r++)
+        {
+            var coreRow = coreTable.Rows[r];
+            var wpfRow = rowGroup.Rows[r];
+
+            for (int c = 0; c < coreRow.Cells.Count && c < wpfRow.Cells.Count; c++)
+            {
+                var coreCell = coreRow.Cells[c];
+                var wpfCell = wpfRow.Cells[c];
+
+                bool isHeader = coreRow.IsHeader;
+                bool atTopEdge = r == 0;
+                bool atBottomEdge = r == coreTable.Rows.Count - 1;
+                bool atLeftEdge = c == 0;
+                bool atRightEdge = c == Services.TableOperationHelpers.GetActualColumnCount(coreTable) - 1;
+
+                Services.FlowDocumentBuilder.ApplyCellPropertiesToWpf(
+                    wpfCell, coreCell, isHeader, coreTable,
+                    atTopEdge, atBottomEdge, atLeftEdge, atRightEdge);
+            }
+        }
+    }
+
     private void OpenRowPropertiesDialog(PolyDonky.Core.Table table)
     {
         // 행 선택을 위한 인덱스 입력 대화
@@ -6313,6 +6444,7 @@ public partial class MainWindow : Window
                 var dlg = new RowPropertiesWindow(table, rowIdx) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
+                    UpdatePaginatedDoc();
                     SetupPageEditors();
                     RebuildOverlayTables();
                     _viewModel?.MarkDirty();
@@ -6373,6 +6505,7 @@ public partial class MainWindow : Window
                 var dlg = new ColumnPropertiesWindow(table, colIdx) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
+                    UpdatePaginatedDoc();
                     SetupPageEditors();
                     RebuildOverlayTables();
                     _viewModel?.MarkDirty();
@@ -6440,6 +6573,7 @@ public partial class MainWindow : Window
                     var dlg = new CellPropertiesWindow(cell) { Owner = this };
                     if (dlg.ShowDialog() == true)
                     {
+                        UpdatePaginatedDoc();
                         SetupPageEditors();
                         RebuildOverlayTables();
                         _viewModel?.MarkDirty();
@@ -6481,8 +6615,26 @@ public partial class MainWindow : Window
         // 더블클릭 → 속성 다이얼로그
         if (e.ClickCount == 2 && fe.Tag is PolyDonky.Core.Table tbl)
         {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             var dlg = new TablePropertiesWindow(tbl) { Owner = this };
-            if (dlg.ShowDialog() == true) { RebuildOverlayTables(); _viewModel?.MarkDirty(); }
+            if (dlg.ShowDialog() == true)
+            {
+                RebuildOverlayTables();
+                _viewModel?.MarkDirty();
+            }
+            else
+            {
+                if (_viewModel is not null)
+                {
+                    var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                    if (prev is not null)
+                    {
+                        _viewModel.ReplaceDocumentForUndo(prev);
+                        _viewModel.MarkDirty();
+                        ApplyFlowDocument(_viewModel.FlowDocument);
+                    }
+                }
+            }
             e.Handled = true;
             return;
         }
