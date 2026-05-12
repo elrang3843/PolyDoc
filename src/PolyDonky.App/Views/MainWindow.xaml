@@ -397,7 +397,7 @@
                 <Grid x:Name="PaperHost"
                       Background="Transparent"
                       PreviewMouseLeftButtonDown="OnPreviewMouseLeftButtonDownMaster"
-                      PreviewMouseMove="OnPaperPreviewMouseMove"
+                      PreviewMouseMove="OnPreviewMouseMoveMaster"
                       PreviewMouseLeftButtonUp="OnPreviewMouseLeftButtonUpMaster"
                       PreviewMouseRightButtonDown="OnPaperPreviewMouseRightButtonDown">
                     <!-- 레이어 0: 페이지 배경 — 페이지 별 흰 Border + 그림자 + 점선 여백 가이드.

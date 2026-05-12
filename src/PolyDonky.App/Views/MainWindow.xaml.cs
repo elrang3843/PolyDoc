@@ -1201,11 +1201,11 @@ public partial class MainWindow : Window
         rtb.PreviewTextInput  += OnEditorPreviewTextInput;
 
         rtb.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDownMaster;
-        rtb.PreviewMouseMove           += OnEditorPreviewMouseMoveBlockDrag;
+        rtb.PreviewMouseMove           += OnPreviewMouseMoveMaster;
         rtb.PreviewMouseLeftButtonUp   += OnPreviewMouseLeftButtonUpMaster;
         // RTB 내부 ScrollViewer 가 휠 이벤트를 소비해 본문만 내부 스크롤되는 것을 막고
         // 외부 EditorScrollViewer 로 전달 — 본문·오버레이가 함께 스크롤되도록 한다.
-        rtb.PreviewMouseWheel          += OnPageRtbPreviewMouseWheel;
+        rtb.PreviewMouseWheel          += OnPreviewMouseWheelMaster;
 
         rtb.ContextMenu             = new System.Windows.Controls.ContextMenu();
         rtb.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
@@ -5981,6 +5981,39 @@ public partial class MainWindow : Window
         RebuildOverlayImages();
         _viewModel?.MarkDirty();
         e.Handled = true;
+    }
+
+    /// <summary>통합 마우스 MOVE 마스터 핸들러.</summary>
+    private void OnPreviewMouseMoveMaster(object sender, MouseEventArgs e)
+    {
+        if (sender is Canvas paperCanvas && paperCanvas.Name == "PaperHost")
+        {
+            OnPaperPreviewMouseMove(sender, e);
+            return;
+        }
+
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            OnEditorPreviewMouseMoveBlockDrag(sender, e);
+            return;
+        }
+    }
+
+    /// <summary>통합 마우스 WHEEL 마스터 핸들러.</summary>
+    private void OnPreviewMouseWheelMaster(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            if (EditorScrollViewer is null) return;
+            e.Handled = true;
+            var newArgs = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source      = sender,
+            };
+            EditorScrollViewer.RaiseEvent(newArgs);
+            return;
+        }
     }
 
     private void OnDragOver(object sender, DragEventArgs e)
