@@ -143,6 +143,11 @@ public static class TableModelEditor
                     RowSpan = 1,
                     ColumnSpan = 1
                 };
+                // 표의 기본 테두리 속성 상속
+                if (table.BorderThicknessPt > 0)
+                    newCell.BorderThicknessPt = table.BorderThicknessPt;
+                if (!string.IsNullOrEmpty(table.BorderColor))
+                    newCell.BorderColor = table.BorderColor;
                 row.Cells.Insert(insertCellIndex, newCell);
             }
         }
@@ -392,6 +397,11 @@ public static class TableModelEditor
                         RowSpan = 1,
                         ColumnSpan = 1
                     };
+                    // 표의 기본 테두리 속성 상속
+                    if (table.BorderThicknessPt > 0)
+                        newCell.BorderThicknessPt = table.BorderThicknessPt;
+                    if (!string.IsNullOrEmpty(table.BorderColor))
+                        newCell.BorderColor = table.BorderColor;
                     table.Rows[r].Cells.Insert(0, newCell); // 간단하게 맨 앞에 추가
                 }
             }
@@ -408,12 +418,18 @@ public static class TableModelEditor
         var row = new TableRow();
         for (int c = 0; c < table.Columns.Count; c++)
         {
-            row.Cells.Add(new TableCell
+            var cell = new TableCell
             {
                 Blocks = new List<Block> { new Paragraph() },
                 RowSpan = 1,
                 ColumnSpan = 1
-            });
+            };
+            // 표의 기본 테두리 속성 상속 (명시적 셀 속성이 없을 때 사용됨)
+            if (table.BorderThicknessPt > 0)
+                cell.BorderThicknessPt = table.BorderThicknessPt;
+            if (!string.IsNullOrEmpty(table.BorderColor))
+                cell.BorderColor = table.BorderColor;
+            row.Cells.Add(cell);
         }
         return row;
     }
