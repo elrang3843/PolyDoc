@@ -4810,6 +4810,24 @@ public partial class MainWindow : Window
         _viewModel?.MarkDirty();
     }
 
+    /// <summary>WPF TableRow에서 셀의 시각 열 인덱스를 계산한다 (colspan 고려).</summary>
+    private static int GetVisualColumnStart(System.Windows.Documents.TableRow row, int cellIdx)
+    {
+        int col = 0;
+        for (int i = 0; i < cellIdx && i < row.Cells.Count; i++)
+            col += Math.Max(row.Cells[i].ColumnSpan, 1);
+        return col;
+    }
+
+    /// <summary>Core TableRow에서 셀의 시각 열 인덱스를 계산한다 (colspan 고려).</summary>
+    private static int GetVisualColumnStart(PolyDonky.Core.TableRow row, int cellIdx)
+    {
+        int col = 0;
+        for (int i = 0; i < cellIdx && i < row.Cells.Count; i++)
+            col += Math.Max(row.Cells[i].ColumnSpan, 1);
+        return col;
+    }
+
     private void TableOp_MergeBelow(
         System.Windows.Documents.Table wpfTable, PolyDonky.Core.Table coreTable,
         int rowIdx, int cellIdx,
@@ -4823,13 +4841,35 @@ public partial class MainWindow : Window
         coreCell.RowSpan = Math.Max(coreCell.RowSpan, 1) + 1;
         wpfCell.RowSpan  = coreCell.RowSpan;
 
+        // 병합할 셀의 시각 열 범위 계산
+        int mergeColStart = GetVisualColumnStart(wpfRow, cellIdx);
+        int mergeColSpan = Math.Max(wpfCell.ColumnSpan, 1);
+        int mergeColEnd = mergeColStart + mergeColSpan;
+
+        // 다음 행에서 겹치는 셀 모두 제거 (역순으로)
         var nextCoreRow = coreTable.Rows[nextRowIdx];
-        if (cellIdx < nextCoreRow.Cells.Count) nextCoreRow.Cells.RemoveAt(cellIdx);
+        for (int i = nextCoreRow.Cells.Count - 1; i >= 0; i--)
+        {
+            int cellColStart = GetVisualColumnStart(nextCoreRow, i);
+            int cellColSpan = Math.Max(nextCoreRow.Cells[i].ColumnSpan, 1);
+            int cellColEnd = cellColStart + cellColSpan;
+
+            if (cellColStart < mergeColEnd && cellColEnd > mergeColStart)
+                nextCoreRow.Cells.RemoveAt(i);
+        }
 
         if (rowGroup is not null && nextRowIdx < rowGroup.Rows.Count)
         {
             var nextWpfRow = rowGroup.Rows[nextRowIdx];
-            if (cellIdx < nextWpfRow.Cells.Count) nextWpfRow.Cells.RemoveAt(cellIdx);
+            for (int i = nextWpfRow.Cells.Count - 1; i >= 0; i--)
+            {
+                int cellColStart = GetVisualColumnStart(nextWpfRow, i);
+                int cellColSpan = Math.Max(nextWpfRow.Cells[i].ColumnSpan, 1);
+                int cellColEnd = cellColStart + cellColSpan;
+
+                if (cellColStart < mergeColEnd && cellColEnd > mergeColStart)
+                    nextWpfRow.Cells.RemoveAt(i);
+            }
         }
         _viewModel?.MarkDirty();
     }
