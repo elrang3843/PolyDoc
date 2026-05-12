@@ -100,7 +100,7 @@ public static class TableModelEditor
             throw new ArgumentOutOfRangeException(nameof(logicalColIndex));
 
         int insertLogicalCol = insertBefore ? logicalColIndex : logicalColIndex + 1;
-        int actualColIndex = insertBefore ? colIndex : colIndex + 1;
+        int actualColIndex = insertBefore ? logicalColIndex : logicalColIndex + 1;
 
         // 새 TableColumn 추가
         if (actualColIndex <= table.Columns.Count)
