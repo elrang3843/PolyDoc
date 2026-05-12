@@ -424,11 +424,13 @@ public static class TableModelEditor
                 RowSpan = 1,
                 ColumnSpan = 1
             };
-            // 표의 기본 테두리 속성 상속 (명시적 셀 속성이 없을 때 사용됨)
+            // 표의 기본 테두리·배경 속성 상속 (명시적 셀 속성이 없을 때 사용됨)
             if (table.BorderThicknessPt > 0)
                 cell.BorderThicknessPt = table.BorderThicknessPt;
             if (!string.IsNullOrEmpty(table.BorderColor))
                 cell.BorderColor = table.BorderColor;
+            if (!string.IsNullOrEmpty(table.BackgroundColor))
+                cell.BackgroundColor = table.BackgroundColor;
             row.Cells.Add(cell);
         }
         return row;

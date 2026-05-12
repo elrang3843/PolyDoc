@@ -4316,6 +4316,10 @@ public partial class MainWindow : Window
         int endRowIdx    = rowGroup.Rows.IndexOf(endRow!);
         int endCellIdx   = endRow!.Cells.IndexOf(endWpfCell);
 
+        // 인덱스가 유효하지 않으면 선택 실패
+        if (startRowIdx < 0 || startCellIdx < 0 || endRowIdx < 0 || endCellIdx < 0)
+            return null;
+
         int minRow  = Math.Min(startRowIdx, endRowIdx);
         int maxRow  = Math.Max(startRowIdx, endRowIdx);
         int minCell = Math.Min(startCellIdx, endCellIdx);
@@ -4327,9 +4331,8 @@ public partial class MainWindow : Window
             if (r >= rowGroup.Rows.Count || r >= coreTable.Rows.Count) break;
             var wRow  = rowGroup.Rows[r];
             var coRow = coreTable.Rows[r];
-            for (int c = minCell; c <= maxCell; c++)
+            for (int c = minCell; c <= maxCell && c < wRow.Cells.Count && c < coRow.Cells.Count; c++)
             {
-                if (c >= wRow.Cells.Count || c >= coRow.Cells.Count) break;
                 result.Add(new SelectedCell(wpfTable, rowGroup, wRow, wRow.Cells[c],
                                             coreTable, coRow.Cells[c], r, c));
             }
