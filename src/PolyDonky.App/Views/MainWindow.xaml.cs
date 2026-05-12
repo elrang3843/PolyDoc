@@ -1195,10 +1195,10 @@ public partial class MainWindow : Window
         // 비활성(포커스 없는) RTB 에서도 선택 영역이 시각적으로 유지되도록.
         // 단 경계 교차 선택 시 이전 단의 선택을 표시하기 위해 필요.
         rtb.IsInactiveSelectionHighlightEnabled = true;
-        rtb.GotKeyboardFocus += OnPageRtbGotFocusClearCrossSel;
+        rtb.GotKeyboardFocus += OnGotKeyboardFocusMaster;
 
         rtb.PreviewKeyDown    += OnPreviewKeyDownMaster;
-        rtb.PreviewTextInput  += OnEditorPreviewTextInput;
+        rtb.PreviewTextInput  += OnPreviewTextInputMaster;
 
         rtb.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDownMaster;
         rtb.PreviewMouseMove           += OnPreviewMouseMoveMaster;
@@ -1219,9 +1219,6 @@ public partial class MainWindow : Window
                 Mouse.OverrideCursor = _colDivHovering ? Cursors.SizeWE : null;
             }
         };
-
-        // _lastTextEditor 갱신 — 마지막으로 포커스를 가진 RTB 를 추적한다.
-        rtb.GotKeyboardFocus += (_, _) => _lastTextEditor = rtb;
 
         DataObject.AddPastingHandler(rtb, OnBodyEditorPasting);
         CommandManager.AddPreviewExecutedHandler(rtb, OnBodyEditorPreviewExecuted);
@@ -6012,6 +6009,36 @@ public partial class MainWindow : Window
                 Source      = sender,
             };
             EditorScrollViewer.RaiseEvent(newArgs);
+            return;
+        }
+    }
+
+    /// <summary>통합 TEXT INPUT 마스터 핸들러.</summary>
+    private void OnPreviewTextInputMaster(object sender, TextCompositionEventArgs e)
+    {
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            // 텍스트 입력은 활성 RTB 에만 적용 — 비활성 RTB 의 교차 선택을 해제한다.
+            if (_crossSelActive) ClearCrossColumnSelection();
+
+            if (_viewModel?.IsWriteProtected != true) return;
+            e.Handled = true;
+            _viewModel.TryUnlockForEditing();
+            return;
+        }
+    }
+
+    /// <summary>통합 KEYBOARD FOCUS 마스터 핸들러.</summary>
+    private void OnGotKeyboardFocusMaster(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is RichTextBox rtb && IsPageEditorRtb(rtb))
+        {
+            // 교차 선택 해제 (Shift 네비게이션 중 아닐 때)
+            if (!_inCrossSelNavigation && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+                ClearCrossColumnSelection();
+
+            // 마지막 텍스트 에디터 추적
+            _lastTextEditor = rtb;
             return;
         }
     }
