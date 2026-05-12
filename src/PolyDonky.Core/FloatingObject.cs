@@ -170,4 +170,27 @@ public sealed class TextBoxObject : Block, IOverlayAnchored
         }
         if (Content.Count == 0) Content.Add(new Paragraph());
     }
+
+    /// <summary>모양별 추천 기본 패딩 (mm). 모양 안쪽 여백을 적절히 설정해 초심자도 바로 쓸 수 있게.</summary>
+    public static (double top, double bottom, double left, double right) GetDefaultPaddingByShape(TextBoxShape shape)
+        => shape switch
+        {
+            TextBoxShape.Speech    => (3.0, 3.0, 3.0, 3.0),   // 말풍선 꼬리 때문에 더 많은 여백
+            TextBoxShape.Cloud     => (2.5, 2.5, 2.5, 2.5),   // 구름 모양의 둥근 테두리
+            TextBoxShape.Spiky     => (2.5, 2.5, 2.5, 2.5),   // 뾰족한 부분
+            TextBoxShape.Lightning => (2.5, 2.5, 2.5, 2.5),   // 지그재그 모양
+            TextBoxShape.Ellipse   => (2.5, 2.5, 2.5, 2.5),   // 타원형
+            TextBoxShape.Pie       => (2.0, 2.0, 2.0, 2.0),   // 부채꼴
+            _                      => (2.0, 2.0, 2.0, 2.0),   // Rectangle 기본값
+        };
+
+    /// <summary>주어진 모양에 맞춰 패딩을 초기화한다.</summary>
+    public void ApplyDefaultPaddingForShape(TextBoxShape shape)
+    {
+        var (top, bottom, left, right) = GetDefaultPaddingByShape(shape);
+        PaddingTopMm    = top;
+        PaddingBottomMm = bottom;
+        PaddingLeftMm   = left;
+        PaddingRightMm  = right;
+    }
 }

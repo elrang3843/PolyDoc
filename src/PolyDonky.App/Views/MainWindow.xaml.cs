@@ -5711,6 +5711,7 @@ public partial class MainWindow : Window
             HeightMm = h / TextBoxOverlay.DipsPerMm,
             Status   = NodeStatus.Modified,
         };
+        model.ApplyDefaultPaddingForShape(_drawingShape);
         CommitOverlayDragPosition(model, x, y);
         _viewModel?.AddOverlayBlockToCurrentSection(model);
         var overlay = AddTextBoxOverlay(model);
