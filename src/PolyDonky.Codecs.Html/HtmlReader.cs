@@ -1709,6 +1709,40 @@ public sealed class HtmlReader : IDocumentReader
             p.Style.LineHeightFactor = lh;
     }
 
+    /// <summary>data: URI 문자열에서 ImageBlock 을 생성한다. base64 디코딩 포함.
+    /// 성공하면 ImageBlock, 실패하면 null.</summary>
+    private static ImageBlock? TryExtractDataUriImage(string dataUri)
+    {
+        if (!dataUri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) return null;
+
+        int comma = dataUri.IndexOf(',');
+        if (comma <= 0) return null;
+
+        var meta = dataUri[5..comma];
+        var data = dataUri[(comma + 1)..];
+        var sep  = meta.IndexOf(';');
+        var mimeType = sep > 0 ? meta[..sep] : meta;
+        bool isBase64 = meta.Contains("base64", StringComparison.OrdinalIgnoreCase);
+
+        byte[] bytes;
+        try
+        {
+            bytes = isBase64
+                ? Convert.FromBase64String(data.Trim())
+                : Encoding.UTF8.GetBytes(Uri.UnescapeDataString(data));
+        }
+        catch { return null; }
+
+        if (bytes.Length == 0) return null;
+
+        return new ImageBlock
+        {
+            Data      = bytes,
+            MediaType = mimeType,
+            WrapMode  = ImageWrapMode.Inline,
+        };
+    }
+
     /// <summary>블록 요소의 style 속성에서 단락 레이아웃 CSS 를 파싱해 ParagraphStyle 에 반영.
     /// <paramref name="baseFontSizePt"/>는 em 단위 margin 환산 기준 (기본 11pt = body 기본값).</summary>
     /// <summary>박스 스타일(테두리·배경·padding·margin) 이 있는 div 또는 의미가 있는 클래스(<c>toc</c>·<c>alert</c>·
@@ -1725,6 +1759,21 @@ public sealed class HtmlReader : IDocumentReader
                       !string.IsNullOrEmpty(ps.BackgroundColor) ||
                       ps.PaddingTopMm > 0 || ps.PaddingBottomMm > 0;
 
+        // CSS background-image data URI → ImageBlock 추출
+        var style    = el.GetAttribute("style") ?? "";
+        var bgImgVal = StyleProp(style, "background-image");
+        ImageBlock? bgImage = null;
+        if (bgImgVal is not null)
+        {
+            bgImgVal = bgImgVal.Trim();
+            if (bgImgVal.StartsWith("url(", StringComparison.OrdinalIgnoreCase))
+            {
+                var urlInner = bgImgVal[4..].TrimEnd(')').Trim().Trim('\'', '"');
+                bgImage = TryExtractDataUriImage(urlInner);
+                if (bgImage is not null) hasBox = true;
+            }
+        }
+
         ContainerRole role = ContainerRole.Generic;
         var classTokens = classNames.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         foreach (var cls in classTokens)
@@ -1739,6 +1788,17 @@ public sealed class HtmlReader : IDocumentReader
 
         var inner = new List<PdBlock>();
         ProcessChildren(el, inner, ctx);
+
+        // background-image가 있으면 첫 자식으로 삽입 (텍스트 뒤에 렌더되도록)
+        if (bgImage is not null)
+        {
+            if (TryParseCssMm(StyleProp(style, "width"), out var wMm) && wMm > 0)
+                bgImage.WidthMm = wMm;
+            if (TryParseCssMm(StyleProp(style, "height"), out var hMm) && hMm > 0)
+                bgImage.HeightMm = hMm;
+            inner.Insert(0, bgImage);
+        }
+
         if (inner.Count == 0) return false;
 
         var box = new ContainerBlock
