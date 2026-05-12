@@ -6134,7 +6134,6 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertRowAbove(table, 0);
-            ParseAllPageEditors();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6143,7 +6142,6 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertRowBelow(table, table.Rows.Count - 1);
-            ParseAllPageEditors();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6161,7 +6159,6 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertColumnLeft(table, 0);
-            ParseAllPageEditors();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6170,7 +6167,6 @@ public partial class MainWindow : Window
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             Services.TableModelEditor.InsertColumnRight(table, table.Columns.Count - 1);
-            ParseAllPageEditors();
             SetupPageEditors();
             RebuildOverlayTables();
             _viewModel?.MarkDirty();
@@ -6199,8 +6195,8 @@ public partial class MainWindow : Window
             var dlg = new TablePropertiesWindow(table) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                // 속성이 이미 table에 적용됨 — FlowDocument 갱신하고 화면 새로고침
-                ParseAllPageEditors();
+                // 속성이 이미 table에 적용됨 — SetupPageEditors로 FlowDocument 재구성
+                // (ParseAllPageEditors 불가 - old 속성으로 Core 모델 덮어쓰기 때문)
                 SetupPageEditors();
                 RebuildOverlayTables();
                 _viewModel?.MarkDirty();
@@ -6317,7 +6313,6 @@ public partial class MainWindow : Window
                 var dlg = new RowPropertiesWindow(table, rowIdx) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
-                    ParseAllPageEditors();
                     SetupPageEditors();
                     RebuildOverlayTables();
                     _viewModel?.MarkDirty();
@@ -6378,7 +6373,6 @@ public partial class MainWindow : Window
                 var dlg = new ColumnPropertiesWindow(table, colIdx) { Owner = this };
                 if (dlg.ShowDialog() == true)
                 {
-                    ParseAllPageEditors();
                     SetupPageEditors();
                     RebuildOverlayTables();
                     _viewModel?.MarkDirty();
@@ -6446,7 +6440,6 @@ public partial class MainWindow : Window
                     var dlg = new CellPropertiesWindow(cell) { Owner = this };
                     if (dlg.ShowDialog() == true)
                     {
-                        ParseAllPageEditors();
                         SetupPageEditors();
                         RebuildOverlayTables();
                         _viewModel?.MarkDirty();
