@@ -242,6 +242,7 @@ catch (IOException ex)
 catch (Exception ex)
 {
     Console.Error.WriteLine($"변환 실패: {ex.GetType().Name}: {ex.Message}");
+    Console.Error.WriteLine(ex.StackTrace);
     return ExitConvertError;
 }
 finally
