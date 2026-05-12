@@ -6467,6 +6467,7 @@ public partial class MainWindow : Window
             PlaceOverlay(ctrl, table);
             ctrl.Cursor = Cursors.SizeAll;
             ctrl.MouseLeftButtonDown += OnOverlayTableMouseDown;
+            ctrl.MouseMove += OnOverlayTableMouseMove;
 
             var canvas = table.WrapMode == PolyDonky.Core.TableWrapMode.BehindText
                 ? UnderlayTableCanvas
@@ -6733,6 +6734,27 @@ public partial class MainWindow : Window
         return (-1, -1);
     }
 
+    private (int colIdx, int rowIdx) FindTableResizeSeparatorAt(System.Windows.Controls.Grid grid, Point ptInGrid)
+    {
+        double x = 0;
+        for (int c = 0; c < grid.ColumnDefinitions.Count - 1; c++)
+        {
+            x += grid.ColumnDefinitions[c].ActualWidth;
+            if (Math.Abs(ptInGrid.X - x) <= ResizeSeparatorThreshold)
+                return (c, -1);
+        }
+
+        double y = 0;
+        for (int r = 0; r < grid.RowDefinitions.Count - 1; r++)
+        {
+            y += grid.RowDefinitions[r].ActualHeight;
+            if (Math.Abs(ptInGrid.Y - y) <= ResizeSeparatorThreshold)
+                return (-1, r);
+        }
+
+        return (-1, -1);
+    }
+
     private void OpenRowPropertiesDialog(PolyDonky.Core.Table table, int? preselectedRow = null)
     {
         // 행 선택을 위한 인덱스 입력 대화
@@ -6941,12 +6963,22 @@ public partial class MainWindow : Window
     private double _overlayTableDragStartTop;
     private bool   _overlayTableDragMoved;
 
+    // ── 오버레이 표 리사이징 상태 ────────────────────────────────────────
+    private System.Windows.Controls.Grid? _resizingTableGrid;
+    private PolyDonky.Core.Table? _resizingTable;
+    private int _resizingColumnIndex = -1;
+    private int _resizingRowIndex = -1;
+    private Point _resizeDragStart;
+    private double _resizeDragStartWidth;
+    private double _resizeDragStartHeight;
+    private const double ResizeSeparatorThreshold = 5.0;
+
     private void OnOverlayTableMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not FrameworkElement fe) return;
+        if (sender is not System.Windows.Controls.Grid grid) return;
 
         // 더블클릭 → 속성 다이얼로그
-        if (e.ClickCount == 2 && fe.Tag is PolyDonky.Core.Table tbl)
+        if (e.ClickCount == 2 && grid.Tag is PolyDonky.Core.Table tbl)
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
             var dlg = new TablePropertiesWindow(tbl) { Owner = this };
@@ -6972,21 +7004,119 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 단일 클릭 → 드래그 시작 (Block 모드 표는 드래그 불가)
-        if (fe.Tag is PolyDonky.Core.Table t &&
-            t.WrapMode == PolyDonky.Core.TableWrapMode.Block) return;
+        // 단일 클릭 — separator 드래그 또는 테이블 이동
+        if (grid.Tag is not PolyDonky.Core.Table table) return;
+        if (table.WrapMode == PolyDonky.Core.TableWrapMode.Block) return;
+        if (grid.Parent is not Canvas canvas) return;
 
-        if (fe.Parent is not Canvas canvas) return;
-        _draggingOverlayTable       = fe;
+        var ptInGrid = e.GetPosition(grid);
+        var (colIdx, rowIdx) = FindTableResizeSeparatorAt(grid, ptInGrid);
+
+        if (colIdx >= 0)
+        {
+            _resizingTableGrid = grid;
+            _resizingTable = table;
+            _resizingColumnIndex = colIdx;
+            _resizingRowIndex = -1;
+            _resizeDragStart = e.GetPosition(grid);
+            _resizeDragStartWidth = grid.ColumnDefinitions[colIdx].ActualWidth;
+            grid.CaptureMouse();
+            grid.MouseMove += OnOverlayTableResizeMove;
+            grid.MouseLeftButtonUp += OnOverlayTableResizeUp;
+            e.Handled = true;
+            return;
+        }
+
+        if (rowIdx >= 0)
+        {
+            _resizingTableGrid = grid;
+            _resizingTable = table;
+            _resizingColumnIndex = -1;
+            _resizingRowIndex = rowIdx;
+            _resizeDragStart = e.GetPosition(grid);
+            _resizeDragStartHeight = grid.RowDefinitions[rowIdx].ActualHeight;
+            grid.CaptureMouse();
+            grid.MouseMove += OnOverlayTableResizeMove;
+            grid.MouseLeftButtonUp += OnOverlayTableResizeUp;
+            e.Handled = true;
+            return;
+        }
+
+        _draggingOverlayTable       = grid;
         _overlayTableDragStart      = e.GetPosition(canvas);
-        _overlayTableDragStartLeft  = Canvas.GetLeft(fe);
-        _overlayTableDragStartTop   = Canvas.GetTop(fe);
+        _overlayTableDragStartLeft  = Canvas.GetLeft(grid);
+        _overlayTableDragStartTop   = Canvas.GetTop(grid);
         if (double.IsNaN(_overlayTableDragStartLeft)) _overlayTableDragStartLeft = 0;
         if (double.IsNaN(_overlayTableDragStartTop))  _overlayTableDragStartTop  = 0;
         _overlayTableDragMoved = false;
-        fe.CaptureMouse();
-        fe.MouseMove         += OnOverlayTableDragMove;
-        fe.MouseLeftButtonUp += OnOverlayTableDragUp;
+        grid.CaptureMouse();
+        grid.MouseMove         += OnOverlayTableDragMove;
+        grid.MouseLeftButtonUp += OnOverlayTableDragUp;
+        e.Handled = true;
+    }
+
+    private void OnOverlayTableMouseMove(object sender, MouseEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Grid grid) return;
+        var ptInGrid = e.GetPosition(grid);
+        var (colIdx, rowIdx) = FindTableResizeSeparatorAt(grid, ptInGrid);
+
+        if (colIdx >= 0)
+            grid.Cursor = Cursors.SizeWE;
+        else if (rowIdx >= 0)
+            grid.Cursor = Cursors.SizeNS;
+        else
+            grid.Cursor = Cursors.SizeAll;
+    }
+
+    private void OnOverlayTableResizeMove(object sender, MouseEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Grid grid || _resizingTableGrid is null) return;
+        if (!ReferenceEquals(_resizingTableGrid, grid)) return;
+
+        var ptInGrid = e.GetPosition(grid);
+        double delta = 0;
+
+        if (_resizingColumnIndex >= 0)
+        {
+            delta = ptInGrid.X - _resizeDragStart.X;
+            double newWidth = Math.Max(20, _resizeDragStartWidth + delta);
+            grid.ColumnDefinitions[_resizingColumnIndex].Width = new System.Windows.GridLength(newWidth);
+
+            if (_resizingTable is not null)
+                _resizingTable.Columns[_resizingColumnIndex].WidthMm =
+                    FlowDocumentBuilder.DipToMm(newWidth);
+        }
+        else if (_resizingRowIndex >= 0)
+        {
+            delta = ptInGrid.Y - _resizeDragStart.Y;
+            double newHeight = Math.Max(20, _resizeDragStartHeight + delta);
+            grid.RowDefinitions[_resizingRowIndex].Height = new System.Windows.GridLength(newHeight);
+
+            if (_resizingTable is not null)
+                _resizingTable.Rows[_resizingRowIndex].HeightMm =
+                    FlowDocumentBuilder.DipToMm(newHeight);
+        }
+    }
+
+    private void OnOverlayTableResizeUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Grid grid || _resizingTableGrid is null) return;
+        if (!ReferenceEquals(_resizingTableGrid, grid)) return;
+
+        grid.ReleaseMouseCapture();
+        grid.MouseMove -= OnOverlayTableResizeMove;
+        grid.MouseLeftButtonUp -= OnOverlayTableResizeUp;
+
+        if (_resizingTable is not null)
+        {
+            _viewModel?.MarkDirty();
+        }
+
+        _resizingTableGrid = null;
+        _resizingTable = null;
+        _resizingColumnIndex = -1;
+        _resizingRowIndex = -1;
         e.Handled = true;
     }
 
