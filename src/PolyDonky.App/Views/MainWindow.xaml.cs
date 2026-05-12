@@ -4858,6 +4858,10 @@ public partial class MainWindow : Window
                 nextCoreRow.Cells.RemoveAt(i);
         }
 
+        // 행이 완전히 비었다면 빈 셀을 추가해 유효한 표 구조 유지
+        if (nextCoreRow.Cells.Count == 0)
+            nextCoreRow.Cells.Add(new PolyDonky.Core.TableCell { Blocks = { Paragraph.Of(string.Empty) } });
+
         if (rowGroup is not null && nextRowIdx < rowGroup.Rows.Count)
         {
             var nextWpfRow = rowGroup.Rows[nextRowIdx];
@@ -4870,6 +4874,10 @@ public partial class MainWindow : Window
                 if (cellColStart < mergeColEnd && cellColEnd > mergeColStart)
                     nextWpfRow.Cells.RemoveAt(i);
             }
+
+            // WPF 행도 빈 셀 추가 (균형 유지)
+            if (nextWpfRow.Cells.Count == 0)
+                nextWpfRow.Cells.Add(MakeEmptyWpfCell());
         }
         _viewModel?.MarkDirty();
     }
