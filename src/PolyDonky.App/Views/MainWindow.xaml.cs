@@ -6127,6 +6127,62 @@ public partial class MainWindow : Window
     private System.Windows.Controls.ContextMenu BuildOverlayTableMenu(PolyDonky.Core.Table table)
     {
         var menu = new System.Windows.Controls.ContextMenu();
+
+        // ── 행 관리 ──
+        var rowMenu = new System.Windows.Controls.MenuItem { Header = "행(_R)" };
+        rowMenu.Items.Add(MakeMenuItem("위에 삽입(_A)", () =>
+        {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            Services.TableModelEditor.InsertRowAbove(table, 0);
+            RefreshTableInFlowDocument(table);
+            _viewModel?.MarkDirty();
+        }));
+        rowMenu.Items.Add(MakeMenuItem("아래에 삽입(_B)", () =>
+        {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            Services.TableModelEditor.InsertRowBelow(table, table.Rows.Count - 1);
+            RefreshTableInFlowDocument(table);
+            _viewModel?.MarkDirty();
+        }));
+        rowMenu.Items.Add(new System.Windows.Controls.Separator());
+        rowMenu.Items.Add(MakeMenuItem("높이 조정(_H)...", () =>
+        {
+            OpenRowPropertiesDialog(table);
+        }));
+        menu.Items.Add(rowMenu);
+
+        // ── 열 관리 ──
+        var colMenu = new System.Windows.Controls.MenuItem { Header = "열(_C)" };
+        colMenu.Items.Add(MakeMenuItem("왼쪽에 삽입(_L)", () =>
+        {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            Services.TableModelEditor.InsertColumnLeft(table, 0);
+            RefreshTableInFlowDocument(table);
+            _viewModel?.MarkDirty();
+        }));
+        colMenu.Items.Add(MakeMenuItem("오른쪽에 삽입(_R)", () =>
+        {
+            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            Services.TableModelEditor.InsertColumnRight(table, table.Columns.Count - 1);
+            RefreshTableInFlowDocument(table);
+            _viewModel?.MarkDirty();
+        }));
+        colMenu.Items.Add(new System.Windows.Controls.Separator());
+        colMenu.Items.Add(MakeMenuItem("너비 조정(_W)...", () =>
+        {
+            OpenColumnPropertiesDialog(table);
+        }));
+        menu.Items.Add(colMenu);
+
+        menu.Items.Add(new System.Windows.Controls.Separator());
+
+        // ── 셀 관리 ──
+        menu.Items.Add(MakeMenuItem("셀 편집(_E)...", () =>
+        {
+            OpenCellPropertiesDialog(table);
+        }));
+
+        menu.Items.Add(new System.Windows.Controls.Separator());
         menu.Items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
             var dlg = new TablePropertiesWindow(table) { Owner = this };
@@ -6173,6 +6229,176 @@ public partial class MainWindow : Window
             RebuildOverlayTables();
         }));
         return menu;
+    }
+
+    // ── 표 편집 헬퍼 메서드 ────────────────────────────────────────────────────
+
+    private void RefreshTableInFlowDocument(PolyDonky.Core.Table table)
+    {
+        // 현재 FlowDocument에서 표 앵커를 찾아 재빌드한다.
+        foreach (var rtb in PageEditorHost.PageEditors)
+        {
+            var anchor = rtb.Document.Blocks.FirstOrDefault(b => ReferenceEquals(b.Tag, table));
+            if (anchor is not null)
+            {
+                if (table.WrapMode == PolyDonky.Core.TableWrapMode.Block)
+                {
+                    var newTable = Services.FlowDocumentBuilder.BuildTable(table);
+                    rtb.Document.Blocks.InsertBefore(anchor, newTable);
+                    rtb.Document.Blocks.Remove(anchor);
+                }
+                break;
+            }
+        }
+        RebuildOverlayTables();
+    }
+
+    private void OpenRowPropertiesDialog(PolyDonky.Core.Table table)
+    {
+        // 행 선택을 위한 인덱스 입력 대화
+        var selectDlg = new System.Windows.Window
+        {
+            Title = "행 선택",
+            Width = 300,
+            Height = 120,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+            Owner = this
+        };
+
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text = "행 인덱스 (0~" + (table.Rows.Count - 1) + "):" });
+        var rowIndexBox = new System.Windows.Controls.TextBox { Text = "0", Margin = new Thickness(0, 5, 0, 10) };
+        panel.Children.Add(rowIndexBox);
+
+        var btnPanel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+        var okBtn = new System.Windows.Controls.Button { Content = "확인", Width = 80, Margin = new Thickness(0, 0, 5, 0) };
+        var cancelBtn = new System.Windows.Controls.Button { Content = "취소", Width = 80 };
+        btnPanel.Children.Add(okBtn);
+        btnPanel.Children.Add(cancelBtn);
+        panel.Children.Add(btnPanel);
+
+        selectDlg.Content = panel;
+
+        okBtn.Click += (s, e) =>
+        {
+            if (int.TryParse(rowIndexBox.Text, out int rowIdx) && rowIdx >= 0 && rowIdx < table.Rows.Count)
+            {
+                selectDlg.Close();
+                // 행 속성 다이얼로그 열기
+                var dlg = new RowPropertiesWindow(table, rowIdx) { Owner = this };
+                if (dlg.ShowDialog() == true)
+                {
+                    _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+                    RefreshTableInFlowDocument(table);
+                    _viewModel?.MarkDirty();
+                }
+            }
+        };
+        cancelBtn.Click += (s, e) => selectDlg.DialogResult = false;
+
+        selectDlg.ShowDialog();
+    }
+
+    private void OpenColumnPropertiesDialog(PolyDonky.Core.Table table)
+    {
+        // 열 선택을 위한 인덱스 입력 대화
+        var selectDlg = new System.Windows.Window
+        {
+            Title = "열 선택",
+            Width = 300,
+            Height = 120,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+            Owner = this
+        };
+
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text = "열 인덱스 (0~" + (table.Columns.Count - 1) + "):" });
+        var colIndexBox = new System.Windows.Controls.TextBox { Text = "0", Margin = new Thickness(0, 5, 0, 10) };
+        panel.Children.Add(colIndexBox);
+
+        var btnPanel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+        var okBtn = new System.Windows.Controls.Button { Content = "확인", Width = 80, Margin = new Thickness(0, 0, 5, 0) };
+        var cancelBtn = new System.Windows.Controls.Button { Content = "취소", Width = 80 };
+        btnPanel.Children.Add(okBtn);
+        btnPanel.Children.Add(cancelBtn);
+        panel.Children.Add(btnPanel);
+
+        selectDlg.Content = panel;
+
+        okBtn.Click += (s, e) =>
+        {
+            if (int.TryParse(colIndexBox.Text, out int colIdx) && colIdx >= 0 && colIdx < table.Columns.Count)
+            {
+                selectDlg.Close();
+                // 열 속성 다이얼로그 열기
+                var dlg = new ColumnPropertiesWindow(table, colIdx) { Owner = this };
+                if (dlg.ShowDialog() == true)
+                {
+                    _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+                    RefreshTableInFlowDocument(table);
+                    _viewModel?.MarkDirty();
+                }
+            }
+        };
+        cancelBtn.Click += (s, e) => selectDlg.DialogResult = false;
+
+        selectDlg.ShowDialog();
+    }
+
+    private void OpenCellPropertiesDialog(PolyDonky.Core.Table table)
+    {
+        // 셀 선택을 위한 인덱스 입력 대화
+        var selectDlg = new System.Windows.Window
+        {
+            Title = "셀 선택",
+            Width = 300,
+            Height = 150,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+            Owner = this
+        };
+
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text = "행 인덱스 (0~" + (table.Rows.Count - 1) + "):" });
+        var rowIndexBox = new System.Windows.Controls.TextBox { Text = "0", Margin = new Thickness(0, 5, 0, 10) };
+        panel.Children.Add(rowIndexBox);
+
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text = "열 인덱스 (물리, 0~" + (Services.TableOperationHelpers.GetActualColumnCount(table) - 1) + "):" });
+        var colIndexBox = new System.Windows.Controls.TextBox { Text = "0", Margin = new Thickness(0, 5, 0, 10) };
+        panel.Children.Add(colIndexBox);
+
+        var btnPanel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+        var okBtn = new System.Windows.Controls.Button { Content = "확인", Width = 80, Margin = new Thickness(0, 0, 5, 0) };
+        var cancelBtn = new System.Windows.Controls.Button { Content = "취소", Width = 80 };
+        btnPanel.Children.Add(okBtn);
+        btnPanel.Children.Add(cancelBtn);
+        panel.Children.Add(btnPanel);
+
+        selectDlg.Content = panel;
+
+        okBtn.Click += (s, e) =>
+        {
+            if (int.TryParse(rowIndexBox.Text, out int rowIdx) && int.TryParse(colIndexBox.Text, out int colIdx))
+            {
+                var cell = Services.TableOperationHelpers.GetCellAt(table, rowIdx, colIdx);
+                if (cell is not null)
+                {
+                    selectDlg.Close();
+                    // 셀 속성 다이얼로그 열기
+                    var dlg = new CellPropertiesWindow(cell) { Owner = this };
+                    if (dlg.ShowDialog() == true)
+                    {
+                        _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+                        RefreshTableInFlowDocument(table);
+                        _viewModel?.MarkDirty();
+                    }
+                    return;
+                }
+                MessageBox.Show("해당 위치의 셀을 찾을 수 없습니다.", "오류", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        };
+        cancelBtn.Click += (s, e) => selectDlg.DialogResult = false;
+
+        selectDlg.ShowDialog();
     }
 
     // ── 오버레이 표 드래그 이동 상태 ────────────────────────────────────────
