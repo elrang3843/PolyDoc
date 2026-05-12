@@ -231,15 +231,33 @@ try
         text = InlineExternalStylesheets(text, htmlBaseDir);
         text = ComputeAndInlineCss(text);
 
+        WriteProgress(20, "HTML 파싱 중");
         var doc = HtmlReader.FromHtml(text, maxBlocks: 0);
+        Console.Error.WriteLine($"[DEBUG] HTML 파싱 완료: 섹션 {doc.Sections.Count}, 블록 {doc.Sections[0].Blocks.Count}");
 
         // HTML 파일 기준 상대 경로 이미지를 디스크에서 읽어 data 로 내장.
         WriteProgress(30, "이미지 내장 중");
+        long totalImageBytes = 0;
+        var imgCount = CountImages(doc);
         EmbedLocalImages(doc, htmlBaseDir);
+        foreach (var section in doc.Sections)
+            totalImageBytes += SumImageBytes(section.Blocks);
+        Console.Error.WriteLine($"[DEBUG] 이미지 내장 완료: 개수 {imgCount}, 총 크기 {totalImageBytes / (1024 * 1024)}MB");
 
         WriteProgress(60, "IWPF 로 변환 중");
-        using (var ofs = File.Create(tempOut))
-            new IwpfWriter().Write(doc, ofs);
+        Console.Error.WriteLine($"[DEBUG] IWPF 쓰기 시작");
+        try
+        {
+            using (var ofs = File.Create(tempOut))
+                new IwpfWriter().Write(doc, ofs);
+            var fileInfo = new FileInfo(tempOut);
+            Console.Error.WriteLine($"[DEBUG] IWPF 쓰기 완료: {fileInfo.Length / (1024 * 1024)}MB");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[DEBUG] IWPF 쓰기 실패: {ex.GetType().Name}: {ex.Message}");
+            throw;
+        }
     }
     else // isExport
     {
@@ -431,6 +449,43 @@ static bool IsValidUtf8WithNonAscii(byte[] bytes)
 /// 디스크에서 읽어 Data 에 내장한다.
 /// http(s):// · data: · // 등 외부 URL 은 건너뛴다.
 /// </summary>
+static int CountImages(PolyDonkyument doc)
+{
+    int count = 0;
+    foreach (var section in doc.Sections)
+        count += CountImagesInBlocks(section.Blocks);
+    return count;
+}
+
+static int CountImagesInBlocks(IList<Block> blocks)
+{
+    int count = 0;
+    foreach (var block in blocks)
+    {
+        if (block is ImageBlock) count++;
+        else if (block is Table t)
+            foreach (var row in t.Rows)
+                foreach (var cell in row.Cells)
+                    count += CountImagesInBlocks(cell.Blocks);
+    }
+    return count;
+}
+
+static long SumImageBytes(IList<Block> blocks)
+{
+    long sum = 0;
+    foreach (var block in blocks)
+    {
+        if (block is ImageBlock img)
+            sum += img.Data?.LongLength ?? 0;
+        else if (block is Table t)
+            foreach (var row in t.Rows)
+                foreach (var cell in row.Cells)
+                    sum += SumImageBytes(cell.Blocks);
+    }
+    return sum;
+}
+
 static void EmbedLocalImages(PolyDonkyument doc, string baseDir)
 {
     foreach (var section in doc.Sections)
