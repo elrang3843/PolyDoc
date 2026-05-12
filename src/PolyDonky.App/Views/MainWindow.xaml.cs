@@ -1209,7 +1209,7 @@ public partial class MainWindow : Window
 
         rtb.ContextMenu             = new System.Windows.Controls.ContextMenu();
         rtb.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
-        rtb.PreviewMouseDoubleClick += OnEmbeddedObjectDoubleClick;
+        rtb.PreviewMouseDoubleClick += OnPreviewMouseDoubleClickMaster;
 
         rtb.MouseLeave += (_, _) =>
         {
@@ -4937,7 +4937,7 @@ public partial class MainWindow : Window
     }
 
 
-    private void OnEmbeddedObjectDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private void OnPreviewMouseDoubleClickMaster(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         var pt = e.GetPosition(BodyEditor);
         if (FindEmbeddedObjectAt(e.OriginalSource, pt) is not { } found) return;
