@@ -2592,4 +2592,59 @@ public class HtmlTests
         Assert.InRange(p.MarginHeaderMm, 14.5, 15.5);
         Assert.InRange(p.MarginFooterMm, 11.5, 12.5);
     }
+
+    [Fact]
+    public void Reader_DivBackgroundImageDataUri_BecomesImageBlock()
+    {
+        // 공백을 없애서 더 간단한 HTML로 테스트
+        const string html = @"<div style=""background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=); width: 100px; height: 100px;""><p>Test</p></div>";
+        var doc = HtmlReader.FromHtml(html);
+
+        // 모든 블록 타입 확인 (디버깅용)
+        var blocks = doc.Sections[0].Blocks;
+        Assert.NotEmpty(blocks);
+
+        // 블록 타입과 내용 확인
+        string blockTypes = string.Join(", ", blocks.Select(b => b.GetType().Name));
+
+        // ContainerBlock이 생성되었나?
+        var container = blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);  // ContainerBlock이 있는지 확인
+
+        // ContainerBlock 안의 자식들 확인
+        var children = container.Children;
+        string childTypes = string.Join(", ", children.Select(c => c.GetType().Name));
+
+        var img = children.OfType<ImageBlock>().FirstOrDefault();
+        Assert.NotNull(img);
+        Assert.NotEmpty(img.Data);
+        Assert.Equal("image/png", img.MediaType);
+    }
+
+    [Fact]
+    public void Reader_DivBackgroundImageUrl_StoresResourcePath()
+    {
+        const string html = @"<div style='background-image: url(./images/test.jpg); width: 100mm; height: 50mm;'>
+            <p>Content</p>
+        </div>";
+        var doc = HtmlReader.FromHtml(html);
+        var img = doc.Sections[0].Blocks.OfType<ImageBlock>().FirstOrDefault();
+        Assert.NotNull(img);
+        Assert.Equal("./images/test.jpg", img.ResourcePath);
+        Assert.Equal("image/jpeg", img.MediaType);
+        Assert.Empty(img.Data);  // ResourcePath만 있음
+    }
+
+    [Fact]
+    public void Reader_DivBackgroundImageExternalUrl_StoresUrl()
+    {
+        const string html = @"<div style='background-image: url(https://example.com/image.png); width: 200mm;'>
+            <p>Text</p>
+        </div>";
+        var doc = HtmlReader.FromHtml(html);
+        var img = doc.Sections[0].Blocks.OfType<ImageBlock>().FirstOrDefault();
+        Assert.NotNull(img);
+        Assert.Equal("https://example.com/image.png", img.ResourcePath);
+        Assert.Equal("image/png", img.MediaType);
+    }
 }

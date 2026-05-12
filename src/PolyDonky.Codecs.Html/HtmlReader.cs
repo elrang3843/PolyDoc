@@ -1848,6 +1848,23 @@ public sealed class HtmlReader : IDocumentReader
 
     /// <summary>data: URI 문자열에서 ImageBlock 을 생성한다. base64 디코딩 포함.
     /// 성공하면 ImageBlock, 실패하면 null.</summary>
+    private static string GuessMediaTypeFromUrl(string url)
+    {
+        var path = url.Split('?', '#')[0];  // 쿼리스트링 제거
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        return ext switch
+        {
+            ".png"              => "image/png",
+            ".jpg" or ".jpeg"   => "image/jpeg",
+            ".gif"              => "image/gif",
+            ".bmp"              => "image/bmp",
+            ".tif" or ".tiff"   => "image/tiff",
+            ".webp"             => "image/webp",
+            ".svg"              => "image/svg+xml",
+            _                   => "application/octet-stream",
+        };
+    }
+
     private static ImageBlock? TryExtractDataUriImage(string dataUri)
     {
         if (!dataUri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) return null;
@@ -1891,14 +1908,18 @@ public sealed class HtmlReader : IDocumentReader
         ApplyBlockStyle(probe, el);
         var ps = probe.Style;
 
+        // background-image 미리 확인 — hasBox 판정에 포함
+        var style    = el.GetAttribute("style") ?? "";
+        var bgImgVal = StyleProp(style, "background-image");
+        bool hasBgImage = bgImgVal is not null && bgImgVal.Trim().StartsWith("url(", StringComparison.OrdinalIgnoreCase);
+
         bool hasBox = ps.BorderTopPt > 0 || ps.BorderBottomPt > 0 ||
                       ps.BorderLeftPt > 0 || ps.BorderRightPt > 0 ||
                       !string.IsNullOrEmpty(ps.BackgroundColor) ||
-                      ps.PaddingTopMm > 0 || ps.PaddingBottomMm > 0;
+                      ps.PaddingTopMm > 0 || ps.PaddingBottomMm > 0 ||
+                      hasBgImage;  // background-image도 박스 스타일로 인정
 
-        // CSS background-image data URI → ImageBlock 추출
-        var style    = el.GetAttribute("style") ?? "";
-        var bgImgVal = StyleProp(style, "background-image");
+        // CSS background-image data URI → ImageBlock 추출. 외부 URL도 ResourcePath로 저장.
         ImageBlock? bgImage = null;
         if (bgImgVal is not null)
         {
@@ -1906,8 +1927,25 @@ public sealed class HtmlReader : IDocumentReader
             if (bgImgVal.StartsWith("url(", StringComparison.OrdinalIgnoreCase))
             {
                 var urlInner = bgImgVal[4..].TrimEnd(')').Trim().Trim('\'', '"');
+                // data: URI 먼저 시도 (inline 이미지)
                 bgImage = TryExtractDataUriImage(urlInner);
-                if (bgImage is not null) hasBox = true;
+                if (bgImage is null && !urlInner.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 외부 URL: ResourcePath로 저장 (EmbedLocalImages에서 나중에 처리)
+                    bgImage = new ImageBlock
+                    {
+                        ResourcePath = urlInner,
+                        MediaType    = GuessMediaTypeFromUrl(urlInner),
+                        WrapMode     = ImageWrapMode.Inline,
+                    };
+                    // [DEBUG] 외부 URL background-image 감지
+                    System.Diagnostics.Debug.WriteLine($"[BG-IMG] URL: {urlInner}");
+                }
+                if (bgImage is not null)
+                {
+                    hasBox = true;
+                    System.Diagnostics.Debug.WriteLine($"[BG-IMG] Created: data={bgImage.Data.Length}, path={bgImage.ResourcePath}");
+                }
             }
         }
 
