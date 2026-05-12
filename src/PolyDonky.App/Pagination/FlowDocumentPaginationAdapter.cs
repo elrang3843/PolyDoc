@@ -1468,13 +1468,15 @@ public static class FlowDocumentPaginationAdapter
                 if (block is Paragraph p &&
                     (p.StyleId == "pd-flex-shape-spacer" || p.StyleId == "image-spacer"))
                 {
-                    if (lookup.TryGetValue(p, out var info)
-                        && info.bodyLocalRect != Rect.Empty)
+                    if (lookup.TryGetValue(p, out var info))
                     {
+                        // pageIdx 는 fast-path 에서도 유효(균등 분배 결과).
+                        // bodyLocalRect 가 Rect.Empty(fast-path) 이면 Y=0(페이지 상단) 으로 폴백.
                         currentSpacerPage = info.pageIdx;
-                        currentSpacerYMm  = FlowDocumentBuilder.DipToMm(info.bodyLocalRect.Top);
+                        currentSpacerYMm  = info.bodyLocalRect != Rect.Empty
+                            ? FlowDocumentBuilder.DipToMm(info.bodyLocalRect.Top)
+                            : 0.0;
                     }
-                    // bodyLocalRect 가 Rect.Empty 이면 이전 값 유지 (fallback).
                 }
                 else if (block is ShapeObject shape && shape.AnchorPageIndex == -2)
                 {
