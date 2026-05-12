@@ -1289,6 +1289,8 @@ public static class FlowDocumentBuilder
                 System.Windows.Controls.Grid.SetColumn(border, c);
                 if (cell.ColumnSpan > 1) System.Windows.Controls.Grid.SetColumnSpan(border, cell.ColumnSpan);
                 if (cell.RowSpan    > 1) System.Windows.Controls.Grid.SetRowSpan(border, cell.RowSpan);
+
+                border.Tag = (r, c);
                 grid.Children.Add(border);
             }
         }

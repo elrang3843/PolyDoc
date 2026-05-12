@@ -6119,11 +6119,12 @@ public partial class MainWindow : Window
         }
 
         // ④ 오버레이 표 (InFrontOfText/Fixed 우선, BehindText 차선)
-        var hitTable = (FindCanvasChildAt(OverlayTableCanvas, pt)
-                     ?? FindCanvasChildAt(UnderlayTableCanvas, pt))?.Tag as PolyDonky.Core.Table;
-        if (hitTable is not null)
+        var hitTableGrid = FindCanvasChildAt(OverlayTableCanvas, pt) as System.Windows.Controls.Grid
+                        ?? FindCanvasChildAt(UnderlayTableCanvas, pt) as System.Windows.Controls.Grid;
+        if (hitTableGrid?.Tag is PolyDonky.Core.Table hitTable)
         {
-            OpenContextMenu(BuildOverlayTableMenu(hitTable));
+            var cellInfo = FindTableCellAtPoint(hitTableGrid, pt);
+            OpenContextMenu(BuildOverlayTableMenu(hitTable, cellInfo));
             e.Handled = true;
             return;
         }
@@ -6476,7 +6477,7 @@ public partial class MainWindow : Window
 
     // ── 오버레이 표 메뉴 / 이벤트 ────────────────────────────────────────
 
-    private System.Windows.Controls.ContextMenu BuildOverlayTableMenu(PolyDonky.Core.Table table)
+    private System.Windows.Controls.ContextMenu BuildOverlayTableMenu(PolyDonky.Core.Table table, (int rowIdx, int colIdx) cellInfo)
     {
         var menu = new System.Windows.Controls.ContextMenu();
 
@@ -6485,7 +6486,7 @@ public partial class MainWindow : Window
         rowMenu.Items.Add(MakeMenuItem("위에 삽입(_A)", () =>
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-            Services.TableModelEditor.InsertRowAbove(table, 0);
+            Services.TableModelEditor.InsertRowAbove(table, cellInfo.rowIdx >= 0 ? cellInfo.rowIdx : 0);
             UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
@@ -6494,7 +6495,7 @@ public partial class MainWindow : Window
         rowMenu.Items.Add(MakeMenuItem("아래에 삽입(_B)", () =>
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-            Services.TableModelEditor.InsertRowBelow(table, table.Rows.Count - 1);
+            Services.TableModelEditor.InsertRowBelow(table, cellInfo.rowIdx >= 0 ? cellInfo.rowIdx : table.Rows.Count - 1);
             UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
@@ -6503,7 +6504,7 @@ public partial class MainWindow : Window
         rowMenu.Items.Add(new System.Windows.Controls.Separator());
         rowMenu.Items.Add(MakeMenuItem("높이 조정(_H)...", () =>
         {
-            OpenRowPropertiesDialog(table);
+            OpenRowPropertiesDialog(table, cellInfo.rowIdx);
         }));
         menu.Items.Add(rowMenu);
 
@@ -6512,7 +6513,7 @@ public partial class MainWindow : Window
         colMenu.Items.Add(MakeMenuItem("왼쪽에 삽입(_L)", () =>
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-            Services.TableModelEditor.InsertColumnLeft(table, 0);
+            Services.TableModelEditor.InsertColumnLeft(table, cellInfo.colIdx >= 0 ? cellInfo.colIdx : 0);
             UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
@@ -6521,7 +6522,7 @@ public partial class MainWindow : Window
         colMenu.Items.Add(MakeMenuItem("오른쪽에 삽입(_R)", () =>
         {
             _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
-            Services.TableModelEditor.InsertColumnRight(table, table.Columns.Count - 1);
+            Services.TableModelEditor.InsertColumnRight(table, cellInfo.colIdx >= 0 ? cellInfo.colIdx : table.Columns.Count - 1);
             UpdatePaginatedDoc();
             SetupPageEditors();
             RebuildOverlayTables();
@@ -6530,7 +6531,7 @@ public partial class MainWindow : Window
         colMenu.Items.Add(new System.Windows.Controls.Separator());
         colMenu.Items.Add(MakeMenuItem("너비 조정(_W)...", () =>
         {
-            OpenColumnPropertiesDialog(table);
+            OpenColumnPropertiesDialog(table, cellInfo.colIdx);
         }));
         menu.Items.Add(colMenu);
 
@@ -6716,7 +6717,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenRowPropertiesDialog(PolyDonky.Core.Table table)
+    private (int rowIdx, int colIdx) FindTableCellAtPoint(System.Windows.Controls.Grid grid, Point pt)
+    {
+        var ptInGrid = PaperHost.TransformToDescendant(grid).Transform(pt);
+        foreach (UIElement child in grid.Children)
+        {
+            if (child is not System.Windows.Controls.Border border) continue;
+            var borderRect = new Rect(border.RenderSize);
+            var borderPt = border.TransformToVisual(grid).Transform(new Point(0, 0));
+            borderRect.Offset(borderPt);
+
+            if (borderRect.Contains(ptInGrid) && border.Tag is (int r, int c))
+                return (r, c);
+        }
+        return (-1, -1);
+    }
+
+    private void OpenRowPropertiesDialog(PolyDonky.Core.Table table, int? preselectedRow = null)
     {
         // 행 선택을 위한 인덱스 입력 대화
         var selectDlg = new System.Windows.Window
@@ -6730,7 +6747,11 @@ public partial class MainWindow : Window
 
         var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text = "행 인덱스 (0~" + (table.Rows.Count - 1) + "):" });
-        var rowIndexBox = new System.Windows.Controls.TextBox { Text = "0", Margin = new Thickness(0, 5, 0, 10) };
+        var rowIndexBox = new System.Windows.Controls.TextBox
+        {
+            Text = (preselectedRow >= 0 && preselectedRow < table.Rows.Count) ? preselectedRow.ToString() : "0",
+            Margin = new Thickness(0, 5, 0, 10)
+        };
         panel.Children.Add(rowIndexBox);
 
         var btnPanel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
@@ -6777,7 +6798,7 @@ public partial class MainWindow : Window
         selectDlg.ShowDialog();
     }
 
-    private void OpenColumnPropertiesDialog(PolyDonky.Core.Table table)
+    private void OpenColumnPropertiesDialog(PolyDonky.Core.Table table, int? preselectedCol = null)
     {
         // 열 선택을 위한 인덱스 입력 대화
         var selectDlg = new System.Windows.Window
@@ -6791,7 +6812,11 @@ public partial class MainWindow : Window
 
         var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(10) };
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text = "열 인덱스 (0~" + (table.Columns.Count - 1) + "):" });
-        var colIndexBox = new System.Windows.Controls.TextBox { Text = "0", Margin = new Thickness(0, 5, 0, 10) };
+        var colIndexBox = new System.Windows.Controls.TextBox
+        {
+            Text = (preselectedCol >= 0 && preselectedCol < table.Columns.Count) ? preselectedCol.ToString() : "0",
+            Margin = new Thickness(0, 5, 0, 10)
+        };
         panel.Children.Add(colIndexBox);
 
         var btnPanel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
