@@ -3403,6 +3403,34 @@ public partial class MainWindow : Window
                 }
             }
 
+            // 오른쪽 끝열 오른쪽 외곽선: 표 전체 가로 크기 조정
+            // 모든 열이 절대값 너비일 때만 정확하게 계산 가능.
+            if (cellIdx == colCount - 1 && firstRow.Cells.Count == colCount)
+            {
+                var firstCellRect = firstRow.Cells[0].ContentStart
+                    .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                if (!firstCellRect.IsEmpty)
+                {
+                    double totalW = 0;
+                    bool allAbs = true;
+                    foreach (var col in wTable.Columns)
+                    {
+                        if (col.Width.IsAbsolute) totalW += col.Width.Value;
+                        else { allAbs = false; break; }
+                    }
+                    if (allAbs)
+                    {
+                        double rightX = firstCellRect.Left + totalW;
+                        if (Math.Abs(pt.X - rightX) <= TableColResizeHitDip)
+                        {
+                            wpfTable = wTable; coreTable = cTable;
+                            leftColIdx = cellIdx; borderX = rightX;
+                            return true;
+                        }
+                    }
+                }
+            }
+
             return false;
         }
         catch (System.InvalidOperationException)
@@ -3591,6 +3619,21 @@ public partial class MainWindow : Window
         _colRszLeftCol.Width = new GridLength(_colRszInitLeft);
         if (_colRszRightCol != null)
             _colRszRightCol.Width = new GridLength(_colRszInitRight);
+
+        // 표 폭 조정 모드(우측 외곽선 드래그): 나머지 열들도 절대값으로 고정해야
+        // 마지막 열 확장 시 다른 Auto 열이 재분배되지 않는다.
+        if (_colRszRightCol == null)
+        {
+            for (int i = 0; i < leftColIdx; i++)
+            {
+                double xi  = CellLeft(i);
+                double xi1 = CellLeft(i + 1);
+                if (!double.IsNaN(xi) && !double.IsNaN(xi1) && xi1 > xi)
+                    wpfTable.Columns[i].Width = new GridLength(xi1 - xi);
+                else if (!wpfTable.Columns[i].Width.IsAbsolute)
+                    wpfTable.Columns[i].Width = new GridLength(80);
+            }
+        }
 
         (_colRszRtb ?? BodyEditor).CaptureMouse();
         Mouse.OverrideCursor = Cursors.SizeWE;
