@@ -422,15 +422,12 @@ public static class TableModelEditor
             {
                 Blocks = new List<Block> { new Paragraph() },
                 RowSpan = 1,
-                ColumnSpan = 1
+                ColumnSpan = 1,
+                // 표의 모든 속성을 그대로 상속 (조건 없이)
+                BorderThicknessPt = table.BorderThicknessPt,
+                BorderColor = table.BorderColor,
+                BackgroundColor = table.BackgroundColor,
             };
-            // 표의 기본 테두리·배경 속성 상속 (명시적 셀 속성이 없을 때 사용됨)
-            if (table.BorderThicknessPt > 0)
-                cell.BorderThicknessPt = table.BorderThicknessPt;
-            if (!string.IsNullOrEmpty(table.BorderColor))
-                cell.BorderColor = table.BorderColor;
-            if (!string.IsNullOrEmpty(table.BackgroundColor))
-                cell.BackgroundColor = table.BackgroundColor;
             row.Cells.Add(cell);
         }
         return row;

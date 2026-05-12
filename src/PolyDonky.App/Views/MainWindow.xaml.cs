@@ -4334,6 +4334,24 @@ public partial class MainWindow : Window
         int minCell = Math.Min(startCellIdx, endCellIdx);
         int maxCell = Math.Max(startCellIdx, endCellIdx);
 
+        // endCell의 실제 포함 여부 재확인
+        // Selection.End가 endWpfCell 범위를 벗어났을 가능성이 있음
+        var selEnd = BodyEditor.Selection.End;
+        if (endWpfCell != null && maxCell > minCell)
+        {
+            // endCell의 콘텐츠 끝 다음인지 확인
+            var endCellContentEnd = endWpfCell.ContentEnd;
+
+            // Selection.End가 endCell 콘텐츠 끝을 넘어서면, endCell은 부분 선택만 됨
+            // 이 경우 endCellIdx를 줄이는 것이 맞을 수 있음
+            if (selEnd.CompareTo(endCellContentEnd) > 0)
+            {
+                // Selection이 endCell을 완전히 포함하지 않으면 endCell 제외
+                endCellIdx = Math.Max(minCell, endCellIdx - 1);
+                maxCell = Math.Max(startCellIdx, endCellIdx);
+            }
+        }
+
         var result = new List<SelectedCell>();
         for (int r = minRow; r <= maxRow; r++)
         {
