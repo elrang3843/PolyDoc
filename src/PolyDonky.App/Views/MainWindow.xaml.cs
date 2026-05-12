@@ -4292,9 +4292,18 @@ public partial class MainWindow : Window
         // Selection.End 가 셀 오른쪽 경계 또는 표 뒤의 Paragraph에 위치하면
         // FindAncestorCell 이 null 을 반환하거나 다음 셀을 반환해 off-by-one 발생.
         // 한 위치 뒤로 물러나면 항상 마지막으로 선택된 셀 안쪽에 머문다.
+        System.Windows.Documents.TableCell? endWpfCell = null;
         var endRaw = BodyEditor.Selection.End;
-        var endPos = endRaw.GetPositionAtOffset(-1, System.Windows.Documents.LogicalDirection.Backward) ?? endRaw;
-        var endWpfCell = FindAncestorCell(endPos);
+
+        // 여러 오프셋을 시도해서 올바른 셀 찾기
+        for (int offset = -1; offset >= -3 && endWpfCell == null; offset--)
+        {
+            var endPos = endRaw.GetPositionAtOffset(offset, System.Windows.Documents.LogicalDirection.Backward) ?? endRaw;
+            endWpfCell = FindAncestorCell(endPos);
+        }
+        // 모두 실패하면 Selection.End 직접 시도
+        if (endWpfCell == null)
+            endWpfCell = FindAncestorCell(endRaw);
 
         if (startWpfCell == null || endWpfCell == null) return null;
         if (ReferenceEquals(startWpfCell, endWpfCell)) return null; // 단일 셀
