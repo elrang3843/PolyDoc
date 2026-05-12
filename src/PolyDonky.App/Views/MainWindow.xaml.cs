@@ -6208,7 +6208,16 @@ public partial class MainWindow : Window
             else
             {
                 // 취소되면 Undo 실행 (변경사항 되돌림)
-                _viewModel?.UndoRedo.Undo();
+                if (_viewModel is not null)
+                {
+                    var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                    if (prev is not null)
+                    {
+                        _viewModel.ReplaceDocumentForUndo(prev);
+                        _viewModel.MarkDirty();
+                        ApplyFlowDocument(_viewModel.FlowDocument);
+                    }
+                }
             }
         }));
         menu.Items.Add(new System.Windows.Controls.Separator());
@@ -6315,7 +6324,16 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    _viewModel?.UndoRedo.Undo();
+                    if (_viewModel is not null)
+                    {
+                        var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                        if (prev is not null)
+                        {
+                            _viewModel.ReplaceDocumentForUndo(prev);
+                            _viewModel.MarkDirty();
+                            ApplyFlowDocument(_viewModel.FlowDocument);
+                        }
+                    }
                 }
             }
         };
@@ -6367,7 +6385,16 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    _viewModel?.UndoRedo.Undo();
+                    if (_viewModel is not null)
+                    {
+                        var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                        if (prev is not null)
+                        {
+                            _viewModel.ReplaceDocumentForUndo(prev);
+                            _viewModel.MarkDirty();
+                            ApplyFlowDocument(_viewModel.FlowDocument);
+                        }
+                    }
                 }
             }
         };
@@ -6426,7 +6453,16 @@ public partial class MainWindow : Window
                     }
                     else
                     {
-                        _viewModel?.UndoRedo.Undo();
+                        if (_viewModel is not null)
+                        {
+                            var prev = _viewModel.UndoRedo.Undo(_viewModel.Document);
+                            if (prev is not null)
+                            {
+                                _viewModel.ReplaceDocumentForUndo(prev);
+                                _viewModel.MarkDirty();
+                                ApplyFlowDocument(_viewModel.FlowDocument);
+                            }
+                        }
                     }
                     return;
                 }
