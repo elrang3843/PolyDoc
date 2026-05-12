@@ -52,6 +52,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **오버레이 표 행·열 드래그 기반 크기 조정 구현**: 오버레이 모드 표의 열 너비 및 행 높이를 마우스 드래그로 조정 가능하도록 구현. 우클릭 메뉴에서 표 셀 위치를 자동 감지해 행·열 인덱스를 전달. 마우스 호버 시 커서 변경(SizeWE/SizeNS) 및 경계선 강조. 오버레이 표의 분리선(`BorderBrush` 또는 동적 계산) 위에서 5 DIP 내 hit-test로 경계 감지. 드래그 중 실시간 셀 크기 반영 후 Core 모델 업데이트. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
+
+- **블록 모드 표 행 높이 드래그 조정 구현**: Block-mode FlowDocument 표의 행 높이를 마우스 드래그로 조정 가능하도록 구현. WPF TableRow는 MinHeight 속성이 없으므로 행의 모든 셀의 Padding.Bottom을 균등하게 조정하여 행 높이 증감 수행. 마우스 호버 시 SizeNS 커서 표시, 경계 감지 시 색상 변경으로 시각 피드백 제공. 드래그 종료 후 Core 모델의 셀 내용물 크기 재계산. (`MainWindow.xaml.cs`)
+
+- **표 행 경계 감지 보정 — 패딩 조정 후 재감지 실패 수정**: 블록 모드 표의 행 높이를 드래그로 조정한 후 동일 행 경계를 다시 드래그할 수 없던 문제. `TryHitTableRowBorder`의 `RowBottomY()` 지역 함수가 행의 ContentEnd.Bottom만 사용했으나, 이전 드래그에서 추가된 Padding.Bottom 값을 반영하지 않아 경계 위치가 틀려지던 것이 원인. 계산 식에 행의 모든 셀 중 최대 Padding.Bottom을 더하도록 수정해 패딩 변경이 반영된 행 높이를 올바르게 감지. (`MainWindow.xaml.cs`)
+
 - **표 열 리사이즈 커서가 잘못된 위치에서 나타나다 클릭 시 사라지는 문제**: 다중 RTB(페이지별 에디터) 환경에서 `TryHitTableColumnBorder`가 항상 `BodyEditor`(활성/첫 번째 RTB) 기준 좌표를 사용해 실제 마우스가 위치한 RTB와 좌표계가 달라 경계 감지가 틀리던 문제. 마우스 이벤트의 `sender` RTB를 기준으로 좌표 계산 및 hit-test를 수행하도록 수정. 마우스 캡처 대상도 `sender` RTB로 고정해 드래그 중 좌표 일관성 보장. (`MainWindow.xaml.cs`)
 - **표 WrapMode 변경/삭제가 다른 페이지 RTB의 표에 적용 안 되는 문제**: `표 속성` 다이얼로그에서 WrapMode를 변경하거나 표를 삭제할 때 `BodyEditor.Document`만 탐색하던 코드가 테이블이 있는 RTB를 찾지 못해 변경이 누락되던 문제. `FindRtbContaining()` 헬퍼를 추가해 전체 페이지 에디터에서 해당 블록을 소유한 RTB를 검색하고, 그 RTB의 FlowDocument에 변경을 적용하도록 수정. 멀티셀 선택 메뉴의 `표 속성`도 WrapMode 변경을 단일 셀 메뉴와 동일하게 처리하도록 수정. (`MainWindow.xaml.cs`)
 - **HR(수평선)의 복사/붙여넣기 및 우클릭 메뉴 미지원 문제**: HTML 등에서 `<hr>` 요소를 `ThematicBreakBlock`으로 변환한 수평선을 복사/붙여넣기할 수 없고, 우클릭으로 삭제하거나 편집할 수 있는 방법이 없던 문제. `BuildThematicBreak` 메서드를 `internal static`으로 변경해 `MainWindow.BuildWpfBlockFromCore()`에서 접근 가능하게 하고, `ThematicBreakBlock` 케이스를 switch문에 추가해 복사/붙여넣기 지원. `OnEmbeddedObjectContextMenuOpening`에서 카레트 위치의 HR을 감지하는 `FindThematicBreakBlockAtCaret()` 헬퍼와 삭제 처리 `DeleteThematicBreakBlock()` 메서드를 추가해 우클릭 메뉴에 "선 삭제" 항목 추가. (`FlowDocumentBuilder.cs`, `MainWindow.xaml.cs`)
