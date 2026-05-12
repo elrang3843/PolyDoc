@@ -1626,6 +1626,18 @@ public partial class MainWindow : Window
     private double[] _colDivDragStartWidths = Array.Empty<double>();
     private readonly List<WpfShapes.Line> _columnDividerLines = new();
 
+    // ── 표 셀 범위 선택 상태 ─────────────────────────────────────────────
+    // WPF Selection 의 오버슈트(다음 셀로 밀려남) 문제를 피하기 위해
+    // 마우스 클릭/드래그 시점에 셀의 (row, col) 인덱스를 직접 기록한다.
+    // Ctrl+Click 으로 비연속 사각형 범위를 누적할 수 있다.
+    private System.Windows.Documents.Table?         _cellSelWpfTable;
+    private System.Windows.Documents.TableRowGroup? _cellSelRowGroup;
+    private PolyDonky.Core.Table?                   _cellSelCoreTable;
+    private int _cellSelAnchorRow = -1, _cellSelAnchorCol = -1; // 선택 앵커(드래그 시작)
+    private int _cellSelFocusRow  = -1, _cellSelFocusCol  = -1; // 선택 포커스(드래그 끝)
+    // Ctrl+Click 으로 추가된 이전 사각형 범위들 (같은 표 기준)
+    private readonly List<(int MinRow, int MaxRow, int MinCol, int MaxCol)> _cellCtrlRects = [];
+
     // ── 단 경계 교차 텍스트 선택 상태 ────────────────────────────────────
     // Shift+방향키로 단 경계를 넘을 때 비활성 RTB 의 선택을 유지(IsInactiveSelectionHighlightEnabled)
     // 하고, _crossSelActive 플래그로 복사/편집 명령이 여러 RTB 의 선택을 하나로 처리하도록 한다.
@@ -4234,89 +4246,52 @@ public partial class MainWindow : Window
 
     private List<SelectedCell>? FindSelectedTableCells()
     {
-        if (BodyEditor.Selection.IsEmpty) return null;
-
-        // Paragraph.Parent 직접 검사 대신 조상 체인을 끝까지 거슬러 올라간다.
-        // (List · Span · 중첩 Block 등으로 중간 단계가 있을 수 있음)
-        var startWpfCell = FindAncestorCell(BodyEditor.Selection.Start);
-
-        // Selection.End 가 셀 오른쪽 경계 또는 표 뒤의 Paragraph에 위치하면
-        // FindAncestorCell 이 null 을 반환하거나 다음 셀을 반환해 off-by-one 발생.
-        // 한 위치 뒤로 물러나면 항상 마지막으로 선택된 셀 안쪽에 머문다.
-        System.Windows.Documents.TableCell? endWpfCell = null;
-        var endRaw = BodyEditor.Selection.End;
-
-        // 여러 오프셋을 시도해서 올바른 셀 찾기
-        for (int offset = -1; offset >= -3 && endWpfCell == null; offset--)
-        {
-            var endPos = endRaw.GetPositionAtOffset(offset, System.Windows.Documents.LogicalDirection.Backward) ?? endRaw;
-            endWpfCell = FindAncestorCell(endPos);
-        }
-        // 모두 실패하면 Selection.End 직접 시도
-        if (endWpfCell == null)
-            endWpfCell = FindAncestorCell(endRaw);
-
-        if (startWpfCell == null || endWpfCell == null) return null;
-        if (ReferenceEquals(startWpfCell, endWpfCell)) return null; // 단일 셀
-
-        var startRow  = startWpfCell.Parent as System.Windows.Documents.TableRow;
-        var rowGroup  = startRow?.Parent as System.Windows.Documents.TableRowGroup;
-        var wpfTable  = rowGroup?.Parent as System.Windows.Documents.Table;
-        if (wpfTable is null || rowGroup is null || startRow is null) return null;
-        // 붙여넣기 표는 Tag 가 null 일 수 있으므로 즉석 부착
-        var coreTable = EnsureCoreTable(wpfTable);
-
-        // 끝 셀이 같은 표에 속하는지 확인
-        var endRow = endWpfCell.Parent as System.Windows.Documents.TableRow;
-        var endRowGroup = endRow?.Parent as System.Windows.Documents.TableRowGroup;
-        if (!ReferenceEquals(endRowGroup, rowGroup)) return null;
-
-        int startRowIdx  = rowGroup.Rows.IndexOf(startRow);
-        int startCellIdx = startRow.Cells.IndexOf(startWpfCell);
-        int endRowIdx    = rowGroup.Rows.IndexOf(endRow!);
-        int endCellIdx   = endRow!.Cells.IndexOf(endWpfCell);
-
-        // 인덱스가 유효하지 않으면 선택 실패
-        if (startRowIdx < 0 || startCellIdx < 0 || endRowIdx < 0 || endCellIdx < 0)
+        // 마우스 클릭/드래그로 기록한 (row, col) 상태를 우선 사용.
+        // WPF Selection.End 는 셀 경계에서 오버슈트하거나 빈 셀을 처리하지 못하므로
+        // 직접 기록한 좌표를 사용한다.
+        if (_cellSelWpfTable is null || _cellSelRowGroup is null || _cellSelCoreTable is null
+            || _cellSelAnchorRow < 0)
             return null;
 
-        int minRow  = Math.Min(startRowIdx, endRowIdx);
-        int maxRow  = Math.Max(startRowIdx, endRowIdx);
-        int minCell = Math.Min(startCellIdx, endCellIdx);
-        int maxCell = Math.Max(startCellIdx, endCellIdx);
+        int minRow = Math.Min(_cellSelAnchorRow, _cellSelFocusRow);
+        int maxRow = Math.Max(_cellSelAnchorRow, _cellSelFocusRow);
+        int minCol = Math.Min(_cellSelAnchorCol, _cellSelFocusCol);
+        int maxCol = Math.Max(_cellSelAnchorCol, _cellSelFocusCol);
 
-        // endCell의 실제 포함 여부 재확인
-        var selEnd = BodyEditor.Selection.End;
-        if (endWpfCell != null && maxCell > minCell)
+        // 단일 셀 + Ctrl 누적 없으면 개별 셀 컨텍스트 메뉴로 넘긴다
+        if (_cellCtrlRects.Count == 0 && minRow == maxRow && minCol == maxCol)
+            return null;
+
+        // 현재 앵커-포커스 사각형 + Ctrl 누적 사각형 전체에서 중복 없이 셀 수집
+        var wTable    = _cellSelWpfTable;
+        var rg        = _cellSelRowGroup;
+        var coreTable = _cellSelCoreTable;
+
+        var rects = new List<(int MinRow, int MaxRow, int MinCol, int MaxCol)>(_cellCtrlRects)
         {
-            // 두 가지 케이스로 endWpfCell을 제외:
-            // 1) selEnd > ContentEnd: 구조 오버슈트 (기존 로직)
-            // 2) selEnd <= ContentStart: 오프셋 루프가 셀 경계의 구조적 위치를 통과하지 못해
-            //    fallback이 다음 셀(오른쪽)을 잡은 경우.
-            //    예) 세로 선택 시 Selection.End가 col+1의 ContentStart에 위치 → 실제 선택은 col까지.
-            bool excludeEndCell = selEnd.CompareTo(endWpfCell.ContentEnd)   > 0
-                                || selEnd.CompareTo(endWpfCell.ContentStart) <= 0;
-            if (excludeEndCell)
-            {
-                endCellIdx = Math.Max(minCell, endCellIdx - 1);
-                // endCellIdx 조정 후 minCell도 재계산 (역방향 선택 등 엣지케이스 대비)
-                minCell = Math.Min(startCellIdx, endCellIdx);
-                maxCell = Math.Max(startCellIdx, endCellIdx);
-            }
-        }
+            (minRow, maxRow, minCol, maxCol)
+        };
 
         var result = new List<SelectedCell>();
-        for (int r = minRow; r <= maxRow; r++)
+        var added  = new HashSet<(int, int)>();
+
+        foreach (var rect in rects)
         {
-            if (r >= rowGroup.Rows.Count || r >= coreTable.Rows.Count) break;
-            var wRow  = rowGroup.Rows[r];
-            var coRow = coreTable.Rows[r];
-            for (int c = minCell; c <= maxCell && c < wRow.Cells.Count && c < coRow.Cells.Count; c++)
+            for (int r = rect.MinRow; r <= rect.MaxRow; r++)
             {
-                result.Add(new SelectedCell(wpfTable, rowGroup, wRow, wRow.Cells[c],
-                                            coreTable, coRow.Cells[c], r, c));
+                if (r >= rg.Rows.Count || r >= coreTable.Rows.Count) continue;
+                var wRow  = rg.Rows[r];
+                var coRow = coreTable.Rows[r];
+                for (int c = rect.MinCol; c <= rect.MaxCol; c++)
+                {
+                    if (c >= wRow.Cells.Count || c >= coRow.Cells.Count) continue;
+                    if (added.Add((r, c)))
+                        result.Add(new SelectedCell(wTable, rg, wRow, wRow.Cells[c],
+                                                    coreTable, coRow.Cells[c], r, c));
+                }
             }
         }
+
         return result.Count > 1 ? result : null;
     }
 
@@ -5730,6 +5705,94 @@ public partial class MainWindow : Window
         {
             _suppressEmbeddedObjectDrag = false;
         }
+
+        // ── 표 셀 클릭: (row, col) 기록 ─────────────────────────────────────
+        // WPF Selection 오버슈트 방지 목적으로 클릭 시점에 셀 위치를 직접 저장한다.
+        var clickedCellInfo = FindTableCellAtPt(rtb, pt);
+        if (clickedCellInfo is var (clickTable, clickRg, clickCoreTable, clickRow, clickCol))
+        {
+            bool isCtrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            bool isAlt  = (Keyboard.Modifiers & ModifierKeys.Alt)     != 0;
+
+            if (isCtrl && _cellSelWpfTable is not null
+                       && ReferenceEquals(_cellSelWpfTable, clickTable))
+            {
+                // Ctrl+Click: 현재 앵커-포커스 범위를 누적에 추가하고 새 단일-셀 앵커 설정
+                CommitCurrentCellSelToCtrlRects();
+                _cellSelAnchorRow = clickRow; _cellSelAnchorCol = clickCol;
+                _cellSelFocusRow  = clickRow; _cellSelFocusCol  = clickCol;
+            }
+            else if (isAlt && _cellSelWpfTable is not null
+                           && ReferenceEquals(_cellSelWpfTable, clickTable))
+            {
+                // Alt+Click: 클릭한 셀을 포함하는 Ctrl 누적 범위를 제거
+                _cellCtrlRects.RemoveAll(r =>
+                    clickRow >= r.MinRow && clickRow <= r.MaxRow &&
+                    clickCol >= r.MinCol && clickCol <= r.MaxCol);
+                // 현재 앵커-포커스 범위에도 해당 셀이 속하면 선택 초기화
+                int aR = Math.Min(_cellSelAnchorRow, _cellSelFocusRow);
+                int bR = Math.Max(_cellSelAnchorRow, _cellSelFocusRow);
+                int aC = Math.Min(_cellSelAnchorCol, _cellSelFocusCol);
+                int bC = Math.Max(_cellSelAnchorCol, _cellSelFocusCol);
+                if (clickRow >= aR && clickRow <= bR && clickCol >= aC && clickCol <= bC)
+                {
+                    _cellSelAnchorRow = -1; _cellSelAnchorCol = -1;
+                    _cellSelFocusRow  = -1; _cellSelFocusCol  = -1;
+                }
+            }
+            else
+            {
+                // 일반 클릭 or 다른 표: 상태 초기화 후 새 앵커
+                _cellCtrlRects.Clear();
+                _cellSelWpfTable  = clickTable;
+                _cellSelRowGroup  = clickRg;
+                _cellSelCoreTable = clickCoreTable;
+                _cellSelAnchorRow = clickRow; _cellSelAnchorCol = clickCol;
+                _cellSelFocusRow  = clickRow; _cellSelFocusCol  = clickCol;
+            }
+        }
+        else
+        {
+            // 표 밖 클릭: 셀 선택 상태 초기화
+            _cellSelWpfTable = null; _cellSelRowGroup = null; _cellSelCoreTable = null;
+            _cellSelAnchorRow = -1; _cellSelAnchorCol = -1;
+            _cellSelFocusRow  = -1; _cellSelFocusCol  = -1;
+            _cellCtrlRects.Clear();
+        }
+    }
+
+    /// <summary>RTB 내 좌표에서 표 셀 (row, col) 을 찾는다. 없으면 null.</summary>
+    private (System.Windows.Documents.Table, System.Windows.Documents.TableRowGroup,
+             PolyDonky.Core.Table, int Row, int Col)?
+        FindTableCellAtPt(RichTextBox rtb, System.Windows.Point pt)
+    {
+        try
+        {
+            var tp   = rtb.GetPositionFromPoint(pt, snapToText: true);
+            var cell = FindAncestorCell(tp);
+            if (cell is null) return null;
+            var row = cell.Parent as System.Windows.Documents.TableRow;
+            var rg  = row?.Parent as System.Windows.Documents.TableRowGroup;
+            var tbl = rg?.Parent  as System.Windows.Documents.Table;
+            if (tbl is null || rg is null || row is null) return null;
+            int rowIdx = rg.Rows.IndexOf(row);
+            int colIdx = row.Cells.IndexOf(cell);
+            if (rowIdx < 0 || colIdx < 0) return null;
+            var coreTable = EnsureCoreTable(tbl);
+            return (tbl, rg, coreTable, rowIdx, colIdx);
+        }
+        catch (System.InvalidOperationException) { return null; }
+    }
+
+    /// <summary>현재 앵커-포커스 범위를 Ctrl 누적 리스트로 이동한다.</summary>
+    private void CommitCurrentCellSelToCtrlRects()
+    {
+        if (_cellSelAnchorRow < 0) return;
+        int minR = Math.Min(_cellSelAnchorRow, _cellSelFocusRow);
+        int maxR = Math.Max(_cellSelAnchorRow, _cellSelFocusRow);
+        int minC = Math.Min(_cellSelAnchorCol, _cellSelFocusCol);
+        int maxC = Math.Max(_cellSelAnchorCol, _cellSelFocusCol);
+        _cellCtrlRects.Add((minR, maxR, minC, maxC));
     }
 
     /// <summary>PaperHost PreviewMouseLeftButtonUp 처리.</summary>
@@ -5813,6 +5876,19 @@ public partial class MainWindow : Window
     /// <summary>페이지 에디터 RTB PreviewMouseLeftButtonUp 처리.</summary>
     private void HandlePageEditorMouseUp(RichTextBox rtb, MouseButtonEventArgs e)
     {
+        // ── 표 셀 드래그 포커스 갱신 (드래그 끝 위치의 셀 → FocusRow/Col) ─────
+        if (_cellSelWpfTable is not null && _cellSelAnchorRow >= 0)
+        {
+            var upPt   = e.GetPosition(rtb);
+            var upInfo = FindTableCellAtPt(rtb, upPt);
+            if (upInfo is var (upTable, _, _, upRow, upCol)
+                && ReferenceEquals(upTable, _cellSelWpfTable))
+            {
+                _cellSelFocusRow = upRow;
+                _cellSelFocusCol = upCol;
+            }
+        }
+
         // ── 표 열 너비 드래그 완료 ───────────────────────────────────────────
         if (_tableColResizeActive)
         {
