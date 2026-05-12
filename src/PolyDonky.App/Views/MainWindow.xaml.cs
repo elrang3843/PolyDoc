@@ -6466,8 +6466,8 @@ public partial class MainWindow : Window
             ctrl.Tag = table;
             PlaceOverlay(ctrl, table);
             ctrl.Cursor = Cursors.SizeAll;
-            ctrl.MouseLeftButtonDown += OnOverlayTableMouseDown;
-            ctrl.MouseMove += OnOverlayTableMouseMove;
+            ctrl.PreviewMouseLeftButtonDown += OnOverlayTableMouseDown;
+            ctrl.PreviewMouseMove += OnOverlayTableMouseMove;
 
             var canvas = table.WrapMode == PolyDonky.Core.TableWrapMode.BehindText
                 ? UnderlayTableCanvas
@@ -6975,7 +6975,10 @@ public partial class MainWindow : Window
 
     private void OnOverlayTableMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not System.Windows.Controls.Grid grid) return;
+        System.Windows.Controls.Grid? grid = sender as System.Windows.Controls.Grid;
+        if (grid is null && sender is FrameworkElement fe)
+            grid = fe as System.Windows.Controls.Grid;
+        if (grid is null) return;
 
         // 더블클릭 → 속성 다이얼로그
         if (e.ClickCount == 2 && grid.Tag is PolyDonky.Core.Table tbl)
@@ -7057,7 +7060,11 @@ public partial class MainWindow : Window
 
     private void OnOverlayTableMouseMove(object sender, MouseEventArgs e)
     {
-        if (sender is not System.Windows.Controls.Grid grid) return;
+        System.Windows.Controls.Grid? grid = sender as System.Windows.Controls.Grid;
+        if (grid is null && sender is FrameworkElement fe)
+            grid = fe as System.Windows.Controls.Grid;
+        if (grid is null) return;
+
         var ptInGrid = e.GetPosition(grid);
         var (colIdx, rowIdx) = FindTableResizeSeparatorAt(grid, ptInGrid);
 
