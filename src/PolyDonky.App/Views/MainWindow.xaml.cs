@@ -4289,18 +4289,18 @@ public partial class MainWindow : Window
         int maxCell = Math.Max(startCellIdx, endCellIdx);
 
         // endCell의 실제 포함 여부 재확인
-        // Selection.End가 endWpfCell 범위를 벗어났을 가능성이 있음
         var selEnd = BodyEditor.Selection.End;
         if (endWpfCell != null && maxCell > minCell)
         {
-            // endCell의 콘텐츠 끝 다음인지 확인
-            var endCellContentEnd = endWpfCell.ContentEnd;
-
-            // Selection.End가 endCell 콘텐츠 끝을 넘어서면, endCell은 부분 선택만 됨
-            // 이 경우 endCellIdx를 줄이는 것이 맞을 수 있음
-            if (selEnd.CompareTo(endCellContentEnd) > 0)
+            // 두 가지 케이스로 endWpfCell을 제외:
+            // 1) selEnd > ContentEnd: 구조 오버슈트 (기존 로직)
+            // 2) selEnd <= ContentStart: 오프셋 루프가 셀 경계의 구조적 위치를 통과하지 못해
+            //    fallback이 다음 셀(오른쪽)을 잡은 경우.
+            //    예) 세로 선택 시 Selection.End가 col+1의 ContentStart에 위치 → 실제 선택은 col까지.
+            bool excludeEndCell = selEnd.CompareTo(endWpfCell.ContentEnd)   > 0
+                                || selEnd.CompareTo(endWpfCell.ContentStart) <= 0;
+            if (excludeEndCell)
             {
-                // Selection이 endCell을 완전히 포함하지 않으면 endCell 제외
                 endCellIdx = Math.Max(minCell, endCellIdx - 1);
                 maxCell = Math.Max(startCellIdx, endCellIdx);
             }
