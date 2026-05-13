@@ -46,6 +46,9 @@ public enum TableWrapMode
 /// <summary>셀 텍스트 수평 정렬.</summary>
 public enum CellTextAlign { Left, Center, Right, Justify }
 
+/// <summary>셀 텍스트 세로 정렬.</summary>
+public enum CellVerticalAlign { Top, Middle, Bottom }
+
 /// <summary>
 /// 행·열 구조의 표. 셀은 임의의 Block(주로 Paragraph) 들을 포함한다.
 /// 셀 병합은 <see cref="TableCell.RowSpan"/> / <see cref="TableCell.ColumnSpan"/> 로 표현하고,
@@ -157,6 +160,11 @@ public sealed class TableRow
     public double HeightMm { get; set; }
     /// <summary>머리글 행 여부. true 이면 렌더러가 배경색·굵기를 강조해 표시한다.</summary>
     public bool IsHeader { get; set; }
+    /// <summary>행 배경색 hex. null 이면 투명 (셀 배경색 우선).</summary>
+    public string? BackgroundColor { get; set; }
+    /// <summary>행 기본 세로 정렬. null 이면 셀별 VerticalAlign 을 따른다.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public CellVerticalAlign? VerticalAlign { get; set; }
 }
 
 public sealed class TableCell
@@ -169,6 +177,8 @@ public sealed class TableCell
 
     // ── 텍스트 정렬 ──────────────────────────────────────────────────────
     public CellTextAlign TextAlign { get; set; } = CellTextAlign.Left;
+    /// <summary>세로 정렬. 기본 Top. TableRow.VerticalAlign 이 설정되어 있으면 행 설정이 우선.</summary>
+    public CellVerticalAlign VerticalAlign { get; set; } = CellVerticalAlign.Top;
 
     // ── 여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) 사용 ───────
     public double PaddingTopMm    { get; set; }
