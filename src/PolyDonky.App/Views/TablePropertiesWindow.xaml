@@ -20,6 +20,8 @@
             <RowDefinition Height="10" />
             <RowDefinition Height="Auto" />  <!-- 표 정렬 (Block 모드 전용) -->
             <RowDefinition Height="10" />
+            <RowDefinition Height="Auto" />  <!-- 표 크기 -->
+            <RowDefinition Height="10" />
             <RowDefinition Height="Auto" />  <!-- 배경색 -->
             <RowDefinition Height="10" />
             <RowDefinition Height="Auto" />  <!-- 기본 셀 안여백 -->
@@ -54,9 +56,14 @@
         </GroupBox>
 
         <!-- ── 오버레이 위치 — InFrontOfText/BehindText/Fixed 모드 전용 ── -->
-        <GroupBox x:Name="GrpOverlayPos" Grid.Row="2" Header="오버레이 위치 (mm, 페이지 좌상단 기준)"
+        <GroupBox x:Name="GrpOverlayPos" Grid.Row="2" Header="오버레이 위치 (페이지 좌상단 기준)"
                   Padding="8,4,8,8" Visibility="Collapsed">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="6" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="70" />
@@ -64,12 +71,16 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="70" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="X:" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <TextBox   Grid.Column="1" x:Name="OverlayXBox"
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="X (mm):" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="OverlayXBox"
                            Text="0" TextAlignment="Right" VerticalContentAlignment="Center" />
-                <TextBlock Grid.Column="3" Text="Y:" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <TextBox   Grid.Column="4" x:Name="OverlayYBox"
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="Y (mm):" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <TextBox   Grid.Row="0" Grid.Column="4" x:Name="OverlayYBox"
                            Text="0" TextAlignment="Right" VerticalContentAlignment="Center" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="고정 페이지:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <TextBox   Grid.Row="2" Grid.Column="1" x:Name="AnchorPageBox"
+                           Text="1" TextAlignment="Right" VerticalContentAlignment="Center"
+                           ToolTip="1부터 시작하는 페이지 번호. 해당 페이지 좌상단 기준으로 X/Y 좌표를 배치." />
             </Grid>
         </GroupBox>
 
@@ -82,13 +93,34 @@
             </StackPanel>
         </GroupBox>
 
+        <!-- ── 표 크기 ───────────────────────────────────────────────────── -->
+        <GroupBox Grid.Row="6" Header="표 크기 (mm, 0 = 자동)" Padding="8,4,8,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="70" />
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="70" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="너비:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <TextBox   Grid.Column="1" x:Name="TableWidthBox"
+                           Text="0" TextAlignment="Right" VerticalContentAlignment="Center"
+                           ToolTip="0이면 페이지 본문 너비(100%)로 자동 설정" />
+                <TextBlock Grid.Column="3" Text="높이:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <TextBox   Grid.Column="4" x:Name="TableHeightBox"
+                           Text="0" TextAlignment="Right" VerticalContentAlignment="Center"
+                           ToolTip="0이면 행 높이 합계로 자동 계산" />
+            </Grid>
+        </GroupBox>
+
         <!-- ── 표 배경색 ─────────────────────────────────────────────────── -->
-        <GroupBox Grid.Row="6" Header="표 배경색" Padding="8,4,8,8">
+        <GroupBox Grid.Row="8" Header="표 배경색" Padding="8,4,8,8">
             <ctrl:ColorPickerBox x:Name="BgColorPicker" AllowEmpty="True" />
         </GroupBox>
 
         <!-- ── 기본 셀 안여백 (mm) ─────────────────────────────────────── -->
-        <GroupBox Grid.Row="8" Header="기본 셀 안여백 (mm) — 개별 셀 설정이 없을 때 사용" Padding="8,4,8,8">
+        <GroupBox Grid.Row="10" Header="기본 셀 안여백 (mm) — 개별 셀 설정이 없을 때 사용" Padding="8,4,8,8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -119,7 +151,7 @@
         </GroupBox>
 
         <!-- ── 바깥 여백 (mm) ─────────────────────────────────────────── -->
-        <GroupBox Grid.Row="10" Header="바깥 여백 (mm)" Padding="8,4,8,8">
+        <GroupBox Grid.Row="12" Header="바깥 여백 (mm)" Padding="8,4,8,8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -150,7 +182,7 @@
         </GroupBox>
 
         <!-- ── 표 외곽선 — 공통 + 면별 ───────────────────────────────────── -->
-        <GroupBox Grid.Row="12" Header="표 외곽선" Padding="8,4,8,8">
+        <GroupBox Grid.Row="14" Header="표 외곽선" Padding="8,4,8,8">
             <StackPanel>
                 <!-- 공통값 — 면별 미지정 시 적용 -->
                 <Grid>
@@ -203,7 +235,7 @@
         </GroupBox>
 
         <!-- ── 페이지 분할 옵션 ───────────────────────────────────────────── -->
-        <GroupBox Grid.Row="13" Header="페이지 분할" Padding="8,4,8,8" Margin="0,10,0,0">
+        <GroupBox Grid.Row="15" Header="페이지 분할" Padding="8,4,8,8" Margin="0,10,0,0">
             <StackPanel>
                 <CheckBox x:Name="RepeatHeaderRowsCheck"
                           Content="헤더 행 반복 — 페이지를 넘을 때 헤더 행을 각 조각 상단에 표시(_R)"
@@ -222,7 +254,7 @@
         </GroupBox>
 
         <!-- ── 버튼 ─────────────────────────────────────────────────────── -->
-        <StackPanel Grid.Row="14" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="16" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="확인(_O)"
                     Width="88" Height="30"
                     IsDefault="True"

@@ -38,8 +38,9 @@ public partial class TablePropertiesWindow : Window
         }
         UpdateOverlayVisibility();
 
-        OverlayXBox.Text = _table.OverlayXMm.ToString("F1");
-        OverlayYBox.Text = _table.OverlayYMm.ToString("F1");
+        OverlayXBox.Text    = _table.OverlayXMm.ToString("F1");
+        OverlayYBox.Text    = _table.OverlayYMm.ToString("F1");
+        AnchorPageBox.Text  = (_table.AnchorPageIndex + 1).ToString();
 
         // 표 정렬
         switch (_table.HAlign)
@@ -48,6 +49,10 @@ public partial class TablePropertiesWindow : Window
             case TableHAlign.Right:  AlignRightRadio.IsChecked  = true; break;
             default:                 AlignLeftRadio.IsChecked   = true; break;
         }
+
+        // 표 크기
+        TableWidthBox.Text  = _table.WidthMm  > 0 ? _table.WidthMm.ToString("F1")  : "0";
+        TableHeightBox.Text = _table.HeightMm > 0 ? _table.HeightMm.ToString("F1") : "0";
 
         BgColorPicker.ColorText = _table.BackgroundColor ?? string.Empty;
 
@@ -122,8 +127,24 @@ public partial class TablePropertiesWindow : Window
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            _table.OverlayXMm = ox;
-            _table.OverlayYMm = oy;
+            if (!int.TryParse(AnchorPageBox.Text.Trim(), out int anchorPage) || anchorPage < 1)
+            {
+                MessageBox.Show(this, "고정 페이지는 1 이상의 정수로 입력하세요.", "표 속성",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                AnchorPageBox.Focus();
+                return;
+            }
+            _table.OverlayXMm      = ox;
+            _table.OverlayYMm      = oy;
+            _table.AnchorPageIndex = anchorPage - 1;
+        }
+
+        if (!TryParseNonNeg(TableWidthBox.Text,  out double tableW) ||
+            !TryParseNonNeg(TableHeightBox.Text, out double tableH))
+        {
+            MessageBox.Show(this, "너비/높이는 0 이상의 숫자(mm)로 입력하세요.", "표 속성",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
         }
 
         if (!TryParseNonNeg(CellPadTopBox.Text,    out double cpt) ||
@@ -181,6 +202,9 @@ public partial class TablePropertiesWindow : Window
         _table.HAlign = AlignCenterRadio.IsChecked == true ? TableHAlign.Center
                       : AlignRightRadio.IsChecked  == true ? TableHAlign.Right
                       : TableHAlign.Left;
+
+        _table.WidthMm  = tableW;
+        _table.HeightMm = tableH;
 
         _table.BackgroundColor = bgColor.Length > 0 ? bgColor : null;
 
