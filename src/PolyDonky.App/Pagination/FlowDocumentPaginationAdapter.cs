@@ -1702,7 +1702,14 @@ public static class FlowDocumentPaginationAdapter
                 : rowH;
             accumY = rowY + stepH;
 
+            // 행 하단 외곽선 두께 — 하단이 1픽셀이라도 페이지를 넘으면 다음 페이지로 이동
+            double borderBottomDip = GetRowBottomBorderDip(coreTable, i);
+            double rowBottomY = rowY + stepH + borderBottomDip;
+
             int pg = bodyH > 0 ? (int)(rowY / bodyH) : 0;
+            if (bodyH > 0 && rowBottomY > (pg + 1) * bodyH)
+                pg += 1; // 하단(외곽선 포함)이 현재 페이지 끝을 넘으면 다음 페이지
+
             if (pg != curPage)
             {
                 curGroup = new System.Collections.Generic.List<int>();
@@ -1713,5 +1720,25 @@ public static class FlowDocumentPaginationAdapter
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 지정 행의 하단 외곽선 두께를 DIP 로 반환한다.
+    /// 셀별 BorderBottom → 셀 공통 BorderThicknessPt → 표 공통 BorderThicknessPt 순으로 폴백.
+    /// </summary>
+    private static double GetRowBottomBorderDip(Core.Table table, int rowIdx)
+    {
+        const double PtToDip = 96.0 / 72.0;
+        var row = table.Rows[rowIdx];
+        double maxPt = 0;
+        foreach (var cell in row.Cells)
+        {
+            double pt = cell.BorderBottom.HasValue
+                ? cell.BorderBottom.Value.ThicknessPt
+                : (cell.BorderThicknessPt > 0 ? cell.BorderThicknessPt : table.BorderThicknessPt);
+            if (pt > maxPt) maxPt = pt;
+        }
+        if (maxPt <= 0) maxPt = table.BorderThicknessPt;
+        return maxPt * PtToDip;
     }
 }

@@ -300,7 +300,13 @@ internal static class TableRowSplitter
 
     private static TableRow CloneRow(TableRow src, int? maxRowSpan)
     {
-        var row = new TableRow { IsHeader = src.IsHeader, HeightMm = src.HeightMm };
+        var row = new TableRow
+        {
+            IsHeader        = src.IsHeader,
+            HeightMm        = src.HeightMm,
+            BackgroundColor = src.BackgroundColor,
+            VerticalAlign   = src.VerticalAlign,
+        };
         foreach (var cell in src.Cells)
         {
             var c = new TableCell
@@ -309,6 +315,7 @@ internal static class TableRowSplitter
                 ColumnSpan      = cell.ColumnSpan,
                 WidthMm         = cell.WidthMm,
                 TextAlign       = cell.TextAlign,
+                VerticalAlign   = cell.VerticalAlign,
                 PaddingTopMm    = cell.PaddingTopMm,
                 PaddingBottomMm = cell.PaddingBottomMm,
                 PaddingLeftMm   = cell.PaddingLeftMm,
