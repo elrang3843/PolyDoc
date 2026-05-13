@@ -85,12 +85,24 @@ public sealed class HtmlReader : IDocumentReader
 
         double pageBodyH = section.Page.EffectiveHeightMm
             - section.Page.MarginTopMm - section.Page.MarginBottomMm;
+
+        // 행 높이 최소값 계산: CSS height 는 min-height 처럼 동작하므로
+        // 실제 폰트 줄높이 + 셀 패딩보다 작은 CSS 값은 과소 추정이다.
+        double fontSizePt       = pd.Metadata.DefaultFontSizePt > 0 ? pd.Metadata.DefaultFontSizePt : 12.0;
+        double lineHeightFactor = pd.Metadata.DefaultLineHeightFactor > 0 ? pd.Metadata.DefaultLineHeightFactor : 1.5;
+        // 표의 font-size 는 body 보다 약간 작은 경우가 많으나, 여기서는 body 기준 사용
+        double lineHeightMm  = fontSizePt * (25.4 / 72.0) * lineHeightFactor;
+        // 일반적인 셀 패딩: 7px 상하 → 약 3.7mm (CSS th,td { padding: 7px } 관행)
+        const double DefaultCellVPaddingMm = 2 * (7.0 * 25.4 / 96.0); // ≈ 3.7 mm
+        double minRowHeightMm = Math.Max(6.0, lineHeightMm + DefaultCellVPaddingMm);
+
         var ctx = new InlineCtx
         {
             Shared = new ReadShared
             {
                 MaxBlocks        = maxBlocks,
                 PageBodyHeightMm = Math.Max(pageBodyH, 30), // 최소 30 mm 보장
+                MinRowHeightMm   = minRowHeightMm,
             },
         };
         ProcessChildren(root, section.Blocks, ctx);
@@ -205,6 +217,11 @@ public sealed class HtmlReader : IDocumentReader
         /// 용지 높이 − 위 여백 − 아래 여백. 0 이면 분할하지 않는다.
         /// </summary>
         public double PageBodyHeightMm;
+        /// <summary>
+        /// 행 높이 최소값(mm). 폰트 줄높이 + 셀 패딩 추정치.
+        /// CSS height 가 이 값보다 작으면 이 값을 사용한다 (CSS height 는 min-height 처럼 동작).
+        /// </summary>
+        public double MinRowHeightMm;
     }
 
     private sealed class InlineCtx
@@ -401,7 +418,8 @@ public sealed class HtmlReader : IDocumentReader
             case "table":
             {
                 var tblParts = SplitTableByPageHeight(BuildTable(el, ctx),
-                                                      ctx.Shared.PageBodyHeightMm);
+                                                      ctx.Shared.PageBodyHeightMm,
+                                                      ctx.Shared.MinRowHeightMm);
                 foreach (var part in tblParts) target.Add(part);
                 break;
             }
@@ -4163,10 +4181,18 @@ public sealed class HtmlReader : IDocumentReader
     /// 표가 <paramref name="pageBodyHeightMm"/> 을 초과하면 행 단위로 분할한다.
     /// 헤더 행(IsHeader=true)은 모든 분할 표에 반복된다. 스타일·열 정보는 그대로 상속.
     /// pageBodyHeightMm ≤ 0 이면 분할하지 않고 원본을 그대로 반환한다.
+    /// <paramref name="minRowHeightMm"/> — CSS height 는 min-height 로 동작하므로
+    /// 실제 폰트 줄높이+패딩 추정치(≥ FallbackRowHeightMm)보다 작은 값은 이 값으로 올린다.
     /// </summary>
-    private static List<Table> SplitTableByPageHeight(Table table, double pageBodyHeightMm)
+    private static List<Table> SplitTableByPageHeight(
+        Table table, double pageBodyHeightMm, double minRowHeightMm = 6.0)
     {
         const double FallbackRowHeightMm = 6.0;
+        // CSS height 는 브라우저에서 min-height 처럼 작동한다.
+        // 셀 내용이 지정 height 를 초과하면 행이 늘어나므로
+        // 실제 폰트+패딩 추정치와 CSS 값 중 큰 쪽을 사용한다.
+        double MinH = Math.Max(FallbackRowHeightMm, minRowHeightMm);
+        double EffH(TableRow r) => Math.Max(r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm, MinH);
 
         if (pageBodyHeightMm <= 0)
             return new List<Table> { table };
@@ -4177,17 +4203,16 @@ public sealed class HtmlReader : IDocumentReader
         if (bodyRows.Count == 0)
             return new List<Table> { table };
 
-        double headerH = headerRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+        double headerH = headerRows.Sum(EffH);
         double tableVerticalMargin = table.OuterMarginTopMm + table.OuterMarginBottomMm;
+
 
         // 첫 페이지 허용 높이: pageBodyHeightMm - 표 여백
         // 이후 페이지 허용 높이: pageBodyHeightMm - 헤더 높이 - 여백 (다음 표는 위쪽 여백 없음)
         double firstPageAvailable = pageBodyHeightMm - tableVerticalMargin;
         double nextPageAvailable  = pageBodyHeightMm - headerH;
 
-        double totalH = tableVerticalMargin
-            + headerH
-            + bodyRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+        double totalH = tableVerticalMargin + headerH + bodyRows.Sum(EffH);
 
         if (totalH <= pageBodyHeightMm)
             return new List<Table> { table };
@@ -4198,7 +4223,7 @@ public sealed class HtmlReader : IDocumentReader
 
         foreach (var row in bodyRows)
         {
-            double rh = row.HeightMm > 0 ? row.HeightMm : FallbackRowHeightMm;
+            double rh = EffH(row);
             double pageLimit = parts.Count == 0 ? firstPageAvailable : nextPageAvailable;
 
             if (currentBody.Count > 0 && accumulated + rh > pageLimit)
