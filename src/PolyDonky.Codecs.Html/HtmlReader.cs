@@ -232,11 +232,19 @@ public sealed class HtmlReader : IDocumentReader
             var p = new Paragraph();
             p.Style.QuoteLevel = ctx.QuoteLevel;
             p.Style.ListMarker = CloneMarker(ctx.Marker);
-            // 부모 요소의 text-align 을 텍스트노드 단락에도 적용
+            // 부모 요소의 text-align / 인라인 스타일을 텍스트노드 단락에도 적용
             // (PropagateInheritableStyles 는 요소만 처리하므로 raw 텍스트노드는 누락된다).
+            RunStyle? parentRunStyle = null;
             if (txt.ParentElement is { } parentEl)
+            {
                 ApplyBlockAlignment(p, parentEl);
-            p.AddText(NormalizeWhitespace(txt.Data));
+                var ps = ParseInlineStyle(parentEl.GetAttribute("style"));
+                if (ps.Bold == true || ps.Italic == true || ps.Underline == true ||
+                    ps.Foreground.HasValue || ps.Background.HasValue ||
+                    ps.FontSizePt > 0 || ps.FontFamily is not null)
+                    parentRunStyle = ps;
+            }
+            p.AddText(NormalizeWhitespace(txt.Data), parentRunStyle);
             target.Add(p);
             return;
         }
@@ -3189,7 +3197,8 @@ public sealed class HtmlReader : IDocumentReader
     /// </summary>
     private static void PropagateInheritableStyles(IElement el,
         string? parentTextAlign, string? parentColor, string? parentLineHeight,
-        string? parentFontFamily = null, string? parentTextTransform = null)
+        string? parentFontFamily = null, string? parentTextTransform = null,
+        string? parentFontWeight = null, string? parentFontStyle = null, string? parentFontSize = null)
     {
         var style            = el.GetAttribute("style") ?? "";
         var ownTa            = StyleProp(style, "text-align");
@@ -3197,12 +3206,18 @@ public sealed class HtmlReader : IDocumentReader
         var ownLineHeight    = StyleProp(style, "line-height");
         var ownFontFamily    = StyleProp(style, "font-family");
         var ownTextTransform = StyleProp(style, "text-transform");
+        var ownFontWeight    = StyleProp(style, "font-weight");
+        var ownFontStyle     = StyleProp(style, "font-style");
+        var ownFontSize      = StyleProp(style, "font-size");
 
         var effTa            = ownTa            ?? parentTextAlign;
         var effColor         = ownColor         ?? parentColor;
         var effLineHeight    = ownLineHeight     ?? parentLineHeight;
         var effFontFamily    = ownFontFamily     ?? parentFontFamily;
         var effTextTransform = ownTextTransform  ?? parentTextTransform;
+        var effFontWeight    = ownFontWeight     ?? parentFontWeight;
+        var effFontStyle     = ownFontStyle      ?? parentFontStyle;
+        var effFontSize      = ownFontSize       ?? parentFontSize;
 
         // 자체 값이 없고 부모로부터 상속받은 값이 있으면 inline style 에 추가.
         var toAdd = new StringBuilder();
@@ -3211,6 +3226,9 @@ public sealed class HtmlReader : IDocumentReader
         if (ownLineHeight    is null && parentLineHeight    is not null) toAdd.Append("line-height:").Append(parentLineHeight).Append(';');
         if (ownFontFamily    is null && parentFontFamily    is not null) toAdd.Append("font-family:").Append(parentFontFamily).Append(';');
         if (ownTextTransform is null && parentTextTransform is not null) toAdd.Append("text-transform:").Append(parentTextTransform).Append(';');
+        if (ownFontWeight    is null && parentFontWeight    is not null) toAdd.Append("font-weight:").Append(parentFontWeight).Append(';');
+        if (ownFontStyle     is null && parentFontStyle     is not null) toAdd.Append("font-style:").Append(parentFontStyle).Append(';');
+        if (ownFontSize      is null && parentFontSize      is not null) toAdd.Append("font-size:").Append(parentFontSize).Append(';');
 
         if (toAdd.Length > 0)
         {
@@ -3221,7 +3239,8 @@ public sealed class HtmlReader : IDocumentReader
         }
 
         foreach (var child in el.Children)
-            PropagateInheritableStyles(child, effTa, effColor, effLineHeight, effFontFamily, effTextTransform);
+            PropagateInheritableStyles(child, effTa, effColor, effLineHeight, effFontFamily, effTextTransform,
+                effFontWeight, effFontStyle, effFontSize);
     }
 
     private static void InlineCssClassRules(AngleSharp.Html.Dom.IHtmlDocument doc)
