@@ -36,6 +36,13 @@ public static class FlowDocumentPaginationAdapter
     public const int MaxBlocksForPreciseMapping = 2_500;
 
     /// <summary>
+    /// fast-path(대용량) 문서에서 표 행 분할을 위해 paginator 가 계산할 최대 페이지 수.
+    /// 이 페이지 범위 안에 있는 표는 정확히 분할되고, 범위 밖 행은 마지막 알려진 페이지에 귀속.
+    /// 값이 클수록 정확하지만 열기 시간이 늘어난다 — 20은 일반 업무 문서 기준 충분한 값.
+    /// </summary>
+    private const int MaxPagesForFastPathTableSplit = 20;
+
+    /// <summary>
     /// 문서를 페이지 단위로 분할해 <see cref="PaginatedDocument"/> 로 반환한다.
     /// </summary>
     /// <param name="document">분할할 문서.</param>
@@ -78,18 +85,43 @@ public static class FlowDocumentPaginationAdapter
                 System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>();
         int pageCount;
 
-        // 표가 있으면 fast-path 를 포기하고 정밀 레이아웃을 강제한다.
-        // 표는 페이지 경계를 정확히 감지해야 행 단위로 분할할 수 있기 때문이다.
-        bool hasTable = FlattenBlocks(fd.Blocks).OfType<WpfDocs.Table>().Any();
-        bool shouldUseFastPath = isFastPathDoc && !hasTable;
-
-        if (shouldUseFastPath)
+        if (isFastPathDoc)
         {
             // 정밀 레이아웃 없이 블록 수 기반으로 페이지 수를 추정한다.
             // A4 기준 경험치: ~200 블록/페이지 (텍스트·이미지 혼합 기준).
             const int EstimatedBlocksPerPage = 200;
             pageCount = Math.Max(1,
                 (earlyBlockCount + EstimatedBlocksPerPage - 1) / EstimatedBlocksPerPage);
+
+            // 표가 있으면 최대 MaxPagesForFastPathTableSplit 페이지까지만 paginator 를 실행해
+            // 표 행 분할을 수행한다. 전체 페이지를 계산하지 않으므로 대용량 문서에서도 멈추지 않는다.
+            // 해당 페이지 범위 밖에 있는 행은 GetPageNumber catch 경로로 마지막 알려진 페이지에 귀속.
+            if (FlattenBlocks(fd.Blocks).OfType<WpfDocs.Table>().Any())
+            {
+                var limitedPaginator = (WpfDocs.DynamicDocumentPaginator)
+                    ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
+                limitedPaginator.PageSize = new Size(geo.PageWidthDip, geo.PageHeightDip);
+
+                int pg = 0;
+                while (!limitedPaginator.IsPageCountValid && pg < MaxPagesForFastPathTableSplit)
+                {
+                    limitedPaginator.GetPage(pg);
+                    pg++;
+                }
+
+                foreach (var b in FlattenBlocks(fd.Blocks))
+                {
+                    if (b is not WpfDocs.Table wpfTbl) continue;
+                    if (b.Tag is not Core.Table coreTbl) continue;
+                    if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+
+                    var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, limitedPaginator);
+                    var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+                    tableFragmentMap[wpfTbl] = fragments
+                        .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                        .ToList();
+                }
+            }
         }
         else
         {
@@ -103,21 +135,18 @@ public static class FlowDocumentPaginationAdapter
             // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
             // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
             // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
-            if (hasTable)
+            foreach (var b in FlattenBlocks(fd.Blocks))
             {
-                foreach (var b in FlattenBlocks(fd.Blocks))
-                {
-                    if (b is not WpfDocs.Table wpfTbl) continue;
-                    if (b.Tag is not Core.Table coreTbl) continue;
-                    if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+                if (b is not WpfDocs.Table wpfTbl) continue;
+                if (b.Tag is not Core.Table coreTbl) continue;
+                if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
 
-                    var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
-                    var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+                var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
+                var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
 
-                    tableFragmentMap[wpfTbl] = fragments
-                        .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
-                        .ToList();
-                }
+                tableFragmentMap[wpfTbl] = fragments
+                    .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                    .ToList();
             }
         }
 
