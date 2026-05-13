@@ -452,37 +452,65 @@ static bool IsValidUtf8WithNonAscii(byte[] bytes)
 /// </summary>
 static int CountImages(PolyDonkyument doc)
 {
+    if (doc?.Sections is null) return 0;
     int count = 0;
     foreach (var section in doc.Sections)
-        count += CountImagesInBlocks(section.Blocks);
+    {
+        if (section?.Blocks is not null)
+            count += CountImagesInBlocks(section.Blocks);
+    }
     return count;
 }
 
 static int CountImagesInBlocks(IList<Block> blocks)
 {
+    if (blocks is null) return 0;
     int count = 0;
     foreach (var block in blocks)
     {
-        if (block is ImageBlock) count++;
-        else if (block is Table t)
+        if (block is null) continue;
+        else if (block is ImageBlock) count++;
+        else if (block is Table t && t.Rows is not null)
             foreach (var row in t.Rows)
+            {
+                if (row?.Cells is null) continue;
                 foreach (var cell in row.Cells)
-                    count += CountImagesInBlocks(cell.Blocks);
+                {
+                    if (cell?.Blocks is not null)
+                        count += CountImagesInBlocks(cell.Blocks);
+                }
+            }
+        else if (block is TextBoxObject tbo && tbo.Content is not null)
+            count += CountImagesInBlocks(tbo.Content);
+        else if (block is ContainerBlock cb && cb.Children is not null)
+            count += CountImagesInBlocks(cb.Children);
     }
     return count;
 }
 
 static long SumImageBytes(IList<Block> blocks)
 {
+    if (blocks is null) return 0;
     long sum = 0;
     foreach (var block in blocks)
     {
-        if (block is ImageBlock img)
+        if (block is null) continue;
+        else if (block is ImageBlock img)
             sum += img.Data?.LongLength ?? 0;
-        else if (block is Table t)
+        else if (block is Table t && t.Rows is not null)
             foreach (var row in t.Rows)
+            {
+                if (row?.Cells is null) continue;
                 foreach (var cell in row.Cells)
-                    sum += SumImageBytes(cell.Blocks);
+                {
+                    if (cell?.Blocks is not null)
+                        sum += SumImageBytes(cell.Blocks);
+                }
+            }
+        else if (block is TextBoxObject tbo && tbo.Content is not null)
+            sum += SumImageBytes(tbo.Content);
+        else if (block is ContainerBlock cb && cb.Children is not null)
+            sum += SumImageBytes(cb.Children);
     }
     return sum;
 }
@@ -495,8 +523,12 @@ static void EmbedLocalImages(PolyDonkyument doc, string baseDir)
 
 static void EmbedImagesInBlocks(IList<Block> blocks, string baseDir)
 {
+    if (blocks is null) return;
+
     foreach (var block in blocks)
     {
+        if (block is null) continue;
+
         switch (block)
         {
             case ImageBlock img when (img.Data?.Length ?? 0) == 0
@@ -505,17 +537,23 @@ static void EmbedImagesInBlocks(IList<Block> blocks, string baseDir)
                 TryEmbedImageFromDisk(img, baseDir);
                 break;
 
-            case Table t:
+            case Table t when t.Rows is not null:
                 foreach (var row in t.Rows)
+                {
+                    if (row?.Cells is null) continue;
                     foreach (var cell in row.Cells)
-                        EmbedImagesInBlocks(cell.Blocks, baseDir);
+                    {
+                        if (cell?.Blocks is not null)
+                            EmbedImagesInBlocks(cell.Blocks, baseDir);
+                    }
+                }
                 break;
 
-            case TextBoxObject tbo:
+            case TextBoxObject tbo when tbo.Content is not null:
                 EmbedImagesInBlocks(tbo.Content, baseDir);
                 break;
 
-            case ContainerBlock cb:
+            case ContainerBlock cb when cb.Children is not null:
                 EmbedImagesInBlocks(cb.Children, baseDir);
                 break;
         }
