@@ -818,6 +818,16 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(tblStyle, "margin-top"),    out var tblMt) && tblMt > 0) t.OuterMarginTopMm    = tblMt;
         if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
 
+        // HTML 표준 속성: cellpadding (모든 셀의 기본 안여백)
+        if (tableEl.GetAttribute("cellpadding") is { } cpStr &&
+            TryParseCssMm(cpStr, out var cellpadMm) && cellpadMm > 0)
+        {
+            t.DefaultCellPaddingTopMm    = cellpadMm;
+            t.DefaultCellPaddingBottomMm = cellpadMm;
+            t.DefaultCellPaddingLeftMm   = cellpadMm;
+            t.DefaultCellPaddingRightMm  = cellpadMm;
+        }
+
         // border-collapse: separate → false, 그 외(collapse 또는 미지정) → true (기본값).
         if (StyleProp(tblStyle, "border-collapse") is { } bc &&
             bc.Equals("separate", StringComparison.OrdinalIgnoreCase))
@@ -846,6 +856,34 @@ public sealed class HtmlReader : IDocumentReader
                     ?? StyleProp(colEls[i].GetAttribute("style"), "width");
             if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
                 t.Columns[i].WidthMm = wMm;
+        }
+
+        // colgroup 이 없거나 미완성일 때, 첫 행의 셀 너비로부터 컬럼 너비 추론.
+        if (colEls.Count == 0 && rows.Count > 0)
+        {
+            var firstRow = rows[0];
+            int colIdx = 0;
+            foreach (var cellEl in firstRow.QuerySelectorAll("td,th"))
+            {
+                if (colIdx >= t.Columns.Count) break;
+
+                var cellStyleStr = cellEl.GetAttribute("style");
+                var wVal = cellEl.GetAttribute("width") ?? StyleProp(cellStyleStr, "width");
+                int colspan = TryAttrInt(cellEl, "colspan", 1);
+
+                if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
+                {
+                    // colspan 셀의 너비를 colspan 개 컬럼에 균등 배분.
+                    double widthPerCol = wMm / colspan;
+                    for (int i = 0; i < colspan && colIdx + i < t.Columns.Count; i++)
+                    {
+                        if (t.Columns[colIdx + i].WidthMm <= 0)
+                            t.Columns[colIdx + i].WidthMm = widthPerCol;
+                    }
+                }
+
+                colIdx += colspan;
+            }
         }
 
         foreach (var rowEl in rows)
