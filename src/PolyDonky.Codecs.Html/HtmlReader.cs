@@ -865,10 +865,10 @@ public sealed class HtmlReader : IDocumentReader
         var colEls = tableEl.QuerySelectorAll("col").ToList();
         for (int i = 0; i < colEls.Count && i < t.Columns.Count; i++)
         {
-            var wVal = colEls[i].GetAttribute("width")
-                    ?? StyleProp(colEls[i].GetAttribute("style"), "width");
-            if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
-                t.Columns[i].WidthMm = wMm;
+            var colWidthVal = colEls[i].GetAttribute("width")
+                           ?? StyleProp(colEls[i].GetAttribute("style"), "width");
+            if (TryParseCssMm(colWidthVal, out var colWidthMm) && colWidthMm > 0)
+                t.Columns[i].WidthMm = colWidthMm;
         }
 
         // colgroup 이 없거나 미완성일 때, 첫 행의 셀 너비로부터 컬럼 너비 추론.
@@ -881,13 +881,13 @@ public sealed class HtmlReader : IDocumentReader
                 if (colIdx >= t.Columns.Count) break;
 
                 var cellStyleStr = cellEl.GetAttribute("style");
-                var wVal = cellEl.GetAttribute("width") ?? StyleProp(cellStyleStr, "width");
+                var cellWidthVal = cellEl.GetAttribute("width") ?? StyleProp(cellStyleStr, "width");
                 int colspan = TryAttrInt(cellEl, "colspan", 1);
 
-                if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
+                if (TryParseCssMm(cellWidthVal, out var cellWidthMm) && cellWidthMm > 0)
                 {
                     // colspan 셀의 너비를 colspan 개 컬럼에 균등 배분.
-                    double widthPerCol = wMm / colspan;
+                    double widthPerCol = cellWidthMm / colspan;
                     for (int i = 0; i < colspan && colIdx + i < t.Columns.Count; i++)
                     {
                         if (t.Columns[colIdx + i].WidthMm <= 0)
