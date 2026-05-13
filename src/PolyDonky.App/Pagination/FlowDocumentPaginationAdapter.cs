@@ -1701,7 +1701,7 @@ public static class FlowDocumentPaginationAdapter
             // 테두리·렌더링 오차 흡수용 안전 여유 (DIP).
             // DesiredSize.Height 와 실제 렌더 높이 사이의 미세 차이로 인해
             // 마지막 행의 하단 테두리가 페이지 경계를 살짝 넘어 잘리는 현상을 방지한다.
-            const double BorderSafetyDip = 4.0;
+            const double BorderSafetyDip = 8.0;
             double effectiveAvailH = Math.Max(availH - BorderSafetyDip, availH * 0.5);
 
             // 남은 행 전체가 이 페이지에 들어가는지 먼저 확인 (빠른 경로)
