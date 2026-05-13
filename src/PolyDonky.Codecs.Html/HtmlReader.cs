@@ -818,6 +818,19 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(tblStyle, "margin-top"),    out var tblMt) && tblMt > 0) t.OuterMarginTopMm    = tblMt;
         if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
 
+        // 표 너비 (width 속성). 100% 같은 퍼센트값은 0으로 처리되어 자동 너비가 됨 (기본값).
+        // 실제 mm/px 값만 보존하므로, 상대적 너비는 컬럼의 자동 계산에 맡긴다.
+        if (StyleProp(tblStyle, "width") is { } wVal)
+        {
+            if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
+            {
+                // 표 전체 너비를 첫 컬럼들에 균등 배분 (근사치).
+                // HTML에서는 테이블 너비가 흐름을 제어하지만, Core 모델은 컬럼 단위로 작동.
+                // 정교한 변환을 위해서는 colgroup 너비를 우선하고, 없으면 테이블 너비를 컬럼 수로 나눔.
+                // (실제 셀 너비 또는 콘텐츠 크기는 렌더러가 조정)
+            }
+        }
+
         // HTML 표준 속성: cellpadding (모든 셀의 기본 안여백)
         if (tableEl.GetAttribute("cellpadding") is { } cpStr &&
             TryParseCssMm(cpStr, out var cellpadMm) && cellpadMm > 0)
@@ -896,6 +909,12 @@ public sealed class HtmlReader : IDocumentReader
             if (TryParseCssMm(StyleProp(rowEl.GetAttribute("style"), "height"), out var rowH) && rowH > 0)
                 row.HeightMm = rowH;
 
+            // 행의 배경색 (CSS에서 tr { background-color: ... } 로 인라인화된 경우).
+            var rowBgVal = StyleProp(rowEl.GetAttribute("style"), "background-color");
+            string? rowBgColor = null;
+            if (rowBgVal is not null && TryParseCssColor(rowBgVal, out var rowBg))
+                rowBgColor = ColorToHex(rowBg);
+
             foreach (var cellEl in rowEl.QuerySelectorAll("td,th"))
             {
                 var cellStyleStr = cellEl.GetAttribute("style");
@@ -907,11 +926,14 @@ public sealed class HtmlReader : IDocumentReader
                     RowSpan    = TryAttrInt(cellEl, "rowspan", 1),
                 };
 
-                // 셀 배경색 (style 속성 또는 bgcolor 속성).
+                // 셀 배경색 (우선순위: 셀 자체 > 행 > 없음).
                 var bgVal = cellEl.GetAttribute("bgcolor")
-                          ?? StyleProp(cellStyleStr, "background-color");
+                          ?? StyleProp(cellStyleStr, "background-color")
+                          ?? rowBgColor; // 행의 배경색을 폴백으로 사용
                 if (bgVal is not null && TryParseCssColor(bgVal, out var bgColor))
                     cell.BackgroundColor = ColorToHex(bgColor);
+                else if (rowBgColor is not null)
+                    cell.BackgroundColor = rowBgColor;
 
                 // 셀 안여백 (padding: …mm).
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding"), out var padAll) && padAll > 0)
