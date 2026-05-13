@@ -225,7 +225,7 @@ internal static class TableRowSplitter
             Caption                    = omitCaption ? null : source.Caption,
             BackgroundColor            = source.BackgroundColor,
             WidthMm                    = source.WidthMm,
-            HeightMm                   = source.HeightMm,
+            HeightMm                   = 0,  // 조각은 행 내용으로 높이를 결정, 원본 전체 높이 복사 금지
             IsFlexLayout               = source.IsFlexLayout,
             BorderCollapse             = source.BorderCollapse,
             BorderThicknessPt          = source.BorderThicknessPt,
