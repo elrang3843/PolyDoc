@@ -1021,8 +1021,10 @@ public static class FlowDocumentBuilder
         if (collapse)
         {
             // 셀이 명시적으로 설정하지 않은 경우에만 BorderCollapse 적용
-            if (!atTopEdge && cell.BorderTop is null)  topDip  = 0;
-            if (!atLeftEdge && cell.BorderLeft is null) leftDip = 0;
+            if (!atTopEdge && cell.BorderTop is null)       topDip    = 0;
+            if (!atBottomEdge && cell.BorderBottom is null) bottomDip = 0;
+            if (!atLeftEdge && cell.BorderLeft is null)     leftDip   = 0;
+            if (!atRightEdge && cell.BorderRight is null)   rightDip  = 0;
         }
         wcell.BorderThickness = new Thickness(leftDip, topDip, rightDip, bottomDip);
 
