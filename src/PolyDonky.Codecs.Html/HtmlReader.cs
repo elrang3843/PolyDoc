@@ -1043,17 +1043,8 @@ public sealed class HtmlReader : IDocumentReader
                 if (StyleProp(cellStyleStr, "border") is { } cellBorderAll)
                 {
                     ExtractBorderSizeColor(cellBorderAll, out double cbaPx, out string? cbaClr);
-                    var borderThk = cbaPx * 72.0 / 96.0;
-                    cell.BorderThicknessPt = borderThk;
+                    cell.BorderThicknessPt = cbaPx * 72.0 / 96.0;
                     if (cbaClr is not null) cell.BorderColor = cbaClr;
-                    // Shorthand는 모든 면에 적용되므로 개별 면도 설정
-                    if (borderThk > 0)
-                    {
-                        cell.BorderTop = new CellBorderSide(borderThk, cbaClr);
-                        cell.BorderBottom = new CellBorderSide(borderThk, cbaClr);
-                        cell.BorderLeft = new CellBorderSide(borderThk, cbaClr);
-                        cell.BorderRight = new CellBorderSide(borderThk, cbaClr);
-                    }
                 }
                 if (StyleProp(cellStyleStr, "border-top") is { } cbtStr)
                 {

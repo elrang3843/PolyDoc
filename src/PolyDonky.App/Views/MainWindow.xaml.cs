@@ -4375,7 +4375,7 @@ public partial class MainWindow : Window
         items.Add(new System.Windows.Controls.Separator());
         items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
-            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            BeginUndoableAction();
             var dlg = new TablePropertiesWindow(first.CoreTable) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
@@ -4572,7 +4572,7 @@ public partial class MainWindow : Window
         }
         items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
-            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            BeginUndoableAction();
             var dlg = new TablePropertiesWindow(coreTable) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
@@ -6849,8 +6849,8 @@ public partial class MainWindow : Window
         menu.Items.Add(new System.Windows.Controls.Separator());
         menu.Items.Add(MakeMenuItem("표 속성(_T)...", () =>
         {
-            // Undo 스냅샷을 먼저 저장 (다이얼로그 열기 전)
-            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            // 텍스트 편집 burst 를 먼저 종료 (idle 타이머가 ParseAllPageEditors 로 모델 덮어쓰기 방지) 후 Undo 스냅샷 저장
+            BeginUndoableAction();
 
             var dlg = new TablePropertiesWindow(table) { Owner = this };
             if (dlg.ShowDialog() == true)
@@ -7285,7 +7285,7 @@ public partial class MainWindow : Window
         // 더블클릭 → 속성 다이얼로그
         if (e.ClickCount == 2 && grid.Tag is PolyDonky.Core.Table tbl)
         {
-            _viewModel?.UndoRedo.PushUndo(_viewModel.Document);
+            BeginUndoableAction();
             var dlg = new TablePropertiesWindow(tbl) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
