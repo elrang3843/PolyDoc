@@ -1654,61 +1654,83 @@ public static class FlowDocumentPaginationAdapter
         const double MmToDip = 96.0 / 25.4;
         const double FallbackRowHeightDip = 6.0 * MmToDip; // 6mm 기본 행 높이
 
+        int totalRows = coreTable.Rows.Count;
+
+        // ── 전처리: 병합 셀(RowSpan>1) 기준 행 → 병합 그룹의 마지막 행 인덱스 맵 ──
+        // spanGroupEnd[i] = i 행이 속하거나 시작하는 RowSpan 병합 그룹의 마지막 행 인덱스.
+        // 병합이 없으면 spanGroupEnd[i] == i.
+        var spanGroupEnd = new int[totalRows];
+        for (int i = 0; i < totalRows; i++) spanGroupEnd[i] = i;
+        for (int i = 0; i < totalRows; i++)
+        {
+            foreach (var cell in coreTable.Rows[i].Cells)
+            {
+                if (cell.RowSpan <= 1) continue;
+                int end = System.Math.Min(i + cell.RowSpan - 1, totalRows - 1);
+                // 병합 그룹 내 모든 행이 이 end 를 알도록 갱신
+                for (int j = i; j <= end; j++)
+                    spanGroupEnd[j] = System.Math.Max(spanGroupEnd[j], end);
+            }
+        }
+
         var result  = new List<(int, List<int>)>();
         var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
 
-        int    curPage       = -1;
-        List<int>? curGroup  = null;
-        double accumY        = tableTopY; // GetCharacterRect 실패 시 누적 Y 폴백
+        int    curPage    = -1;
+        List<int>? curGroup = null;
+        double accumY     = tableTopY; // GetCharacterRect 실패 시 누적 Y 폴백
 
-        for (int i = 0; i < coreTable.Rows.Count; i++)
+        // 행별 rowY / stepH 를 미리 계산 (병합 하단 검사에서 재참조)
+        var rowTopY = new double[totalRows];
+        var rowH    = new double[totalRows];
+
+        for (int i = 0; i < totalRows; i++)
         {
-            if (coreTable.Rows[i].IsHeader) continue;
-
-            // 1순위: GetCharacterRect 실측 Y
-            double rowY    = double.NaN;
-            double rowH    = double.NaN;
+            double y = double.NaN;
+            double h = double.NaN;
             if (i < wpfRows.Count)
             {
                 try
                 {
                     var rect = wpfRows[i].ContentStart.GetCharacterRect(
                         WpfDocs.LogicalDirection.Forward);
-                    if (!double.IsNaN(rect.Y) && rect.Y >= 0)
-                        rowY = rect.Y;
+                    if (!double.IsNaN(rect.Y) && rect.Y >= 0) y = rect.Y;
                 }
                 catch { }
 
-                // 2순위: ContentStart/End Y 차이로 행 높이 측정 (누적 Y 폴백에 사용)
                 try
                 {
                     var r0 = wpfRows[i].ContentStart.GetCharacterRect(WpfDocs.LogicalDirection.Forward);
                     var r1 = wpfRows[i].ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
                     if (!double.IsNaN(r0.Y) && !double.IsNaN(r1.Bottom) && r1.Bottom > r0.Y)
-                        rowH = r1.Bottom - r0.Y;
+                        h = r1.Bottom - r0.Y;
                 }
                 catch { }
             }
-
-            // GetCharacterRect 실패 → 누적 Y 사용
-            if (double.IsNaN(rowY)) rowY = accumY;
-
-            // 다음 행을 위한 누적 Y 갱신:
-            //   ActualHeight 있으면 그것, 없으면 Core.Row.HeightMm, 없으면 기본값
-            double stepH = double.IsNaN(rowH)
-                ? (coreTable.Rows[i].HeightMm > 0
+            if (double.IsNaN(y)) y = accumY;
+            if (double.IsNaN(h))
+                h = coreTable.Rows[i].HeightMm > 0
                     ? coreTable.Rows[i].HeightMm * MmToDip
-                    : FallbackRowHeightDip)
-                : rowH;
-            accumY = rowY + stepH;
+                    : FallbackRowHeightDip;
 
-            // 행 하단 외곽선 두께 — 하단이 1픽셀이라도 페이지를 넘으면 다음 페이지로 이동
-            double borderBottomDip = GetRowBottomBorderDip(coreTable, i);
-            double rowBottomY = rowY + stepH + borderBottomDip;
+            rowTopY[i] = y;
+            rowH[i]    = h;
+            accumY     = y + h;
+        }
 
-            int pg = bodyH > 0 ? (int)(rowY / bodyH) : 0;
-            if (bodyH > 0 && rowBottomY > (pg + 1) * bodyH)
-                pg += 1; // 하단(외곽선 포함)이 현재 페이지 끝을 넘으면 다음 페이지
+        for (int i = 0; i < totalRows; i++)
+        {
+            if (coreTable.Rows[i].IsHeader) continue;
+
+            // 병합 그룹의 마지막 행까지의 하단 + 하단 외곽선을 페이지 경계 기준으로 사용
+            int endRow = spanGroupEnd[i];
+            double borderBottomDip = GetRowBottomBorderDip(coreTable, endRow);
+            double groupBottomY = rowTopY[endRow] + rowH[endRow] + borderBottomDip;
+
+            int pg = bodyH > 0 ? (int)(rowTopY[i] / bodyH) : 0;
+            // 병합 그룹 하단(외곽선 포함)이 현재 페이지 끝을 넘으면 이 행부터 다음 페이지
+            if (bodyH > 0 && groupBottomY > (pg + 1) * bodyH)
+                pg += 1;
 
             if (pg != curPage)
             {
