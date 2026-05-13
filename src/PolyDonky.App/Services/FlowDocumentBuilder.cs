@@ -910,6 +910,7 @@ public static class FlowDocumentBuilder
                 if (wcell.Blocks.Count == 0)
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
 
+                ApplyVerticalAlignmentToCell(wcell, cell, row);
                 wrow.Cells.Add(wcell);
                 colIdx += colSpan;
             }
@@ -1046,9 +1047,152 @@ public static class FlowDocumentBuilder
 
         wcell.FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal;
         ApplyCellTextAlign(wcell, cell.TextAlign);
-        // NOTE: TableCell.VerticalAlign / TableRow.VerticalAlign 은 모델에 저장되지만
-        // System.Windows.Documents.TableCell 은 TextElement 를 상속해 VerticalAlignment
-        // 속성을 지원하지 않는다 (WPF FlowDocument 플랫폼 한계). DOCX/HTML export 시 적용.
+    }
+
+    /// <summary>
+    /// 셀의 수직 정렬을 BlockUIContainer + Grid 로 구현한다.
+    /// TableCell 은 TextElement 이므로 VerticalAlignment 를 직접 지원하지 않지만,
+    /// BlockUIContainer 내 Grid 는 FrameworkElement 이므로 지원한다.
+    /// </summary>
+    private static void ApplyVerticalAlignmentToCell(Wpf.TableCell wcell, TableCell cell, TableRow? row)
+    {
+        // 유효한 수직 정렬 결정: 셀 > 행 > 기본값(Top)
+        var align = cell.VerticalAlign;
+        if (align == CellVerticalAlign.Top && row?.VerticalAlign.HasValue == true)
+            align = row.VerticalAlign.Value;
+        if (align == CellVerticalAlign.Top)
+            return; // 기본값이면 처리 안 함
+
+        // 셀의 기존 블록들을 모두 수집
+        var originalBlocks = wcell.Blocks.Cast<Wpf.Block>().ToList();
+        wcell.Blocks.Clear();
+
+        // Grid 생성: 높이는 자동으로 콘텐츠에 맞춤, VerticalAlignment 는 셀 내 정렬 결정
+        var grid = new System.Windows.Controls.Grid
+        {
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = align switch
+            {
+                CellVerticalAlign.Middle => System.Windows.VerticalAlignment.Center,
+                CellVerticalAlign.Bottom => System.Windows.VerticalAlignment.Bottom,
+                _ => System.Windows.VerticalAlignment.Top,
+            },
+        };
+
+        // StackPanel 에 모든 블록을 담는다
+        var stack = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Vertical,
+        };
+
+        foreach (var block in originalBlocks)
+        {
+            // 블록을 UIElement 로 변환하여 StackPanel 에 추가
+            if (block is Wpf.Paragraph para)
+            {
+                // 단락을 TextBlock 으로 변환 (가장 일반적인 경우)
+                var tb = new System.Windows.Controls.TextBlock
+                {
+                    TextWrapping = System.Windows.TextWrapping.Wrap,
+                    TextAlignment = para.TextAlignment,
+                    Foreground = para.Foreground ?? System.Windows.Media.Brushes.Black,
+                    Background = para.Background,
+                    Padding = para.Padding,
+                    Margin = para.Margin,
+                    FontFamily = para.FontFamily,
+                    FontSize = para.FontSize,
+                    FontWeight = para.FontWeight,
+                    FontStyle = para.FontStyle,
+                };
+
+                // 단락의 inlines 를 TextBlock 에 복사
+                foreach (var inline in para.Inlines)
+                    tb.Inlines.Add(CopyInline(inline));
+
+                stack.Children.Add(tb);
+            }
+            else if (block is Wpf.BlockUIContainer buc)
+            {
+                // BlockUIContainer 는 그대로 추가
+                stack.Children.Add(buc.Child as System.Windows.UIElement ?? new System.Windows.Controls.TextBlock { Text = "(UI element)" });
+            }
+            else if (block is Wpf.Table table)
+            {
+                // 표는 복잡하므로 별도 처리 필요 — 현재는 placeholder
+                stack.Children.Add(new System.Windows.Controls.TextBlock { Text = "[표 콘텐츠]" });
+            }
+            else
+            {
+                // 기타 블록 타입은 텍스트 placeholder
+                stack.Children.Add(new System.Windows.Controls.TextBlock { Text = "[블록]" });
+            }
+        }
+
+        grid.Children.Add(stack);
+
+        // Grid 를 BlockUIContainer 로 감싸서 wcell.Blocks 에 추가
+        wcell.Blocks.Add(new Wpf.BlockUIContainer(grid));
+    }
+
+    /// <summary>WPF Inline 을 복사한다. (Tag, 스타일 포함)</summary>
+    private static Wpf.Inline CopyInline(Wpf.Inline inline)
+    {
+        if (inline is Wpf.Run run)
+        {
+            return new Wpf.Run(run.Text)
+            {
+                Tag = run.Tag,
+                Foreground = run.Foreground,
+                Background = run.Background,
+                FontSize = run.FontSize,
+                FontWeight = run.FontWeight,
+                FontStyle = run.FontStyle,
+                TextDecorations = run.TextDecorations,
+                BaselineAlignment = run.BaselineAlignment,
+            };
+        }
+        else if (inline is Wpf.Span span)
+        {
+            var newSpan = new Wpf.Span
+            {
+                Tag = span.Tag,
+                Foreground = span.Foreground,
+                Background = span.Background,
+                FontSize = span.FontSize,
+                FontWeight = span.FontWeight,
+                FontStyle = span.FontStyle,
+                TextDecorations = span.TextDecorations,
+            };
+            foreach (var child in span.Inlines)
+                newSpan.Inlines.Add(CopyInline(child));
+            return newSpan;
+        }
+        else if (inline is Wpf.Hyperlink link)
+        {
+            var newLink = new Wpf.Hyperlink()
+            {
+                Tag = link.Tag,
+                NavigateUri = link.NavigateUri,
+                Foreground = link.Foreground,
+                Background = link.Background,
+                FontSize = link.FontSize,
+                FontWeight = link.FontWeight,
+                FontStyle = link.FontStyle,
+                TextDecorations = link.TextDecorations,
+            };
+            foreach (var child in link.Inlines)
+                newLink.Inlines.Add(CopyInline(child));
+            return newLink;
+        }
+        else if (inline is Wpf.InlineUIContainer iuc)
+        {
+            return new Wpf.InlineUIContainer(iuc.Child) { Tag = iuc.Tag };
+        }
+        else
+        {
+            // 기타 inline: 그냥 반환
+            return inline;
+        }
     }
 
     private static void ApplyCellTextAlign(Wpf.TableCell wcell, CellTextAlign align)
