@@ -316,6 +316,8 @@ catch (IOException ex)
 catch (Exception ex)
 {
     Console.Error.WriteLine($"변환 실패: {ex.GetType().Name}: {ex.Message}");
+    if (!string.IsNullOrEmpty(ex.StackTrace))
+        Console.Error.WriteLine($"스택 트레이스:\n{ex.StackTrace}");
     return ExitConvertError;
 }
 finally
