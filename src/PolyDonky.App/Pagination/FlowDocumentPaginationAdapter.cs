@@ -563,11 +563,17 @@ public static class FlowDocumentPaginationAdapter
                 // 2. fragments 없거나 단일 페이지이면 페이지별 독립 측정으로 재시도
                 if ((tblFragments == null || tblFragments.Count <= 1) && !double.IsNaN(topY))
                 {
-                    var rowGroupsByPage = SplitTableByPageMeasurement(
+                    var (rowGroupsByPage, fragmentHeightsMm) = SplitTableByPageMeasurement(
                         coreTblForSplit, topY, bodyH, colWidth);
                     if (rowGroupsByPage.Count > 1)
                     {
                         var pageFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByPage);
+                        // 각 조각에 측정된 높이 기록
+                        for (int fi2 = 0; fi2 < pageFragments.Count; fi2++)
+                        {
+                            if (fi2 < fragmentHeightsMm.Count && fragmentHeightsMm[fi2] > 0)
+                                pageFragments[fi2].fragment.HeightMm = fragmentHeightsMm[fi2];
+                        }
                         tblFragments = pageFragments
                             .Select(f => (f.fragment, f.pageIdx * colCount))
                             .ToList();
@@ -591,7 +597,10 @@ public static class FlowDocumentPaginationAdapter
                             tblSlot = ((prevSlot / colCount) + 1) * colCount;
                             tblSlot = Math.Max(minSlot, tblSlot);
                         }
-                        result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
+                        int tblPage = tblSlot / colCount;
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[Table] page={tblPage} id={coreFragment.Id ?? "(null)"} heightMm={coreFragment.HeightMm:F2}");
+                        result.Add((tblPage, tblSlot % colCount, coreFragment, Rect.Empty));
                         prevSlot = tblSlot;
                         minSlot  = Math.Max(minSlot, tblSlot);
                     }
@@ -797,6 +806,9 @@ public static class FlowDocumentPaginationAdapter
 
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
+            if (coreBlock is Core.Table tblSingle)
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Table] page={slotTop / colCount} id={tblSingle.Id ?? "(null)"} heightMm={tblSingle.HeightMm:F2}");
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
             if (!double.IsNaN(topY) && !slotContentStartY.ContainsKey(slotTop))
                 slotContentStartY[slotTop] = topY;
@@ -1646,7 +1658,11 @@ public static class FlowDocumentPaginationAdapter
     /// 실제로 렌더링한 뒤 넘치는 행을 찾는다. 통짜 표를 연속 좌표계에서 측정하는
     /// 방식과 달리 각 조각이 처음부터 독립 표로 취급된다.
     /// </summary>
-    private static List<(int pageNum, List<int> bodyRowIndices)> SplitTableByPageMeasurement(
+    /// <summary>
+    /// 표를 페이지별로 독립 측정해 행 그룹과 각 조각의 높이(mm)를 함께 반환한다.
+    /// </summary>
+    private static (List<(int pageNum, List<int> bodyRowIndices)> groups, List<double> fragmentHeightsMm)
+        SplitTableByPageMeasurement(
         Core.Table coreTable,
         double tableTopY,
         double bodyH,
@@ -1658,7 +1674,7 @@ public static class FlowDocumentPaginationAdapter
             if (!coreTable.Rows[i].IsHeader) allBodyIndices.Add(i);
 
         if (allBodyIndices.Count == 0)
-            return new List<(int, List<int>)>();
+            return (new List<(int, List<int>)>(), new List<double>());
 
         // 앞머리 헤더 행 인덱스 (첫 본문 행 이전의 IsHeader 행들)
         int firstBodySrcIdx = allBodyIndices[0];
@@ -1670,9 +1686,10 @@ public static class FlowDocumentPaginationAdapter
         double pageStartOffset = bodyH > 0 ? (tableTopY % bodyH) : 0;
         if (pageStartOffset < 0) pageStartOffset = 0;
 
-        var result = new List<(int, List<int>)>();
-        int startBodyIdx = 0; // allBodyIndices 안의 시작 위치
-        int pageOffset   = 0;
+        var result          = new List<(int, List<int>)>();
+        var fragmentHeights = new List<double>(); // 조각별 높이(mm)
+        int startBodyIdx    = 0;
+        int pageOffset      = 0;
 
         while (startBodyIdx < allBodyIndices.Count)
         {
@@ -1705,11 +1722,12 @@ public static class FlowDocumentPaginationAdapter
             measRtb.Arrange(new Rect(measRtb.DesiredSize));
             measRtb.UpdateLayout();
 
-            // ── 넘치는 행 탐색 ────────────────────────────────────────────────────
-            // wpfTable 의 행 순서: [앞머리 헤더 * n개] [본문 행 * remainCount개]
+            // ── 행별 누적으로 넘치는 지점 탐색 ──────────────────────────────────
+            // wpfTable 행 순서: [앞머리 헤더 × hdrCount개] [본문 행 × remainCount개]
             var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
-            int hdrCount = leadingHeaderIndices.Count;
-            int lastFit = remainCount; // 기본: 전부 들어감
+            int    hdrCount      = leadingHeaderIndices.Count;
+            int    lastFit       = remainCount; // 기본: 전부 들어감
+            double fragBottomDip = 0;           // 마지막으로 들어간 행의 하단 Y (DIP)
 
             for (int k = 0; k < remainCount; k++)
             {
@@ -1725,7 +1743,7 @@ public static class FlowDocumentPaginationAdapter
                 }
                 catch { }
 
-                // 폴백: ContentStart 위치 + 행 높이 추정
+                // 폴백: ContentStart Y + HeightMm 추정
                 if (double.IsNaN(rowBottom))
                 {
                     try
@@ -1740,11 +1758,14 @@ public static class FlowDocumentPaginationAdapter
                     catch { }
                 }
 
-                if (!double.IsNaN(rowBottom) && rowBottom > availH)
+                if (!double.IsNaN(rowBottom))
                 {
-                    // RowSpan 병합 그룹의 경계에서 자르도록 k 를 후퇴
-                    lastFit = k;
-                    break;
+                    if (rowBottom > availH)
+                    {
+                        lastFit = k; // 이 행부터 다음 페이지
+                        break;
+                    }
+                    fragBottomDip = rowBottom; // 들어갈 수 있으면 하단 갱신
                 }
             }
 
@@ -1755,11 +1776,14 @@ public static class FlowDocumentPaginationAdapter
                 startBodyIdx, Math.Min(lastFit, allBodyIndices.Count - startBodyIdx));
             result.Add((pageNum, pageIndices));
 
+            // 조각 높이 기록: 마지막으로 들어간 행의 하단을 mm 로 변환
+            fragmentHeights.Add(fragBottomDip > 0 ? fragBottomDip * (25.4 / 96.0) : 0);
+
             startBodyIdx += pageIndices.Count;
             pageOffset++;
         }
 
-        return result;
+        return (result, fragmentHeights);
     }
 
     /// <summary>
