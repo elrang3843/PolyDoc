@@ -510,6 +510,14 @@ static void EmbedImagesInBlocks(IList<Block> blocks, string baseDir)
                     foreach (var cell in row.Cells)
                         EmbedImagesInBlocks(cell.Blocks, baseDir);
                 break;
+
+            case TextBoxObject tbo:
+                EmbedImagesInBlocks(tbo.Content, baseDir);
+                break;
+
+            case ContainerBlock cb:
+                EmbedImagesInBlocks(cb.Children, baseDir);
+                break;
         }
     }
 }
