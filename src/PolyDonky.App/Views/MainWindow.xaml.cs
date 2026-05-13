@@ -3333,7 +3333,7 @@ public partial class MainWindow : Window
                 cur = fce.Parent;
             }
             if (cell == null) return false;
-            if (cell.ColumnSpan > 1) return false;
+            // colspan > 1인 셀도 오른쪽 경계(span 끝)에서 리사이즈 가능하므로 early-return 없음
 
             var row      = cell.Parent as System.Windows.Documents.TableRow;
             var rowGroup = row?.Parent as System.Windows.Documents.TableRowGroup;
@@ -3346,39 +3346,48 @@ public partial class MainWindow : Window
             int colCount = wTable.Columns.Count;
             if (cellIdx < 0) return false;
 
-            var firstRow = rowGroup!.Rows[0];
-
-            // 이 셀의 오른쪽 경계선 = 다음 셀 콘텐츠 시작 X
-            if (cellIdx < colCount - 1 && cellIdx + 1 < firstRow.Cells.Count)
+            // 현재 셀의 실제 열 위치 계산 (colspan 포함).
+            // firstRow 고정 대신 현재 행 기준으로 경계를 감지해
+            // colspan/rowspan이 있는 HTML 표에서도 올바르게 동작한다.
+            int cellColPos = 0;
+            foreach (var c in row.Cells)
             {
-                var nextRect = firstRow.Cells[cellIdx + 1].ContentStart
+                if (c == cell) break;
+                cellColPos += c.ColumnSpan;
+            }
+            int rightBorderColIdx = cellColPos + cell.ColumnSpan - 1;
+
+            // 이 셀의 오른쪽 경계선: 현재 행의 다음 셀 ContentStart.Left
+            if (rightBorderColIdx < colCount - 1 && cellIdx + 1 < row.Cells.Count)
+            {
+                var nextRect = row.Cells[cellIdx + 1].ContentStart
                                     .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
                 if (!nextRect.IsEmpty && Math.Abs(pt.X - nextRect.Left) <= TableColResizeHitDip)
                 {
                     wpfTable = wTable; coreTable = cTable;
-                    leftColIdx = cellIdx; borderX = nextRect.Left;
+                    leftColIdx = rightBorderColIdx; borderX = nextRect.Left;
                     return true;
                 }
             }
 
-            // 이 셀의 왼쪽 경계선 = 이 셀 콘텐츠 시작 X (이전 셀의 오른쪽 경계)
-            if (cellIdx > 0 && cellIdx < firstRow.Cells.Count)
+            // 이 셀의 왼쪽 경계선: 현재 셀 ContentStart.Left
+            if (cellColPos > 0)
             {
-                var thisRect = firstRow.Cells[cellIdx].ContentStart
+                var thisRect = cell.ContentStart
                                     .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
                 if (!thisRect.IsEmpty && Math.Abs(pt.X - thisRect.Left) <= TableColResizeHitDip)
                 {
                     wpfTable = wTable; coreTable = cTable;
-                    leftColIdx = cellIdx - 1; borderX = thisRect.Left;
+                    leftColIdx = cellColPos - 1; borderX = thisRect.Left;
                     return true;
                 }
             }
 
-            // 오른쪽 끝열 오른쪽 외곽선: 표 전체 가로 크기 조정
+            // 오른쪽 끝열 오른쪽 외곽선: 표 전체 가로 크기 조정.
             // 모든 열이 절대값 너비일 때만 정확하게 계산 가능.
-            if (cellIdx == colCount - 1 && firstRow.Cells.Count == colCount)
+            if (rightBorderColIdx == colCount - 1 && row.Cells.Count > 0)
             {
-                var firstCellRect = firstRow.Cells[0].ContentStart
+                var firstCellRect = row.Cells[0].ContentStart
                     .GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
                 if (!firstCellRect.IsEmpty)
                 {
@@ -3395,7 +3404,7 @@ public partial class MainWindow : Window
                         if (Math.Abs(pt.X - rightX) <= TableColResizeHitDip)
                         {
                             wpfTable = wTable; coreTable = cTable;
-                            leftColIdx = cellIdx; borderX = rightX;
+                            leftColIdx = rightBorderColIdx; borderX = rightX;
                             return true;
                         }
                     }
@@ -3564,13 +3573,27 @@ public partial class MainWindow : Window
                         ? wpfTable.Columns[leftColIdx + 1]
                         : null;
 
-        // 현재 렌더된 열 너비 스냅샷 (셀 콘텐츠 시작 X 차이로 추정)
-        var firstRow = wpfTable.RowGroups[0].Rows[0];
-        double CellLeft(int idx)
+        // 현재 렌더된 열 너비 스냅샷.
+        // colIdx는 열 인덱스(WPF Columns 기준). colspan을 고려해 해당 열에
+        // ColumnSpan=1인 셀이 있는 행을 찾아 ContentStart.Left를 반환한다.
+        double CellLeft(int colIdx)
         {
-            if (idx >= firstRow.Cells.Count) return double.NaN;
-            var r = firstRow.Cells[idx].ContentStart.GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
-            return r.IsEmpty ? double.NaN : r.Left;
+            foreach (var r in wpfTable.RowGroups[0].Rows)
+            {
+                int pos = 0;
+                foreach (var c in r.Cells)
+                {
+                    if (pos == colIdx && c.ColumnSpan == 1)
+                    {
+                        var rect = c.ContentStart.GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                        if (!rect.IsEmpty) return rect.Left;
+                        break;
+                    }
+                    pos += c.ColumnSpan;
+                    if (pos > colIdx) break;
+                }
+            }
+            return double.NaN;
         }
 
         double x0 = CellLeft(leftColIdx);

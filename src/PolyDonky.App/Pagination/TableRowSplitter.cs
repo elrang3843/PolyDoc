@@ -253,8 +253,9 @@ internal static class TableRowSplitter
             OverlayYMm                 = source.OverlayYMm,
         };
 
+        // 원본 TableColumn 객체를 공유 — 드래그로 너비를 바꾸면 원본 테이블에도 즉시 반영됨.
         foreach (var col in source.Columns)
-            frag.Columns.Add(new TableColumn { WidthMm = col.WidthMm });
+            frag.Columns.Add(col);
 
         // 첫 번째 본문 행 / 마지막 본문 행의 원본 인덱스
         // (앞머리 IsHeader vs 꼬리 IsHeader 구분에 사용)

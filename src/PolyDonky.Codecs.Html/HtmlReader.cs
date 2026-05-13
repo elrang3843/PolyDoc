@@ -925,7 +925,28 @@ public sealed class HtmlReader : IDocumentReader
         }
 
         var rows = tableEl.QuerySelectorAll("tr").ToList();
-        int maxCols = rows.Count > 0 ? rows.Max(r => r.QuerySelectorAll("td,th").Count(_ => true)) : 0;
+
+        // colspan/rowspan을 모두 고려한 실제 열 수 계산.
+        // 단순 td/th 개수는 colspan을 무시하므로 열 수가 부족하게 계산될 수 있다.
+        int maxCols = 0;
+        {
+            var occupied = new System.Collections.Generic.Dictionary<int, int>(); // col → 남은 rowspan
+            foreach (var rowEl in rows)
+            {
+                int colPos = 0;
+                foreach (var cellEl in rowEl.QuerySelectorAll("td,th"))
+                {
+                    while (occupied.TryGetValue(colPos, out var rem) && rem > 0) colPos++;
+                    int cs = Math.Max(1, TryAttrInt(cellEl, "colspan", 1));
+                    int rs = Math.Max(1, TryAttrInt(cellEl, "rowspan", 1));
+                    for (int i = 0; i < cs; i++) occupied[colPos + i] = rs - 1;
+                    colPos += cs;
+                    if (colPos > maxCols) maxCols = colPos;
+                }
+                foreach (var k in occupied.Keys.ToList())
+                    if (occupied[k] > 0) occupied[k]--;
+            }
+        }
         for (int i = 0; i < maxCols; i++) t.Columns.Add(new TableColumn());
 
         // <colgroup><col> 에서 열 너비 파싱. % 단위도 tableWidthMm 기준으로 변환.

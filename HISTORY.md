@@ -64,6 +64,11 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **BookEditor Pro `be-*` 메타 태그 용지 설정 미지원 수정**: BookEditor Pro 가 생성한 HTML의 `be-paper-size`, `be-custom-paper-w/h`, `be-orientation`, `be-margin-*`, `be-page-start-number` 메타 태그가 무시되어 용지 크기·여백이 기본값(A4/25mm)으로 설정되던 문제. `ApplyPageSettings`에 `ApplyBeMetaTags` 헬퍼를 추가해 be-* 태그를 PageSettings에 반영. pd-* 태그가 이미 있으면 be-* 는 무시(PolyDonky 원본 우선). A5 용지를 A5로, 여백을 올바른 값으로 저장. (`HtmlReader.cs`)
 
+- **HTML 변환 표 열 너비 드래그 편집 3종 버그 수정**:
+  1. `HtmlReader`: `maxCols` 계산이 colspan을 무시해 실제보다 열 수가 적게 계산되던 문제. colspan+rowspan 점유 격자를 추적하는 정확한 계산으로 교체.
+  2. `TableRowSplitter.CreateFragment()`: 페이지 분할된 조각 테이블이 `TableColumn`을 새로 생성해, 드래그로 열 너비를 변경해도 원본 `_document` 테이블에 반영되지 않아 저장 시 원래 너비로 돌아오던 문제. 원본 `TableColumn` 객체를 직접 공유하도록 수정.
+  3. `TryHitTableColumnBorder()`: `firstRow.Cells[cellIdx]` 인덱싱에 의존해 colspan/rowspan이 있는 표에서 경계 감지가 실패하던 문제. 현재 행 기준으로 실제 열 위치(`cellColPos`)를 직접 계산하고 `CellLeft()` 헬퍼도 열 인덱스 기반으로 교체. (`HtmlReader.cs`, `TableRowSplitter.cs`, `MainWindow.xaml.cs`)
+
 - **CSS `linear-gradient` 배경색 미추출 수정**: `.toc-page { background: linear-gradient(150deg, #0d1b4b 0%, #1a3a8f 100%); }` 같은 그라디언트 배경이 ContainerBlock.BackgroundColor에 반영되지 않아 배경색이 누락되던 문제. `ApplyBlockStyle`의 background shorthand 파싱에 그라디언트 감지를 추가해 첫 번째 색상 정류장을 solid 색으로 근사 추출 (`ExtractFirstGradientColor`). (`HtmlReader.cs`)
 
 - **오버레이 표 행·열 드래그 기반 크기 조정 구현**: 오버레이 모드 표의 열 너비 및 행 높이를 마우스 드래그로 조정 가능하도록 구현. 우클릭 메뉴에서 표 셀 위치를 자동 감지해 행·열 인덱스를 전달. 마우스 호버 시 커서 변경(SizeWE/SizeNS) 및 경계선 강조. 오버레이 표의 분리선(`BorderBrush` 또는 동적 계산) 위에서 5 DIP 내 hit-test로 경계 감지. 드래그 중 실시간 셀 크기 반영 후 Core 모델 업데이트. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
