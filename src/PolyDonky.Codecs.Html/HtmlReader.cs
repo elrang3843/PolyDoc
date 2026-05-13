@@ -1938,13 +1938,10 @@ public sealed class HtmlReader : IDocumentReader
                         MediaType    = GuessMediaTypeFromUrl(urlInner),
                         WrapMode     = ImageWrapMode.Inline,
                     };
-                    // [DEBUG] 외부 URL background-image 감지
-                    System.Diagnostics.Debug.WriteLine($"[BG-IMG] URL: {urlInner}");
                 }
                 if (bgImage is not null)
                 {
                     hasBox = true;
-                    System.Diagnostics.Debug.WriteLine($"[BG-IMG] Created: data={bgImage.Data.Length}, path={bgImage.ResourcePath}");
                 }
             }
         }
@@ -2211,13 +2208,48 @@ public sealed class HtmlReader : IDocumentReader
     private static string? StyleProp(string? style, string prop)
     {
         if (string.IsNullOrEmpty(style)) return null;
-        foreach (var decl in style.Split(';'))
+
+        // CSS 속성 파싱: url(...) 내의 세미콜론은 무시하고 파싱
+        int pos = 0;
+        while (pos < style.Length)
         {
-            var c = decl.IndexOf(':');
-            if (c <= 0) continue;
-            if (decl[..c].Trim().Equals(prop, StringComparison.OrdinalIgnoreCase))
-                return decl[(c + 1)..].Trim();
+            int colon = style.IndexOf(':', pos);
+            if (colon < 0) break;
+
+            string propName = style[pos..colon].Trim();
+            if (propName.Equals(prop, StringComparison.OrdinalIgnoreCase))
+            {
+                // 속성값을 세미콜론까지 추출 (단, url() 내 세미콜론 제외)
+                int valueStart = colon + 1;
+                int i = valueStart;
+                int parenDepth = 0;
+
+                while (i < style.Length)
+                {
+                    char ch = style[i];
+                    if (ch == '(') parenDepth++;
+                    else if (ch == ')') parenDepth--;
+                    else if (ch == ';' && parenDepth == 0) break;
+                    i++;
+                }
+
+                return style[valueStart..i].Trim();
+            }
+
+            // 다음 속성으로 진행 (현재 속성의 끝까지 스킵)
+            int nextSemi = pos;
+            int depth = 0;
+            while (nextSemi < style.Length)
+            {
+                char ch = style[nextSemi];
+                if (ch == '(') depth++;
+                else if (ch == ')') depth--;
+                else if (ch == ';' && depth == 0) break;
+                nextSemi++;
+            }
+            pos = nextSemi + 1;
         }
+
         return null;
     }
 

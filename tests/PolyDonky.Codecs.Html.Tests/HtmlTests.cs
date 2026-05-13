@@ -2596,8 +2596,9 @@ public class HtmlTests
     [Fact]
     public void Reader_DivBackgroundImageDataUri_BecomesImageBlock()
     {
-        // 공백을 없애서 더 간단한 HTML로 테스트
-        const string html = @"<div style=""background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=); width: 100px; height: 100px;""><p>Test</p></div>";
+        // 더 간단한 데이터 URI로 테스트
+        const string dataUri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+        const string html = $@"<div style=""background-image: url({dataUri}); width: 100px; height: 100px;""><p>Test</p></div>";
         var doc = HtmlReader.FromHtml(html);
 
         // 모든 블록 타입 확인 (디버깅용)
@@ -2621,6 +2622,27 @@ public class HtmlTests
         Assert.Equal("image/png", img.MediaType);
     }
 
+    // CSS background-image 기본 동작 확인
+    [Fact]
+    public void Reader_SimpleDivWithBackground_CreatesContainer()
+    {
+        // 가장 간단한 경우: background-color만 있어도 ContainerBlock이 생성되는지 확인
+        const string html = @"<div style=""background-color: red;""><p>Test</p></div>";
+        var doc = HtmlReader.FromHtml(html);
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);
+    }
+
+    [Fact]
+    public void Reader_DivWithBackgroundImageOnly_CreatesContainer()
+    {
+        // background-image만으로도 ContainerBlock이 생성되어야 함
+        const string html = @"<div style=""background-image: url(test.jpg);""><p>Test</p></div>";
+        var doc = HtmlReader.FromHtml(html);
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);  // 실패할 경우 여기서 걸림
+    }
+
     [Fact]
     public void Reader_DivBackgroundImageUrl_StoresResourcePath()
     {
@@ -2628,7 +2650,9 @@ public class HtmlTests
             <p>Content</p>
         </div>";
         var doc = HtmlReader.FromHtml(html);
-        var img = doc.Sections[0].Blocks.OfType<ImageBlock>().FirstOrDefault();
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);
+        var img = container.Children.OfType<ImageBlock>().FirstOrDefault();
         Assert.NotNull(img);
         Assert.Equal("./images/test.jpg", img.ResourcePath);
         Assert.Equal("image/jpeg", img.MediaType);
@@ -2642,7 +2666,9 @@ public class HtmlTests
             <p>Text</p>
         </div>";
         var doc = HtmlReader.FromHtml(html);
-        var img = doc.Sections[0].Blocks.OfType<ImageBlock>().FirstOrDefault();
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);
+        var img = container.Children.OfType<ImageBlock>().FirstOrDefault();
         Assert.NotNull(img);
         Assert.Equal("https://example.com/image.png", img.ResourcePath);
         Assert.Equal("image/png", img.MediaType);
