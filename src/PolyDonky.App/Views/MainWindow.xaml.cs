@@ -3384,7 +3384,8 @@ public partial class MainWindow : Window
             }
 
             // 오른쪽 끝열 오른쪽 외곽선: 표 전체 가로 크기 조정.
-            // 모든 열이 절대값 너비일 때만 정확하게 계산 가능.
+            // 절대값 열은 실제 너비, Star 열은 임의값(80 DIP)으로 추정해서
+            // HTML 변환 표(Star 너비)에서도 작동하게 함.
             if (rightBorderColIdx == colCount - 1 && row.Cells.Count > 0)
             {
                 var firstCellRect = row.Cells[0].ContentStart
@@ -3392,21 +3393,20 @@ public partial class MainWindow : Window
                 if (!firstCellRect.IsEmpty)
                 {
                     double totalW = 0;
-                    bool allAbs = true;
                     foreach (var col in wTable.Columns)
                     {
-                        if (col.Width.IsAbsolute) totalW += col.Width.Value;
-                        else { allAbs = false; break; }
+                        if (col.Width.IsAbsolute)
+                            totalW += col.Width.Value;
+                        else
+                            // Star 너비는 임의값(80 DIP)으로 추정
+                            totalW += 80;
                     }
-                    if (allAbs)
+                    double rightX = firstCellRect.Left + totalW;
+                    if (Math.Abs(pt.X - rightX) <= TableColResizeHitDip)
                     {
-                        double rightX = firstCellRect.Left + totalW;
-                        if (Math.Abs(pt.X - rightX) <= TableColResizeHitDip)
-                        {
-                            wpfTable = wTable; coreTable = cTable;
-                            leftColIdx = rightBorderColIdx; borderX = rightX;
-                            return true;
-                        }
+                        wpfTable = wTable; coreTable = cTable;
+                        leftColIdx = rightBorderColIdx; borderX = rightX;
+                        return true;
                     }
                 }
             }
