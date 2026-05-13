@@ -1078,6 +1078,7 @@ public sealed class HtmlReader : IDocumentReader
             {
                 double lineH     = ctx.Shared.FontLineHeightMm;
                 double cjkW      = ctx.Shared.AvgCjkCharWidthMm;
+                double cellPadV  = ctx.Shared.MinRowHeightMm - lineH; // 추정 셀 상하 패딩
                 double maxEstH   = 0;
                 int    colCursor = 0;
                 foreach (var cell in row.Cells)
@@ -1086,15 +1087,10 @@ public sealed class HtmlReader : IDocumentReader
                     double cellW = 0;
                     for (int ci = 0; ci < cell.ColumnSpan && colCursor + ci < t.Columns.Count; ci++)
                         cellW += t.Columns[colCursor + ci].WidthMm;
-
-                    // 셀 실제 패딩 (좌우)
-                    double padLeft  = cell.PaddingLeftMm  > 0 ? cell.PaddingLeftMm  : t.DefaultCellPaddingLeftMm;
-                    double padRight = cell.PaddingRightMm > 0 ? cell.PaddingRightMm : t.DefaultCellPaddingRightMm;
-                    double padTop   = cell.PaddingTopMm   > 0 ? cell.PaddingTopMm   : t.DefaultCellPaddingTopMm;
-                    double padBot   = cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : t.DefaultCellPaddingBottomMm;
-
-                    // 셀 좌우 패딩 제외한 내부 너비
-                    double innerW = Math.Max(10, cellW - padLeft - padRight);
+                    // 셀 좌우 패딩 제외
+                    double innerW = Math.Max(10, cellW
+                        - (cell.PaddingLeftMm  > 0 ? cell.PaddingLeftMm  : t.DefaultCellPaddingLeftMm)
+                        - (cell.PaddingRightMm > 0 ? cell.PaddingRightMm : t.DefaultCellPaddingRightMm));
 
                     // 셀 내 텍스트 수집 (모든 Paragraph의 Run.Text 합산)
                     var sb = new System.Text.StringBuilder();
@@ -1113,20 +1109,12 @@ public sealed class HtmlReader : IDocumentReader
                         double avgCharW    = cjkW * (korRatio + (1 - korRatio) * 0.55);
                         int    charsPerLine = Math.Max(1, (int)(innerW / avgCharW));
                         int    lineCount    = (int)Math.Ceiling((double)text.Length / charsPerLine);
-                        // 텍스트 높이 + 상하 패딩
-                        double estimatedH  = lineCount * lineH + padTop + padBot;
+                        double estimatedH  = lineCount * lineH + Math.Max(0, cellPadV);
                         if (estimatedH > maxEstH) maxEstH = estimatedH;
-                    }
-                    else if (text.Length == 0)
-                    {
-                        // 빈 셀도 최소 높이(상하 패딩) 필요
-                        double minCellH = padTop + padBot;
-                        if (minCellH > maxEstH) maxEstH = minCellH;
                     }
 
                     colCursor += cell.ColumnSpan;
                 }
-                // 추정 높이와 CSS height 중 큰 쪽 사용
                 if (maxEstH > row.HeightMm) row.HeightMm = maxEstH;
             }
 
