@@ -180,7 +180,9 @@ internal static class TableRowSplitter
         if (rowGroups.Count == 1)
             return new List<(Table, int)> { (source, rowGroups[0].pageNum) };
 
-        // 여러 페이지에 걸친 표 — 조각 생성
+        // 여러 페이지에 걸친 표 — 조각 생성.
+        // 각 조각은 완전히 독립된 표로 취급되므로 고유 Id 를 부여한다.
+        // 형식: "{sourceId}§t{index}" (§t = table fragment separator)
         var fragments = new List<(Table, int)>();
 
         for (int gi = 0; gi < rowGroups.Count; gi++)
@@ -189,10 +191,15 @@ internal static class TableRowSplitter
             bool isLast  = gi == rowGroups.Count - 1;
             var (pageNum, bodyIndices) = rowGroups[gi];
 
-            // 첫 조각: 캡션 유지. 이후 조각: 캡션 제거(반복 방지).
             bool prependHeaders = !isFirst && source.RepeatHeaderRowsOnBreak;
             var frag = CreateFragment(source, bodyIndices, prependHeaders,
                                       omitCaption: !isFirst, isLastFragment: isLast, isFirstFragment: isFirst);
+
+            // 각 조각에 고유 Id — MergeTableFragments 없이도 독립 표로 관리된다.
+            frag.Id = string.IsNullOrEmpty(source.Id)
+                ? $"§t{gi}"
+                : $"{source.Id}§t{gi}";
+
             fragments.Add((frag, pageNum));
         }
 

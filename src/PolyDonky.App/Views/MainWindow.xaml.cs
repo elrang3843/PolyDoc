@@ -1090,9 +1090,9 @@ public partial class MainWindow : Window
                 foreach (var b in ps.Blocks)
                     rawBlocks.Add(b);
         }
-        // 줄 단위 분할로 생성된 조각 단락(§f0/§f1 접미사)을 원본 단락으로 재결합하고,
-        // TableRowSplitter 가 만든 표 조각(같은 Id 공유)도 하나의 표로 합친다.
-        foreach (var b in MergeTableFragments(MergeColumnFragments(rawBlocks)))
+        // 줄 단위 분할로 생성된 조각 단락(§f0/§f1 접미사)을 원본 단락으로 재결합한다.
+        // 표 조각은 각 페이지에서 독립 표로 취급되므로 별도 병합 없이 그대로 유지한다.
+        foreach (var b in MergeColumnFragments(rawBlocks))
             section.Blocks.Add(b);
 
         // 오버레이 블록 (_viewModel.Document 가 stable source) — 글상자는 RTB 에 앵커가 없고,
@@ -1216,41 +1216,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// TableRowSplitter 가 만든 표 조각들을 원본 한 개로 재결합한다.
-    /// 모든 조각은 source.Id 를 공유하므로 동일 Id 를 가진 연속 표는 같은 원본의 조각으로 간주.
-    /// 첫 조각은 그대로 두고, 후속 조각은 splitter 가 prepend 한 선두 IsHeader 행(원본 헤더의 클론)을
-    /// 건너뛴 뒤 본문/꼬리 행을 첫 조각에 이어 붙인다.
-    /// </summary>
-    private static System.Collections.Generic.IEnumerable<PolyDonky.Core.Block>
-        MergeTableFragments(System.Collections.Generic.IEnumerable<PolyDonky.Core.Block> blocks)
-    {
-        var result  = new System.Collections.Generic.List<PolyDonky.Core.Block>();
-        var firstById = new System.Collections.Generic.Dictionary<string, PolyDonky.Core.Table>();
-
-        foreach (var block in blocks)
-        {
-            if (block is PolyDonky.Core.Table tbl
-                && tbl.Id is { Length: > 0 } id
-                && firstById.TryGetValue(id, out var first))
-            {
-                bool pastLeadingHeaders = false;
-                foreach (var row in tbl.Rows)
-                {
-                    if (!pastLeadingHeaders && row.IsHeader) continue;
-                    pastLeadingHeaders = true;
-                    first.Rows.Add(row);
-                }
-                continue;
-            }
-
-            if (block is PolyDonky.Core.Table newTbl && newTbl.Id is { Length: > 0 } newId)
-                firstById[newId] = newTbl;
-            result.Add(block);
-        }
-
-        return result;
-    }
-
     private bool _liveRefreshQueued;
     private bool _isImeComposing;
     private bool _pendingLiveRefresh;
