@@ -78,7 +78,12 @@ public static class FlowDocumentPaginationAdapter
                 System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>();
         int pageCount;
 
-        if (isFastPathDoc)
+        // 표가 있으면 fast-path 를 포기하고 정밀 레이아웃을 강제한다.
+        // 표는 페이지 경계를 정확히 감지해야 행 단위로 분할할 수 있기 때문이다.
+        bool hasTable = FlattenBlocks(fd.Blocks).OfType<WpfDocs.Table>().Any();
+        bool shouldUseFastPath = isFastPathDoc && !hasTable;
+
+        if (shouldUseFastPath)
         {
             // 정밀 레이아웃 없이 블록 수 기반으로 페이지 수를 추정한다.
             // A4 기준 경험치: ~200 블록/페이지 (텍스트·이미지 혼합 기준).
@@ -98,18 +103,21 @@ public static class FlowDocumentPaginationAdapter
             // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
             // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
             // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
-            foreach (var b in FlattenBlocks(fd.Blocks))
+            if (hasTable)
             {
-                if (b is not WpfDocs.Table wpfTbl) continue;
-                if (b.Tag is not Core.Table coreTbl) continue;
-                if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+                foreach (var b in FlattenBlocks(fd.Blocks))
+                {
+                    if (b is not WpfDocs.Table wpfTbl) continue;
+                    if (b.Tag is not Core.Table coreTbl) continue;
+                    if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
 
-                var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
-                var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+                    var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
+                    var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
 
-                tableFragmentMap[wpfTbl] = fragments
-                    .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
-                    .ToList();
+                    tableFragmentMap[wpfTbl] = fragments
+                        .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                        .ToList();
+                }
             }
         }
 
