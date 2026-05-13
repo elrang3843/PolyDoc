@@ -1659,15 +1659,22 @@ public static class FlowDocumentPaginationAdapter
         // ── 전처리: 병합 셀(RowSpan>1) 기준 행 → 병합 그룹의 마지막 행 인덱스 맵 ──
         // spanGroupEnd[i] = i 행이 속하거나 시작하는 RowSpan 병합 그룹의 마지막 행 인덱스.
         // 병합이 없으면 spanGroupEnd[i] == i.
+        // IsHeader 행은 병합 그룹에서 제외 — RowSpan 이 헤더 경계를 넘지 않도록 제한.
         var spanGroupEnd = new int[totalRows];
         for (int i = 0; i < totalRows; i++) spanGroupEnd[i] = i;
         for (int i = 0; i < totalRows; i++)
         {
+            if (coreTable.Rows[i].IsHeader) continue;
             foreach (var cell in coreTable.Rows[i].Cells)
             {
                 if (cell.RowSpan <= 1) continue;
-                int end = System.Math.Min(i + cell.RowSpan - 1, totalRows - 1);
-                // 병합 그룹 내 모든 행이 이 end 를 알도록 갱신
+                // 헤더 경계를 넘지 않는 범위 내에서 end 산출
+                int end = i;
+                for (int j = i + 1; j < totalRows && j <= i + cell.RowSpan - 1; j++)
+                {
+                    if (coreTable.Rows[j].IsHeader) break;
+                    end = j;
+                }
                 for (int j = i; j <= end; j++)
                     spanGroupEnd[j] = System.Math.Max(spanGroupEnd[j], end);
             }
@@ -1678,7 +1685,8 @@ public static class FlowDocumentPaginationAdapter
 
         int    curPage    = -1;
         List<int>? curGroup = null;
-        double accumY     = tableTopY; // GetCharacterRect 실패 시 누적 Y 폴백
+        // tableTopY 가 음수이면 표가 페이지 상단 위에 위치 — 0 으로 클램프
+        double accumY     = (double.IsNaN(tableTopY) || tableTopY < 0) ? 0 : tableTopY;
 
         // 행별 rowY / stepH 를 미리 계산 (병합 하단 검사에서 재참조)
         var rowTopY = new double[totalRows];
@@ -1751,6 +1759,7 @@ public static class FlowDocumentPaginationAdapter
     private static double GetRowBottomBorderDip(Core.Table table, int rowIdx)
     {
         const double PtToDip = 96.0 / 72.0;
+        if (rowIdx < 0 || rowIdx >= table.Rows.Count) return 0;
         var row = table.Rows[rowIdx];
         double maxPt = 0;
         foreach (var cell in row.Cells)

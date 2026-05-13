@@ -216,8 +216,18 @@ internal static class TableRowSplitter
             HAlign                     = source.HAlign,
             Caption                    = omitCaption ? null : source.Caption,
             BackgroundColor            = source.BackgroundColor,
+            WidthMm                    = source.WidthMm,
+            HeightMm                   = source.HeightMm,
+            IsFlexLayout               = source.IsFlexLayout,
+            BorderCollapse             = source.BorderCollapse,
             BorderThicknessPt          = source.BorderThicknessPt,
             BorderColor                = source.BorderColor,
+            BorderTop                  = source.BorderTop,
+            BorderBottom               = source.BorderBottom,
+            BorderLeft                 = source.BorderLeft,
+            BorderRight                = source.BorderRight,
+            InnerBorderHorizontal      = source.InnerBorderHorizontal,
+            InnerBorderVertical        = source.InnerBorderVertical,
             DefaultCellPaddingTopMm    = source.DefaultCellPaddingTopMm,
             DefaultCellPaddingBottomMm = source.DefaultCellPaddingBottomMm,
             DefaultCellPaddingLeftMm   = source.DefaultCellPaddingLeftMm,
@@ -228,6 +238,9 @@ internal static class TableRowSplitter
             OuterMarginRightMm         = source.OuterMarginRightMm,
             RepeatHeaderRowsOnBreak    = source.RepeatHeaderRowsOnBreak,
             HeaderColumnCount          = source.HeaderColumnCount,
+            AnchorPageIndex            = source.AnchorPageIndex,
+            OverlayXMm                 = source.OverlayXMm,
+            OverlayYMm                 = source.OverlayYMm,
         };
 
         foreach (var col in source.Columns)
