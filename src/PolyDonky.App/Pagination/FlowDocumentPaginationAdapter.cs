@@ -560,15 +560,15 @@ public static class FlowDocumentPaginationAdapter
                 List<(Core.Table coreFragment, int slotIdx)>? tblFragments = null;
                 tableFragmentMap?.TryGetValue(wTbl, out tblFragments);
 
-                // 2. fragments 없거나 단일 페이지이면 RTB Y좌표 기반 분할 시도
-                //    (RTB가 Measure/Arrange/UpdateLayout 완료된 slow-path에서만 유효)
+                // 2. fragments 없거나 단일 페이지이면 페이지별 독립 측정으로 재시도
                 if ((tblFragments == null || tblFragments.Count <= 1) && !double.IsNaN(topY))
                 {
-                    var rowGroupsByY = GetRowGroupsByRtbY(wTbl, coreTblForSplit, topY, bodyH);
-                    if (rowGroupsByY.Count > 1)
+                    var rowGroupsByPage = SplitTableByPageMeasurement(
+                        coreTblForSplit, topY, bodyH, colWidth);
+                    if (rowGroupsByPage.Count > 1)
                     {
-                        var rtbFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByY);
-                        tblFragments = rtbFragments
+                        var pageFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByPage);
+                        tblFragments = pageFragments
                             .Select(f => (f.fragment, f.pageIdx * colCount))
                             .ToList();
                     }
@@ -1638,12 +1638,177 @@ public static class FlowDocumentPaginationAdapter
         return pages;
     }
 
-    // ── RTB Y좌표 기반 표 행 그룹화 ──────────────────────────────────────────
+    // ── 페이지별 독립 RTB 측정으로 표 행 그룹화 ────────────────────────────────
 
     /// <summary>
-    /// RTB layout 완료 후 각 표 행의 ContentStart.GetCharacterRect Y좌표를 측정해
-    /// 페이지별 행 그룹을 반환한다. paginator.GetPageNumber 가 대형 표에 같은 페이지를
-    /// 반환하는 경우의 fallback으로 사용된다.
+    /// 표를 페이지별로 독립된 RTB에서 측정해 행 그룹을 반환한다.
+    /// 각 페이지 측정에서 해당 페이지에 남은 공간(availH)만큼 부분 표를 만들어
+    /// 실제로 렌더링한 뒤 넘치는 행을 찾는다. 통짜 표를 연속 좌표계에서 측정하는
+    /// 방식과 달리 각 조각이 처음부터 독립 표로 취급된다.
+    /// </summary>
+    private static List<(int pageNum, List<int> bodyRowIndices)> SplitTableByPageMeasurement(
+        Core.Table coreTable,
+        double tableTopY,
+        double bodyH,
+        double colWidth)
+    {
+        // 모든 본문 행 인덱스(IsHeader 제외)
+        var allBodyIndices = new List<int>();
+        for (int i = 0; i < coreTable.Rows.Count; i++)
+            if (!coreTable.Rows[i].IsHeader) allBodyIndices.Add(i);
+
+        if (allBodyIndices.Count == 0)
+            return new List<(int, List<int>)>();
+
+        // 앞머리 헤더 행 인덱스 (첫 본문 행 이전의 IsHeader 행들)
+        int firstBodySrcIdx = allBodyIndices[0];
+        var leadingHeaderIndices = new List<int>();
+        for (int i = 0; i < firstBodySrcIdx; i++)
+            if (coreTable.Rows[i].IsHeader) leadingHeaderIndices.Add(i);
+
+        int startPage = bodyH > 0 ? (int)(tableTopY / bodyH) : 0;
+        double pageStartOffset = bodyH > 0 ? (tableTopY % bodyH) : 0;
+        if (pageStartOffset < 0) pageStartOffset = 0;
+
+        var result = new List<(int, List<int>)>();
+        int startBodyIdx = 0; // allBodyIndices 안의 시작 위치
+        int pageOffset   = 0;
+
+        while (startBodyIdx < allBodyIndices.Count)
+        {
+            double availH = pageOffset == 0
+                ? Math.Max(bodyH * 0.1, bodyH - pageStartOffset) // 첫 페이지: 남은 공간
+                : bodyH;                                          // 이후 페이지: 전체 높이
+
+            int pageNum = startPage + pageOffset;
+            int remainCount = allBodyIndices.Count - startBodyIdx;
+
+            // ── 측정용 부분 Core.Table 구성: 앞머리 헤더 + 남은 본문 행 ────────────
+            var measureTable = BuildMeasurementCoreTable(
+                coreTable, leadingHeaderIndices,
+                allBodyIndices, startBodyIdx, remainCount);
+
+            // WPF Table 빌드
+            var wpfTable = FlowDocumentBuilder.BuildTable(measureTable);
+
+            // 독립 FlowDocument + RTB 에서 단독 측정
+            var measFd = new WpfDocs.FlowDocument { PagePadding = new Thickness(0) };
+            measFd.Blocks.Add(wpfTable);
+            var measRtb = new RichTextBox
+            {
+                Document          = measFd,
+                Padding           = new Thickness(0),
+                BorderThickness   = new Thickness(0),
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+            measRtb.Measure(new Size(colWidth, double.PositiveInfinity));
+            measRtb.Arrange(new Rect(measRtb.DesiredSize));
+            measRtb.UpdateLayout();
+
+            // ── 넘치는 행 탐색 ────────────────────────────────────────────────────
+            // wpfTable 의 행 순서: [앞머리 헤더 * n개] [본문 행 * remainCount개]
+            var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
+            int hdrCount = leadingHeaderIndices.Count;
+            int lastFit = remainCount; // 기본: 전부 들어감
+
+            for (int k = 0; k < remainCount; k++)
+            {
+                int wpfIdx = hdrCount + k;
+                if (wpfIdx >= wpfRows.Count) break;
+
+                double rowBottom = double.NaN;
+                try
+                {
+                    var r = wpfRows[wpfIdx].ContentEnd
+                                           .GetCharacterRect(WpfDocs.LogicalDirection.Backward);
+                    rowBottom = r.Bottom;
+                }
+                catch { }
+
+                // 폴백: ContentStart 위치 + 행 높이 추정
+                if (double.IsNaN(rowBottom))
+                {
+                    try
+                    {
+                        var r0 = wpfRows[wpfIdx].ContentStart
+                                               .GetCharacterRect(WpfDocs.LogicalDirection.Forward);
+                        var srcIdx = allBodyIndices[startBodyIdx + k];
+                        double hMm = coreTable.Rows[srcIdx].HeightMm;
+                        double hDip = hMm > 0 ? hMm * (96.0 / 25.4) : 6.0 * (96.0 / 25.4);
+                        rowBottom = r0.Y + hDip;
+                    }
+                    catch { }
+                }
+
+                if (!double.IsNaN(rowBottom) && rowBottom > availH)
+                {
+                    // RowSpan 병합 그룹의 경계에서 자르도록 k 를 후퇴
+                    lastFit = k;
+                    break;
+                }
+            }
+
+            // 최소 1행은 이 페이지에 배정(무한 루프 방지)
+            if (lastFit == 0) lastFit = 1;
+
+            var pageIndices = allBodyIndices.GetRange(
+                startBodyIdx, Math.Min(lastFit, allBodyIndices.Count - startBodyIdx));
+            result.Add((pageNum, pageIndices));
+
+            startBodyIdx += pageIndices.Count;
+            pageOffset++;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 측정용 임시 Core.Table 을 만든다: 앞머리 헤더 행 + 지정 범위 본문 행.
+    /// 표 수준 속성은 원본에서 그대로 복사한다.
+    /// </summary>
+    private static Core.Table BuildMeasurementCoreTable(
+        Core.Table source,
+        List<int> leadingHeaderIndices,
+        List<int> allBodyIndices,
+        int startBodyIdx,
+        int bodyCount)
+    {
+        var t = new Core.Table
+        {
+            WidthMm                    = source.WidthMm,
+            IsFlexLayout               = source.IsFlexLayout,
+            BorderCollapse             = source.BorderCollapse,
+            BorderThicknessPt          = source.BorderThicknessPt,
+            BorderColor                = source.BorderColor,
+            BorderTop                  = source.BorderTop,
+            BorderBottom               = source.BorderBottom,
+            BorderLeft                 = source.BorderLeft,
+            BorderRight                = source.BorderRight,
+            InnerBorderHorizontal      = source.InnerBorderHorizontal,
+            InnerBorderVertical        = source.InnerBorderVertical,
+            DefaultCellPaddingTopMm    = source.DefaultCellPaddingTopMm,
+            DefaultCellPaddingBottomMm = source.DefaultCellPaddingBottomMm,
+            DefaultCellPaddingLeftMm   = source.DefaultCellPaddingLeftMm,
+            DefaultCellPaddingRightMm  = source.DefaultCellPaddingRightMm,
+            BackgroundColor            = source.BackgroundColor,
+            RepeatHeaderRowsOnBreak    = source.RepeatHeaderRowsOnBreak,
+            HAlign                     = source.HAlign,
+        };
+        foreach (var col in source.Columns)
+            t.Columns.Add(new Core.TableColumn { WidthMm = col.WidthMm });
+
+        foreach (int hi in leadingHeaderIndices)
+            t.Rows.Add(source.Rows[hi]);
+
+        for (int k = 0; k < bodyCount; k++)
+            t.Rows.Add(source.Rows[allBodyIndices[startBodyIdx + k]]);
+
+        return t;
+    }
+
+    /// <summary>
+    /// (구) RTB Y좌표 기반 그룹화 — 전체 표를 단일 연속 좌표계에서 측정한다.
+    /// SplitTableByPageMeasurement 로 교체됨. 삭제 예정.
     /// </summary>
     private static List<(int pageNum, List<int> bodyRowIndices)> GetRowGroupsByRtbY(
         WpfDocs.Table wpfTable,
