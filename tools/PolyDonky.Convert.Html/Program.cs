@@ -233,7 +233,8 @@ try
 
         WriteProgress(20, "HTML 파싱 중");
         var doc = HtmlReader.FromHtml(text, maxBlocks: 0);
-        Console.Error.WriteLine($"[DEBUG] HTML 파싱 완료: 섹션 {doc.Sections.Count}, 블록 {doc.Sections[0].Blocks.Count}");
+        var blockCount = doc.Sections.Count > 0 ? doc.Sections[0].Blocks.Count : 0;
+        Console.Error.WriteLine($"[DEBUG] HTML 파싱 완료: 섹션 {doc.Sections.Count}, 블록 {blockCount}");
 
         // HTML 파일 기준 상대 경로 이미지를 디스크에서 읽어 data 로 내장.
         WriteProgress(30, "이미지 내장 중");
