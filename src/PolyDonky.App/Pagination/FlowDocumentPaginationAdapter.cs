@@ -1651,17 +1651,23 @@ public static class FlowDocumentPaginationAdapter
         double tableTopY,
         double bodyH)
     {
-        var result = new List<(int, List<int>)>();
+        const double MmToDip = 96.0 / 25.4;
+        const double FallbackRowHeightDip = 6.0 * MmToDip; // 6mm 기본 행 높이
+
+        var result  = new List<(int, List<int>)>();
         var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
 
-        int curPage = -1;
-        List<int>? curGroup = null;
+        int    curPage       = -1;
+        List<int>? curGroup  = null;
+        double accumY        = tableTopY; // GetCharacterRect 실패 시 누적 Y 폴백
 
         for (int i = 0; i < coreTable.Rows.Count; i++)
         {
             if (coreTable.Rows[i].IsHeader) continue;
 
-            double rowY = tableTopY;
+            // 1순위: GetCharacterRect 실측 Y
+            double rowY    = double.NaN;
+            double rowH    = double.NaN;
             if (i < wpfRows.Count)
             {
                 try
@@ -1672,7 +1678,29 @@ public static class FlowDocumentPaginationAdapter
                         rowY = rect.Y;
                 }
                 catch { }
+
+                // 2순위: ContentStart/End Y 차이로 행 높이 측정 (누적 Y 폴백에 사용)
+                try
+                {
+                    var r0 = wpfRows[i].ContentStart.GetCharacterRect(WpfDocs.LogicalDirection.Forward);
+                    var r1 = wpfRows[i].ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
+                    if (!double.IsNaN(r0.Y) && !double.IsNaN(r1.Bottom) && r1.Bottom > r0.Y)
+                        rowH = r1.Bottom - r0.Y;
+                }
+                catch { }
             }
+
+            // GetCharacterRect 실패 → 누적 Y 사용
+            if (double.IsNaN(rowY)) rowY = accumY;
+
+            // 다음 행을 위한 누적 Y 갱신:
+            //   ActualHeight 있으면 그것, 없으면 Core.Row.HeightMm, 없으면 기본값
+            double stepH = double.IsNaN(rowH)
+                ? (coreTable.Rows[i].HeightMm > 0
+                    ? coreTable.Rows[i].HeightMm * MmToDip
+                    : FallbackRowHeightDip)
+                : rowH;
+            accumY = rowY + stepH;
 
             int pg = bodyH > 0 ? (int)(rowY / bodyH) : 0;
             if (pg != curPage)
