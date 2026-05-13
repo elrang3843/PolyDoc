@@ -859,10 +859,20 @@ public sealed class HtmlReader : IDocumentReader
             t.BackgroundColor = ColorToHex(tblBgColor);
 
         // CSS float → WrapMode (Block 이 기본값, float 이 있으면 InFrontOfText 로).
-        // 실제 절대좌표가 없으므로 위치는 0 으로 두고 WrapMode 만 설정.
         var tblFloat = StyleProp(tblStyle, "float")?.Trim().ToLowerInvariant();
         if (tblFloat is "left" or "right")
             t.WrapMode = TableWrapMode.InFrontOfText;
+
+        // CSS position:absolute + left/top → overlay mode with explicit coordinates.
+        var tblPosition = StyleProp(tblStyle, "position")?.Trim().ToLowerInvariant();
+        if (tblPosition == "absolute")
+        {
+            t.WrapMode = TableWrapMode.InFrontOfText;
+            if (TryParseCssMm(StyleProp(tblStyle, "left"), out var leftMm) && leftMm >= 0)
+                t.OverlayXMm = leftMm;
+            if (TryParseCssMm(StyleProp(tblStyle, "top"), out var topMm) && topMm >= 0)
+                t.OverlayYMm = topMm;
+        }
 
         // 표 정렬 (margin:auto 또는 HTML align 속성).
         var tblAlign = tableEl.GetAttribute("align")?.Trim().ToLowerInvariant();
