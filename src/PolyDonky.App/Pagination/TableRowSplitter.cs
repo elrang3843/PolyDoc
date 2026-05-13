@@ -192,7 +192,7 @@ internal static class TableRowSplitter
             // 첫 조각: 캡션 유지. 이후 조각: 캡션 제거(반복 방지).
             bool prependHeaders = !isFirst && source.RepeatHeaderRowsOnBreak;
             var frag = CreateFragment(source, bodyIndices, prependHeaders,
-                                      omitCaption: !isFirst, isLastFragment: isLast);
+                                      omitCaption: !isFirst, isLastFragment: isLast, isFirstFragment: isFirst);
             fragments.Add((frag, pageNum));
         }
 
@@ -206,7 +206,8 @@ internal static class TableRowSplitter
         IReadOnlyList<int> bodyRowIndices,
         bool prependHeaders,
         bool omitCaption,
-        bool isLastFragment)
+        bool isLastFragment,
+        bool isFirstFragment = true)
     {
         var frag = new Table
         {
@@ -232,8 +233,10 @@ internal static class TableRowSplitter
             DefaultCellPaddingBottomMm = source.DefaultCellPaddingBottomMm,
             DefaultCellPaddingLeftMm   = source.DefaultCellPaddingLeftMm,
             DefaultCellPaddingRightMm  = source.DefaultCellPaddingRightMm,
-            OuterMarginTopMm           = source.OuterMarginTopMm,
-            OuterMarginBottomMm        = source.OuterMarginBottomMm,
+            // 후속 조각은 페이지 상단에 바로 붙으므로 위쪽 여백 제거.
+            // 마지막이 아닌 조각은 아래쪽 여백도 제거 (다음 조각과 이어지는 표).
+            OuterMarginTopMm           = isFirstFragment  ? source.OuterMarginTopMm    : 0,
+            OuterMarginBottomMm        = isLastFragment   ? source.OuterMarginBottomMm : 0,
             OuterMarginLeftMm          = source.OuterMarginLeftMm,
             OuterMarginRightMm         = source.OuterMarginRightMm,
             RepeatHeaderRowsOnBreak    = source.RepeatHeaderRowsOnBreak,

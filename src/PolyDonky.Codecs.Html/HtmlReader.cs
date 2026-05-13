@@ -862,11 +862,20 @@ public sealed class HtmlReader : IDocumentReader
             && TryParseCssColor(tblBg, out var tblBgColor))
             t.BackgroundColor = ColorToHex(tblBgColor);
 
-        // 표 정렬 (margin:auto).
-        var marginL = StyleProp(tblStyle, "margin-left");
-        var marginR = StyleProp(tblStyle, "margin-right");
-        if (marginL == "auto" && marginR == "auto")       t.HAlign = TableHAlign.Center;
-        else if (marginL == "auto" && marginR != "auto")  t.HAlign = TableHAlign.Right;
+        // CSS float → WrapMode (Block 이 기본값, float 이 있으면 InFrontOfText 로).
+        // 실제 절대좌표가 없으므로 위치는 0 으로 두고 WrapMode 만 설정.
+        var tblFloat = StyleProp(tblStyle, "float")?.Trim().ToLowerInvariant();
+        if (tblFloat is "left" or "right")
+            t.WrapMode = TableWrapMode.InFrontOfText;
+
+        // 표 정렬 (margin:auto 또는 HTML align 속성).
+        var tblAlign = tableEl.GetAttribute("align")?.Trim().ToLowerInvariant();
+        var marginL  = StyleProp(tblStyle, "margin-left");
+        var marginR  = StyleProp(tblStyle, "margin-right");
+        if (tblAlign == "center" || (marginL == "auto" && marginR == "auto"))
+            t.HAlign = TableHAlign.Center;
+        else if (tblAlign == "right" || (marginL == "auto" && marginR != "auto"))
+            t.HAlign = TableHAlign.Right;
 
         // 표 외곽 여백.
         if (TryParseCssMm(StyleProp(tblStyle, "margin-top"),    out var tblMt) && tblMt > 0) t.OuterMarginTopMm    = tblMt;
@@ -1020,6 +1029,19 @@ public sealed class HtmlReader : IDocumentReader
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding-bottom"), out var pb) && pb > 0) cell.PaddingBottomMm = pb;
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding-left"),   out var pl) && pl > 0) cell.PaddingLeftMm   = pl;
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding-right"),  out var pr) && pr > 0) cell.PaddingRightMm  = pr;
+
+                // 셀 세로 정렬: CSS vertical-align 또는 HTML valign 속성.
+                var vaRaw = cellEl.GetAttribute("valign")
+                          ?? StyleProp(cellStyleStr, "vertical-align");
+                if (vaRaw is not null)
+                {
+                    cell.VerticalAlign = vaRaw.Trim().ToLowerInvariant() switch
+                    {
+                        "middle" or "center" => CellVerticalAlign.Middle,
+                        "bottom"             => CellVerticalAlign.Bottom,
+                        _                    => CellVerticalAlign.Top,
+                    };
+                }
 
                 // 셀 테두리 — shorthand 먼저, 이후 면별 값이 override.
                 if (StyleProp(cellStyleStr, "border") is { } cellBorderAll)

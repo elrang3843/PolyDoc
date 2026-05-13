@@ -905,7 +905,7 @@ public static class FlowDocumentBuilder
                 bool atRight  = colIdx + colSpan - 1 >= colCount - 1;
 
                 ApplyCellPropertiesToWpf(wcell, cell, row.IsHeader, table,
-                    atTop, atBottom, atLeft, atRight);
+                    atTop, atBottom, atLeft, atRight, row);
                 AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles);
                 if (wcell.Blocks.Count == 0)
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
@@ -976,7 +976,8 @@ public static class FlowDocumentBuilder
         bool atTopEdge    = false,
         bool atBottomEdge = false,
         bool atLeftEdge   = false,
-        bool atRightEdge  = false)
+        bool atRightEdge  = false,
+        TableRow? row     = null)
     {
         // 면별 테두리 cascade — 셀 면 지정 > 표 외곽/안쪽 면 > 공통값.
         // 안쪽 면(table 내부) 일 때는 InnerBorderHorizontal/Vertical 을 default 로 쓴다.
@@ -1035,14 +1036,19 @@ public static class FlowDocumentBuilder
         double padRight = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : defRight);
         wcell.Padding = new Thickness(padLeft, padTop, padRight, padBottom);
 
-        if (!string.IsNullOrEmpty(cell.BackgroundColor) &&
-            TryParseColor(cell.BackgroundColor) is { } bg)
+        // 배경색: 셀 지정 > 행 지정 > null(투명)
+        var bgColor = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
+                    : (!string.IsNullOrEmpty(row?.BackgroundColor) ? row!.BackgroundColor : null);
+        if (bgColor is not null && TryParseColor(bgColor) is { } bg)
             wcell.Background = new WpfMedia.SolidColorBrush(bg);
         else
             wcell.Background = null;
 
         wcell.FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal;
         ApplyCellTextAlign(wcell, cell.TextAlign);
+        // NOTE: TableCell.VerticalAlign / TableRow.VerticalAlign 은 모델에 저장되지만
+        // System.Windows.Documents.TableCell 은 TextElement 를 상속해 VerticalAlignment
+        // 속성을 지원하지 않는다 (WPF FlowDocument 플랫폼 한계). DOCX/HTML export 시 적용.
     }
 
     private static void ApplyCellTextAlign(Wpf.TableCell wcell, CellTextAlign align)
