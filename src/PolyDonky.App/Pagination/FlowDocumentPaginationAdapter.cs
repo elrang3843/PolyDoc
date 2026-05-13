@@ -556,19 +556,17 @@ public static class FlowDocumentPaginationAdapter
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
             if (wpfBlock is WpfDocs.Table wTbl && wpfBlock.Tag is Core.Table coreTblForSplit)
             {
-                // 1. paginator 기반 fragments 가져오기
+                // paginator 기반 분할은 연속 좌표계에서 동작해 부정확하다.
+                // 항상 페이지별 독립 RTB 측정(SplitTableByPageMeasurement)을 우선 실행한다.
                 List<(Core.Table coreFragment, int slotIdx)>? tblFragments = null;
-                tableFragmentMap?.TryGetValue(wTbl, out tblFragments);
 
-                // 2. fragments 없거나 단일 페이지이면 페이지별 독립 측정으로 재시도
-                if ((tblFragments == null || tblFragments.Count <= 1) && !double.IsNaN(topY))
+                if (!double.IsNaN(topY))
                 {
                     var (rowGroupsByPage, fragmentHeightsMm) = SplitTableByPageMeasurement(
                         coreTblForSplit, topY, bodyH, colWidth);
                     if (rowGroupsByPage.Count > 1)
                     {
                         var pageFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByPage);
-                        // 각 조각에 측정된 높이 기록
                         for (int fi2 = 0; fi2 < pageFragments.Count; fi2++)
                         {
                             if (fi2 < fragmentHeightsMm.Count)
@@ -578,6 +576,7 @@ public static class FlowDocumentPaginationAdapter
                             .Select(f => (f.fragment, f.pageIdx * colCount))
                             .ToList();
                     }
+                    // rowGroupsByPage.Count <= 1: 표가 한 페이지에 들어감 — tblFragments=null 유지 (아래 단일 블록 처리)
                 }
 
                 if (tblFragments != null && tblFragments.Count > 0)
@@ -1653,13 +1652,9 @@ public static class FlowDocumentPaginationAdapter
     // ── 페이지별 독립 RTB 측정으로 표 행 그룹화 ────────────────────────────────
 
     /// <summary>
-    /// 표를 페이지별로 독립된 RTB에서 측정해 행 그룹을 반환한다.
-    /// 각 페이지 측정에서 해당 페이지에 남은 공간(availH)만큼 부분 표를 만들어
-    /// 실제로 렌더링한 뒤 넘치는 행을 찾는다. 통짜 표를 연속 좌표계에서 측정하는
-    /// 방식과 달리 각 조각이 처음부터 독립 표로 취급된다.
-    /// </summary>
     /// <summary>
-    /// 표를 페이지별로 독립 측정해 행 그룹과 각 조각의 높이(mm)를 함께 반환한다.
+    /// 표를 페이지별 독립 RTB 측정으로 분할한다. 이진 탐색 + DesiredSize.Height 방식.
+    /// GetCharacterRect 를 쓰지 않으며, 각 측정은 완전히 독립된 RTB 에서 수행된다.
     /// </summary>
     private static (List<(int pageNum, List<int> bodyRowIndices)> groups, List<double> fragmentHeightsMm)
         SplitTableByPageMeasurement(
@@ -1668,7 +1663,6 @@ public static class FlowDocumentPaginationAdapter
         double bodyH,
         double colWidth)
     {
-        // 모든 본문 행 인덱스(IsHeader 제외)
         var allBodyIndices = new List<int>();
         for (int i = 0; i < coreTable.Rows.Count; i++)
             if (!coreTable.Rows[i].IsHeader) allBodyIndices.Add(i);
@@ -1676,7 +1670,6 @@ public static class FlowDocumentPaginationAdapter
         if (allBodyIndices.Count == 0)
             return (new List<(int, List<int>)>(), new List<double>());
 
-        // 앞머리 헤더 행 인덱스 (첫 본문 행 이전의 IsHeader 행들)
         int firstBodySrcIdx = allBodyIndices[0];
         var leadingHeaderIndices = new List<int>();
         for (int i = 0; i < firstBodySrcIdx; i++)
@@ -1687,110 +1680,92 @@ public static class FlowDocumentPaginationAdapter
         if (pageStartOffset < 0) pageStartOffset = 0;
 
         var result          = new List<(int, List<int>)>();
-        var fragmentHeights = new List<double>(); // 조각별 높이(mm)
+        var fragmentHeights = new List<double>();
         int startBodyIdx    = 0;
         int pageOffset      = 0;
 
         while (startBodyIdx < allBodyIndices.Count)
         {
             double availH = pageOffset == 0
-                ? Math.Max(bodyH * 0.1, bodyH - pageStartOffset) // 첫 페이지: 남은 공간
-                : bodyH;                                          // 이후 페이지: 전체 높이
+                ? Math.Max(bodyH * 0.1, bodyH - pageStartOffset)
+                : bodyH;
 
-            int pageNum = startPage + pageOffset;
+            int pageNum     = startPage + pageOffset;
             int remainCount = allBodyIndices.Count - startBodyIdx;
 
-            // ── 측정용 부분 Core.Table 구성: 앞머리 헤더 + 남은 본문 행 ────────────
-            var measureTable = BuildMeasurementCoreTable(
-                coreTable, leadingHeaderIndices,
-                allBodyIndices, startBodyIdx, remainCount);
+            // 남은 행 전체가 이 페이지에 들어가는지 먼저 확인 (빠른 경로)
+            double fullH = MeasureFragmentHeight(
+                coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, remainCount, colWidth);
 
-            // WPF Table 빌드
-            var wpfTable = FlowDocumentBuilder.BuildTable(measureTable);
+            int    fitsCount;
+            double fragHeightDip;
 
-            // 독립 FlowDocument + RTB 에서 단독 측정
-            var measFd = new WpfDocs.FlowDocument { PagePadding = new Thickness(0) };
-            measFd.Blocks.Add(wpfTable);
-            var measRtb = new RichTextBox
+            if (fullH <= availH || remainCount == 1)
             {
-                Document          = measFd,
-                Padding           = new Thickness(0),
-                BorderThickness   = new Thickness(0),
-                VerticalAlignment = VerticalAlignment.Top,
-            };
-            measRtb.Measure(new Size(colWidth, double.PositiveInfinity));
-            measRtb.Arrange(new Rect(measRtb.DesiredSize));
-            measRtb.UpdateLayout();
-
-            // ── 행별 누적으로 넘치는 지점 탐색 ──────────────────────────────────
-            // wpfTable 행 순서: [앞머리 헤더 × hdrCount개] [본문 행 × remainCount개]
-            var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
-            int    hdrCount      = leadingHeaderIndices.Count;
-            int    lastFit       = remainCount; // 기본: 전부 들어감
-            double fragBottomDip = 0;           // 마지막으로 들어간 행의 하단 Y (DIP)
-
-            for (int k = 0; k < remainCount; k++)
+                // 전부 들어가거나 행이 1개뿐
+                fitsCount    = remainCount;
+                fragHeightDip = fullH;
+            }
+            else
             {
-                int wpfIdx = hdrCount + k;
-                if (wpfIdx >= wpfRows.Count) break;
-
-                double rowBottom = double.NaN;
-                try
+                // 이진 탐색: availH 에 들어가는 최대 행 수
+                int lo = 1, hi = remainCount - 1;
+                while (lo < hi)
                 {
-                    var r = wpfRows[wpfIdx].ContentEnd
-                                           .GetCharacterRect(WpfDocs.LogicalDirection.Backward);
-                    rowBottom = r.Bottom;
+                    int    mid  = (lo + hi + 1) / 2;
+                    double h    = MeasureFragmentHeight(
+                        coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, mid, colWidth);
+                    if (h <= availH) lo = mid; else hi = mid - 1;
                 }
-                catch { }
-
-                // 폴백: ContentStart Y + HeightMm 추정
-                if (double.IsNaN(rowBottom))
-                {
-                    try
-                    {
-                        var r0 = wpfRows[wpfIdx].ContentStart
-                                               .GetCharacterRect(WpfDocs.LogicalDirection.Forward);
-                        var srcIdx = allBodyIndices[startBodyIdx + k];
-                        double hMm = coreTable.Rows[srcIdx].HeightMm;
-                        double hDip = hMm > 0 ? hMm * (96.0 / 25.4) : 6.0 * (96.0 / 25.4);
-                        rowBottom = r0.Y + hDip;
-                    }
-                    catch { }
-                }
-
-                if (!double.IsNaN(rowBottom))
-                {
-                    if (rowBottom > availH)
-                    {
-                        lastFit = k; // 이 행부터 다음 페이지
-                        break;
-                    }
-                    fragBottomDip = rowBottom; // 들어갈 수 있으면 하단 갱신
-                }
+                fitsCount    = Math.Max(1, lo);
+                fragHeightDip = fitsCount == remainCount
+                    ? fullH
+                    : MeasureFragmentHeight(
+                        coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, fitsCount, colWidth);
             }
 
-            // 최소 1행은 이 페이지에 배정(무한 루프 방지)
-            if (lastFit == 0) lastFit = 1;
-
-            var pageIndices = allBodyIndices.GetRange(
-                startBodyIdx, Math.Min(lastFit, allBodyIndices.Count - startBodyIdx));
+            var pageIndices = allBodyIndices.GetRange(startBodyIdx, fitsCount);
             result.Add((pageNum, pageIndices));
 
-            // 조각 높이 계산: 앞머리 헤더 + 이 페이지의 본문 행들의 높이 합
-            double fragHeightMm = 0.0;
-            foreach (int hdrIdx in leadingHeaderIndices)
-                fragHeightMm += coreTable.Rows[hdrIdx].HeightMm > 0 ? coreTable.Rows[hdrIdx].HeightMm : 6.0; // 기본 6mm
-            foreach (int bodyIdx in pageIndices)
-                fragHeightMm += coreTable.Rows[bodyIdx].HeightMm > 0 ? coreTable.Rows[bodyIdx].HeightMm : 6.0;
+            double fragHeightMm = fragHeightDip * (25.4 / 96.0);
             fragmentHeights.Add(fragHeightMm);
             System.Diagnostics.Debug.WriteLine(
-                $"[TableSplit] page={pageNum} bodyRowCount={pageIndices.Count} heightMm={fragHeightMm:F2}");
+                $"[TableSplit] page={pageNum} bodyRows={fitsCount} heightMm={fragHeightMm:F2} availH={availH:F0}dip");
 
-            startBodyIdx += pageIndices.Count;
+            startBodyIdx += fitsCount;
             pageOffset++;
         }
 
         return (result, fragmentHeights);
+    }
+
+    /// <summary>
+    /// 앞머리 헤더 + 지정 범위 본문 행으로 독립 표를 구성해 RTB DesiredSize.Height 를 반환한다.
+    /// </summary>
+    private static double MeasureFragmentHeight(
+        Core.Table source,
+        List<int> leadingHeaderIndices,
+        List<int> allBodyIndices,
+        int startBodyIdx,
+        int bodyCount,
+        double colWidth)
+    {
+        var t = BuildMeasurementCoreTable(source, leadingHeaderIndices, allBodyIndices, startBodyIdx, bodyCount);
+        var wpfTable = FlowDocumentBuilder.BuildTable(t);
+        var fd = new WpfDocs.FlowDocument { PagePadding = new Thickness(0) };
+        fd.Blocks.Add(wpfTable);
+        var rtb = new RichTextBox
+        {
+            Document        = fd,
+            Padding         = new Thickness(0),
+            BorderThickness = new Thickness(0),
+        };
+        rtb.Measure(new Size(colWidth, double.PositiveInfinity));
+        rtb.Arrange(new Rect(rtb.DesiredSize));
+        rtb.UpdateLayout();
+        double h = rtb.DesiredSize.Height;
+        rtb.Document = new WpfDocs.FlowDocument(); // 분리
+        return h;
     }
 
     /// <summary>
