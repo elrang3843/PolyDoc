@@ -499,7 +499,7 @@ static void EmbedImagesInBlocks(IList<Block> blocks, string baseDir)
     {
         switch (block)
         {
-            case ImageBlock img when img.Data.Length == 0
+            case ImageBlock img when (img.Data?.Length ?? 0) == 0
                                   && !string.IsNullOrEmpty(img.ResourcePath)
                                   && !IsExternalUrl(img.ResourcePath):
                 TryEmbedImageFromDisk(img, baseDir);
