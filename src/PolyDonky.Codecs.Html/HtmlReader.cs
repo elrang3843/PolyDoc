@@ -4166,7 +4166,7 @@ public sealed class HtmlReader : IDocumentReader
     /// </summary>
     private static List<Table> SplitTableByPageHeight(Table table, double pageBodyHeightMm)
     {
-        const double FallbackRowHeightMm = 6.0; // height 미지정 행의 기본 추정치
+        const double FallbackRowHeightMm = 6.0;
 
         if (pageBodyHeightMm <= 0)
             return new List<Table> { table };
@@ -4174,18 +4174,24 @@ public sealed class HtmlReader : IDocumentReader
         var headerRows = table.Rows.Where(r => r.IsHeader).ToList();
         var bodyRows   = table.Rows.Where(r => !r.IsHeader).ToList();
 
-        // 분할이 필요 없는 경우 — 본문 행이 없거나 표 전체가 한 페이지에 들어가면 그대로 반환.
         if (bodyRows.Count == 0)
             return new List<Table> { table };
 
         double headerH = headerRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+        double tableVerticalMargin = table.OuterMarginTopMm + table.OuterMarginBottomMm;
 
-        // 실제 총 높이를 계산해서 분할이 필요한지 먼저 확인한다.
-        double totalH = headerH + bodyRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+        // 첫 페이지 허용 높이: pageBodyHeightMm - 표 여백
+        // 이후 페이지 허용 높이: pageBodyHeightMm - 헤더 높이 - 여백 (다음 표는 위쪽 여백 없음)
+        double firstPageAvailable = pageBodyHeightMm - tableVerticalMargin;
+        double nextPageAvailable  = pageBodyHeightMm - headerH;
+
+        double totalH = tableVerticalMargin
+            + headerH
+            + bodyRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+
         if (totalH <= pageBodyHeightMm)
             return new List<Table> { table };
 
-        // 분할 진행
         var parts          = new List<Table>();
         double accumulated = headerH;
         var currentBody    = new List<TableRow>();
@@ -4193,9 +4199,9 @@ public sealed class HtmlReader : IDocumentReader
         foreach (var row in bodyRows)
         {
             double rh = row.HeightMm > 0 ? row.HeightMm : FallbackRowHeightMm;
+            double pageLimit = parts.Count == 0 ? firstPageAvailable : nextPageAvailable;
 
-            // 현재 본문 행이 하나라도 있는 상태에서 페이지를 넘치면 새 페이지로 분할한다.
-            if (currentBody.Count > 0 && accumulated + rh > pageBodyHeightMm)
+            if (currentBody.Count > 0 && accumulated + rh > pageLimit)
             {
                 parts.Add(CloneTableWithRows(table, headerRows, currentBody));
                 currentBody    = new List<TableRow>();
@@ -4206,9 +4212,15 @@ public sealed class HtmlReader : IDocumentReader
             accumulated += rh;
         }
 
-        // 마지막 조각
         if (currentBody.Count > 0)
             parts.Add(CloneTableWithRows(table, headerRows, currentBody));
+
+        // 분할된 표들의 여백 조정: 첫 표만 원본 여백, 이후는 위쪽 여백 제거
+        if (parts.Count > 1)
+        {
+            for (int i = 1; i < parts.Count; i++)
+                parts[i].OuterMarginTopMm = 0;
+        }
 
         return parts.Count > 0 ? parts : new List<Table> { table };
     }
