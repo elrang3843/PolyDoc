@@ -433,13 +433,7 @@ public sealed class HtmlReader : IDocumentReader
                                                       ctx.Shared.MinRowHeightMm);
                 for (int i = 0; i < tblParts.Count; i++)
                 {
-                    if (i > 0)
-                    {
-                        // 분할 조각 사이에 페이지 구분자 삽입 (2번째부터)
-                        var pageBreak = new Paragraph();
-                        pageBreak.Style.ForcePageBreakBefore = true;
-                        target.Add(pageBreak);
-                    }
+                    if (i > 0) tblParts[i].ForcePageBreakBefore = true;
                     target.Add(tblParts[i]);
                 }
                 break;

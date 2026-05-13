@@ -662,7 +662,8 @@ public static class FlowDocumentPaginationAdapter
             // 같은 슬롯(=같은 페이지) 에 묶일 수 있다 — 이를 직전 블록 페이지의 다음 페이지 첫 단으로
             // 끌어올려 보정하고, minSlot 을 갱신해 후속 블록도 같은 페이지 이상에 배정한다.
             // 첫 블록(prevSlot=-1) 에서는 적용하지 않는다(0 페이지 유지).
-            bool isPageBreak = coreBlock is Paragraph fpara && fpara.Style.ForcePageBreakBefore;
+            bool isPageBreak = (coreBlock is Paragraph fpara && fpara.Style.ForcePageBreakBefore)
+                             || (coreBlock is Table ftbl  && ftbl.ForcePageBreakBefore);
             if (isPageBreak && prevSlot >= 0)
             {
                 int forcedSlot = ((prevSlot / colCount) + 1) * colCount;

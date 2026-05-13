@@ -79,6 +79,8 @@ public sealed class Table : Block, IOverlayAnchored
     public string? Caption { get; set; }
 
     // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
+    /// <summary>이 표 앞에서 강제 페이지 나누기. 분할된 표 조각(2번째~)에 설정.</summary>
+    public bool ForcePageBreakBefore { get; set; }
     /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
     public bool RepeatHeaderRowsOnBreak { get; set; } = true;
     /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
