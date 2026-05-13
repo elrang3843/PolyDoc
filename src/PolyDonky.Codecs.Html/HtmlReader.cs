@@ -428,10 +428,6 @@ public sealed class HtmlReader : IDocumentReader
 
             case "table":
             {
-                // 표는 항상 새 페이지에서 시작. 실제 행 분할은 WPF TableRowSplitter 가 실측값으로 담당.
-                var pageBreakBefore = new Paragraph();
-                pageBreakBefore.Style.ForcePageBreakBefore = true;
-                target.Add(pageBreakBefore);
                 target.Add(BuildTable(el, ctx));
                 break;
             }
