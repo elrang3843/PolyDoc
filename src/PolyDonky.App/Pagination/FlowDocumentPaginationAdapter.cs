@@ -576,9 +576,21 @@ public static class FlowDocumentPaginationAdapter
 
                 if (tblFragments != null && tblFragments.Count > 0)
                 {
-                    foreach (var (coreFragment, slotIdx) in tblFragments)
+                    for (int fi = 0; fi < tblFragments.Count; fi++)
                     {
-                        int tblSlot = Math.Max(minSlot, slotIdx);
+                        var (coreFragment, slotIdx) = tblFragments[fi];
+                        int tblSlot;
+                        if (fi == 0)
+                        {
+                            // 첫 조각: minSlot 과 paginator 슬롯 중 큰 쪽
+                            tblSlot = Math.Max(minSlot, slotIdx);
+                        }
+                        else
+                        {
+                            // 두 번째 이상 조각: 이전 조각 다음 페이지로 강제 이동 (Page Break 효과)
+                            tblSlot = ((prevSlot / colCount) + 1) * colCount;
+                            tblSlot = Math.Max(minSlot, tblSlot);
+                        }
                         result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
                         prevSlot = tblSlot;
                         minSlot  = Math.Max(minSlot, tblSlot);
