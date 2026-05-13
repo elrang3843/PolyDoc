@@ -562,8 +562,16 @@ public static class FlowDocumentPaginationAdapter
 
                 if (!double.IsNaN(topY))
                 {
+                    // 첫 페이지에서 표 이전에 이미 쌓인 높이: slotFill 이 topY 보다 정확하다.
+                    // topY 는 전체 문서 RTB 의 연속 Y 좌표라 제목·단락 마진 등이 과다 반영되어
+                    // availH 를 잘못 산출하는 문제를 slotFill 로 보정한다.
+                    double effTopY4Tbl  = (!double.IsNaN(prevContBottom) && topY < prevContBottom)
+                        ? prevContBottom : topY;
+                    int    tblFirstSlot = Math.Max(minSlot, (int)(effTopY4Tbl / bodyH));
+                    double tblPageFill  = slotFill.GetValueOrDefault(tblFirstSlot, 0.0);
+
                     var (rowGroupsByPage, fragmentHeightsMm) = SplitTableByPageMeasurement(
-                        coreTblForSplit, topY, bodyH, colWidth);
+                        coreTblForSplit, tblFirstSlot, tblPageFill, bodyH, colWidth);
                     if (rowGroupsByPage.Count > 1)
                     {
                         var pageFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByPage);
@@ -1659,7 +1667,8 @@ public static class FlowDocumentPaginationAdapter
     private static (List<(int pageNum, List<int> bodyRowIndices)> groups, List<double> fragmentHeightsMm)
         SplitTableByPageMeasurement(
         Core.Table coreTable,
-        double tableTopY,
+        int    startPage,
+        double pageStartFill,   // 첫 페이지에서 표 이전에 이미 쌓인 높이 (slotFill 기반)
         double bodyH,
         double colWidth)
     {
@@ -1675,10 +1684,6 @@ public static class FlowDocumentPaginationAdapter
         for (int i = 0; i < firstBodySrcIdx; i++)
             if (coreTable.Rows[i].IsHeader) leadingHeaderIndices.Add(i);
 
-        int startPage = bodyH > 0 ? (int)(tableTopY / bodyH) : 0;
-        double pageStartOffset = bodyH > 0 ? (tableTopY % bodyH) : 0;
-        if (pageStartOffset < 0) pageStartOffset = 0;
-
         var result          = new List<(int, List<int>)>();
         var fragmentHeights = new List<double>();
         int startBodyIdx    = 0;
@@ -1687,11 +1692,17 @@ public static class FlowDocumentPaginationAdapter
         while (startBodyIdx < allBodyIndices.Count)
         {
             double availH = pageOffset == 0
-                ? Math.Max(bodyH * 0.1, bodyH - pageStartOffset)
+                ? Math.Max(bodyH * 0.1, bodyH - pageStartFill)
                 : bodyH;
 
             int pageNum     = startPage + pageOffset;
             int remainCount = allBodyIndices.Count - startBodyIdx;
+
+            // 테두리·렌더링 오차 흡수용 안전 여유 (DIP).
+            // DesiredSize.Height 와 실제 렌더 높이 사이의 미세 차이로 인해
+            // 마지막 행의 하단 테두리가 페이지 경계를 살짝 넘어 잘리는 현상을 방지한다.
+            const double BorderSafetyDip = 4.0;
+            double effectiveAvailH = Math.Max(availH - BorderSafetyDip, availH * 0.5);
 
             // 남은 행 전체가 이 페이지에 들어가는지 먼저 확인 (빠른 경로)
             double fullH = MeasureFragmentHeight(
@@ -1700,24 +1711,24 @@ public static class FlowDocumentPaginationAdapter
             int    fitsCount;
             double fragHeightDip;
 
-            if (fullH <= availH || remainCount == 1)
+            if (fullH <= effectiveAvailH || remainCount == 1)
             {
                 // 전부 들어가거나 행이 1개뿐
-                fitsCount    = remainCount;
+                fitsCount     = remainCount;
                 fragHeightDip = fullH;
             }
             else
             {
-                // 이진 탐색: availH 에 들어가는 최대 행 수
+                // 이진 탐색: effectiveAvailH 에 들어가는 최대 행 수
                 int lo = 1, hi = remainCount - 1;
                 while (lo < hi)
                 {
-                    int    mid  = (lo + hi + 1) / 2;
-                    double h    = MeasureFragmentHeight(
+                    int    mid = (lo + hi + 1) / 2;
+                    double h   = MeasureFragmentHeight(
                         coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, mid, colWidth);
-                    if (h <= availH) lo = mid; else hi = mid - 1;
+                    if (h <= effectiveAvailH) lo = mid; else hi = mid - 1;
                 }
-                fitsCount    = Math.Max(1, lo);
+                fitsCount     = Math.Max(1, lo);
                 fragHeightDip = fitsCount == remainCount
                     ? fullH
                     : MeasureFragmentHeight(
@@ -1730,7 +1741,7 @@ public static class FlowDocumentPaginationAdapter
             double fragHeightMm = fragHeightDip * (25.4 / 96.0);
             fragmentHeights.Add(fragHeightMm);
             System.Diagnostics.Debug.WriteLine(
-                $"[TableSplit] page={pageNum} bodyRows={fitsCount} heightMm={fragHeightMm:F2} availH={availH:F0}dip");
+                $"[TableSplit] page={pageNum} bodyRows={fitsCount} heightMm={fragHeightMm:F2} availH={availH:F0}dip fill={pageStartFill:F0}dip");
 
             startBodyIdx += fitsCount;
             pageOffset++;
