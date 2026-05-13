@@ -102,10 +102,12 @@ public sealed class HtmlReader : IDocumentReader
         {
             Shared = new ReadShared
             {
-                MaxBlocks        = maxBlocks,
-                PageBodyHeightMm = Math.Max(pageBodyH, 30),
-                PageBodyWidthMm  = Math.Max(pageBodyW, 50),
-                MinRowHeightMm   = minRowHeightMm,
+                MaxBlocks          = maxBlocks,
+                PageBodyHeightMm   = Math.Max(pageBodyH, 30),
+                PageBodyWidthMm    = Math.Max(pageBodyW, 50),
+                MinRowHeightMm     = minRowHeightMm,
+                FontLineHeightMm   = lineHeightMm,
+                AvgCjkCharWidthMm  = fontSizePt * (25.4 / 72.0),
             },
         };
         ProcessChildren(root, section.Blocks, ctx);
@@ -227,6 +229,10 @@ public sealed class HtmlReader : IDocumentReader
         /// CSS height 가 이 값보다 작으면 이 값을 사용한다 (CSS height 는 min-height 처럼 동작).
         /// </summary>
         public double MinRowHeightMm;
+        /// <summary>폰트 한 줄 높이(mm) = fontSizePt × 25.4/72 × lineHeightFactor.</summary>
+        public double FontLineHeightMm;
+        /// <summary>한글(CJK) 평균 문자 너비(mm) ≈ 폰트 크기(pt → mm). 줄 수 추정에 사용.</summary>
+        public double AvgCjkCharWidthMm;
     }
 
     private sealed class InlineCtx
@@ -951,6 +957,20 @@ public sealed class HtmlReader : IDocumentReader
             }
         }
 
+        // 열 너비 미설정 컬럼에 균등 분배 폴백.
+        if (tableWidthMm > 0 && t.Columns.Count > 0)
+        {
+            double assigned   = t.Columns.Sum(c => c.WidthMm);
+            int    zeroCols   = t.Columns.Count(c => c.WidthMm <= 0);
+            if (zeroCols > 0)
+            {
+                double remaining = Math.Max(0, tableWidthMm - assigned);
+                double perCol    = remaining / zeroCols;
+                foreach (var col in t.Columns)
+                    if (col.WidthMm <= 0) col.WidthMm = perCol;
+            }
+        }
+
         foreach (var rowEl in rows)
         {
             var row = new PdTableRow();
@@ -1038,6 +1058,51 @@ public sealed class HtmlReader : IDocumentReader
                 }
                 row.Cells.Add(cell);
             }
+
+            // CSS height 는 min-height 처럼 동작하므로, 셀 내용 기반 추정치와 비교해 큰 쪽을 사용.
+            {
+                double lineH     = ctx.Shared.FontLineHeightMm;
+                double cjkW      = ctx.Shared.AvgCjkCharWidthMm;
+                double cellPadV  = ctx.Shared.MinRowHeightMm - lineH; // 추정 셀 상하 패딩
+                double maxEstH   = 0;
+                int    colCursor = 0;
+                foreach (var cell in row.Cells)
+                {
+                    // 셀 너비 (colspan 고려)
+                    double cellW = 0;
+                    for (int ci = 0; ci < cell.ColumnSpan && colCursor + ci < t.Columns.Count; ci++)
+                        cellW += t.Columns[colCursor + ci].WidthMm;
+                    // 셀 좌우 패딩 제외
+                    double innerW = Math.Max(10, cellW
+                        - (cell.PaddingLeftMm  > 0 ? cell.PaddingLeftMm  : t.DefaultCellPaddingLeftMm)
+                        - (cell.PaddingRightMm > 0 ? cell.PaddingRightMm : t.DefaultCellPaddingRightMm));
+
+                    // 셀 내 텍스트 수집 (모든 Paragraph의 Run.Text 합산)
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var blk in cell.Blocks.OfType<Paragraph>())
+                        foreach (var run in blk.Runs)
+                            if (!string.IsNullOrEmpty(run.Text)) sb.Append(run.Text);
+                    string text = sb.ToString();
+
+                    if (text.Length > 0 && lineH > 0 && cjkW > 0)
+                    {
+                        // 한국어/CJK 비율에 따라 평균 문자 너비 결정
+                        int cjkCount = 0;
+                        foreach (char c in text)
+                            if ((c >= '가' && c <= '힣') || (c >= '一' && c <= '鿿')) cjkCount++;
+                        double korRatio    = (double)cjkCount / text.Length;
+                        double avgCharW    = cjkW * (korRatio + (1 - korRatio) * 0.55);
+                        int    charsPerLine = Math.Max(1, (int)(innerW / avgCharW));
+                        int    lineCount    = (int)Math.Ceiling((double)text.Length / charsPerLine);
+                        double estimatedH  = lineCount * lineH + Math.Max(0, cellPadV);
+                        if (estimatedH > maxEstH) maxEstH = estimatedH;
+                    }
+
+                    colCursor += cell.ColumnSpan;
+                }
+                if (maxEstH > row.HeightMm) row.HeightMm = maxEstH;
+            }
+
             t.Rows.Add(row);
         }
 
