@@ -741,8 +741,10 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
 
 /// <summary>CSS selector 의 specificity 를 (a*100 + b*10 + c) 단일 정수로 근사. inline style 은 별도 처리이므로 제외.
 /// a = id 개수, b = class/attr/pseudo-class 개수, c = type/pseudo-element 개수.</summary>
-static int ComputeSpecificity(string selector)
+static int ComputeSpecificity(string? selector)
 {
+    if (string.IsNullOrEmpty(selector)) return 0;
+
     int a = 0, b = 0, c = 0;
     int i = 0;
     while (i < selector.Length)
@@ -809,8 +811,10 @@ static int SkipIdent(string s, int i)
 }
 
 /// <summary>"a, b, c" 형식의 selector 를 콤마 분기로 분리. 함수 인자 안의 콤마는 무시.</summary>
-static IEnumerable<string> SplitTopLevelCommas(string selector)
+static IEnumerable<string> SplitTopLevelCommas(string? selector)
 {
+    if (string.IsNullOrEmpty(selector)) yield break;
+
     int depth = 0;
     int start = 0;
     for (int i = 0; i < selector.Length; i++)
@@ -1191,11 +1195,13 @@ static bool StartsWithCi(string haystack, int idx, string needle)
     => idx + needle.Length <= haystack.Length &&
        string.Compare(haystack, idx, needle, 0, needle.Length, StringComparison.OrdinalIgnoreCase) == 0;
 
-static void CollectStyleRules(ICssRuleList ruleList, List<(string, ICssStyleDeclaration)> result)
+static void CollectStyleRules(ICssRuleList? ruleList, List<(string, ICssStyleDeclaration)> result)
 {
+    if (ruleList is null) return;
     foreach (var rule in ruleList)
     {
-        if (rule is ICssStyleRule styleRule)
+        if (rule is null) continue;
+        if (rule is ICssStyleRule styleRule && !string.IsNullOrEmpty(styleRule.SelectorText))
             result.Add((styleRule.SelectorText, styleRule.Style));
         else if (rule is ICssGroupingRule groupRule)
             CollectStyleRules(groupRule.Rules, result);
