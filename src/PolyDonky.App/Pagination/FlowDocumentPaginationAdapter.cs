@@ -552,21 +552,40 @@ public static class FlowDocumentPaginationAdapter
             double gap;
 
             // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
+            // paginator 기반 분할이 불충분(단일 fragment)하면 RTB Y좌표 기반으로 재시도한다.
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
-            if (wpfBlock is WpfDocs.Table wTbl
-                && tableFragmentMap is not null
-                && tableFragmentMap.TryGetValue(wTbl, out var tblFragments)
-                && tblFragments.Count > 0)
+            if (wpfBlock is WpfDocs.Table wTbl && wpfBlock.Tag is Core.Table coreTblForSplit)
             {
-                foreach (var (coreFragment, slotIdx) in tblFragments)
+                // 1. paginator 기반 fragments 가져오기
+                List<(Core.Table coreFragment, int slotIdx)>? tblFragments = null;
+                tableFragmentMap?.TryGetValue(wTbl, out tblFragments);
+
+                // 2. fragments 없거나 단일 페이지이면 RTB Y좌표 기반 분할 시도
+                //    (RTB가 Measure/Arrange/UpdateLayout 완료된 slow-path에서만 유효)
+                if ((tblFragments == null || tblFragments.Count <= 1) && !double.IsNaN(topY))
                 {
-                    int tblSlot = Math.Max(minSlot, slotIdx);
-                    result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
-                    prevSlot = tblSlot;
-                    minSlot  = Math.Max(minSlot, tblSlot);
+                    var rowGroupsByY = GetRowGroupsByRtbY(wTbl, coreTblForSplit, topY, bodyH);
+                    if (rowGroupsByY.Count > 1)
+                    {
+                        var rtbFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByY);
+                        tblFragments = rtbFragments
+                            .Select(f => (f.fragment, f.pageIdx * colCount))
+                            .ToList();
+                    }
                 }
-                if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
-                continue;
+
+                if (tblFragments != null && tblFragments.Count > 0)
+                {
+                    foreach (var (coreFragment, slotIdx) in tblFragments)
+                    {
+                        int tblSlot = Math.Max(minSlot, slotIdx);
+                        result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
+                        prevSlot = tblSlot;
+                        minSlot  = Math.Max(minSlot, tblSlot);
+                    }
+                    if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
+                    continue;
+                }
             }
 
             // Y 를 측정할 수 없으면 직전 블록과 같은 슬롯에 배정한다.
@@ -1605,5 +1624,54 @@ public static class FlowDocumentPaginationAdapter
             };
         }
         return pages;
+    }
+
+    // ── RTB Y좌표 기반 표 행 그룹화 ──────────────────────────────────────────
+
+    /// <summary>
+    /// RTB layout 완료 후 각 표 행의 ContentStart.GetCharacterRect Y좌표를 측정해
+    /// 페이지별 행 그룹을 반환한다. paginator.GetPageNumber 가 대형 표에 같은 페이지를
+    /// 반환하는 경우의 fallback으로 사용된다.
+    /// </summary>
+    private static List<(int pageNum, List<int> bodyRowIndices)> GetRowGroupsByRtbY(
+        WpfDocs.Table wpfTable,
+        Core.Table coreTable,
+        double tableTopY,
+        double bodyH)
+    {
+        var result = new List<(int, List<int>)>();
+        var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
+
+        int curPage = -1;
+        List<int>? curGroup = null;
+
+        for (int i = 0; i < coreTable.Rows.Count; i++)
+        {
+            if (coreTable.Rows[i].IsHeader) continue;
+
+            double rowY = tableTopY;
+            if (i < wpfRows.Count)
+            {
+                try
+                {
+                    var rect = wpfRows[i].ContentStart.GetCharacterRect(
+                        WpfDocs.LogicalDirection.Forward);
+                    if (!double.IsNaN(rect.Y) && rect.Y >= 0)
+                        rowY = rect.Y;
+                }
+                catch { }
+            }
+
+            int pg = bodyH > 0 ? (int)(rowY / bodyH) : 0;
+            if (pg != curPage)
+            {
+                curGroup = new System.Collections.Generic.List<int>();
+                result.Add((pg, curGroup));
+                curPage = pg;
+            }
+            curGroup!.Add(i);
+        }
+
+        return result;
     }
 }
