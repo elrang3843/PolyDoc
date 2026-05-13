@@ -85,6 +85,8 @@ public sealed class HtmlReader : IDocumentReader
 
         double pageBodyH = section.Page.EffectiveHeightMm
             - section.Page.MarginTopMm - section.Page.MarginBottomMm;
+        double pageBodyW = section.Page.EffectiveWidthMm
+            - section.Page.MarginLeftMm - section.Page.MarginRightMm;
 
         // 행 높이 최소값 계산: CSS height 는 min-height 처럼 동작하므로
         // 실제 폰트 줄높이 + 셀 패딩보다 작은 CSS 값은 과소 추정이다.
@@ -101,7 +103,8 @@ public sealed class HtmlReader : IDocumentReader
             Shared = new ReadShared
             {
                 MaxBlocks        = maxBlocks,
-                PageBodyHeightMm = Math.Max(pageBodyH, 30), // 최소 30 mm 보장
+                PageBodyHeightMm = Math.Max(pageBodyH, 30),
+                PageBodyWidthMm  = Math.Max(pageBodyW, 50),
                 MinRowHeightMm   = minRowHeightMm,
             },
         };
@@ -217,6 +220,8 @@ public sealed class HtmlReader : IDocumentReader
         /// 용지 높이 − 위 여백 − 아래 여백. 0 이면 분할하지 않는다.
         /// </summary>
         public double PageBodyHeightMm;
+        /// <summary>페이지 본문 너비(mm). 표 % 너비를 절대값으로 변환할 때 기준으로 사용.</summary>
+        public double PageBodyWidthMm;
         /// <summary>
         /// 행 높이 최소값(mm). 폰트 줄높이 + 셀 패딩 추정치.
         /// CSS height 가 이 값보다 작으면 이 값을 사용한다 (CSS height 는 min-height 처럼 동작).
@@ -860,17 +865,15 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(tblStyle, "margin-top"),    out var tblMt) && tblMt > 0) t.OuterMarginTopMm    = tblMt;
         if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
 
-        // 표 너비 (width 속성). 100% 같은 퍼센트값은 0으로 처리되어 자동 너비가 됨 (기본값).
-        // 실제 mm/px 값만 보존하므로, 상대적 너비는 컬럼의 자동 계산에 맡긴다.
+        // 표 너비 결정 — 절대값 또는 % 모두 처리. 이후 열 너비의 % 계산 기준.
+        double pageBodyW = ctx.Shared.PageBodyWidthMm;
+        double tableWidthMm = pageBodyW; // 기본값: 페이지 본문 너비 (width:100% 와 동일)
         if (StyleProp(tblStyle, "width") is { } wVal)
         {
-            if (TryParseCssMm(wVal, out var wMm) && wMm > 0)
-            {
-                // 표 전체 너비를 첫 컬럼들에 균등 배분 (근사치).
-                // HTML에서는 테이블 너비가 흐름을 제어하지만, Core 모델은 컬럼 단위로 작동.
-                // 정교한 변환을 위해서는 colgroup 너비를 우선하고, 없으면 테이블 너비를 컬럼 수로 나눔.
-                // (실제 셀 너비 또는 콘텐츠 크기는 렌더러가 조정)
-            }
+            if (TryParseCssMm(wVal, out var wMmAbs) && wMmAbs > 0)
+                tableWidthMm = wMmAbs;
+            else if (TryParseCssPercent(wVal, out var wPct) && wPct > 0 && pageBodyW > 0)
+                tableWidthMm = pageBodyW * wPct / 100.0;
         }
 
         // HTML 표준 속성: cellpadding (모든 셀의 기본 안여백)
@@ -903,7 +906,7 @@ public sealed class HtmlReader : IDocumentReader
         int maxCols = rows.Count > 0 ? rows.Max(r => r.QuerySelectorAll("td,th").Count(_ => true)) : 0;
         for (int i = 0; i < maxCols; i++) t.Columns.Add(new TableColumn());
 
-        // <colgroup><col> 에서 열 너비 파싱.
+        // <colgroup><col> 에서 열 너비 파싱. % 단위도 tableWidthMm 기준으로 변환.
         var colEls = tableEl.QuerySelectorAll("col").ToList();
         for (int i = 0; i < colEls.Count && i < t.Columns.Count; i++)
         {
@@ -911,9 +914,11 @@ public sealed class HtmlReader : IDocumentReader
                            ?? StyleProp(colEls[i].GetAttribute("style"), "width");
             if (TryParseCssMm(colWidthVal, out var colWidthMm) && colWidthMm > 0)
                 t.Columns[i].WidthMm = colWidthMm;
+            else if (TryParseCssPercent(colWidthVal, out var colPct) && colPct > 0 && tableWidthMm > 0)
+                t.Columns[i].WidthMm = tableWidthMm * colPct / 100.0;
         }
 
-        // colgroup 이 없거나 미완성일 때, 첫 행의 셀 너비로부터 컬럼 너비 추론.
+        // colgroup 이 없거나 미완성일 때, 첫 행의 셀 너비로부터 컬럼 너비 추론. % 지원.
         if (colEls.Count == 0 && rows.Count > 0)
         {
             var firstRow = rows[0];
@@ -926,9 +931,14 @@ public sealed class HtmlReader : IDocumentReader
                 var cellWidthVal = cellEl.GetAttribute("width") ?? StyleProp(cellStyleStr, "width");
                 int colspan = TryAttrInt(cellEl, "colspan", 1);
 
-                if (TryParseCssMm(cellWidthVal, out var cellWidthMm) && cellWidthMm > 0)
+                double cellWidthMm = 0;
+                if (TryParseCssMm(cellWidthVal, out var cwAbs) && cwAbs > 0)
+                    cellWidthMm = cwAbs;
+                else if (TryParseCssPercent(cellWidthVal, out var cwPct) && cwPct > 0 && tableWidthMm > 0)
+                    cellWidthMm = tableWidthMm * cwPct / 100.0;
+
+                if (cellWidthMm > 0)
                 {
-                    // colspan 셀의 너비를 colspan 개 컬럼에 균등 배분.
                     double widthPerCol = cellWidthMm / colspan;
                     for (int i = 0; i < colspan && colIdx + i < t.Columns.Count; i++)
                     {
@@ -2451,6 +2461,17 @@ public sealed class HtmlReader : IDocumentReader
         if (val.EndsWith("px")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 25.4 / 96.0; return true; }
         if (val.EndsWith("pt")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 25.4 / 72.0; return true; }
         if (val.EndsWith("in")  && double.TryParse(val[..^2],  NumberStyles.Any, CultureInfo.InvariantCulture, out v)) { mm = v * 25.4; return true; }
+        return false;
+    }
+
+    /// <summary>CSS 퍼센트값(%) 파싱. 성공 시 0~100 범위의 숫자 반환.</summary>
+    private static bool TryParseCssPercent(string? val, out double percent)
+    {
+        percent = 0;
+        if (string.IsNullOrWhiteSpace(val)) return false;
+        val = val.Trim();
+        if (val.EndsWith('%') && double.TryParse(val[..^1], NumberStyles.Any, CultureInfo.InvariantCulture, out percent))
+            return percent >= 0;
         return false;
     }
 
