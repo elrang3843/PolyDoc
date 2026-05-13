@@ -78,6 +78,16 @@ public sealed class Table : Block, IOverlayAnchored
     /// null 이면 캡션 없음. 렌더러는 표 위에 가운데 정렬 작은 단락으로 표시한다.</summary>
     public string? Caption { get; set; }
 
+    // ── 표 치수 ──────────────────────────────────────────────────────────────
+    /// <summary>표 너비 (mm). 0 이하면 페이지 본문 너비(100%).</summary>
+    public double WidthMm  { get; set; }
+    /// <summary>표 높이 (mm). 0 이하면 행 높이 합계로 자동 계산.</summary>
+    public double HeightMm { get; set; }
+
+    /// <summary>BlockWidth/Height 는 WidthMm/HeightMm 의 별칭.</summary>
+    public override double BlockWidth  { get => WidthMm;  set => WidthMm  = value; }
+    public override double BlockHeight { get => HeightMm; set => HeightMm = value; }
+
     // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
     /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
     public bool RepeatHeaderRowsOnBreak { get; set; } = true;

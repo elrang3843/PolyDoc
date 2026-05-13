@@ -21,4 +21,12 @@ public interface IOverlayAnchored
     int AnchorPageIndex { get; set; }
     double OverlayXMm   { get; set; }
     double OverlayYMm   { get; set; }
+
+    /// <summary>InFrontOfText/BehindText 모드에서의 페이지 로컬 X 좌표 (mm).
+    /// OverlayXMm 의 별칭.</summary>
+    double BlockX { get => OverlayXMm; set => OverlayXMm = value; }
+
+    /// <summary>InFrontOfText/BehindText 모드에서의 페이지 로컬 Y 좌표 (mm).
+    /// OverlayYMm 의 별칭.</summary>
+    double BlockY { get => OverlayYMm; set => OverlayYMm = value; }
 }

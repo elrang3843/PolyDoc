@@ -78,6 +78,10 @@ public sealed class TextBoxObject : Block, IOverlayAnchored
     public double WidthMm { get; set; }
     public double HeightMm { get; set; }
 
+    /// <summary>BlockWidth/Height 는 WidthMm/HeightMm 의 별칭.</summary>
+    public override double BlockWidth  { get => WidthMm;  set => WidthMm  = value; }
+    public override double BlockHeight { get => HeightMm; set => HeightMm = value; }
+
     /// <summary>z-order. 큰 값이 위에 그려진다.</summary>
     public int ZOrder { get; set; }
 

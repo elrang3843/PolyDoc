@@ -8,6 +8,15 @@ public abstract class Block
 {
     public string? Id { get; set; }
     public NodeStatus Status { get; set; } = NodeStatus.Clean;
+
+    /// <summary>블록의 너비 (mm). 0 이하면 자동/미정의.
+    /// 치수를 직접 갖는 서브클래스(ImageBlock·ShapeObject·TextBoxObject·Table)에서는
+    /// 해당 클래스의 WidthMm 을 반환하도록 override 된다.</summary>
+    public virtual double BlockWidth  { get => 0; set { } }
+
+    /// <summary>블록의 높이 (mm). 0 이하면 자동/미정의.
+    /// 치수를 직접 갖는 서브클래스에서 override 된다.</summary>
+    public virtual double BlockHeight { get => 0; set { } }
 }
 
 /// <summary>

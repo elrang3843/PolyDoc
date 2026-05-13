@@ -57,6 +57,10 @@ public sealed class ImageBlock : Block, IOverlayAnchored
     public double WidthMm { get; set; }
     public double HeightMm { get; set; }
 
+    /// <summary>BlockWidth/Height 는 WidthMm/HeightMm 의 별칭.</summary>
+    public override double BlockWidth  { get => WidthMm;  set => WidthMm  = value; }
+    public override double BlockHeight { get => HeightMm; set => HeightMm = value; }
+
     /// <summary>접근성·검색용 대체 텍스트.</summary>
     public string? Description { get; set; }
 
