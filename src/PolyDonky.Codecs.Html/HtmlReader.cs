@@ -428,6 +428,11 @@ public sealed class HtmlReader : IDocumentReader
 
             case "table":
             {
+                // 표는 항상 새 페이지에서 시작 — 앞 내용과 무관하게 순수히 표 치수만으로 분할 계산 가능.
+                var pageBreakBefore = new Paragraph();
+                pageBreakBefore.Style.ForcePageBreakBefore = true;
+                target.Add(pageBreakBefore);
+
                 var tblParts = SplitTableByPageHeight(BuildTable(el, ctx),
                                                       ctx.Shared.PageBodyHeightMm,
                                                       ctx.Shared.MinRowHeightMm);
@@ -435,7 +440,7 @@ public sealed class HtmlReader : IDocumentReader
                 {
                     if (i > 0)
                     {
-                        // 분할 조각 사이에 페이지 구분자 삽입 (2번째부터)
+                        // 분할 조각 사이에도 페이지 구분자 삽입
                         var pageBreak = new Paragraph();
                         pageBreak.Style.ForcePageBreakBefore = true;
                         target.Add(pageBreak);
