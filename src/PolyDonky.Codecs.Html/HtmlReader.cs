@@ -83,7 +83,16 @@ public sealed class HtmlReader : IDocumentReader
         // 머리말/꼬리말 추출 후 DOM 에서 제거 — 본문에 섞이지 않도록.
         ExtractHeaderFooter(root, section.Page);
 
-        var ctx = new InlineCtx { Shared = new ReadShared { MaxBlocks = maxBlocks } };
+        double pageBodyH = section.Page.EffectiveHeightMm
+            - section.Page.MarginTopMm - section.Page.MarginBottomMm;
+        var ctx = new InlineCtx
+        {
+            Shared = new ReadShared
+            {
+                MaxBlocks        = maxBlocks,
+                PageBodyHeightMm = Math.Max(pageBodyH, 30), // 최소 30 mm 보장
+            },
+        };
         ProcessChildren(root, section.Blocks, ctx);
 
         if (ctx.Shared.Truncated)
@@ -189,8 +198,13 @@ public sealed class HtmlReader : IDocumentReader
     /// <summary>리더 전체에서 공유되는 상태 — 한도/잘림 플래그.</summary>
     private sealed class ReadShared
     {
-        public int  MaxBlocks;
-        public bool Truncated;
+        public int    MaxBlocks;
+        public bool   Truncated;
+        /// <summary>
+        /// 표를 분할할 때 기준이 되는 페이지 본문 높이(mm).
+        /// 용지 높이 − 위 여백 − 아래 여백. 0 이면 분할하지 않는다.
+        /// </summary>
+        public double PageBodyHeightMm;
     }
 
     private sealed class InlineCtx
@@ -386,7 +400,9 @@ public sealed class HtmlReader : IDocumentReader
 
             case "table":
             {
-                target.Add(BuildTable(el, ctx));
+                var tblParts = SplitTableByPageHeight(BuildTable(el, ctx),
+                                                      ctx.Shared.PageBodyHeightMm);
+                foreach (var part in tblParts) target.Add(part);
                 break;
             }
 
@@ -4139,5 +4155,106 @@ public sealed class HtmlReader : IDocumentReader
             && double.TryParse(tokens[i + 3], NumberStyles.Any, CultureInfo.InvariantCulture, out dd)
             && double.TryParse(tokens[i + 4], NumberStyles.Any, CultureInfo.InvariantCulture, out e)
             && double.TryParse(tokens[i + 5], NumberStyles.Any, CultureInfo.InvariantCulture, out f);
+    }
+
+    // ── 표 페이지 분할 ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 표가 <paramref name="pageBodyHeightMm"/> 을 초과하면 행 단위로 분할한다.
+    /// 헤더 행(IsHeader=true)은 모든 분할 표에 반복된다. 스타일·열 정보는 그대로 상속.
+    /// pageBodyHeightMm ≤ 0 이면 분할하지 않고 원본을 그대로 반환한다.
+    /// </summary>
+    private static List<Table> SplitTableByPageHeight(Table table, double pageBodyHeightMm)
+    {
+        const double FallbackRowHeightMm = 6.0; // height 미지정 행의 기본 추정치
+
+        if (pageBodyHeightMm <= 0)
+            return new List<Table> { table };
+
+        var headerRows = table.Rows.Where(r => r.IsHeader).ToList();
+        var bodyRows   = table.Rows.Where(r => !r.IsHeader).ToList();
+
+        // 분할이 필요 없는 경우 — 본문 행이 없거나 표 전체가 한 페이지에 들어가면 그대로 반환.
+        if (bodyRows.Count == 0)
+            return new List<Table> { table };
+
+        double headerH = headerRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+
+        // 실제 총 높이를 계산해서 분할이 필요한지 먼저 확인한다.
+        double totalH = headerH + bodyRows.Sum(r => r.HeightMm > 0 ? r.HeightMm : FallbackRowHeightMm);
+        if (totalH <= pageBodyHeightMm)
+            return new List<Table> { table };
+
+        // 분할 진행
+        var parts          = new List<Table>();
+        double accumulated = headerH;
+        var currentBody    = new List<TableRow>();
+
+        foreach (var row in bodyRows)
+        {
+            double rh = row.HeightMm > 0 ? row.HeightMm : FallbackRowHeightMm;
+
+            // 현재 본문 행이 하나라도 있는 상태에서 페이지를 넘치면 새 페이지로 분할한다.
+            if (currentBody.Count > 0 && accumulated + rh > pageBodyHeightMm)
+            {
+                parts.Add(CloneTableWithRows(table, headerRows, currentBody));
+                currentBody    = new List<TableRow>();
+                accumulated    = headerH;
+            }
+
+            currentBody.Add(row);
+            accumulated += rh;
+        }
+
+        // 마지막 조각
+        if (currentBody.Count > 0)
+            parts.Add(CloneTableWithRows(table, headerRows, currentBody));
+
+        return parts.Count > 0 ? parts : new List<Table> { table };
+    }
+
+    /// <summary>
+    /// 원본 표의 스타일·열 정보를 유지하면서 지정된 행들만 담는 새 표를 만든다.
+    /// </summary>
+    private static Table CloneTableWithRows(
+        Table source,
+        IReadOnlyList<TableRow> headerRows,
+        IReadOnlyList<TableRow> bodyRows)
+    {
+        var t = new Table
+        {
+            WrapMode                 = source.WrapMode,
+            HAlign                   = source.HAlign,
+            BackgroundColor          = source.BackgroundColor,
+            Caption                  = null, // 분할 조각에는 캡션 없음
+            RepeatHeaderRowsOnBreak  = source.RepeatHeaderRowsOnBreak,
+            HeaderColumnCount        = source.HeaderColumnCount,
+            BorderCollapse           = source.BorderCollapse,
+            BorderThicknessPt        = source.BorderThicknessPt,
+            BorderColor              = source.BorderColor,
+            BorderTop                = source.BorderTop,
+            BorderBottom             = source.BorderBottom,
+            BorderLeft               = source.BorderLeft,
+            BorderRight              = source.BorderRight,
+            InnerBorderHorizontal    = source.InnerBorderHorizontal,
+            InnerBorderVertical      = source.InnerBorderVertical,
+            DefaultCellPaddingTopMm    = source.DefaultCellPaddingTopMm,
+            DefaultCellPaddingBottomMm = source.DefaultCellPaddingBottomMm,
+            DefaultCellPaddingLeftMm   = source.DefaultCellPaddingLeftMm,
+            DefaultCellPaddingRightMm  = source.DefaultCellPaddingRightMm,
+            OuterMarginTopMm    = source.OuterMarginTopMm,
+            OuterMarginBottomMm = source.OuterMarginBottomMm,
+            OuterMarginLeftMm   = source.OuterMarginLeftMm,
+            OuterMarginRightMm  = source.OuterMarginRightMm,
+        };
+
+        // 열 정의 공유 (열 너비 등 동일)
+        foreach (var col in source.Columns) t.Columns.Add(col);
+
+        // 헤더 행 + 본문 행 순서로 추가
+        foreach (var r in headerRows) t.Rows.Add(r);
+        foreach (var r in bodyRows)   t.Rows.Add(r);
+
+        return t;
     }
 }
