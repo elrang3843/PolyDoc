@@ -1927,21 +1927,24 @@ public sealed class HtmlReader : IDocumentReader
             if (bgImgVal.StartsWith("url(", StringComparison.OrdinalIgnoreCase))
             {
                 var urlInner = bgImgVal[4..].TrimEnd(')').Trim().Trim('\'', '"');
-                // data: URI 먼저 시도 (inline 이미지)
-                bgImage = TryExtractDataUriImage(urlInner);
-                if (bgImage is null && !urlInner.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(urlInner))
                 {
-                    // 외부 URL: ResourcePath로 저장 (EmbedLocalImages에서 나중에 처리)
-                    bgImage = new ImageBlock
+                    // data: URI 먼저 시도 (inline 이미지)
+                    bgImage = TryExtractDataUriImage(urlInner);
+                    if (bgImage is null && !urlInner.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
                     {
-                        ResourcePath = urlInner,
-                        MediaType    = GuessMediaTypeFromUrl(urlInner),
-                        WrapMode     = ImageWrapMode.Inline,
-                    };
-                }
-                if (bgImage is not null)
-                {
-                    hasBox = true;
+                        // 외부 URL: ResourcePath로 저장 (EmbedLocalImages에서 나중에 처리)
+                        bgImage = new ImageBlock
+                        {
+                            ResourcePath = urlInner,
+                            MediaType    = GuessMediaTypeFromUrl(urlInner),
+                            WrapMode     = ImageWrapMode.Inline,
+                        };
+                    }
+                    if (bgImage is not null)
+                    {
+                        hasBox = true;
+                    }
                 }
             }
         }
