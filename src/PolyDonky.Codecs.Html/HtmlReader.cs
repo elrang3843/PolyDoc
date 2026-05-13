@@ -431,7 +431,17 @@ public sealed class HtmlReader : IDocumentReader
                 var tblParts = SplitTableByPageHeight(BuildTable(el, ctx),
                                                       ctx.Shared.PageBodyHeightMm,
                                                       ctx.Shared.MinRowHeightMm);
-                foreach (var part in tblParts) target.Add(part);
+                for (int i = 0; i < tblParts.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        // 분할 조각 사이에 페이지 구분자 삽입 (2번째부터)
+                        var pageBreak = new Paragraph();
+                        pageBreak.Style.ForcePageBreakBefore = true;
+                        target.Add(pageBreak);
+                    }
+                    target.Add(tblParts[i]);
+                }
                 break;
             }
 
