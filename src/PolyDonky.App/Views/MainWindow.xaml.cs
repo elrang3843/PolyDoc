@@ -5926,7 +5926,10 @@ public partial class MainWindow : Window
         }
 
         // 일반 Enter → 현재 단락이 BreakPageBefore=true 이면 새 단락에 상속되지 않도록 즉시 클리어.
-        // WPF 는 InsertParagraphBreak 시 서식을 상속하므로 Dispatcher 로 WPF 처리 후 클리어한다.
+        // WPF 는 InsertParagraphBreak 시 BreakPageBefore 와 Tag 를 새 단락에 자동 상속하므로
+        // Dispatcher 로 WPF 처리 후 두 속성 모두 초기화한다.
+        // (Tag 를 초기화하지 않으면 FlowDocumentParser 의 taggedBefore OR 결합에 의해
+        //  ForcePageBreakBefore 가 다시 true 로 복원된다.)
         if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
         {
             var caretPara = rtb.CaretPosition.Paragraph;
@@ -5936,7 +5939,10 @@ public partial class MainWindow : Window
                 {
                     var newPara = rtb.CaretPosition.Paragraph;
                     if (newPara is not null && newPara != caretPara && newPara.BreakPageBefore)
+                    {
                         newPara.BreakPageBefore = false;
+                        newPara.Tag = null;
+                    }
                 });
             }
         }
