@@ -1117,8 +1117,10 @@ public partial class MainWindow : Window
             // ForcePageBreakBefore 단락 = 섹션 경계. 새 섹션을 시작한다.
             if (block is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore)
             {
+                // Id 가 없으면 생성 — 다음 ParseAllPageEditors 사이클에서 boundaryMap 과 연결된다.
+                bp.Id ??= "§p" + Guid.NewGuid().ToString("N")[..8];
                 // 이전 사이클에서 사용자가 설정한 PageSettings 복원; 없으면 이전 섹션에서 상속.
-                var newPage = (bp.Id is not null && boundaryMap.TryGetValue(bp.Id, out var saved))
+                var newPage = boundaryMap.TryGetValue(bp.Id, out var saved)
                     ? saved
                     : Services.PageSettingsCloner.Clone(currentSection.Page);
                 currentSection = new PolyDonky.Core.Section { Page = newPage };
@@ -1155,10 +1157,12 @@ public partial class MainWindow : Window
         {
             foreach (var b in sec.Blocks)
             {
-                if (b is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore
-                    && bp.Id is { } id)
+                if (b is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore)
                 {
-                    map[id] = sec.Page;
+                    // Id 없으면 자동 생성 — RTB 파싱 결과의 단락이 Tag 를 통해
+                    // 같은 인스턴스를 참조하므로 다음 Parse 에서도 같은 Id 가 사용된다.
+                    bp.Id ??= "§p" + Guid.NewGuid().ToString("N")[..8];
+                    map[bp.Id] = sec.Page;
                     break;
                 }
             }
@@ -1771,6 +1775,10 @@ public partial class MainWindow : Window
         if (PageEditorHost.PageCount > 0)
         {
             var freshDoc = ParseAllPageEditors();
+            // freshDoc 을 ViewModel 에 동기화 — _currentPaginatedDoc.Source 와 _viewModel.Document 가
+            // 항상 같은 최신 문서를 참조하도록 보장해 다음 BuildSectionBoundaryMap 호출이 올바른
+            // Id → PageSettings 맵을 반환하게 한다.
+            _viewModel?.SyncDocumentFromLive(freshDoc);
             _currentPaginatedDoc = PaginateDoc(freshDoc);
             SetupPageEditors();
             RebuildOverlays();
@@ -1785,6 +1793,7 @@ public partial class MainWindow : Window
             {
                 if (_pageGeometry is null) return;
                 var redoFresh = ParseAllPageEditors();
+                _viewModel?.SyncDocumentFromLive(redoFresh);
                 var redoPaginated = PaginateDoc(redoFresh);
                 _currentPaginatedDoc = redoPaginated;
                 if (NeedsPageRebuild())
