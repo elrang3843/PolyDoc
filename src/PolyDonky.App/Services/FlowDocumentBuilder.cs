@@ -3181,7 +3181,7 @@ public static class FlowDocumentBuilder
         {
             var enNum = 0;
             enNums?.TryGetValue(enId, out enNum);
-            var label = enNum > 0 ? enNum.ToString(System.Globalization.CultureInfo.InvariantCulture) : "‡";
+            var label = enNum > 0 ? ToRoman(enNum, lower: true) : "‡";
             var enWpfRun = new Wpf.Run(label)
             {
                 BaselineAlignment = BaselineAlignment.Superscript,
