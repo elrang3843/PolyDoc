@@ -5925,23 +5925,32 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 일반 Enter → 현재 단락이 BreakPageBefore=true 이면 새 단락에 상속되지 않도록 즉시 클리어.
-        // WPF 는 InsertParagraphBreak 시 BreakPageBefore 와 Tag 를 새 단락에 자동 상속하므로
+        // 일반 Enter → 현재 단락이 페이지 나누기 마크를 가지고 있으면 새 단락에 상속되지 않도록 클리어.
+        // WPF BreakPageBefore 와 Core ForcePageBreakBefore 둘 다 확인:
+        //   - PerPageDocumentSplitter 는 페이지 분할 첫 단락의 BreakPageBefore 를 false 로 억제하므로
+        //     Tag 의 원본 Core Paragraph.ForcePageBreakBefore 도 체크해야 한다.
+        //   - WPF 는 InsertParagraphBreak 시 BreakPageBefore 와 Tag 를 새 단락에 자동 상속한다.
         // Dispatcher 로 WPF 처리 후 두 속성 모두 초기화한다.
-        // (Tag 를 초기화하지 않으면 FlowDocumentParser 의 taggedBefore OR 결합에 의해
-        //  ForcePageBreakBefore 가 다시 true 로 복원된다.)
         if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
         {
             var caretPara = rtb.CaretPosition.Paragraph;
-            if (caretPara?.BreakPageBefore == true)
+            bool isPageBreakPara = caretPara?.BreakPageBefore == true ||
+                (caretPara?.Tag is PolyDonky.Core.Paragraph cp && cp.Style.ForcePageBreakBefore);
+
+            if (isPageBreakPara)
             {
                 Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
                 {
                     var newPara = rtb.CaretPosition.Paragraph;
-                    if (newPara is not null && newPara != caretPara && newPara.BreakPageBefore)
+                    if (newPara is not null && newPara != caretPara)
                     {
-                        newPara.BreakPageBefore = false;
-                        newPara.Tag = null;
+                        bool newHasPageBreak = newPara.BreakPageBefore ||
+                            (newPara.Tag is PolyDonky.Core.Paragraph np && np.Style.ForcePageBreakBefore);
+                        if (newHasPageBreak)
+                        {
+                            newPara.BreakPageBefore = false;
+                            newPara.Tag = null;
+                        }
                     }
                 });
             }
