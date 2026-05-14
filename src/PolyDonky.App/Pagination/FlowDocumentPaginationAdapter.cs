@@ -262,8 +262,9 @@ public static class FlowDocumentPaginationAdapter
             int fastBlockIdx = 0;
             foreach (var wpfBlock in flat)
             {
+                // 부동소수점으로 계산해 정수 나눗셈에 의한 초반 블록 쏠림을 방지한다.
                 int fastPageIdx = pageCount <= 1 ? 0
-                    : Math.Min(fastBlockIdx * pageCount / totalFlatCount, pageCount - 1);
+                    : Math.Min((int)((double)fastBlockIdx * pageCount / totalFlatCount), pageCount - 1);
                 int fastSlot = fastPageIdx * colCount;
                 // fast-path: ContainerBlock Section 은 자식 코어 블록을 직접 추가.
                 if (wpfBlock is WpfDocs.Section fastSect && fastSect.Tag is ContainerBlock)
@@ -1953,5 +1954,92 @@ public static class FlowDocumentPaginationAdapter
         }
         if (maxPt <= 0) maxPt = table.BorderThicknessPt;
         return maxPt * PtToDip;
+    }
+
+    // ── 섹션별 페이지네이션 ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// 각 섹션을 독립적으로 페이지네이션해 하나의 <see cref="PaginatedDocument"/> 로 합산한다.
+    /// 섹션별 <see cref="PageSettings"/> 가 다른 경우(여백·다단·배경색 등)를 올바르게 처리한다.
+    /// 섹션이 1개이면 <see cref="Paginate(PolyDonkyument, PageSettings?)"/> 에 위임한다.
+    /// </summary>
+    public static PaginatedDocument PaginateAllSections(PolyDonkyument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.Sections.Count <= 1)
+            return Paginate(document);
+
+        var allPages        = new System.Collections.Generic.List<PaginatedPage>();
+        var perPageSettings = new System.Collections.Generic.List<PageSettings>();
+        int offset          = 0;
+
+        for (int si = 0; si < document.Sections.Count; si++)
+        {
+            var section = document.Sections[si];
+
+            // 섹션을 임시 문서로 감싸서 독립 페이지네이션
+            var sectionDoc = new PolyDonkyument
+            {
+                Metadata      = document.Metadata,
+                Styles        = document.Styles,
+                OutlineStyles = document.OutlineStyles,
+                Footnotes     = document.Footnotes,
+                Endnotes      = document.Endnotes,
+            };
+            sectionDoc.Sections.Add(section);
+
+            var paginated = Paginate(sectionDoc, section.Page);
+
+            for (int pi = 0; pi < paginated.PageCount; pi++)
+            {
+                var orig      = paginated.Pages[pi];
+                int globalIdx = orig.PageIndex + offset;
+
+                // LINQ Select().ToArray() 할당 오버헤드 제거 — manual loop로 전환.
+                var bodyBlocks = new BlockOnPage[orig.BodyBlocks.Count];
+                for (int j = 0; j < orig.BodyBlocks.Count; j++)
+                {
+                    var b = orig.BodyBlocks[j];
+                    bodyBlocks[j] = new BlockOnPage
+                    {
+                        Source        = b.Source,
+                        PageIndex     = b.PageIndex + offset,
+                        ColumnIndex   = b.ColumnIndex,
+                        BodyLocalRect = b.BodyLocalRect,
+                    };
+                }
+
+                var overlayBlocks = new OverlayOnPage[orig.OverlayBlocks.Count];
+                for (int j = 0; j < orig.OverlayBlocks.Count; j++)
+                {
+                    var o = orig.OverlayBlocks[j];
+                    overlayBlocks[j] = new OverlayOnPage
+                    {
+                        Source          = o.Source,
+                        AnchorPageIndex = o.AnchorPageIndex + offset,
+                        XMm             = o.XMm,
+                        YMm             = o.YMm,
+                    };
+                }
+
+                allPages.Add(new PaginatedPage
+                {
+                    PageIndex = globalIdx,
+                    BodyBlocks = bodyBlocks,
+                    OverlayBlocks = overlayBlocks,
+                });
+                perPageSettings.Add(section.Page);
+            }
+            offset += paginated.PageCount;
+        }
+
+        return new PaginatedDocument
+        {
+            Source          = document,
+            PageSettings    = document.Sections.First().Page,
+            Pages           = allPages,
+            PerPageSettings = perPageSettings,
+        };
     }
 }

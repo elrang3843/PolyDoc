@@ -331,6 +331,10 @@ public static class FlowDocumentParser
                 OverlayYMm = original.OverlayYMm,
                 Caption                      = original.Caption,
                 BackgroundColor              = original.BackgroundColor,
+                WidthMm                      = original.WidthMm,
+                HeightMm                     = original.HeightMm,
+                IsFlexLayout                 = original.IsFlexLayout,
+                BorderCollapse               = original.BorderCollapse,
                 DefaultCellPaddingTopMm      = original.DefaultCellPaddingTopMm,
                 DefaultCellPaddingBottomMm   = original.DefaultCellPaddingBottomMm,
                 DefaultCellPaddingLeftMm     = original.DefaultCellPaddingLeftMm,
@@ -341,8 +345,13 @@ public static class FlowDocumentParser
                 OuterMarginRightMm           = original.OuterMarginRightMm,
                 BorderThicknessPt            = original.BorderThicknessPt,
                 BorderColor                  = original.BorderColor,
+                BorderTop                    = original.BorderTop,
+                BorderBottom                 = original.BorderBottom,
+                BorderLeft                   = original.BorderLeft,
+                BorderRight                  = original.BorderRight,
+                InnerBorderHorizontal        = original.InnerBorderHorizontal,
+                InnerBorderVertical          = original.InnerBorderVertical,
                 RepeatHeaderRowsOnBreak      = original.RepeatHeaderRowsOnBreak,
-                HeaderColumnCount            = original.HeaderColumnCount,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();
@@ -357,7 +366,13 @@ public static class FlowDocumentParser
         {
             var wpfRow = rowGroup.Rows[rowIndex];
             var origRow = (wpfTable.Tag is Table o && rowIndex < o.Rows.Count) ? o.Rows[rowIndex] : null;
-            var row = new TableRow { HeightMm = origRow?.HeightMm ?? 0, IsHeader = origRow?.IsHeader ?? false };
+            var row = new TableRow
+            {
+                HeightMm      = origRow?.HeightMm      ?? 0,
+                IsHeader      = origRow?.IsHeader      ?? false,
+                BackgroundColor = origRow?.BackgroundColor,
+                VerticalAlign   = origRow?.VerticalAlign,
+            };
 
             for (int cellIndex = 0; cellIndex < wpfRow.Cells.Count; cellIndex++)
             {
@@ -369,12 +384,17 @@ public static class FlowDocumentParser
                     RowSpan           = wpfCell.RowSpan    > 0 ? wpfCell.RowSpan    : (origCell?.RowSpan    ?? 1),
                     WidthMm           = origCell?.WidthMm           ?? 0,
                     TextAlign         = origCell?.TextAlign         ?? CellTextAlign.Left,
+                    VerticalAlign     = origCell?.VerticalAlign     ?? CellVerticalAlign.Top,
                     PaddingTopMm      = origCell?.PaddingTopMm      ?? 0,
                     PaddingBottomMm   = origCell?.PaddingBottomMm   ?? 0,
                     PaddingLeftMm     = origCell?.PaddingLeftMm     ?? 0,
                     PaddingRightMm    = origCell?.PaddingRightMm    ?? 0,
                     BorderThicknessPt = origCell?.BorderThicknessPt ?? 0,
                     BorderColor       = origCell?.BorderColor,
+                    BorderTop         = origCell?.BorderTop,
+                    BorderBottom      = origCell?.BorderBottom,
+                    BorderLeft        = origCell?.BorderLeft,
+                    BorderRight       = origCell?.BorderRight,
                     BackgroundColor   = origCell?.BackgroundColor,
                 };
                 ParseInto(cell.Blocks, wpfCell.Blocks);

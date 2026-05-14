@@ -964,8 +964,17 @@ public partial class MainWindow : Window
     {
         var doc = _viewModel?.Document;
         if (doc is null || _pageGeometry is null) return;
-        _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(doc);
+        _currentPaginatedDoc = PaginateDoc(doc);
     }
+
+    /// <summary>
+    /// 섹션 수에 따라 적절한 페이지네이션 방식을 선택한다.
+    /// 2개 이상의 섹션이 있으면 섹션별 독립 페이지네이션으로 각 섹션의 PageSettings 를 반영한다.
+    /// </summary>
+    private static Pagination.PaginatedDocument PaginateDoc(PolyDonkyument doc)
+        => doc.Sections.Count > 1
+            ? FlowDocumentPaginationAdapter.PaginateAllSections(doc)
+            : FlowDocumentPaginationAdapter.Paginate(doc);
 
     /// <summary>
     /// _currentPaginatedDoc 으로부터 페이지별 슬라이스를 만들고 PageEditorHost 를 초기화한다.
@@ -975,6 +984,7 @@ public partial class MainWindow : Window
     {
         if (_currentPaginatedDoc is null || _pageGeometry is null) return;
         var slices = PerPageDocumentSplitter.Split(_currentPaginatedDoc);
+        _currentSlices = slices;
 
         // 오프스크린 측정 vs per-page 렌더 높이 차이로 인한 오버플로 후처리 보정.
         // fast-path(MaxBlocksForPreciseMapping 초과) 는 블록별 Y 측정을 수행하지 않으므로
@@ -1034,6 +1044,7 @@ public partial class MainWindow : Window
         // RTB 내부 ScrollViewer 가 휠 이벤트를 소비해 본문만 내부 스크롤되는 것을 막고
         // 외부 EditorScrollViewer 로 전달 — 본문·오버레이가 함께 스크롤되도록 한다.
         rtb.PreviewMouseWheel          += OnPreviewMouseWheelMaster;
+        rtb.SelectionChanged += OnAnyEditorSelectionChanged;
 
         rtb.ContextMenu             = new System.Windows.Controls.ContextMenu();
         rtb.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
@@ -1074,12 +1085,9 @@ public partial class MainWindow : Window
             freshDoc.Provenance    = original.Provenance;
             freshDoc.Watermark     = original.Watermark;
             freshDoc.OutlineStyles = original.OutlineStyles;
+            freshDoc.Footnotes     = original.Footnotes;
+            freshDoc.Endnotes      = original.Endnotes;
         }
-
-        var section = new PolyDonky.Core.Section();
-        if (original?.Sections.FirstOrDefault() is { } origSection)
-            section.Page = origSection.Page;
-        freshDoc.Sections.Add(section);
 
         // 각 페이지 RTB 를 파싱해 본문 블록 수집 (오버레이는 제외 — per-page RTB 에는 없다)
         var rawBlocks = new System.Collections.Generic.List<PolyDonky.Core.Block>();
@@ -1091,27 +1099,71 @@ public partial class MainWindow : Window
                     rawBlocks.Add(b);
         }
         // 줄 단위 분할로 생성된 조각 단락(§f0/§f1 접미사)을 원본 단락으로 재결합한다.
-        // 표 조각은 각 페이지에서 독립 표로 취급되므로 별도 병합 없이 그대로 유지한다.
-        foreach (var b in MergeColumnFragments(rawBlocks))
-            section.Blocks.Add(b);
+        var mergedBlocks = MergeColumnFragments(rawBlocks).ToList();
 
-        // 오버레이 블록 (_viewModel.Document 가 stable source) — 글상자는 RTB 에 앵커가 없고,
-        // 오버레이 모드 표/그림/도형의 앵커 단락은 PerPageDocumentSplitter 가 BodyBlocks 에서 제외하므로
-        // 둘 다 RTB 파싱으로 복원되지 않는다. 따라서 모델에서 직접 인계.
-        // 주의: Table/ImageBlock/ShapeObject 는 모두 IOverlayAnchored 를 구현하므로 단순히
-        // `b is IOverlayAnchored` 로 거르면 block-mode 표 등 본문 블록까지 포함되어 RTB 파싱본과
-        // 중복되고 ("표가 한 개 더 맨 끝에 붙는" 증상) 페이지 끝에 추가 배정된다.
-        // IsOverlayMode 로 진짜 오버레이만 추린다.
-        if (original?.Sections.FirstOrDefault() is { } origOverlay)
+        // 섹션 경계 단락 Id → 사용자 지정 PageSettings 맵.
+        // ForcePageBreakBefore=true 인 단락의 Id 를 키로, 그 단락이 시작하는 섹션의 PageSettings 를 저장.
+        // 이전 렌더링 사이클에서 사용자가 설정한 페이지 서식을 복원한다.
+        var boundaryMap = BuildSectionBoundaryMap(original);
+
+        // 첫 번째 섹션 시작
+        var firstPage = original?.Sections.FirstOrDefault()?.Page
+                        ?? new PolyDonky.Core.PageSettings();
+        var currentSection = new PolyDonky.Core.Section { Page = firstPage };
+        freshDoc.Sections.Add(currentSection);
+
+        foreach (var block in mergedBlocks)
+        {
+            // ForcePageBreakBefore 단락 = 섹션 경계. 새 섹션을 시작한다.
+            if (block is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore)
+            {
+                // 이전 사이클에서 사용자가 설정한 PageSettings 복원; 없으면 이전 섹션에서 상속.
+                var newPage = (bp.Id is not null && boundaryMap.TryGetValue(bp.Id, out var saved))
+                    ? saved
+                    : Services.PageSettingsCloner.Clone(currentSection.Page);
+                currentSection = new PolyDonky.Core.Section { Page = newPage };
+                freshDoc.Sections.Add(currentSection);
+            }
+            currentSection.Blocks.Add(block);
+        }
+
+        // 오버레이 블록 (_viewModel.Document 가 stable source) — 첫 섹션에서만 인계.
+        // 글상자·오버레이 모드 표/그림/도형은 RTB 파싱으로 복원되지 않으므로 모델에서 직접 가져온다.
+        if (original?.Sections.FirstOrDefault() is { } origOverlay
+            && freshDoc.Sections.FirstOrDefault() is { } firstFresh)
         {
             foreach (var b in origOverlay.Blocks)
             {
                 if (Pagination.FlowDocumentPaginationAdapter.IsOverlayMode(b))
-                    section.Blocks.Add(b);
+                    firstFresh.Blocks.Add(b);
             }
         }
 
         return freshDoc;
+    }
+
+    /// <summary>
+    /// 원본 문서의 섹션 경계 단락 Id → PageSettings 맵을 구성한다.
+    /// 각 섹션에서 ForcePageBreakBefore=true 인 첫 단락의 Id 가 키다.
+    /// </summary>
+    private static System.Collections.Generic.Dictionary<string, PolyDonky.Core.PageSettings>
+        BuildSectionBoundaryMap(PolyDonkyument? original)
+    {
+        var map = new System.Collections.Generic.Dictionary<string, PolyDonky.Core.PageSettings>();
+        if (original is null) return map;
+        foreach (var sec in original.Sections)
+        {
+            foreach (var b in sec.Blocks)
+            {
+                if (b is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore
+                    && bp.Id is { } id)
+                {
+                    map[id] = sec.Page;
+                    break;
+                }
+            }
+        }
+        return map;
     }
 
     /// <summary>
@@ -1267,7 +1319,7 @@ public partial class MainWindow : Window
             {
                 // 모든 페이지 RTB 를 파싱해 결합된 PolyDonkyument 를 만들고 재페이지네이트.
                 var freshDoc = ParseAllPageEditors();
-                _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+                _currentPaginatedDoc = PaginateDoc(freshDoc);
 
                 // 재구성 필요 판정:
                 //   ① 페이지 수가 달라졌거나
@@ -1700,6 +1752,7 @@ public partial class MainWindow : Window
     private PolyDonky.App.Services.PageGeometry? _pageGeometry;
     private int                _currentPageCount    = 1;
     private PaginatedDocument? _currentPaginatedDoc;           // 로드 시점 또는 ScheduleLivePaginationRefresh 후 최신
+    private IReadOnlyList<Pagination.PerPageDocumentSlice>? _currentSlices; // SetupPageEditors 에서 최신화
     private bool               _suppressPageFrameRebuild;      // RebuildPageFrames 안에서 MinHeight 변경이 재귀로 돌아오는 것을 차단
 
     private void ApplyPageSettings(PolyDonky.Core.PageSettings? page)
@@ -1715,7 +1768,7 @@ public partial class MainWindow : Window
         {
             var freshDoc = ParseAllPageEditors();
             if (freshDoc.Sections.FirstOrDefault() is { } s) s.Page = page;
-            _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+            _currentPaginatedDoc = PaginateDoc(freshDoc);
             SetupPageEditors();
             RebuildOverlays();
 
@@ -1730,7 +1783,7 @@ public partial class MainWindow : Window
                 if (_pageGeometry is null) return;
                 var redoFresh = ParseAllPageEditors();
                 if (redoFresh.Sections.FirstOrDefault() is { } rs) rs.Page = page;
-                var redoPaginated = FlowDocumentPaginationAdapter.Paginate(redoFresh);
+                var redoPaginated = PaginateDoc(redoFresh);
                 _currentPaginatedDoc = redoPaginated;
                 if (NeedsPageRebuild())
                 {
@@ -2387,6 +2440,8 @@ public partial class MainWindow : Window
 
     private System.Windows.Threading.DispatcherTimer? _textEditUndoIdleTimer;
     private bool                                      _textEditUndoBurstActive;
+    // EndTextEditUndoBurst 에서 ParseAllPageEditors 실패 시 true — BeginUndoableAction 이 stale PushUndo 를 건너뜀.
+    private bool                                      _textEditBurstSyncFailed;
 
     /// <summary>텍스트 입력 burst idle 임계 (이 시간 동안 입력이 없으면 burst 가 종료된다).</summary>
     private static readonly TimeSpan TextEditBurstIdle = TimeSpan.FromMilliseconds(1500);
@@ -2434,15 +2489,21 @@ public partial class MainWindow : Window
 
         if (_viewModel is null) return;
         if (PageEditorHost.PageCount == 0) return;
+
+        // 파싱 성공 여부를 추적해 이후 BeginUndoableAction 에 stale _document 로
+        // PushUndo 되는 것을 막는다.
+        bool synced = false;
         try
         {
             var live = ParseAllPageEditors();
             _viewModel.SyncDocumentFromLive(live);
+            synced = true;
         }
         catch
         {
-            // 파싱 실패해도 burst 만 종료하고 계속 (다음 BeginTextEditUndoBurst 가 새 스냅샷을 만든다).
+            // 파싱 실패 시에도 burst 는 종료. synced=false 이므로 _burstSyncFailed 플래그 설정.
         }
+        _textEditBurstSyncFailed = !synced;
     }
 
     /// <summary>
@@ -2454,6 +2515,8 @@ public partial class MainWindow : Window
     {
         if (_viewModel is null) return;
         EndTextEditUndoBurst();
+        // burst 파싱이 실패한 경우 stale _document 를 undo 스택에 올리지 않는다.
+        if (_textEditBurstSyncFailed) return;
         _viewModel.UndoRedo.PushUndo(_viewModel.Document);
     }
 
@@ -2540,8 +2603,8 @@ public partial class MainWindow : Window
             ? vm2.Document.OutlineStyles
             : PolyDonky.Core.OutlineStyleSet.CreateDefault();
         var dlg = new OutlineStyleWindow(current) { Owner = this };
-        // live FlowDocument 를 함께 전달해 재빌드 전 모델 동기화 — 편집 중 이미지·글상자 손실 방지.
-        dlg.StyleApplied += (_, styleSet) => _viewModel?.ApplyOutlineStyles(styleSet, BodyEditor.Document);
+        // 모든 페이지 에디터의 변경사항을 포함해 동기화 — ApplyOutlineStyles 가 LiveDocumentProvider 로 처리.
+        dlg.StyleApplied += (_, styleSet) => _viewModel?.ApplyOutlineStyles(styleSet);
         dlg.ShowDialog();
     }
 
@@ -2571,6 +2634,251 @@ public partial class MainWindow : Window
         editor.SelectAll();
     }
 
+    // ── 서식 툴바 ──────────────────────────────────────────────────
+    // 두 번째 툴바 행: 글꼴·크기·B/I/U/S/위첨자/아래첨자·정렬·목록·들여쓰기
+
+    private bool _suppressToolbarUpdate;
+
+    private void OnFormatToolBarLoaded(object sender, RoutedEventArgs e)
+    {
+        var fonts = System.Windows.Media.Fonts.SystemFontFamilies
+            .OrderBy(f => f.Source, StringComparer.OrdinalIgnoreCase)
+            .Select(f => f.Source)
+            .ToList();
+        CboToolbarFont.ItemsSource = fonts;
+    }
+
+    private void OnAnyEditorSelectionChanged(object? sender, RoutedEventArgs e)
+    {
+        if (sender is RichTextBox rtb)
+            UpdateFormatToolbar(rtb);
+    }
+
+    private void UpdateFormatToolbar(RichTextBox? rtb = null)
+    {
+        rtb ??= GetActiveTextEditor();
+        var sel = rtb.Selection;
+
+        _suppressToolbarUpdate = true;
+        try
+        {
+            // 굵게
+            var weightVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontWeightProperty);
+            TbBold.IsChecked = weightVal is FontWeight fw &&
+                               fw.ToOpenTypeWeight() >= FontWeights.Bold.ToOpenTypeWeight();
+
+            // 기울임꼴
+            var styleVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontStyleProperty);
+            TbItalic.IsChecked = styleVal is FontStyle fs && fs == FontStyles.Italic;
+
+            // 밑줄·취소선
+            var tdVal = sel.GetPropertyValue(System.Windows.Documents.Inline.TextDecorationsProperty);
+            var tdCol = tdVal as System.Windows.TextDecorationCollection;
+            TbUnderline.IsChecked     = tdCol?.Any(d => d.Location == System.Windows.TextDecorationLocation.Underline)     ?? false;
+            TbStrikethrough.IsChecked = tdCol?.Any(d => d.Location == System.Windows.TextDecorationLocation.Strikethrough) ?? false;
+
+            // 위/아래첨자
+            var baseVal = sel.GetPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty);
+            TbSuperscript.IsChecked = baseVal is BaselineAlignment baSup && baSup == BaselineAlignment.Superscript;
+            TbSubscript.IsChecked   = baseVal is BaselineAlignment baSub && baSub == BaselineAlignment.Subscript;
+
+            // 글꼴 이름
+            var ffVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty);
+            if (ffVal is System.Windows.Media.FontFamily ff)
+                CboToolbarFont.Text = ff.Source.Split(',')[0].Trim();
+
+            // 글자 크기 (DIP → pt)
+            var fsVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
+            if (fsVal is double dip && dip > 0)
+                CboToolbarFontSize.Text = Services.FlowDocumentBuilder.DipToPt(dip).ToString("0.#");
+
+            // 정렬
+            var para = sel.Start.Paragraph;
+            if (para is not null)
+            {
+                var align = para.TextAlignment;
+                TbAlignLeft.IsChecked    = align == TextAlignment.Left;
+                TbAlignCenter.IsChecked  = align == TextAlignment.Center;
+                TbAlignRight.IsChecked   = align == TextAlignment.Right;
+                TbAlignJustify.IsChecked = align == TextAlignment.Justify;
+            }
+        }
+        finally
+        {
+            _suppressToolbarUpdate = false;
+        }
+    }
+
+    private void OnToolbarBold(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool bold = TbBold.IsChecked == true;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontWeightProperty,
+            bold ? FontWeights.Bold : FontWeights.Normal);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarItalic(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool italic = TbItalic.IsChecked == true;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontStyleProperty,
+            italic ? FontStyles.Italic : FontStyles.Normal);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarUnderline(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        ApplyToolbarTextDecorations(rtb.Selection,
+            TbUnderline.IsChecked == true,
+            TbStrikethrough.IsChecked == true);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarStrikethrough(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        ApplyToolbarTextDecorations(rtb.Selection,
+            TbUnderline.IsChecked == true,
+            TbStrikethrough.IsChecked == true);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private static void ApplyToolbarTextDecorations(System.Windows.Documents.TextSelection sel,
+        bool underline, bool strikethrough)
+    {
+        var decos = new System.Windows.TextDecorationCollection();
+        if (underline)     foreach (var d in System.Windows.TextDecorations.Underline)     decos.Add(d);
+        if (strikethrough) foreach (var d in System.Windows.TextDecorations.Strikethrough) decos.Add(d);
+        sel.ApplyPropertyValue(System.Windows.Documents.Inline.TextDecorationsProperty, decos);
+    }
+
+    private void OnToolbarSuperscript(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool sup = TbSuperscript.IsChecked == true;
+        if (sup) TbSubscript.IsChecked = false;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty,
+            sup ? BaselineAlignment.Superscript : BaselineAlignment.Baseline);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarSubscript(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool sub = TbSubscript.IsChecked == true;
+        if (sub) TbSuperscript.IsChecked = false;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty,
+            sub ? BaselineAlignment.Subscript : BaselineAlignment.Baseline);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarAlignLeft(object sender, RoutedEventArgs e)    => ApplyToolbarAlignment(TextAlignment.Left);
+    private void OnToolbarAlignCenter(object sender, RoutedEventArgs e)  => ApplyToolbarAlignment(TextAlignment.Center);
+    private void OnToolbarAlignRight(object sender, RoutedEventArgs e)   => ApplyToolbarAlignment(TextAlignment.Right);
+    private void OnToolbarAlignJustify(object sender, RoutedEventArgs e) => ApplyToolbarAlignment(TextAlignment.Justify);
+
+    private void ApplyToolbarAlignment(TextAlignment align)
+    {
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Paragraph.TextAlignmentProperty, align);
+        // 정렬 버튼 상태 즉시 갱신 (SelectionChanged 가 비동기 발생할 수 있으므로)
+        TbAlignLeft.IsChecked    = align == TextAlignment.Left;
+        TbAlignCenter.IsChecked  = align == TextAlignment.Center;
+        TbAlignRight.IsChecked   = align == TextAlignment.Right;
+        TbAlignJustify.IsChecked = align == TextAlignment.Justify;
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarListBullet(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.ToggleBullets.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarListNumber(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.ToggleNumbering.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarIndent(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.IncreaseIndentation.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarOutdent(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.DecreaseIndentation.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarFontSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_suppressToolbarUpdate) return;
+        if (CboToolbarFont.SelectedItem is not string fontName) return;
+        if (string.IsNullOrWhiteSpace(fontName)) return;
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty,
+            new System.Windows.Media.FontFamily(fontName));
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarFontKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Return && e.Key != Key.Enter) return;
+        var fontName = CboToolbarFont.Text?.Trim();
+        if (string.IsNullOrEmpty(fontName)) return;
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty,
+            new System.Windows.Media.FontFamily(fontName));
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarFontSizeSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_suppressToolbarUpdate) return;
+        ApplyToolbarFontSizeFromText();
+    }
+
+    private void OnToolbarFontSizeKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Return && e.Key != Key.Enter) return;
+        ApplyToolbarFontSizeFromText();
+        GetActiveTextEditor().Focus();
+    }
+
+    private void ApplyToolbarFontSizeFromText()
+    {
+        var text = CboToolbarFontSize.Text?.Trim();
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pt)
+            || pt < 1 || pt > 999) return;
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty,
+            Services.FlowDocumentBuilder.PtToDip(pt));
+        _viewModel?.MarkDirty();
+    }
+
     private void OnFormatChar(object sender, RoutedEventArgs e)
     {
         // 글자 속성: 선택이 있으면 그 영역만, 없으면 caret 위치(이후 입력에 적용) — SelectAll 강제 안 함.
@@ -2591,7 +2899,8 @@ public partial class MainWindow : Window
         var dlg = new ParaFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
-            _viewModel?.MarkDirty();
+            // 전체 재빌드 — 개요 수준 변경 시 폰트 크기·굵기 등 OutlineStyleSet 효과가 즉시 반영되게.
+            _viewModel?.ApplyParaFormatRebuild();
             editor.Focus();
         }
     }
@@ -2604,19 +2913,43 @@ public partial class MainWindow : Window
 
     private void OpenPageFormatDialog(int initialTab)
     {
-        var current = _viewModel?.Document.Sections.FirstOrDefault()?.Page
-                      ?? new PolyDonky.Core.PageSettings();
+        if (_viewModel?.Document is not { } doc) return;
+
+        // 현재 활성 RTB → 슬라이스 → 섹션 인덱스 결정
+        int sectionIdx = GetActiveSectionIndex();
+        var targetSection = sectionIdx >= 0 && sectionIdx < doc.Sections.Count
+            ? doc.Sections[sectionIdx]
+            : doc.Sections.FirstOrDefault();
+
+        var current = targetSection?.Page ?? new PolyDonky.Core.PageSettings();
         var dlg = new PageFormatWindow(current, initialTab) { Owner = this };
-        if (dlg.ShowDialog() == true)
-        {
-            if (_viewModel?.Document.Sections.FirstOrDefault() is { } section)
-                section.Page = dlg.ResultSettings;
-            // PageSettings 는 FlowDocument 블록 내용과 무관하다 (종이 크기·여백·배경색만 바뀜).
-            // RebuildFlowDocument() 로 전체 재구성하면 저장 이후 편집한 이미지·글상자를 잃으므로
-            // 레이아웃 속성만 직접 갱신한다.
-            ApplyPageSettings(dlg.ResultSettings);
-            _viewModel?.MarkDirty();
-        }
+        if (dlg.ShowDialog() != true) return;
+
+        // 현재 페이지의 섹션만 수정한다.
+        if (targetSection is not null)
+            targetSection.Page = dlg.ResultSettings;
+
+        // PageSettings 는 FlowDocument 블록 내용과 무관하다 (종이 크기·여백·배경색만 바뀜).
+        // ApplyPageSettings 로 레이아웃 속성만 직접 갱신한다.
+        ApplyPageSettings(dlg.ResultSettings);
+        _viewModel?.MarkDirty();
+    }
+
+    /// <summary>
+    /// 현재 활성 RTB 가 속한 섹션 인덱스를 반환한다.
+    /// 슬라이스 정보가 없으면 0 을 반환한다.
+    /// </summary>
+    private int GetActiveSectionIndex()
+    {
+        if (_currentSlices is null) return 0;
+        var active = PageEditorHost.ActiveEditor;
+        if (active is null) return 0;
+        var editors = PageEditorHost.PageEditors;
+        int rtbIdx  = -1;
+        for (int i = 0; i < editors.Count; i++)
+            if (ReferenceEquals(editors[i], active)) { rtbIdx = i; break; }
+        if (rtbIdx < 0 || rtbIdx >= _currentSlices.Count) return 0;
+        return _currentSlices[rtbIdx].SectionIndex;
     }
 
     private void OnInsertSpecialChar(object sender, RoutedEventArgs e)
@@ -2891,24 +3224,25 @@ public partial class MainWindow : Window
     private void OnInsertToc(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;
-        var editor = GetActiveTextEditor();
-        var toc    = new PolyDonky.Core.TocBlock();
-        toc.Entries = CollectTocEntries(editor.Document);
+        var toc = new PolyDonky.Core.TocBlock();
+        toc.Entries = CollectTocEntriesFromAllPages();
         InsertCoreBlocksAtCaret(new System.Collections.Generic.List<PolyDonky.Core.Block> { toc });
     }
 
     private void OnRefreshAllToc(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;
-        var editor     = GetActiveTextEditor();
-        var doc        = editor.Document;
-        var newEntries = CollectTocEntries(doc);
+        var newEntries = CollectTocEntriesFromAllPages();
 
-        var toRefresh = new System.Collections.Generic.List<(System.Windows.Documents.Block wpfBlock, PolyDonky.Core.TocBlock toc)>();
-        foreach (var block in doc.Blocks)
+        // 모든 페이지 RTB 에서 TocBlock 을 찾아 교체.
+        var toRefresh = new System.Collections.Generic.List<(System.Windows.Documents.FlowDocument doc, System.Windows.Documents.Block wpfBlock, PolyDonky.Core.TocBlock toc)>();
+        foreach (var rtb in PageEditorHost.PageEditors)
         {
-            if (block is System.Windows.Documents.BlockUIContainer { Tag: PolyDonky.Core.TocBlock toc })
-                toRefresh.Add((block, toc));
+            foreach (var block in rtb.Document.Blocks)
+            {
+                if (block is System.Windows.Documents.BlockUIContainer { Tag: PolyDonky.Core.TocBlock toc })
+                    toRefresh.Add((rtb.Document, block, toc));
+            }
         }
 
         if (toRefresh.Count == 0)
@@ -2921,7 +3255,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        foreach (var (oldBlock, toc) in toRefresh)
+        foreach (var (doc, oldBlock, toc) in toRefresh)
         {
             toc.Entries = new System.Collections.Generic.List<PolyDonky.Core.TocEntry>(newEntries);
             var newBlock = PolyDonky.App.Services.FlowDocumentBuilder.BuildTocBlock(toc);
@@ -2932,17 +3266,24 @@ public partial class MainWindow : Window
         _viewModel.MarkDirty();
     }
 
-    private static System.Collections.Generic.IList<PolyDonky.Core.TocEntry> CollectTocEntries(
-        System.Windows.Documents.FlowDocument fd)
+    // 모든 페이지 RTB 를 순서대로 스캔해 개요 단락을 수집한다.
+    // RTB 인덱스(0-based) + 1 이 페이지 번호.
+    private System.Collections.Generic.IList<PolyDonky.Core.TocEntry> CollectTocEntriesFromAllPages()
     {
         var entries = new System.Collections.Generic.List<PolyDonky.Core.TocEntry>();
-        CollectEntriesFromBlocks(fd.Blocks, entries);
+        var editors = PageEditorHost.PageEditors;
+        for (int i = 0; i < editors.Count; i++)
+        {
+            int pageNum = i + 1;
+            CollectEntriesFromBlocks(editors[i].Document.Blocks, entries, pageNum);
+        }
         return entries;
     }
 
     private static void CollectEntriesFromBlocks(
         System.Windows.Documents.BlockCollection blocks,
-        System.Collections.Generic.List<PolyDonky.Core.TocEntry> entries)
+        System.Collections.Generic.List<PolyDonky.Core.TocEntry> entries,
+        int pageNum)
     {
         foreach (var block in blocks)
         {
@@ -2951,18 +3292,19 @@ public partial class MainWindow : Window
             {
                 entries.Add(new PolyDonky.Core.TocEntry
                 {
-                    Level = (int)coreP.Style.Outline,
-                    Text  = coreP.GetPlainText(),
+                    Level      = (int)coreP.Style.Outline,
+                    Text       = coreP.GetPlainText(),
+                    PageNumber = pageNum,
                 });
             }
             else if (block is System.Windows.Documents.List list)
             {
                 foreach (var item in list.ListItems)
-                    CollectEntriesFromBlocks(item.Blocks, entries);
+                    CollectEntriesFromBlocks(item.Blocks, entries, pageNum);
             }
             else if (block is System.Windows.Documents.Section nested)
             {
-                CollectEntriesFromBlocks(nested.Blocks, entries);
+                CollectEntriesFromBlocks(nested.Blocks, entries, pageNum);
             }
         }
     }
@@ -3999,7 +4341,7 @@ public partial class MainWindow : Window
                 {
                     GroupBlocks(selBlocks);
                     var fdGrp = ParseAllPageEditors();
-                    _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(fdGrp);
+                    _currentPaginatedDoc = PaginateDoc(fdGrp);
                     SetupPageEditors();
                     RebuildOverlays();
                 }));
@@ -5466,6 +5808,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 일반 Enter → 현재 단락이 BreakPageBefore=true 이면 새 단락에 상속되지 않도록 즉시 클리어.
+        // WPF 는 InsertParagraphBreak 시 서식을 상속하므로 Dispatcher 로 WPF 처리 후 클리어한다.
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            var caretPara = rtb.CaretPosition.Paragraph;
+            if (caretPara?.BreakPageBefore == true)
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+                {
+                    var newPara = rtb.CaretPosition.Paragraph;
+                    if (newPara is not null && newPara != caretPara && newPara.BreakPageBefore)
+                        newPara.BreakPageBefore = false;
+                });
+            }
+        }
+
         // Ctrl+Z/Y/Shift+Z → Undo/Redo
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
@@ -6508,7 +6866,7 @@ public partial class MainWindow : Window
         {
             UngroupSection(groupSec);
             var fdUng = ParseAllPageEditors();
-            _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(fdUng);
+            _currentPaginatedDoc = PaginateDoc(fdUng);
             SetupPageEditors();
             RebuildOverlays();
         }));

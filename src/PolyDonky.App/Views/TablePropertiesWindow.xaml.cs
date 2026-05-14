@@ -56,10 +56,10 @@ public partial class TablePropertiesWindow : Window
 
         BgColorPicker.ColorText = _table.BackgroundColor ?? string.Empty;
 
-        CellPadTopBox.Text    = _table.DefaultCellPaddingTopMm    > 0 ? _table.DefaultCellPaddingTopMm.ToString("F1")    : "1.0";
-        CellPadBottomBox.Text = _table.DefaultCellPaddingBottomMm > 0 ? _table.DefaultCellPaddingBottomMm.ToString("F1") : "1.0";
-        CellPadLeftBox.Text   = _table.DefaultCellPaddingLeftMm   > 0 ? _table.DefaultCellPaddingLeftMm.ToString("F1")   : "1.5";
-        CellPadRightBox.Text  = _table.DefaultCellPaddingRightMm  > 0 ? _table.DefaultCellPaddingRightMm.ToString("F1")  : "1.5";
+        CellPadTopBox.Text    = _table.DefaultCellPaddingTopMm    > 0 ? _table.DefaultCellPaddingTopMm.ToString("F1")    : Table.FallbackCellPaddingVerticalMm.ToString("F1");
+        CellPadBottomBox.Text = _table.DefaultCellPaddingBottomMm > 0 ? _table.DefaultCellPaddingBottomMm.ToString("F1") : Table.FallbackCellPaddingVerticalMm.ToString("F1");
+        CellPadLeftBox.Text   = _table.DefaultCellPaddingLeftMm   > 0 ? _table.DefaultCellPaddingLeftMm.ToString("F1")   : Table.FallbackCellPaddingHorizontalMm.ToString("F1");
+        CellPadRightBox.Text  = _table.DefaultCellPaddingRightMm  > 0 ? _table.DefaultCellPaddingRightMm.ToString("F1")  : Table.FallbackCellPaddingHorizontalMm.ToString("F1");
 
         OuterMarginTopBox.Text    = _table.OuterMarginTopMm    > 0 ? _table.OuterMarginTopMm.ToString("F1")    : "0";
         OuterMarginBottomBox.Text = _table.OuterMarginBottomMm > 0 ? _table.OuterMarginBottomMm.ToString("F1") : "0";
@@ -88,7 +88,6 @@ public partial class TablePropertiesWindow : Window
 
         // 페이지 분할
         RepeatHeaderRowsCheck.IsChecked = _table.RepeatHeaderRowsOnBreak;
-        HeaderColumnCountBox.Text       = _table.HeaderColumnCount.ToString();
 
         // 테두리 병합
         BorderCollapseCheck.IsChecked = _table.BorderCollapse;
@@ -218,14 +217,6 @@ public partial class TablePropertiesWindow : Window
         _table.OuterMarginLeftMm   = oml;
         _table.OuterMarginRightMm  = omr;
 
-        if (!int.TryParse(HeaderColumnCountBox.Text.Trim(), out int headerColCount) || headerColCount < 0)
-        {
-            MessageBox.Show(this, "헤더 열 수는 0 이상의 정수로 입력하세요.", "표 속성",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            HeaderColumnCountBox.Focus();
-            return;
-        }
-
         _table.BorderThicknessPt = borderPt;
         _table.BorderColor       = borderColor.Length > 0 ? borderColor : null;
 
@@ -248,7 +239,6 @@ public partial class TablePropertiesWindow : Window
 
         // 페이지 분할
         _table.RepeatHeaderRowsOnBreak = RepeatHeaderRowsCheck.IsChecked == true;
-        _table.HeaderColumnCount       = headerColCount;
 
         // 테두리 병합
         _table.BorderCollapse = BorderCollapseCheck.IsChecked == true;

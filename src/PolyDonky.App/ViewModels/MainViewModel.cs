@@ -821,13 +821,28 @@ public partial class MainViewModel : ObservableObject
     public event EventHandler? OutlineStyleRequested;
 
     /// <summary>
-    /// 개요 서식 적용. live FlowDocument 를 먼저 _document 에 동기화해
-    /// 저장 이후 편집한 이미지·글상자를 보존한 뒤 재빌드한다.
+    /// 개요 서식 적용. LiveDocumentProvider 가 제공하는 라이브 모델을 먼저 동기화한 뒤
+    /// OutlineStyles 를 적용하고 재빌드한다.
     /// </summary>
-    public void ApplyOutlineStyles(PolyDonky.Core.OutlineStyleSet styleSet, Wpf.FlowDocument liveDoc)
+    public void ApplyOutlineStyles(PolyDonky.Core.OutlineStyleSet styleSet)
     {
-        _document = FlowDocumentParser.Parse(liveDoc, _document);
+        // 모든 페이지 에디터의 변경사항을 동기화 — 활성 RTB 만으로는 다른 페이지 수정이 손실됨.
+        var live = LiveDocumentProvider?.Invoke();
+        if (live is not null)
+            _document = live;
         _document.OutlineStyles = styleSet;
+        RebuildFlowDocument();
+    }
+
+    /// <summary>
+    /// 문단 서식 다이얼로그 OK 후 호출. LiveDocumentProvider 로 전체 페이지 동기화 후 재빌드한다.
+    /// 개요 수준 변경이 시각적으로 즉시 반영되도록 전체 FlowDocument 를 재구성한다.
+    /// </summary>
+    public void ApplyParaFormatRebuild()
+    {
+        var live = LiveDocumentProvider?.Invoke();
+        if (live is not null)
+            _document = live;
         RebuildFlowDocument();
     }
 

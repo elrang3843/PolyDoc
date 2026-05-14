@@ -46,10 +46,29 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **페이지별 서식 설정 지원**: 물리 페이지마다 독립적인 용지 크기·여백·단 수를 설정 가능. `Section` 단위로 `PageSettings`를 분리 관리하며, 강제 페이지 나누기(`Ctrl+Enter`) 또는 콘텐츠 오버플로 시 이전 페이지 설정을 자동 상속. 커서가 있는 페이지에서 서식 → 용지 설정 시 해당 페이지만 변경. (`PaginatedDocument.cs`, `PerPageDocumentSlice.cs`, `FlowDocumentPaginationAdapter.cs`, `PerPageDocumentSplitter.cs`, `PerPageEditorHost.cs`, `MainWindow.xaml.cs`)
+
+- **서식 툴바 두 번째 행 추가**: 글꼴 이름·크기 콤보박스, 굵게/기울임꼴/밑줄/취소선/위첨자/아래첨자 토글 버튼, 좌·가운데·우·양쪽 정렬 버튼, 글머리 기호·번호 매기기 목록, 들여쓰기/내어쓰기 버튼을 포함한 서식 툴바 행을 메인 창에 추가. RTB 선택 변경 시 버튼 상태가 현재 서식에 맞게 즉시 반영된다. (`MainWindow.xaml`, `MainWindow.xaml.cs`, `ToolbarIcons.xaml`, `Resources.resx`, `Resources.en-US.resx`)
+
 - **블록 그룹/해제 기능**: 여러 블록을 `ContainerBlock{Role=Group}`으로 묶는 "블록 그룹으로 묶기"와 그룹을 해제하는 "그룹 해제" 우클릭 메뉴 항목 추가. 캐럿이 그룹 안에 있을 때 "그룹 해제", 텍스트 선택이 2개 이상의 최상위 블록을 걸칠 때 "블록 그룹으로 묶기" 메뉴가 활성화된다. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
 - **복수 도형 SVG → 편집 가능한 ShapeObject 그룹으로 분해**: HTML 파일 안의 다중 도형 SVG (`<svg>` 내 rect/circle/ellipse/line/polyline/polygon/path 복수)를 `ImageBlock`(읽기 전용)이 아닌 개별 `ShapeObject`들로 분해하여 `ContainerBlock{Role=Group}`으로 묶어 가져온다. 그룹 해제 후 각 도형의 색상·크기·회전 등을 편집 가능. `<g>` 래퍼의 `transform="rotate()"` 도 전파. (`HtmlReader.cs`, `ContainerBlock.cs`)
 
 ### Fixed
+
+- **Ctrl+Enter 후 일반 Enter 입력 시 페이지 나누기가 계속 발생하는 버그 수정**: Ctrl+Enter로 삽입된 단락(`BreakPageBefore=true`)에서 일반 Enter를 누르면 WPF가 새 단락에 `BreakPageBefore`를 자동 상속해 Enter를 누를 때마다 페이지가 나눠지던 문제. `HandlePageEditorKeyDown`에서 Enter 키 처리 시 현재 단락이 `BreakPageBefore=true`이면 `Dispatcher.BeginInvoke`로 WPF 처리 후 새 단락의 `BreakPageBefore`를 즉시 false로 리셋. (`MainWindow.xaml.cs`)
+
+- **개요 서식 적용이 멀티페이지 문서에서 동작하지 않던 버그 수정**: `ApplyOutlineStyles`가 활성 RTB의 FlowDocument만 파싱하여 다른 페이지의 편집 내용이 손실되던 문제. 이제 `LiveDocumentProvider`를 통해 모든 페이지 RTB를 포함한 완전한 라이브 모델을 동기화한 뒤 OutlineStyles를 적용한다. (`MainViewModel.cs`, `MainWindow.xaml.cs`)
+
+- **문단 서식 창에서 개요 수준 변경 시 즉시 스타일 미반영 수정**: 문단 서식(`Ctrl+T`) 다이얼로그에서 개요 수준(H1~H6)을 설정하고 확인해도 글자 크기·굵기 등 OutlineStyleSet 시각 효과가 적용되지 않던 문제. `OnFormatPara`가 `MarkDirty()`만 호출하고 FlowDocument를 재빌드하지 않아 Core 모델의 `Outline` 변경이 WPF 단락에 반영되지 않던 원인. 이제 다이얼로그 OK 시 `ApplyParaFormatRebuild()`(LiveDocumentProvider 동기화 + 전체 재빌드)를 호출한다. (`MainViewModel.cs`, `MainWindow.xaml.cs`)
+
+- **개요 서식 번호 매기기 미표시 수정**: `OutlineStyleSet`에 번호 스타일(Decimal, AlphaLower, RomanUpper, 한글음절/서수 등)이 설정되어 있어도 단락 앞에 번호가 표시되지 않던 문제. `FlowDocumentBuilder`에 `ComputeOutlineNumbers` 전처리 메서드를 추가해 문서 전체 단락을 순서대로 스캔하며 각 개요 단락의 번호 문자열을 계산하고, `Build()` 및 페이지별 `BuildFromBlocks()` 모두에 번호 맵을 전달해 단락 앞에 번호 Run을 삽입한다. 십진수·알파벳·로마자·한글음절·한글서수 다섯 종류의 형식 변환기 포함. (`FlowDocumentBuilder.cs`, `PerPageDocumentSplitter.cs`)
+
+- **표/셀 속성 역직렬화 시 손실 수정**: FlowDocumentParser.ParseTable이 역변환 시 Table.BorderCollapse, BorderTop/Bottom/Left/Right, InnerBorderHorizontal/Vertical, WidthMm, HeightMm, IsFlexLayout, TableRow.BackgroundColor/VerticalAlign, TableCell.VerticalAlign/BorderTop~Right를 복원하지 않던 문제. 해당 속성이 편집 후 초기화되거나 저장 시 손실되던 현상 수정. (`FlowDocumentParser.cs`)
+- **HTML 표 행 배경색·세로정렬 import 손실 수정**: HtmlReader가 행 배경색을 파싱 후 셀에 직접 복사하고 row.BackgroundColor에 저장하지 않아, 행 배경색 변경이 라운드트립 이후 개별 셀 색으로 굳어지던 문제. 행 `valign` 속성도 파싱하지 않던 문제. row.BackgroundColor/VerticalAlign 저장 및 셀 배경색 분리 수정. (`HtmlReader.cs`)
+- **오버레이 객체 AnchorPageIndex 음수/범위 초과 시 화면 밖 렌더링 수정**: HTML에서 import된 도형/이미지의 sentinel 값(-2)이 페이지네이션 후 해결되지 않거나, 사용자 편집으로 페이지 수가 줄어 AnchorPageIndex가 범위를 초과할 때 객체가 화면 밖에 렌더링되던 문제. PlaceAt에서 pageIndex < 0이면 숨김 처리, PopulateOverlayCanvases에서 범위 초과 인덱스 건너뜀. (`PageViewBuilder.cs`)
+- **텍스트 burst 파싱 실패 시 stale _document로 Undo 스냅샷 저장 수정**: EndTextEditUndoBurst에서 ParseAllPageEditors가 예외를 던지면 _document가 최신화되지 않은 채 BeginUndoableAction이 stale 상태를 PushUndo하던 문제. 파싱 실패 플래그(_textEditBurstSyncFailed)를 도입해 실패 시 PushUndo 건너뜀. (`MainWindow.xaml.cs`)
+- **표 기본 셀 여백 폴백 값 불일치 수정**: FlowDocumentBuilder, TablePropertiesWindow가 각자 1.0/1.5mm를 하드코딩해 값을 일치시키기 어려웠던 문제. Table.FallbackCellPaddingVerticalMm/HorizontalMm 상수를 Core에 추가하고 모든 참조를 통일. (`Table.cs`, `FlowDocumentBuilder.cs`, `TablePropertiesWindow.xaml.cs`)
+- **Fast-path 페이지 배정 정수 나눗셈 블록 쏠림 수정**: 블록 수 2,500 초과 문서에서 fast-path 페이지 분배 시 정수 나눗셈으로 인해 초반 블록이 첫 페이지에 몰리던 문제. 부동소수점 나눗셈으로 전환해 균등 분배. (`FlowDocumentPaginationAdapter.cs`)
 
 - **HTML 변환 시 절대 위치 표 드래그앤드롭 지원 안 됨**: HTML의 `position:absolute` CSS를 가진 표를 import할 때, 절대 좌표(`left`, `top`)를 파싱하지 않아 오버레이 모드에서도 올바른 위치에 배치되지 않음. 이제 `position:absolute`를 감지하면 `WrapMode=InFrontOfText`로 설정하고 `left`/`top` CSS 값을 `OverlayXMm`/`OverlayYMm`에 저장하여 드래그앤드롭으로 정상 편집 가능. (`HtmlReader.cs`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
@@ -160,6 +179,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **cascade 체인 단절로 인한 slotFill 과소평가 수정 — `prevContBottom` effectiveTopY 기준 보정 (개별 블록 + 리스트 핸들러)**: BUC(BlockUIContainer) 이후 블록/리스트의 `topY` 가 BUC 시작 Y 부근으로 collapse 되면 `effectiveTopY = prevContBottom` 로 cascade 해 실제 배치 기준점을 사용한다. 그런데 두 곳(`MapBodyBlocksToPages` 단일 블록 경로 및 `Wpf.List` 전용 핸들러)에서 `prevContBottom` 갱신 시 cascade 이전의 원래 `topY` / `bottomY` / `listBottomY` 를 사용하면 다음 블록에 대한 cascade 체인이 끊어진다. 예: `List(listBottomY=7204)` → `HR(topY=6824, blockH=21)` cascade → `effectiveTopY=7204` 이지만 `prevContBottom = 6824+21 = 6845` 로 되돌아가, HR 이후 단락들의 gap 계산이 잘못된 기준점으로 무너짐. 결과적으로 slotFill 이 실제 Y-span 보다 ~100 DIP 이상 과소평가돼 BUC 집약 페이지(예: 9페이지)에서 form section 전체가 잘려 보이지 않는 문제. 수정: 개별 블록 경로는 `prevContBottom = effectiveTopY + blockH` (BUC 폴백) / `effectiveTopY + (bottomY - topY)` (일반) 로, 리스트 핸들러는 `prevContBottom = effListTopY + listH` 로 변경. cascade 없는 경우(`effectiveTopY == topY`)에는 기존과 동일 결과. (`FlowDocumentPaginationAdapter.cs`)
 
 - **슬롯 fill 과소평가로 리스트 마지막 항목이 페이지 하단에서 잘리던 문제 근본 수정 (두 가지 fix)**: (1) `minSlot` 갱신 누락으로 인한 문서 순서 위반 — `fillOverflow`로 block 이 N+1 슬롯으로 밀린 후에도 `minSlot` 이 갱신되지 않아 이후 section 의 블록이 이미 N+1 에 배정된 섹션보다 앞 페이지(N)에 착지하던 문제. 단일 블록 배정·단락 분할 양쪽 경로 모두 `minSlot = Math.Max(minSlot, slotTop)` 를 추가해 이후 모든 블록이 최소한 현재 슬롯 이상으로 배정되도록 강제. (2) Y-span 사후 보정 pass 추가 — `gap` 리셋·ContainerBlock 마진 미계상 등으로 `slotFill` 이 실제 per-page RTB 렌더 높이보다 과소평가될 때 발생하는 클리핑 문제(예: 슬롯 7 의 오프스크린 Y 범위 6643−5652=991 DIP > bodyH=971.3 DIP → 리스트 3번째 항목 잘림). orphan scan 완료 후 측정 항목에서 슬롯별 `minTopY`/`maxBottomY` 를 집계해, `ySpan = maxBottomY − minTopY > bodyH` 인 슬롯의 마지막 블록을 다음 슬롯으로 cascade 하는 while 루프를 추가. guard `ySpan ≤ 2×bodyH` 로 제목 이동 등에서 서로 다른 페이지에 걸쳐 Y 가 수집된 슬롯의 오탐 방지. (`FlowDocumentPaginationAdapter.cs`)
+
+- **OpaqueBlock XML IDRef 유효성 검증 강화**: HWPX export 시 OpaqueBlock 의 보존 XML 에서 `charPrIDRef`/`paraPrIDRef`/`styleIDRef` 속성이 새 문서의 실제 RunStyle/ParaStyle 에 존재하지 않으면 한컴이 ID 루프업 실패로 무한 루프에 빠지는 문제. `SanitizeIdRefs()` 를 `ValidateAndSanitizeIdRefs()` 로 개선해 WriteContext 의 `RunStyles.Count`/`ParaStyles.Count` 를 기준으로 유효 범위 검사 후, 존재하는 ID 는 보존하고 없는 ID 만 "0" 으로 리셋. borderFillIDRef 등 검증 불가능한 *IDRef 는 안전하게 "0" 으로 처리. (`HwpxWriter.cs`)
 
 - **flex ContainerBlock 의 Section 래퍼 제거 — h2/h3 제목 누락 및 회색 박스 미표시 근본 수정**: `Wpf.Section { BlockUIContainer(Grid) }` 구조 자체가 (1) 인접 `Wpf.Paragraph`(`h3`/`h2`)의 `ContentStart.GetCharacterRect` 를 `Rect.Empty` 로 만들어 제목이 엉뚱한 페이지에 배정되고 (2) `Wpf.Section.Background/BorderBrush` 가 WPF FlowDocument 렌더러에서 무시되어 회색 테두리 박스가 미표시되는 두 버그의 공통 근본 원인. `AppendBlocks` 에서 "단독 flex-table ContainerBlock" 을 탐지해 `BuildContainer`(→ Section 생성)를 우회, `BuildFlexContainer` 에 `boxStyle` 파라미터를 추가해 Grid 를 WPF `Border` 로 감싸 배경·테두리·패딩을 직접 적용. Section 래퍼 없이 `BlockUIContainer` 를 FlowDocument 에 직접 추가함으로써 인접 단락의 `GetCharacterRect` 신뢰성 회복 + 회색 박스 렌더링 모두 해결. (`FlowDocumentBuilder.cs`)
 

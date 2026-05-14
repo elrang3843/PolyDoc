@@ -7,7 +7,6 @@ namespace PolyDonky.App.Pagination;
 
 /// <summary>
 /// 페이지 경계를 가로지르는 <see cref="Table"/> 을 행 기준으로 조각(fragment) 으로 분할한다.
-/// <para>열 방향 분할은 추후 구현 예정 — 현재는 모델에 <see cref="Table.HeaderColumnCount"/> 만 보유.</para>
 /// </summary>
 internal static class TableRowSplitter
 {
@@ -247,7 +246,6 @@ internal static class TableRowSplitter
             OuterMarginLeftMm          = source.OuterMarginLeftMm,
             OuterMarginRightMm         = source.OuterMarginRightMm,
             RepeatHeaderRowsOnBreak    = source.RepeatHeaderRowsOnBreak,
-            HeaderColumnCount          = source.HeaderColumnCount,
             AnchorPageIndex            = source.AnchorPageIndex,
             OverlayXMm                 = source.OverlayXMm,
             OverlayYMm                 = source.OverlayYMm,

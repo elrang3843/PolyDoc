@@ -157,21 +157,44 @@ PolyDonky/
 - ✅ E15 사전 (DictionaryWindow)
 - ✅ E16 페이지 나누기 (PageBreakPadding)
 - ✅ E17 머리말/꼬리말 (PerPageEditorHost, PageViewBuilder 통합)
-- ☐ E18 변경추적·주석 — Phase 3 고급 기능, 아직 미구현
-- ☐ E19 목차 자동 생성 (TocBlock 모델은 있음, UI 자동 생성 미구현)
+- ✅ E19 목차 자동 생성 (전 페이지 스캔 + 페이지 번호 삽입 구현)
 - ☐ E20 필드 코드 자동 갱신 (수동 삽입 가능, 갱신 미구현)
-- ☐ E21 맞춤법 검사 외부 모듈 연동 (DictionaryWindow shell 있음, 실제 검사 엔진 미연동)
 
-### Phase F — DOC/HWP ingest
-- ☐ F1 DOC import (LibreOffice headless 우선, G4 결정 후 착수)
-- ☐ F2 HWP import (LibreOffice headless 우선)
-- ☐ F3 Opaque island 정책 전면 적용 — 이해 못 한 개체 read-only 보존, HWPX export 원형 직렬화
+### Phase F — DOC/HWP ingest (LibreOffice 브리지 방식, **G4 결정 완료**)
+
+**결정**: LibreOffice headless 브리지를 단기 구현으로 채택. 장기적으로 자체 CLI 파서 개발을 목표로 하되, 그 전까지 LibreOffice 경유. LibreOffice는 MPL 2.0 + LGPLv3+ 이중 라이선스로 정책 폐쇄 위험 없음.
+
+**변환 파이프라인** (읽기):
+```
+DOC/HWP → LibreOffice headless (→ DOCX 임시 파일) → PolyDonky.Convert.Docx (→ IWPF)
+```
+**저장 파이프라인** (쓰기):
+```
+IWPF → PolyDonky.Convert.Docx (→ DOCX 임시 파일) → LibreOffice headless (→ DOC/HWP)
+```
+
+**F0 LibreOffice 경로 자동 탐지 및 설정 등록** ☐
+- Windows 레지스트리 + 일반 설치 경로(`Program Files`) 에서 `soffice.exe` 자동 탐색
+- 설정 창(`SettingsWindow`)에 LibreOffice 경로 필드 추가 — 자동 탐지 실패 시 수동 지정
+- `AppSettings.LibreOfficePath` 저장, `ExternalConverter` 에서 참조
+- LibreOffice 미설치 시 "LibreOffice 다운로드" 링크 안내 다이얼로그 표시
+
+**F1 DOC import** ☐
+- `.doc` 열기 시 F0 탐지 경로의 LibreOffice headless 로 DOCX 변환
+- 변환된 임시 DOCX를 `PolyDonky.Convert.Docx` CLI 로 IWPF 변환 후 로드
+- 저장 시 역순 (IWPF → DOCX → LibreOffice → DOC)
+
+**F2 HWP import** ☐
+- `.hwp` 열기 시 LibreOffice headless 로 DOCX 변환 (LibreOffice Writer 가 HWP 지원)
+- 이후 F1 과 동일 파이프라인
+- 저장 시 역순 (IWPF → DOCX → LibreOffice → HWP)
+- ⚠️ LibreOffice 의 HWP 지원 수준에 따라 충실도 제한 있음 — 사용자에게 "한컴 오피스에서 확인 권장" 안내
+
+**F3 Opaque island 정책 전면 적용** ☐
+- 이해 못 한 개체를 read-only 보존, HWPX export 원형 직렬화
 
 ### Phase G — 고급 기능
 - ◑ G-Themes 다중 테마 — ThemeService 구현 완료, 테마 파일 추가 필요
-- ☐ G-Sign 사인 만들기 독립 앱
-- ☐ G-Spell 맞춤법/사전 외부 모듈 실제 연동
-- ☐ G-ChangeTrack 변경추적·주석 (E18과 동일)
 
 ### Phase H — 인스톨러 / `1.0.0` 릴리즈
 - ☐ H1 MSIX 인스톨러 패키징
@@ -204,7 +227,7 @@ PolyDonky/
 | G1 | Phase A 종료 | PR 리뷰 후 머지 | ✅ 완료 |
 | G2 | Phase B 시작 | Windows build/run 검증 | ✅ 완료 |
 | G3 | Phase C 종료 | HWPX·DOCX·HTML·XML 시각 검증 | ◑ HWPX writer 한컴 검증 대기 |
-| G4 | Phase F 진입 시 | LibreOffice 의존 노선 확정 vs 자체 구현 | ☐ 미진입 |
+| G4 | Phase F 진입 시 | LibreOffice 의존 노선 확정 vs 자체 구현 | ✅ **LibreOffice 브리지 채택** (자체 CLI는 장기 목표) |
 | G5 | Phase H 진입 시 | "릴리즈하자" 명시 — `1.0.0` 컷 | ☐ 미진입 |
 
 ---
@@ -222,15 +245,11 @@ PolyDonky/
 
 1. **G3 완료** — 사용자가 PolyDonky 가 만든 `.hwpx` 를 한컴 오피스에서 열어 시각 확인. 문제가 있으면 `C6` (HWPX writer 한컴 호환 향상 — header.xml 동적 charPr/paraPr 생성) 진행.
 
-2. **E18 변경추적·주석** — Core 모델에 `ChangeRecord` / `Comment` 타입 추가, FlowDocumentBuilder 시각화, DOCX/HWPX 양방향.
+2. ~~**E19 목차 자동 생성**~~ ✅ 완료.
 
-3. **E19 목차 자동 생성** — `TocBlock` 모델 기반, H1~H6 스캔 → `TocEntry` 리스트 생성, 페이지 번호 삽입.
+3. **F0/F1/F2 DOC/HWP ingest** — G4 결정 완료(LibreOffice 브리지). F0(경로 탐지·설정 UI) → F1(DOC) → F2(HWP) 순으로 착수 가능.
 
-4. **E21 맞춤법 검사 연동** — 외부 엔진(hunspell 또는 자체) 과 DictionaryWindow 실제 연결.
-
-5. **F1/F2 DOC/HWP ingest** — G4 게이트 통과 후 LibreOffice headless spawn 또는 자체 파서.
-
-6. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
+4. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
 
 ### 알려진 한계·주의사항
 

@@ -35,27 +35,35 @@ public static class PerPageDocumentSplitter
     {
         ArgumentNullException.ThrowIfNull(paginated);
 
-        var page   = paginated.PageSettings;
         var styles = outlineStyles
             ?? paginated.Source.OutlineStyles
             ?? OutlineStyleSet.CreateDefault();
-        var geo    = new PageGeometry(page);
-
-        int    colCount  = geo.ColumnCount;
-        double colGap    = geo.ColGapDip;
-        double bodyH     = Math.Max(1.0, geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip);
 
         // 원본 문서의 ContainerBlock 계층 복원에 사용할 부모 맵.
-        // FlattenBlocks 가 Section 자식들을 낱개로 꺼내므로 빌더에 전달되는
-        // coreBlocks 에서 ContainerBlock 이 사라진다 — 부모 맵으로 다시 감싼다.
-        var parentMap = BuildParentMap(paginated.Source);
+        var parentMap      = BuildParentMap(paginated.Source);
+        var outlineNumbers = FlowDocumentBuilder.ComputeOutlineNumbers(paginated.Source, styles);
 
-        int totalSlices = paginated.PageCount * colCount;
-        var slices      = new PerPageDocumentSlice[totalSlices];
+        // 블록 → 섹션 인덱스 맵 — 각 슬라이스의 SectionIndex 결정에 사용.
+        var blockSectionMap = BuildBlockToSectionIndexMap(paginated.Source);
+
+        var slices = new List<PerPageDocumentSlice>(paginated.PageCount);
 
         for (int pageIdx = 0; pageIdx < paginated.PageCount; pageIdx++)
         {
-            var pp = paginated.Pages[pageIdx];
+            var pp   = paginated.Pages[pageIdx];
+            var page = paginated.GetPageSettings(pageIdx);
+            var geo  = new PageGeometry(page);
+
+            int    colCount = geo.ColumnCount;
+            double bodyH    = Math.Max(1.0, geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip);
+
+            // 이 페이지의 첫 본문 블록이 속한 섹션 인덱스
+            int sectionIdx = 0;
+            foreach (var bop in pp.BodyBlocks)
+            {
+                if (blockSectionMap.TryGetValue(bop.Source, out var si))
+                { sectionIdx = si; break; }
+            }
 
             for (int col = 0; col < colCount; col++)
             {
@@ -67,35 +75,47 @@ public static class PerPageDocumentSplitter
                 var coreBlocks = parentMap.Count > 0
                     ? ReassembleContainerBlocks(rawBlocks, parentMap)
                     : rawBlocks;
-                var fd         = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles);
+                var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers);
 
                 // per-column RTB는 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
                 fd.PageWidth   = colWidth;
                 fd.PagePadding = new Thickness(0);
 
-                int sliceIdx = pageIdx * colCount + col;
-                slices[sliceIdx] = new PerPageDocumentSlice
+                slices.Add(new PerPageDocumentSlice
                 {
-                    PageIndex    = pageIdx,
-                    ColumnIndex  = col,
-                    ColumnCount  = colCount,
-                    XOffsetDip   = geo.ColumnXOffsetDip(col),
-                    PageSettings = page,
-                    BodyBlocks   = colBlocks,
-                    FlowDocument = fd,
+                    PageIndex     = pageIdx,
+                    ColumnIndex   = col,
+                    ColumnCount   = colCount,
+                    SectionIndex  = sectionIdx,
+                    XOffsetDip    = geo.ColumnXOffsetDip(col),
+                    PageSettings  = page,
+                    BodyBlocks    = colBlocks,
+                    FlowDocument  = fd,
                     BodyWidthDip  = colWidth,
                     BodyHeightDip = bodyH,
-                };
+                });
             }
         }
 
         return slices;
     }
 
+    /// <summary>문서의 모든 섹션을 순회해 최상위 블록 → 섹션 인덱스 맵을 만든다.</summary>
+    private static Dictionary<Block, int> BuildBlockToSectionIndexMap(PolyDonkyument doc)
+    {
+        int totalBlocks = doc.Sections.Sum(s => s.Blocks.Count);
+        var map = new Dictionary<Block, int>(totalBlocks, ReferenceEqualityComparer.Instance);
+        for (int si = 0; si < doc.Sections.Count; si++)
+            foreach (var block in doc.Sections[si].Blocks)
+                map[block] = si;
+        return map;
+    }
+
     /// <summary>원본 문서를 순회해 ContainerBlock 의 직접 자식 → 부모 ContainerBlock 맵을 만든다.</summary>
     private static Dictionary<Block, ContainerBlock> BuildParentMap(PolyDonkyument doc)
     {
-        var map = new Dictionary<Block, ContainerBlock>(ReferenceEqualityComparer.Instance);
+        int totalBlocks = doc.Sections.Sum(s => s.Blocks.Count);
+        var map = new Dictionary<Block, ContainerBlock>(totalBlocks, ReferenceEqualityComparer.Instance);
         foreach (var section in doc.Sections)
             CollectParents(section.Blocks, map);
         return map;

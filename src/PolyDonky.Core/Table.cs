@@ -94,9 +94,6 @@ public sealed class Table : Block, IOverlayAnchored
     // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
     /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
     public bool RepeatHeaderRowsOnBreak { get; set; } = true;
-    /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
-    public int HeaderColumnCount { get; set; }
-
     /// <summary>CSS display:flex/grid 에서 변환된 레이아웃용 표 여부.
     /// true 이면 렌더러가 Wpf.Table(클리핑) 대신 BlockUIContainer(WPF Grid)로 렌더링해
     /// 회전 도형 등의 시각적 오버플로를 허용한다.</summary>
@@ -108,6 +105,11 @@ public sealed class Table : Block, IOverlayAnchored
     public bool BorderCollapse { get; set; } = true;
 
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
+    /// <summary>DefaultCellPadding*Mm 이 0 이하일 때 모든 렌더러가 공통으로 사용하는 폴백 상하 여백 (mm).</summary>
+    public const double FallbackCellPaddingVerticalMm   = 1.0;
+    /// <summary>DefaultCellPadding*Mm 이 0 이하일 때 모든 렌더러가 공통으로 사용하는 폴백 좌우 여백 (mm).</summary>
+    public const double FallbackCellPaddingHorizontalMm = 1.5;
+
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }
     public double DefaultCellPaddingLeftMm   { get; set; }

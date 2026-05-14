@@ -90,8 +90,8 @@ HWPX export 시 원형에 가깝게 직렬화, DOCX export 시 시각 대체(이
 
 ## 메뉴 구조 (요약, 자세한 건 README.md)
 
-파일 / 편집 / 입력(글상자·표·그래프·특수문자·수식·이모지·도형·그림·사인) /
-서식(글자·문단·페이지) / 도구(설정·사전·맞춤법·사인 만들기) / 도움말.
+파일 / 편집 / 입력(글상자·표·그래프·특수문자·수식·이모지·도형·그림) /
+서식(글자·문단·페이지) / 도구(설정·사전) / 도움말.
 
 - 테마 다수 지원(대상 연령: 학생~장년).
 - 룰러·눈금·편집용지 보기 옵션.
@@ -333,11 +333,11 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 
 ### 코드 블록 스타일 규칙
 
-`FlowDocumentBuilder.ApplyCodeBlockStyle(wpfPara, ParagraphStyle)` 은 **CSS 우선** 원칙을 따른다.
-- `Foreground` 는 절대 단락 레벨에서 하드코딩하지 않는다 — CSS `color` 는 Run 레벨에 이미 반영되어 있으며, 단락 레벨에 고정값을 쓰면 모든 테마·CSS 색상을 덮어쓴다.
+`FlowDocumentBuilder.ApplyCodeBlockStyle(wpfPara, ParagraphStyle)` 은 **IWPF 모델 속성 우선** 원칙을 따른다 (렌더링 단계 규칙 — HTML 변환기와 무관).
+- `Foreground` 는 절대 단락 레벨에서 하드코딩하지 않는다 — Run 레벨에 이미 반영된 색상이 있으며, 단락 레벨에 고정값을 쓰면 모든 테마·모델 색상을 덮어쓴다.
 - `Background = #F8F8F8` (기본 밝은 회색) 은 `ParagraphStyle.BackgroundColor` 가 비어 있을 때만 적용된다.
-- `BorderBrush = #D0D0D0` / `BorderThickness = 1` 은 CSS 에서 보더 값이 없을 때만 적용된다.
-- `ApplyParagraphBoxStyle` 이 뒤에서 CSS border/background 로 다시 설정하므로 충돌 없음.
+- `BorderBrush = #D0D0D0` / `BorderThickness = 1` 은 모델에 보더 값이 없을 때만 적용된다.
+- `ApplyParagraphBoxStyle` 이 뒤에서 모델의 border/background 로 다시 설정하므로 충돌 없음.
 
 `BuildCodeBlockWithLineNumbers` 의 줄 번호 TextBlock 은 Foreground = `#888888`, 줄 텍스트 Run 은 `sourceRuns[0].Style.Foreground` 값을 우선 사용하고 없으면 `#1A1A1A` 을 폴백으로 사용.
 

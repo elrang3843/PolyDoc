@@ -479,6 +479,22 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="ToolbarZoomOut"              xml:space="preserve"><value>Zoom Out (5%)</value></data>
   <data name="ToolbarFitWidth"             xml:space="preserve"><value>Fit to Width</value></data>
   <data name="ToolbarFitPage"              xml:space="preserve"><value>Fit to Page</value></data>
+  <data name="ToolbarFontFamily"            xml:space="preserve"><value>Font</value></data>
+  <data name="ToolbarFontSize"              xml:space="preserve"><value>Font Size (pt)</value></data>
+  <data name="ToolbarBold"                  xml:space="preserve"><value>Bold (Ctrl+B)</value></data>
+  <data name="ToolbarItalic"                xml:space="preserve"><value>Italic (Ctrl+I)</value></data>
+  <data name="ToolbarUnderline"             xml:space="preserve"><value>Underline (Ctrl+U)</value></data>
+  <data name="ToolbarStrikethrough"         xml:space="preserve"><value>Strikethrough</value></data>
+  <data name="ToolbarSuperscript"           xml:space="preserve"><value>Superscript</value></data>
+  <data name="ToolbarSubscript"             xml:space="preserve"><value>Subscript</value></data>
+  <data name="ToolbarAlignLeft"             xml:space="preserve"><value>Align Left</value></data>
+  <data name="ToolbarAlignCenter"           xml:space="preserve"><value>Center</value></data>
+  <data name="ToolbarAlignRight"            xml:space="preserve"><value>Align Right</value></data>
+  <data name="ToolbarAlignJustify"          xml:space="preserve"><value>Justify</value></data>
+  <data name="ToolbarListBullet"            xml:space="preserve"><value>Bullet List</value></data>
+  <data name="ToolbarListNumber"            xml:space="preserve"><value>Numbered List</value></data>
+  <data name="ToolbarIndent"                xml:space="preserve"><value>Increase Indent</value></data>
+  <data name="ToolbarOutdent"               xml:space="preserve"><value>Decrease Indent</value></data>
   <data name="DictWindowTitle"             xml:space="preserve"><value>Dictionary</value></data>
   <data name="DictWindowSearchHint"        xml:space="preserve"><value>Enter a word</value></data>
   <data name="DictWindowSearch"            xml:space="preserve"><value>Search</value></data>

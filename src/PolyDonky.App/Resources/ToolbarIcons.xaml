@@ -361,4 +361,210 @@
     <!-- 나머지 아이콘은 SVG 파일에서 SvgImage 라이브러리로 로드 권장
          (Svg.Skia / SharpVectors). 현재는 파일 메뉴만 DrawingImage 로 사용. -->
 
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- 3. 서식 툴바 — 두 번째 행 아이콘                  -->
+    <!-- ══════════════════════════════════════════════════ -->
+
+    <!-- 기울임꼴 -->
+    <DrawingImage x:Key="Icon_FormatItalic">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent">
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9,4 L15,4 M7,20 L13,20 M14,4 L10,20"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 왼쪽 정렬 -->
+    <DrawingImage x:Key="Icon_FormatAlignLeft">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="4,7"  EndPoint="20,7"/>
+                            <LineGeometry StartPoint="4,12" EndPoint="15,12"/>
+                            <LineGeometry StartPoint="4,17" EndPoint="18,17"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 가운데 정렬 -->
+    <DrawingImage x:Key="Icon_FormatAlignCenter">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="2,7"  EndPoint="22,7"/>
+                            <LineGeometry StartPoint="5,12" EndPoint="19,12"/>
+                            <LineGeometry StartPoint="4,17" EndPoint="20,17"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 오른쪽 정렬 -->
+    <DrawingImage x:Key="Icon_FormatAlignRight">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="4,7"  EndPoint="20,7"/>
+                            <LineGeometry StartPoint="9,12" EndPoint="20,12"/>
+                            <LineGeometry StartPoint="6,17" EndPoint="20,17"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 양쪽 정렬 -->
+    <DrawingImage x:Key="Icon_FormatAlignJustify">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="2,7"  EndPoint="22,7"/>
+                            <LineGeometry StartPoint="2,12" EndPoint="22,12"/>
+                            <LineGeometry StartPoint="2,17" EndPoint="22,17"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 글머리 기호 목록 -->
+    <DrawingImage x:Key="Icon_FormatListBullet">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- 불릿 원 -->
+                <GeometryDrawing Brush="{StaticResource IconForeground}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <EllipseGeometry Center="3,7"  RadiusX="1.2" RadiusY="1.2"/>
+                            <EllipseGeometry Center="3,12" RadiusX="1.2" RadiusY="1.2"/>
+                            <EllipseGeometry Center="3,17" RadiusX="1.2" RadiusY="1.2"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 텍스트 선 -->
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="7,7"  EndPoint="20,7"/>
+                            <LineGeometry StartPoint="7,12" EndPoint="20,12"/>
+                            <LineGeometry StartPoint="7,17" EndPoint="20,17"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 번호 매기기 목록 -->
+    <DrawingImage x:Key="Icon_FormatListNumber">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- 번호 틱 마크 -->
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.2" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="3,5.5" EndPoint="3,8.5"/>
+                            <LineGeometry StartPoint="2.5,8.5" EndPoint="4,8.5"/>
+                            <LineGeometry StartPoint="2.5,10.5" EndPoint="4.5,10.5"/>
+                            <LineGeometry StartPoint="4.5,10.5" EndPoint="4.5,12"/>
+                            <LineGeometry StartPoint="4.5,12" EndPoint="2.5,12"/>
+                            <LineGeometry StartPoint="2.5,15.5" EndPoint="4.5,15.5"/>
+                            <LineGeometry StartPoint="4.5,15.5" EndPoint="4.5,16.5"/>
+                            <LineGeometry StartPoint="4.5,16.5" EndPoint="3,16.5"/>
+                            <LineGeometry StartPoint="3,16.5" EndPoint="4.5,17.5"/>
+                            <LineGeometry StartPoint="4.5,17.5" EndPoint="2.5,17.5"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 텍스트 선 -->
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="7,7"  EndPoint="20,7"/>
+                            <LineGeometry StartPoint="7,12" EndPoint="20,12"/>
+                            <LineGeometry StartPoint="7,17" EndPoint="20,17"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 들여쓰기 -->
+    <DrawingImage x:Key="Icon_FormatIndent">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- 텍스트 선 (들여쓰기 표현) -->
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="7,8"  EndPoint="20,8"/>
+                            <LineGeometry StartPoint="7,12" EndPoint="20,12"/>
+                            <LineGeometry StartPoint="7,16" EndPoint="20,16"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 오른쪽 화살표 ▶ -->
+                <GeometryDrawing Brush="{StaticResource IconForeground}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M3,9 L6,12 L3,15 Z"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- 내어쓰기 -->
+    <DrawingImage x:Key="Icon_FormatOutdent">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- 텍스트 선 (내어쓰기 표현) -->
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource IconForeground}" Thickness="1.5" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="7,8"  EndPoint="20,8"/>
+                            <LineGeometry StartPoint="7,12" EndPoint="20,12"/>
+                            <LineGeometry StartPoint="7,16" EndPoint="20,16"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 왼쪽 화살표 ◀ -->
+                <GeometryDrawing Brush="{StaticResource IconForeground}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M6,9 L3,12 L6,15 Z"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
 </ResourceDictionary>

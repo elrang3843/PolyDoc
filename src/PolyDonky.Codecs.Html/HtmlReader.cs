@@ -888,14 +888,15 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
 
         // 표 너비 결정 — 절대값 또는 % 모두 처리. 이후 열 너비의 % 계산 기준.
+        // 오른쪽 여백 표시에 의해 선이 가려지는 문제를 방지하기 위해 8mm 감소.
         double pageBodyW = ctx.Shared.PageBodyWidthMm;
-        double tableWidthMm = pageBodyW; // 기본값: 페이지 본문 너비 (width:100% 와 동일)
+        double tableWidthMm = Math.Max(0, pageBodyW - 4.0); // 기본값: 페이지 본문 너비에서 4mm 감소
         if (StyleProp(tblStyle, "width") is { } wVal)
         {
             if (TryParseCssMm(wVal, out var wMmAbs) && wMmAbs > 0)
                 tableWidthMm = wMmAbs;
             else if (TryParseCssPercent(wVal, out var wPct) && wPct > 0 && pageBodyW > 0)
-                tableWidthMm = pageBodyW * wPct / 100.0;
+                tableWidthMm = Math.Max(0, pageBodyW * wPct / 100.0 - 4.0);
         }
 
         // HTML 표준 속성: cellpadding (모든 셀의 기본 안여백)
@@ -1023,6 +1024,20 @@ public sealed class HtmlReader : IDocumentReader
             string? rowBgColor = null;
             if (rowBgVal is not null && TryParseCssColor(rowBgVal, out var rowBg))
                 rowBgColor = ColorToHex(rowBg);
+            row.BackgroundColor = rowBgColor;
+
+            // 행 세로 정렬 (HTML valign 속성 또는 CSS vertical-align).
+            var rowVaRaw = rowEl.GetAttribute("valign")
+                        ?? StyleProp(rowEl.GetAttribute("style"), "vertical-align");
+            if (rowVaRaw is not null)
+            {
+                row.VerticalAlign = rowVaRaw.Trim().ToLowerInvariant() switch
+                {
+                    "middle" or "center" => CellVerticalAlign.Middle,
+                    "bottom"             => CellVerticalAlign.Bottom,
+                    _                    => CellVerticalAlign.Top,
+                };
+            }
 
             foreach (var cellEl in rowEl.QuerySelectorAll("td,th"))
             {
@@ -1035,14 +1050,11 @@ public sealed class HtmlReader : IDocumentReader
                     RowSpan    = TryAttrInt(cellEl, "rowspan", 1),
                 };
 
-                // 셀 배경색 (우선순위: 셀 자체 > 행 > 없음).
+                // 셀 배경색 (셀 자체 속성만 저장. 행 배경색 폴백은 row.BackgroundColor 에 보존되어 렌더러가 처리).
                 var bgVal = cellEl.GetAttribute("bgcolor")
-                          ?? StyleProp(cellStyleStr, "background-color")
-                          ?? rowBgColor; // 행의 배경색을 폴백으로 사용
+                          ?? StyleProp(cellStyleStr, "background-color");
                 if (bgVal is not null && TryParseCssColor(bgVal, out var bgColor))
                     cell.BackgroundColor = ColorToHex(bgColor);
-                else if (rowBgColor is not null)
-                    cell.BackgroundColor = rowBgColor;
 
                 // 셀 안여백 (padding: …mm).
                 if (TryParseCssMm(StyleProp(cellStyleStr, "padding"), out var padAll) && padAll > 0)
@@ -4401,7 +4413,6 @@ public sealed class HtmlReader : IDocumentReader
             BackgroundColor          = source.BackgroundColor,
             Caption                  = null, // 분할 조각에는 캡션 없음
             RepeatHeaderRowsOnBreak  = source.RepeatHeaderRowsOnBreak,
-            HeaderColumnCount        = source.HeaderColumnCount,
             BorderCollapse           = source.BorderCollapse,
             BorderThicknessPt        = source.BorderThicknessPt,
             BorderColor              = source.BorderColor,
