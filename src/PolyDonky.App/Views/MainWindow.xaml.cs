@@ -1764,10 +1764,13 @@ public partial class MainWindow : Window
         _pageHeightDip  = _pageGeometry.PageHeightDip;
 
         // 편집 중 페이지 설정 변경 — 라이브 RTB 내용을 파싱해 새 설정으로 재페이지네이트.
+        // ParseAllPageEditors 는 _viewModel.Document 의 섹션별 Page 를 그대로 사용하므로,
+        // OpenPageFormatDialog 에서 미리 _viewModel.Document.Sections[i].Page = result 를
+        // 설정해 두면 여기서 별도로 s.Page = page 를 덮어쓸 필요가 없다.
+        // (첫 번째 섹션만 덮어썼던 이전 코드는 멀티 섹션 문서에서 잘못된 섹션에 설정을 적용하는 버그를 유발했다.)
         if (PageEditorHost.PageCount > 0)
         {
             var freshDoc = ParseAllPageEditors();
-            if (freshDoc.Sections.FirstOrDefault() is { } s) s.Page = page;
             _currentPaginatedDoc = PaginateDoc(freshDoc);
             SetupPageEditors();
             RebuildOverlays();
@@ -1782,7 +1785,6 @@ public partial class MainWindow : Window
             {
                 if (_pageGeometry is null) return;
                 var redoFresh = ParseAllPageEditors();
-                if (redoFresh.Sections.FirstOrDefault() is { } rs) rs.Page = page;
                 var redoPaginated = PaginateDoc(redoFresh);
                 _currentPaginatedDoc = redoPaginated;
                 if (NeedsPageRebuild())
@@ -2927,9 +2929,17 @@ public partial class MainWindow : Window
         var dlg = new PageFormatWindow(current, initialTab) { Owner = this };
         if (dlg.ShowDialog() != true) return;
 
-        // 현재 페이지의 섹션만 수정한다.
-        if (targetSection is not null)
-            targetSection.Page = dlg.ResultSettings;
+        // 다이얼로그 실행 중에 _undoTimer 만료 등으로 _viewModel.Document 가 교체되었을 수
+        // 있으므로, ShowDialog 반환 후 현재 Document 에서 해당 섹션을 다시 찾아 업데이트한다.
+        // (targetSection 이 고아가 된 경우 Page 할당이 실제 문서에 반영되지 않는 버그 방지)
+        var liveDoc = _viewModel?.Document;
+        var liveSection = liveDoc is not null
+            ? (sectionIdx >= 0 && sectionIdx < liveDoc.Sections.Count
+                ? liveDoc.Sections[sectionIdx]
+                : liveDoc.Sections.FirstOrDefault())
+            : null;
+        if (liveSection is not null)
+            liveSection.Page = dlg.ResultSettings;
 
         // PageSettings 는 FlowDocument 블록 내용과 무관하다 (종이 크기·여백·배경색만 바뀜).
         // ApplyPageSettings 로 레이아웃 속성만 직접 갱신한다.
