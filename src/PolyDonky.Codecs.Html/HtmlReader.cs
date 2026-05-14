@@ -888,14 +888,15 @@ public sealed class HtmlReader : IDocumentReader
         if (TryParseCssMm(StyleProp(tblStyle, "margin-bottom"), out var tblMb) && tblMb > 0) t.OuterMarginBottomMm = tblMb;
 
         // 표 너비 결정 — 절대값 또는 % 모두 처리. 이후 열 너비의 % 계산 기준.
+        // 오른쪽 여백 표시에 의해 선이 가려지는 문제를 방지하기 위해 8mm 감소.
         double pageBodyW = ctx.Shared.PageBodyWidthMm;
-        double tableWidthMm = pageBodyW; // 기본값: 페이지 본문 너비 (width:100% 와 동일)
+        double tableWidthMm = Math.Max(0, pageBodyW - 8.0); // 기본값: 페이지 본문 너비에서 8mm 감소
         if (StyleProp(tblStyle, "width") is { } wVal)
         {
             if (TryParseCssMm(wVal, out var wMmAbs) && wMmAbs > 0)
                 tableWidthMm = wMmAbs;
             else if (TryParseCssPercent(wVal, out var wPct) && wPct > 0 && pageBodyW > 0)
-                tableWidthMm = pageBodyW * wPct / 100.0;
+                tableWidthMm = Math.Max(0, pageBodyW * wPct / 100.0 - 8.0);
         }
 
         // HTML 표준 속성: cellpadding (모든 셀의 기본 안여백)
