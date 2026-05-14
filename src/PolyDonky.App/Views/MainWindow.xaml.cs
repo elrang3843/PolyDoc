@@ -2901,24 +2901,25 @@ public partial class MainWindow : Window
     private void OnInsertToc(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;
-        var editor = GetActiveTextEditor();
-        var toc    = new PolyDonky.Core.TocBlock();
-        toc.Entries = CollectTocEntries(editor.Document);
+        var toc = new PolyDonky.Core.TocBlock();
+        toc.Entries = CollectTocEntriesFromAllPages();
         InsertCoreBlocksAtCaret(new System.Collections.Generic.List<PolyDonky.Core.Block> { toc });
     }
 
     private void OnRefreshAllToc(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;
-        var editor     = GetActiveTextEditor();
-        var doc        = editor.Document;
-        var newEntries = CollectTocEntries(doc);
+        var newEntries = CollectTocEntriesFromAllPages();
 
-        var toRefresh = new System.Collections.Generic.List<(System.Windows.Documents.Block wpfBlock, PolyDonky.Core.TocBlock toc)>();
-        foreach (var block in doc.Blocks)
+        // 모든 페이지 RTB 에서 TocBlock 을 찾아 교체.
+        var toRefresh = new System.Collections.Generic.List<(System.Windows.Documents.FlowDocument doc, System.Windows.Documents.Block wpfBlock, PolyDonky.Core.TocBlock toc)>();
+        foreach (var rtb in PageEditorHost.PageEditors)
         {
-            if (block is System.Windows.Documents.BlockUIContainer { Tag: PolyDonky.Core.TocBlock toc })
-                toRefresh.Add((block, toc));
+            foreach (var block in rtb.Document.Blocks)
+            {
+                if (block is System.Windows.Documents.BlockUIContainer { Tag: PolyDonky.Core.TocBlock toc })
+                    toRefresh.Add((rtb.Document, block, toc));
+            }
         }
 
         if (toRefresh.Count == 0)
@@ -2931,7 +2932,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        foreach (var (oldBlock, toc) in toRefresh)
+        foreach (var (doc, oldBlock, toc) in toRefresh)
         {
             toc.Entries = new System.Collections.Generic.List<PolyDonky.Core.TocEntry>(newEntries);
             var newBlock = PolyDonky.App.Services.FlowDocumentBuilder.BuildTocBlock(toc);
@@ -2942,17 +2943,24 @@ public partial class MainWindow : Window
         _viewModel.MarkDirty();
     }
 
-    private static System.Collections.Generic.IList<PolyDonky.Core.TocEntry> CollectTocEntries(
-        System.Windows.Documents.FlowDocument fd)
+    // 모든 페이지 RTB 를 순서대로 스캔해 개요 단락을 수집한다.
+    // RTB 인덱스(0-based) + 1 이 페이지 번호.
+    private System.Collections.Generic.IList<PolyDonky.Core.TocEntry> CollectTocEntriesFromAllPages()
     {
         var entries = new System.Collections.Generic.List<PolyDonky.Core.TocEntry>();
-        CollectEntriesFromBlocks(fd.Blocks, entries);
+        var editors = PageEditorHost.PageEditors;
+        for (int i = 0; i < editors.Count; i++)
+        {
+            int pageNum = i + 1;
+            CollectEntriesFromBlocks(editors[i].Document.Blocks, entries, pageNum);
+        }
         return entries;
     }
 
     private static void CollectEntriesFromBlocks(
         System.Windows.Documents.BlockCollection blocks,
-        System.Collections.Generic.List<PolyDonky.Core.TocEntry> entries)
+        System.Collections.Generic.List<PolyDonky.Core.TocEntry> entries,
+        int pageNum)
     {
         foreach (var block in blocks)
         {
@@ -2961,18 +2969,19 @@ public partial class MainWindow : Window
             {
                 entries.Add(new PolyDonky.Core.TocEntry
                 {
-                    Level = (int)coreP.Style.Outline,
-                    Text  = coreP.GetPlainText(),
+                    Level      = (int)coreP.Style.Outline,
+                    Text       = coreP.GetPlainText(),
+                    PageNumber = pageNum,
                 });
             }
             else if (block is System.Windows.Documents.List list)
             {
                 foreach (var item in list.ListItems)
-                    CollectEntriesFromBlocks(item.Blocks, entries);
+                    CollectEntriesFromBlocks(item.Blocks, entries, pageNum);
             }
             else if (block is System.Windows.Documents.Section nested)
             {
-                CollectEntriesFromBlocks(nested.Blocks, entries);
+                CollectEntriesFromBlocks(nested.Blocks, entries, pageNum);
             }
         }
     }

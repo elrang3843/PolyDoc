@@ -157,7 +157,7 @@ PolyDonky/
 - ✅ E15 사전 (DictionaryWindow)
 - ✅ E16 페이지 나누기 (PageBreakPadding)
 - ✅ E17 머리말/꼬리말 (PerPageEditorHost, PageViewBuilder 통합)
-- ☐ E19 목차 자동 생성 (TocBlock 모델은 있음, UI 자동 생성 미구현)
+- ✅ E19 목차 자동 생성 (전 페이지 스캔 + 페이지 번호 삽입 구현)
 - ☐ E20 필드 코드 자동 갱신 (수동 삽입 가능, 갱신 미구현)
 
 ### Phase F — DOC/HWP ingest (LibreOffice 브리지 방식, **G4 결정 완료**)
@@ -245,7 +245,7 @@ IWPF → PolyDonky.Convert.Docx (→ DOCX 임시 파일) → LibreOffice headles
 
 1. **G3 완료** — 사용자가 PolyDonky 가 만든 `.hwpx` 를 한컴 오피스에서 열어 시각 확인. 문제가 있으면 `C6` (HWPX writer 한컴 호환 향상 — header.xml 동적 charPr/paraPr 생성) 진행.
 
-2. **E19 목차 자동 생성** — `TocBlock` 모델 기반, H1~H6 스캔 → `TocEntry` 리스트 생성, 페이지 번호 삽입.
+2. ~~**E19 목차 자동 생성**~~ ✅ 완료.
 
 3. **F0/F1/F2 DOC/HWP ingest** — G4 결정 완료(LibreOffice 브리지). F0(경로 탐지·설정 UI) → F1(DOC) → F2(HWP) 순으로 착수 가능.
 
