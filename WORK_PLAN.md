@@ -157,7 +157,6 @@ PolyDonky/
 - ✅ E15 사전 (DictionaryWindow)
 - ✅ E16 페이지 나누기 (PageBreakPadding)
 - ✅ E17 머리말/꼬리말 (PerPageEditorHost, PageViewBuilder 통합)
-- ☐ E18 변경추적·주석 — Phase 3 고급 기능, 아직 미구현
 - ☐ E19 목차 자동 생성 (TocBlock 모델은 있음, UI 자동 생성 미구현)
 - ☐ E20 필드 코드 자동 갱신 (수동 삽입 가능, 갱신 미구현)
 - ☐ E21 맞춤법 검사 외부 모듈 연동 (DictionaryWindow shell 있음, 실제 검사 엔진 미연동)
@@ -171,7 +170,6 @@ PolyDonky/
 - ◑ G-Themes 다중 테마 — ThemeService 구현 완료, 테마 파일 추가 필요
 - ☐ G-Sign 사인 만들기 독립 앱
 - ☐ G-Spell 맞춤법/사전 외부 모듈 실제 연동
-- ☐ G-ChangeTrack 변경추적·주석 (E18과 동일)
 
 ### Phase H — 인스톨러 / `1.0.0` 릴리즈
 - ☐ H1 MSIX 인스톨러 패키징
@@ -222,15 +220,13 @@ PolyDonky/
 
 1. **G3 완료** — 사용자가 PolyDonky 가 만든 `.hwpx` 를 한컴 오피스에서 열어 시각 확인. 문제가 있으면 `C6` (HWPX writer 한컴 호환 향상 — header.xml 동적 charPr/paraPr 생성) 진행.
 
-2. **E18 변경추적·주석** — Core 모델에 `ChangeRecord` / `Comment` 타입 추가, FlowDocumentBuilder 시각화, DOCX/HWPX 양방향.
+2. **E19 목차 자동 생성** — `TocBlock` 모델 기반, H1~H6 스캔 → `TocEntry` 리스트 생성, 페이지 번호 삽입.
 
-3. **E19 목차 자동 생성** — `TocBlock` 모델 기반, H1~H6 스캔 → `TocEntry` 리스트 생성, 페이지 번호 삽입.
+3. **E21 맞춤법 검사 연동** — 외부 엔진(hunspell 또는 자체) 과 DictionaryWindow 실제 연결.
 
-4. **E21 맞춤법 검사 연동** — 외부 엔진(hunspell 또는 자체) 과 DictionaryWindow 실제 연결.
+4. **F1/F2 DOC/HWP ingest** — G4 게이트 통과 후 LibreOffice headless spawn 또는 자체 파서.
 
-5. **F1/F2 DOC/HWP ingest** — G4 게이트 통과 후 LibreOffice headless spawn 또는 자체 파서.
-
-6. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
+5. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
 
 ### 알려진 한계·주의사항
 
