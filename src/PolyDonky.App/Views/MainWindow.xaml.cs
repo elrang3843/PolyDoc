@@ -2929,17 +2929,23 @@ public partial class MainWindow : Window
         var dlg = new PageFormatWindow(current, initialTab) { Owner = this };
         if (dlg.ShowDialog() != true) return;
 
-        // 다이얼로그 실행 중에 _undoTimer 만료 등으로 _viewModel.Document 가 교체되었을 수
-        // 있으므로, ShowDialog 반환 후 현재 Document 에서 해당 섹션을 다시 찾아 업데이트한다.
-        // (targetSection 이 고아가 된 경우 Page 할당이 실제 문서에 반영되지 않는 버그 방지)
-        var liveDoc = _viewModel?.Document;
-        var liveSection = liveDoc is not null
-            ? (sectionIdx >= 0 && sectionIdx < liveDoc.Sections.Count
-                ? liveDoc.Sections[sectionIdx]
-                : liveDoc.Sections.FirstOrDefault())
-            : null;
-        if (liveSection is not null)
-            liveSection.Page = dlg.ResultSettings;
+        // _currentPaginatedDoc.Source 의 블록 참조가 _viewModel.Document 와 다를 수 있으므로
+        // (ScheduleLivePaginationRefresh 실행 후 SyncDocumentFromLive 전 상태),
+        // _currentPaginatedDoc.Source 를 기준으로 분할하고 ViewModel 도 함께 동기화한다.
+        // 이렇게 해야 EnsureSectionForPage 의 ReferenceEquals 탐색이 정확히 작동한다.
+        var splitTarget = _currentPaginatedDoc?.Source ?? _viewModel?.Document;
+        if (splitTarget is not null && _viewModel is not null)
+        {
+            int pageIdx     = GetActivePageIndex();
+            int liveSectIdx = sectionIdx >= 0 && sectionIdx < splitTarget.Sections.Count
+                              ? sectionIdx : 0;
+            liveSectIdx = EnsureSectionForPage(splitTarget, liveSectIdx, pageIdx);
+            if (liveSectIdx >= 0 && liveSectIdx < splitTarget.Sections.Count)
+                splitTarget.Sections[liveSectIdx].Page = dlg.ResultSettings;
+            // splitTarget 이 ViewModel 의 현재 Document 와 다른 경우 ViewModel 을 동기화한다.
+            if (!ReferenceEquals(splitTarget, _viewModel.Document))
+                _viewModel.SyncDocumentFromLive(splitTarget);
+        }
 
         // PageSettings 는 FlowDocument 블록 내용과 무관하다 (종이 크기·여백·배경색만 바뀜).
         // ApplyPageSettings 로 레이아웃 속성만 직접 갱신한다.
@@ -2962,6 +2968,81 @@ public partial class MainWindow : Window
             if (ReferenceEquals(editors[i], active)) { rtbIdx = i; break; }
         if (rtbIdx < 0 || rtbIdx >= _currentSlices.Count) return 0;
         return _currentSlices[rtbIdx].SectionIndex;
+    }
+
+    /// <summary>
+    /// 현재 활성 RTB 가 표시하는 페이지 인덱스를 반환한다.
+    /// 슬라이스 정보가 없으면 0 을 반환한다.
+    /// </summary>
+    private int GetActivePageIndex()
+    {
+        if (_currentSlices is null) return 0;
+        var active = PageEditorHost.ActiveEditor;
+        if (active is null) return 0;
+        var editors = PageEditorHost.PageEditors;
+        int rtbIdx  = -1;
+        for (int i = 0; i < editors.Count; i++)
+            if (ReferenceEquals(editors[i], active)) { rtbIdx = i; break; }
+        if (rtbIdx < 0 || rtbIdx >= _currentSlices.Count) return 0;
+        return _currentSlices[rtbIdx].PageIndex;
+    }
+
+    /// <summary>
+    /// pageIdx 페이지의 첫 블록이 sectionIdx 섹션의 첫 번째 블록이 아닌 경우,
+    /// 해당 위치에서 섹션을 분할해 독립적인 PageSettings 를 가질 수 있도록 한다.
+    /// 분할이 발생하면 새 섹션 인덱스를 반환하고, 이미 독립 섹션이면 sectionIdx 를 반환한다.
+    /// </summary>
+    private int EnsureSectionForPage(PolyDonkyument doc, int sectionIdx, int pageIdx)
+    {
+        if (_currentPaginatedDoc is null) return sectionIdx;
+        if (pageIdx < 0 || pageIdx >= _currentPaginatedDoc.PageCount) return sectionIdx;
+        if (sectionIdx < 0 || sectionIdx >= doc.Sections.Count) return sectionIdx;
+
+        var pp = _currentPaginatedDoc.Pages[pageIdx];
+        // 해당 페이지 column 0 의 첫 블록 (없으면 column 무관 첫 블록)
+        var firstBop = pp.BodyBlocks.FirstOrDefault(b => b.ColumnIndex == 0)
+                       ?? pp.BodyBlocks.FirstOrDefault();
+        if (firstBop is null) return sectionIdx;
+
+        var splitBlock = firstBop.Source;
+        var section    = doc.Sections[sectionIdx];
+        var blocks     = section.Blocks;
+
+        // 분할 위치 탐색
+        int splitIdx = -1;
+        for (int i = 0; i < blocks.Count; i++)
+        {
+            if (ReferenceEquals(blocks[i], splitBlock)) { splitIdx = i; break; }
+        }
+        if (splitIdx <= 0) return sectionIdx;  // 첫 블록이거나 못 찾음 → 분할 불필요
+
+        // splitIdx 위치부터 새 섹션으로 분리
+        var newBlocks = blocks.Skip(splitIdx).ToList();
+        for (int i = blocks.Count - 1; i >= splitIdx; i--)
+            blocks.RemoveAt(i);
+
+        // 첫 블록에 섹션 경계 마커 설정 (ParseAllPageEditors 가 인식할 수 있도록).
+        // Paragraph 가 아닌 블록(표·이미지 등)이 첫 블록이면 ForcePageBreakBefore 마커를
+        // 유지할 방법이 없어 RTB 재파싱 시 경계가 소실된다 — 분할 자체를 건너뛴다.
+        if (newBlocks[0] is not PolyDonky.Core.Paragraph bp)
+        {
+            // 분할 취소: 꺼낸 블록을 원래 섹션으로 돌려 놓는다.
+            foreach (var b in newBlocks)
+                blocks.Add(b);
+            return sectionIdx;
+        }
+        bp.Style.ForcePageBreakBefore = true;
+        bp.Id ??= "§p" + Guid.NewGuid().ToString("N")[..8];
+
+        var newSection = new PolyDonky.Core.Section
+        {
+            Page = Services.PageSettingsCloner.Clone(section.Page),
+        };
+        foreach (var b in newBlocks)
+            newSection.Blocks.Add(b);
+
+        doc.Sections.Insert(sectionIdx + 1, newSection);
+        return sectionIdx + 1;
     }
 
     private void OnInsertSpecialChar(object sender, RoutedEventArgs e)

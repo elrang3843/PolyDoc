@@ -71,11 +71,23 @@ public static class PerPageDocumentSplitter
 
                 var colBlocks  = pp.BodyBlocks.Where(b => b.ColumnIndex == col).ToList();
                 var rawBlocks  = colBlocks.Select(b => b.Source).ToList();
+
+                // ForcePageBreakBefore 는 섹션 경계 마커일 뿐 — per-page RTB 의 첫 블록에
+                // WPF BreakPageBefore 를 적용하면 RTB 상단에 공백이 생기므로 잠시 억제한다.
+                Paragraph? firstBreakPara = rawBlocks.Count > 0
+                    && rawBlocks[0] is Paragraph fbp && fbp.Style.ForcePageBreakBefore
+                    ? fbp : null;
+                if (firstBreakPara is not null)
+                    firstBreakPara.Style.ForcePageBreakBefore = false;
+
                 // ContainerBlock 자식들을 다시 부모로 감싸 배경·보더·마진을 복원한다.
                 var coreBlocks = parentMap.Count > 0
                     ? ReassembleContainerBlocks(rawBlocks, parentMap)
                     : rawBlocks;
                 var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers);
+
+                if (firstBreakPara is not null)
+                    firstBreakPara.Style.ForcePageBreakBefore = true;
 
                 // per-column RTB는 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
                 fd.PageWidth   = colWidth;
