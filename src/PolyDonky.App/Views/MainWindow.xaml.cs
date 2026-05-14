@@ -5485,6 +5485,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 일반 Enter → 현재 단락이 BreakPageBefore=true 이면 새 단락에 상속되지 않도록 즉시 클리어.
+        // WPF 는 InsertParagraphBreak 시 서식을 상속하므로 Dispatcher 로 WPF 처리 후 클리어한다.
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            var caretPara = rtb.CaretPosition.Paragraph;
+            if (caretPara?.BreakPageBefore == true)
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+                {
+                    var newPara = rtb.CaretPosition.Paragraph;
+                    if (newPara is not null && newPara != caretPara && newPara.BreakPageBefore)
+                        newPara.BreakPageBefore = false;
+                });
+            }
+        }
+
         // Ctrl+Z/Y/Shift+Z → Undo/Redo
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
