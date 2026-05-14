@@ -443,12 +443,11 @@ public static class FlowDocumentParser
             p.Style.Outline = InferHeadingFromFontSize(wpfPara.FontSize);
         }
 
-        // Tag 가 있으면 원본의 ForcePageBreakBefore 를 우선한다 (PerPageDocumentSplitter 가
-        // RTB 상단 공백 방지를 위해 BreakPageBefore 를 억제하므로, WPF 값은 신뢰하지 않음).
-        // Tag 없는 신규 단락이면 WPF 값으로 폴백한다.
-        p.Style.ForcePageBreakBefore = wpfPara.Tag is Paragraph taggedBreak
-            ? taggedBreak.Style.ForcePageBreakBefore
-            : wpfPara.BreakPageBefore;
+        // OR 결합: WPF 값(사용자가 직접 설정) 또는 Tag 원본(PerPageDocumentSplitter 가
+        // RTB 상단 공백 방지를 위해 BreakPageBefore 를 억제한 뒤 Tag 로만 남아 있는 경우) 중
+        // 하나라도 true 이면 ForcePageBreakBefore = true.
+        bool taggedBefore = wpfPara.Tag is Paragraph taggedBreak && taggedBreak.Style.ForcePageBreakBefore;
+        p.Style.ForcePageBreakBefore = wpfPara.BreakPageBefore || taggedBefore;
 
         // 들여쓰기·간격은 사용자가 직접 변경할 가능성 높지만, 본 사이클에서는 단순 보존만.
         if (wpfPara.Tag is Paragraph baseP)
