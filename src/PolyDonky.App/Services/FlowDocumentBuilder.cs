@@ -193,7 +193,7 @@ public static class FlowDocumentBuilder
         return sb.ToString();
     }
 
-    private static string ToRoman(int n, bool lower)
+    internal static string ToRoman(int n, bool lower)
     {
         if (n <= 0) return lower ? "i" : "I";
         var vals = new[] { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
