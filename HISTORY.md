@@ -59,6 +59,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **페이지별 독립 서식 자동 섹션 분할**: 커서가 현재 섹션의 첫 페이지가 아닌 페이지에 있을 때 "용지 서식" 다이얼로그를 확인하면, 해당 페이지 위치에서 섹션을 자동 분할하여 해당 페이지만의 독립 `PageSettings`(머리말/꼬리말·여백 등)가 생성된다. 이후 `ParseAllPageEditors` 재구성 시에도 섹션 경계가 유지되도록 `ForcePageBreakBefore` 마커를 사용하며, `FlowDocumentParser`가 Tag 기반으로 마커 값을 보존한다. (`MainWindow.xaml.cs`, `FlowDocumentParser.cs`, `PerPageDocumentSplitter.cs`)
 
+- **페이지별 머리말/꼬리말 설정이 다른 페이지 설정 변경 시 초기화되던 버그 수정**: 섹션 경계 단락(`ForcePageBreakBefore=true`)의 Id가 null인 경우 `BuildSectionBoundaryMap`이 해당 단락을 맵에 등록하지 못해, 다음 `ParseAllPageEditors` 사이클에서 매핑을 찾지 못하고 1페이지(섹션 0) 설정으로 폴백하던 문제. `BuildSectionBoundaryMap`과 `ParseAllPageEditors` 모두에서 null Id에 대해 `"§p" + GUID` 자동 생성으로 수정. 또한 `ApplyPageSettings`에서 `ParseAllPageEditors` 호출 직후 `SyncDocumentFromLive`를 호출해 `_viewModel.Document`와 `_currentPaginatedDoc.Source`를 항상 동기화하도록 수정. (`MainWindow.xaml.cs`)
+
 - **페이지 서식 확인 후 머리말/꼬리말이 사라지는 버그 수정**: `OpenPageFormatDialog`에서 다이얼로그 실행 중 `_undoTimer` 만료로 `_viewModel.Document`가 교체되면 `targetSection`이 고아가 되어 설정이 반영되지 않던 문제. 다이얼로그 `ShowDialog` 반환 후 현재 `_viewModel.Document`를 다시 가져와 해당 섹션을 업데이트하도록 수정. 또한 `ApplyPageSettings`에서 첫 번째 섹션에만 `page`를 덮어쓰던 코드 제거 — 이 코드는 멀티 섹션 문서에서 잘못된 섹션에 설정을 적용하고, `ScheduleLivePaginationRefresh` 실행 시 꼬리말을 삭제하는 버그를 유발했다. (`MainWindow.xaml.cs`)
 
 - **Ctrl+Enter 후 일반 Enter 입력 시 페이지 나누기가 계속 발생하는 버그 수정**: Ctrl+Enter로 삽입된 단락(`BreakPageBefore=true`)에서 일반 Enter를 누르면 WPF가 새 단락에 `BreakPageBefore`를 자동 상속해 Enter를 누를 때마다 페이지가 나눠지던 문제. `HandlePageEditorKeyDown`에서 Enter 키 처리 시 현재 단락이 `BreakPageBefore=true`이면 `Dispatcher.BeginInvoke`로 WPF 처리 후 새 단락의 `BreakPageBefore`를 즉시 false로 리셋. (`MainWindow.xaml.cs`)
