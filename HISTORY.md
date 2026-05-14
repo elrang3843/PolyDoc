@@ -55,6 +55,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **머리말/꼬리말이 페이지마다 해당 섹션의 설정을 사용하도록 수정**: `BuildHeaderFooterLayer`가 단일 `PageSettings`를 모든 페이지에 적용하던 방식을 `Func<int, PageSettings>` 위임 방식으로 변경하여, 각 페이지가 `PaginatedDocument.GetPageSettings(i)`로부터 올바른 섹션별 머리말/꼬리말을 표시한다. 편집 창과 인쇄 미리보기 모두 적용. (`PageViewBuilder.cs`, `MainWindow.xaml.cs`, `PrintPreviewWindow.xaml.cs`)
+
 - **Ctrl+Enter 후 일반 Enter 입력 시 페이지 나누기가 계속 발생하는 버그 수정**: Ctrl+Enter로 삽입된 단락(`BreakPageBefore=true`)에서 일반 Enter를 누르면 WPF가 새 단락에 `BreakPageBefore`를 자동 상속해 Enter를 누를 때마다 페이지가 나눠지던 문제. `HandlePageEditorKeyDown`에서 Enter 키 처리 시 현재 단락이 `BreakPageBefore=true`이면 `Dispatcher.BeginInvoke`로 WPF 처리 후 새 단락의 `BreakPageBefore`를 즉시 false로 리셋. (`MainWindow.xaml.cs`)
 
 - **개요 서식 적용이 멀티페이지 문서에서 동작하지 않던 버그 수정**: `ApplyOutlineStyles`가 활성 RTB의 FlowDocument만 파싱하여 다른 페이지의 편집 내용이 손실되던 문제. 이제 `LiveDocumentProvider`를 통해 모든 페이지 RTB를 포함한 완전한 라이브 모델을 동기화한 뒤 OutlineStyles를 적용한다. (`MainViewModel.cs`, `MainWindow.xaml.cs`)

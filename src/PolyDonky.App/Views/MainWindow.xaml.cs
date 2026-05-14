@@ -2041,7 +2041,7 @@ public partial class MainWindow : Window
         }
 
         RenderWatermark(pg, pageCount);
-        RebuildHeaderFooterLayer(pg, pageCount, page);
+        RebuildHeaderFooterLayer(pg, pageCount);
         RebuildTypesettingMarks();
 
         // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 비운 뒤 한꺼번에 올린다.
@@ -2055,19 +2055,19 @@ public partial class MainWindow : Window
 
     private void RebuildHeaderFooterLayer(
         PolyDonky.App.Services.PageGeometry pg,
-        int pageCount,
-        PolyDonky.Core.PageSettings? page)
+        int pageCount)
     {
-        if (page is null)
-        {
-            HeaderFooterCanvas.Children.Clear();
-            return;
-        }
         string? fileName = string.IsNullOrEmpty(_viewModel?.CurrentFilePath)
             ? null
             : System.IO.Path.GetFileNameWithoutExtension(_viewModel.CurrentFilePath);
+
+        var fallback = _viewModel?.Document.Sections.FirstOrDefault()?.Page
+                       ?? new PolyDonky.Core.PageSettings();
+        PolyDonky.Core.PageSettings GetPerPage(int i)
+            => _currentPaginatedDoc?.GetPageSettings(i) ?? fallback;
+
         PageViewBuilder.BuildHeaderFooterLayer(
-            HeaderFooterCanvas, page, pg, pageCount,
+            HeaderFooterCanvas, GetPerPage, pg, pageCount,
             metadata: _viewModel?.Document?.Metadata,
             fileNameWithoutExt: fileName);
     }

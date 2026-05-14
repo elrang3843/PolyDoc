@@ -268,13 +268,13 @@ public partial class PrintPreviewWindow : Window
                 PreviewWatermarkCanvas, wmForPreview, geo, _pageCount);
 
             // 5.6. 머리말·꼬리말 렌더링 — 페이지 번호·날짜·제목 등 토큰 치환 포함.
-            if (pageSettings is not null)
-            {
-                PageViewBuilder.BuildHeaderFooterLayer(
-                    PreviewHeaderFooterCanvas, pageSettings, geo, _pageCount,
-                    metadata: docForBuild.Metadata,
-                    fileNameWithoutExt: null);
-            }
+            // 섹션별로 다른 페이지 서식을 갖는 문서에서 각 페이지의 머리말/꼬리말을 올바르게 표시한다.
+            PageViewBuilder.BuildHeaderFooterLayer(
+                PreviewHeaderFooterCanvas,
+                i => paginated.GetPageSettings(i),
+                geo, _pageCount,
+                metadata: docForBuild.Metadata,
+                fileNameWithoutExt: null);
 
             // 6. 오버레이 캔버스 클립 — 본문 텍스트가 per-page RTB 에서 페이지마다 잘려 보이는 것과
             // 동일하게, 모든 부유 객체(글상자·도형·이미지·표) 도 페이지 경계 밖(특히 페이지 간 갭) 에서
