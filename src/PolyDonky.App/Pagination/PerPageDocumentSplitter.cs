@@ -99,6 +99,9 @@ public static class PerPageDocumentSplitter
                 if (firstBreakPara is not null)
                     firstBreakPara.Style.ForcePageBreakBefore = true;
 
+                // 이 페이지/단에 나타나는 각주/미주 수집.
+                var (pageFootnotes, pageEndnotes) = CollectPageNotes(coreBlocks, paginated.Source);
+
                 // per-column RTB는 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
                 fd.PageWidth   = colWidth;
                 fd.PagePadding = new Thickness(0);
@@ -115,6 +118,8 @@ public static class PerPageDocumentSplitter
                     FlowDocument  = fd,
                     BodyWidthDip  = colWidth,
                     BodyHeightDip = bodyH,
+                    PageFootnotes = pageFootnotes,
+                    PageEndnotes  = pageEndnotes,
                 });
             }
         }
@@ -204,5 +209,72 @@ public static class PerPageDocumentSplitter
             i = j;
         }
         return result;
+    }
+
+    /// <summary>
+    /// 블록 목록을 재귀 순회해 각주/미주 ID를 수집하고,
+    /// 문서에서 대응하는 FootnoteEntry 를 출현 순서대로 반환한다.
+    /// </summary>
+    private static (IReadOnlyList<FootnoteEntry>, IReadOnlyList<FootnoteEntry>) CollectPageNotes(
+        List<Block> pageBlocks,
+        PolyDonkyument doc)
+    {
+        var fnIds = new Dictionary<string, int>();  // ID → first-appearance order
+        var enIds = new Dictionary<string, int>();
+
+        CollectNoteIds(pageBlocks, fnIds, enIds);
+
+        // 출현 순서대로 footnote/endnote 맵을 만든다.
+        var fnByOrder = fnIds.OrderBy(x => x.Value).Select(x => x.Key).ToList();
+        var enByOrder = enIds.OrderBy(x => x.Value).Select(x => x.Key).ToList();
+
+        var pageFootnotes = fnByOrder
+            .Select(id => doc.Footnotes.FirstOrDefault(f => f.Id == id))
+            .Where(f => f is not null)
+            .Cast<FootnoteEntry>()
+            .ToList();
+
+        var pageEndnotes = enByOrder
+            .Select(id => doc.Endnotes.FirstOrDefault(e => e.Id == id))
+            .Where(e => e is not null)
+            .Cast<FootnoteEntry>()
+            .ToList();
+
+        return (pageFootnotes, pageEndnotes);
+    }
+
+    private static void CollectNoteIds(
+        IList<Block> blocks,
+        Dictionary<string, int> fnIds,
+        Dictionary<string, int> enIds,
+        int nextOrder = 0)
+    {
+        foreach (var block in blocks)
+        {
+            if (block is Paragraph para)
+            {
+                foreach (var run in para.Runs)
+                {
+                    if (!string.IsNullOrEmpty(run.FootnoteId) && !fnIds.ContainsKey(run.FootnoteId))
+                        fnIds[run.FootnoteId] = nextOrder++;
+                    if (!string.IsNullOrEmpty(run.EndnoteId) && !enIds.ContainsKey(run.EndnoteId))
+                        enIds[run.EndnoteId] = nextOrder++;
+                }
+            }
+            else if (block is Table table)
+            {
+                foreach (var row in table.Rows)
+                    foreach (var cell in row.Cells)
+                        CollectNoteIds(cell.Blocks, fnIds, enIds, nextOrder);
+            }
+            else if (block is TextBoxObject textbox)
+            {
+                CollectNoteIds(textbox.Content, fnIds, enIds, nextOrder);
+            }
+            else if (block is ContainerBlock container)
+            {
+                CollectNoteIds(container.Children, fnIds, enIds, nextOrder);
+            }
+        }
     }
 }

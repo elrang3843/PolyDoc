@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Windows.Documents;
 using PolyDonky.Core;
 
+using FootnoteEntry = PolyDonky.Core.FootnoteEntry;
+
 namespace PolyDonky.App.Pagination;
 
 /// <summary>
@@ -38,4 +40,10 @@ public sealed class PerPageDocumentSlice
     public double BodyWidthDip  { get; init; }
     /// <summary>본문 영역 높이 (DIP). 종이 높이 − 상·하 여백.</summary>
     public double BodyHeightDip { get; init; }
+
+    /// <summary>이 페이지/단에 나타나는 각주 목록 (ID 순, 페이지 내 출현 순서).</summary>
+    public IReadOnlyList<FootnoteEntry> PageFootnotes { get; init; } = System.Array.Empty<FootnoteEntry>();
+
+    /// <summary>이 페이지/단에 나타나는 미주 목록 (ID 순, 페이지 내 출현 순서).</summary>
+    public IReadOnlyList<FootnoteEntry> PageEndnotes { get; init; } = System.Array.Empty<FootnoteEntry>();
 }

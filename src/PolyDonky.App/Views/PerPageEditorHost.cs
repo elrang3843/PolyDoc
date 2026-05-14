@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using PolyDonky.App.Pagination;
 using PolyDonky.App.Services;
+using PolyDonky.Core;
 
 namespace PolyDonky.App.Views;
 
@@ -132,6 +134,15 @@ public sealed class PerPageEditorHost : Canvas
 
             Children.Add(rtb);
             _pageEditors.Add(rtb);
+
+            // 각주/미주가 있으면 RTB 아래에 렌더
+            if (slice.PageFootnotes.Count > 0 || slice.PageEndnotes.Count > 0)
+            {
+                var footnotesPanel = BuildFootnotesPanel(slice, slice.BodyWidthDip);
+                SetLeft(footnotesPanel, xPos);
+                SetTop(footnotesPanel, yPos + slice.BodyHeightDip + ClipRenderingTolerance + 4);
+                Children.Add(footnotesPanel);
+            }
         }
 
         ActiveEditor = _pageEditors[0];
@@ -141,4 +152,109 @@ public sealed class PerPageEditorHost : Canvas
 
     private void OnPageTextChanged(object sender, TextChangedEventArgs e)
         => PageTextChanged?.Invoke(sender, e);
+
+    private static Panel BuildFootnotesPanel(PerPageDocumentSlice slice, double width)
+    {
+        var panel = new StackPanel
+        {
+            Width = width,
+            Orientation = Orientation.Vertical,
+            Background = Brushes.Transparent,
+        };
+
+        var hasFootnotes = slice.PageFootnotes.Count > 0;
+        var hasEndnotes  = slice.PageEndnotes.Count > 0;
+
+        if (hasFootnotes)
+        {
+            panel.Children.Add(CreateNoteSeparator());
+            foreach (var (note, index) in slice.PageFootnotes.Select((n, i) => (n, i + 1)))
+            {
+                panel.Children.Add(CreateNoteBlock(note, index, "각주", width));
+            }
+        }
+
+        if (hasEndnotes)
+        {
+            if (hasFootnotes)
+                panel.Children.Add(new Border { Height = 6, Background = Brushes.Transparent });
+            panel.Children.Add(CreateNoteSeparator());
+            foreach (var (note, index) in slice.PageEndnotes.Select((n, i) => (n, i + 1)))
+            {
+                panel.Children.Add(CreateNoteBlock(note, index, "미주", width));
+            }
+        }
+
+        return panel;
+    }
+
+    private static Border CreateNoteSeparator()
+    {
+        return new Border
+        {
+            Height = 1,
+            Margin = new Thickness(0, 4, 0, 4),
+            BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+        };
+    }
+
+    private static StackPanel CreateNoteBlock(FootnoteEntry note, int index, string noteType, double width)
+    {
+        var container = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 2, 0, 2),
+            Width = width,
+        };
+
+        var numBlock = new TextBlock
+        {
+            Text = index.ToString(),
+            FontSize = 10,
+            Margin = new Thickness(0, 0, 4, 0),
+            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 100, 100)),
+            MinWidth = 12,
+        };
+
+        var fd = new FlowDocument
+        {
+            PageWidth = width - 20,
+            PagePadding = new Thickness(0),
+        };
+
+        foreach (var coreBlock in note.Blocks)
+        {
+            if (coreBlock is PolyDonky.Core.Paragraph corePara)
+            {
+                var wpfPara = new System.Windows.Documents.Paragraph
+                {
+                    FontSize = 10,
+                    Margin = new Thickness(0),
+                };
+                foreach (var coreRun in corePara.Runs)
+                {
+                    wpfPara.Inlines.Add(new System.Windows.Documents.Run { Text = coreRun.Text });
+                }
+                fd.Blocks.Add(wpfPara);
+            }
+        }
+
+        var noteRtb = new RichTextBox
+        {
+            Document = fd,
+            IsReadOnly = true,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Height = 40,
+        };
+
+        container.Children.Add(numBlock);
+        container.Children.Add(noteRtb);
+
+        return container;
+    }
 }
