@@ -193,6 +193,7 @@
         <!-- 메인 툴바 행 — 좌: 파일 그룹 / 우: 확대·축소 조절기 -->
         <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
@@ -232,7 +233,7 @@
             </ToolBarTray>
 
             <!-- 확대/축소 조절기 — 오른쪽 끝 -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
                         Margin="0,0,8,0">
                 <Separator Width="1" Margin="0,4" />
                 <Button Content="{Binding ToolbarFitWidth, Source={x:Static svc:LocalizedStrings.Instance}}"
@@ -274,11 +275,7 @@
                         Foreground="{DynamicResource OnSurface}"
                         FontSize="14" FontWeight="Bold" />
             </StackPanel>
-        </Grid>
-
-        <!-- 서식 툴바 행 — 글자/문단 서식 자주 쓰는 버튼 -->
-        <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
-            <ToolBarTray Background="Transparent" IsLocked="True">
+            <ToolBarTray Grid.Column="1" Background="Transparent" IsLocked="True">
                 <ToolBar x:Name="FormatToolBar"
                          Background="Transparent"
                          Foreground="{DynamicResource OnSurface}"
