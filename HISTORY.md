@@ -53,6 +53,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **블록 그룹/해제 기능**: 여러 블록을 `ContainerBlock{Role=Group}`으로 묶는 "블록 그룹으로 묶기"와 그룹을 해제하는 "그룹 해제" 우클릭 메뉴 항목 추가. 캐럿이 그룹 안에 있을 때 "그룹 해제", 텍스트 선택이 2개 이상의 최상위 블록을 걸칠 때 "블록 그룹으로 묶기" 메뉴가 활성화된다. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
 - **복수 도형 SVG → 편집 가능한 ShapeObject 그룹으로 분해**: HTML 파일 안의 다중 도형 SVG (`<svg>` 내 rect/circle/ellipse/line/polyline/polygon/path 복수)를 `ImageBlock`(읽기 전용)이 아닌 개별 `ShapeObject`들로 분해하여 `ContainerBlock{Role=Group}`으로 묶어 가져온다. 그룹 해제 후 각 도형의 색상·크기·회전 등을 편집 가능. `<g>` 래퍼의 `transform="rotate()"` 도 전파. (`HtmlReader.cs`, `ContainerBlock.cs`)
 
+- **필드 코드 자동 갱신 (E20)**: 편집창·미리보기에서 `{PAGE}` / `{NUMPAGES}` 필드가 실제 페이지 번호로 렌더링된다. `FieldRenderContext`(페이지 번호·총 페이지 수·저자·제목·기준 시각)를 `FlowDocumentBuilder.BuildFromBlocks` 파이프라인에 주입하고, `PerPageDocumentSplitter.Split`에서 각 슬라이스 빌드 시 해당 페이지의 컨텍스트를 전달. `{AUTHOR}` / `{TITLE}`은 문서 메타데이터를 실시간 반영. `{DATE}` / `{TIME}`은 렌더링 시점 `DateTime.Now` 사용. 필드 삽입(`OnInsertField`) 시에도 현재 페이지 번호로 즉시 표시. (`FieldRenderContext.cs`, `FlowDocumentBuilder.cs`, `PerPageDocumentSplitter.cs`, `MainWindow.xaml.cs`)
+
 ### Fixed
 
 - **각주 표시 위치 수정 — 꼬리말 영역 침범 방지 + 본문 RTB 높이 축소**: 이전 구현은 각주 패널을 RTB 아래에 임의로 추가해 꼬리말 영역을 침범했다. 수정: `PerPageDocumentSplitter` 에서 페이지별 각주를 수집한 뒤, 오프스크린 RichTextBox 로 각주 FlowDocument 를 Measure() 해 정확한 높이(`FootnoteAreaHeightDip`)를 산출. 본문 RTB 의 `BodyHeightDip` 을 각주 크기만큼 줄여 각주가 본문 영역(상·하 여백 내부) 아래쪽에만 위치하고 꼬리말 위에 표시된다. (`PerPageDocumentSplitter.cs`, `PerPageDocumentSlice.cs`, `PerPageEditorHost.cs`)

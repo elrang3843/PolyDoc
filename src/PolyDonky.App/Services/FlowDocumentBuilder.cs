@@ -247,8 +247,9 @@ public static class FlowDocumentBuilder
         PageSettings?      page           = null,
         OutlineStyleSet?   outlineStyles  = null,
         IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
-        IReadOnlyDictionary<string, int>? fnNums = null,
-        IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? fnNums    = null,
+        IReadOnlyDictionary<string, int>? enNums    = null,
+        FieldRenderContext?               fieldCtx  = null)
     {
         page          ??= new PageSettings();
         outlineStyles ??= OutlineStyleSet.CreateDefault();
@@ -281,7 +282,7 @@ public static class FlowDocumentBuilder
             fd.IsColumnWidthFlexible = false;
         }
 
-        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles, fnNums: fnNums, enNums: enNums, outlineNumbers: outlineNumbers);
+        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles, fnNums: fnNums, enNums: enNums, outlineNumbers: outlineNumbers, fieldCtx: fieldCtx);
         return fd;
     }
 
@@ -290,7 +291,8 @@ public static class FlowDocumentBuilder
         OutlineStyleSet? outlineStyles = null,
         IReadOnlyDictionary<string, int>? fnNums = null,
         IReadOnlyDictionary<string, int>? enNums = null,
-        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null)
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
+        FieldRenderContext? fieldCtx = null)
     {
         // 중첩 리스트 지원: (WPF List, Kind) 스택.
         // 인덱스 0 = 최상위 리스트, 인덱스 n = n 단계 중첩 리스트.
@@ -377,7 +379,7 @@ public static class FlowDocumentBuilder
                     int start = marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } s && s >= 1 ? s : 1;
                     bool isTaskList = marker.Checked is not null;
                     var list  = EnsureList(level, marker.Kind, start, marker.UpperCase, isTaskList, marker.HideBullet);
-                    var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums);
+                    var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums, fieldCtx);
                     if (isTaskList)
                     {
                         // CSS 의 :before 가상 요소처럼 ☐/☑ 를 단락 첫머리에 직접 삽입.
@@ -400,7 +402,7 @@ public static class FlowDocumentBuilder
                 case Paragraph p:
                 {
                     listStack.Clear();
-                    var wpfP = BuildParagraph(p, outlineStyles, fnNums, enNums);
+                    var wpfP = BuildParagraph(p, outlineStyles, fnNums, enNums, fieldCtx);
                     if (outlineNumbers is not null && outlineNumbers.TryGetValue(p, out var numPrefix))
                     {
                         var numRun = new Wpf.Run(numPrefix);
@@ -431,10 +433,10 @@ public static class FlowDocumentBuilder
                                 cell.Blocks.Any(b => b is ShapeObject s && s.RotationAngleDeg != 0)));
                             target.Add(hasRotatedShape
                                 ? BuildFlexContainer(t, outlineStyles)
-                                : BuildTable(t, outlineStyles));
+                                : BuildTable(t, outlineStyles, fnNums, enNums, fieldCtx));
                         }
                         else
-                            target.Add(BuildTable(t, outlineStyles));
+                            target.Add(BuildTable(t, outlineStyles, fnNums, enNums, fieldCtx));
                     }
                     else
                         target.Add(BuildTableAnchor(t));   // 오버레이 모드 — 앵커만 추가
@@ -517,7 +519,7 @@ public static class FlowDocumentBuilder
                     }
                     else
                     {
-                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums, outlineNumbers));
+                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums, outlineNumbers, fieldCtx));
                     }
                     break;
             }
@@ -533,7 +535,8 @@ public static class FlowDocumentBuilder
     /// 자식 블록은 본문과 동일한 dispatch 를 거쳐 Section.Blocks 에 추가된다.</summary>
     private static Wpf.Section BuildContainer(ContainerBlock box, OutlineStyleSet? outlineStyles,
         IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null,
-        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null)
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
+        FieldRenderContext? fieldCtx = null)
     {
         var section = new Wpf.Section { Tag = box };
 
@@ -596,7 +599,7 @@ public static class FlowDocumentBuilder
         }
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
-        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums, outlineNumbers);
+        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums, outlineNumbers, fieldCtx);
 
         // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
         // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Grid 로 감싸 배경·테두리·패딩을 직접 적용한다.
@@ -975,7 +978,9 @@ public static class FlowDocumentBuilder
         return tb;
     }
 
-    internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null)
+    internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null,
+        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null,
+        FieldRenderContext? fieldCtx = null)
     {
         var wtable = new Wpf.Table { CellSpacing = 0 };
 
@@ -1027,7 +1032,7 @@ public static class FlowDocumentBuilder
 
                 ApplyCellPropertiesToWpf(wcell, cell, row.IsHeader, table,
                     atTop, atBottom, atLeft, atRight, row);
-                AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles);
+                AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles, fnNums: fnNums, enNums: enNums, fieldCtx: fieldCtx);
                 if (wcell.Blocks.Count == 0)
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
 
@@ -2800,7 +2805,9 @@ public static class FlowDocumentBuilder
     }
 
     internal static Wpf.Paragraph BuildParagraph(Paragraph p, OutlineStyleSet? outlineStyles = null,
-        IReadOnlyDictionary<string, int>? fnNums = null, IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? fnNums   = null,
+        IReadOnlyDictionary<string, int>? enNums   = null,
+        FieldRenderContext?               fieldCtx = null)
     {
         var wpfPara = new Wpf.Paragraph();
         ApplyParagraphStyle(wpfPara, p.Style, outlineStyles);
@@ -2809,7 +2816,7 @@ public static class FlowDocumentBuilder
             BuildCodeBlockWithLineNumbers(wpfPara, p.Runs);
         else
             foreach (var run in p.Runs)
-                AppendRunInlines(wpfPara, run, fnNums, enNums);
+                AppendRunInlines(wpfPara, run, fnNums, enNums, fieldCtx);
 
         // 원본 PolyDonky.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
@@ -2821,7 +2828,9 @@ public static class FlowDocumentBuilder
     /// '\n' 이 포함된 Run 텍스트를 분할해 LineBreak 요소를 사이에 끼워야 한다.
     /// LatexSource·EmojiKey 등 특수 Run 은 BuildInline 에 그대로 위임한다.
     private static void AppendRunInlines(Wpf.Paragraph wpfPara, Run run,
-        IReadOnlyDictionary<string, int>? fnNums, IReadOnlyDictionary<string, int>? enNums)
+        IReadOnlyDictionary<string, int>? fnNums,
+        IReadOnlyDictionary<string, int>? enNums,
+        FieldRenderContext?               fieldCtx = null)
     {
         // 특수 런(수식·이모지·각주 등)이나 '\n' 없는 일반 런은 직접 위임.
         if (run.LatexSource is not null || run.EmojiKey is not null
@@ -2829,7 +2838,7 @@ public static class FlowDocumentBuilder
             || run.Field is not null
             || !run.Text.Contains('\n'))
         {
-            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
+            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums, fieldCtx));
             return;
         }
 
@@ -2842,7 +2851,7 @@ public static class FlowDocumentBuilder
             if (parts[i].Length > 0)
             {
                 var sub = new Run { Text = parts[i], Style = run.Style, Url = run.Url };
-                wpfPara.Inlines.Add(BuildInline(sub, fnNums, enNums));
+                wpfPara.Inlines.Add(BuildInline(sub, fnNums, enNums, fieldCtx));
             }
         }
     }
@@ -3150,8 +3159,9 @@ public static class FlowDocumentBuilder
     /// LatexSource 가 있으면 WpfMath FormulaControl 로 렌더링.
     /// EmojiKey 가 있으면 Resources/Emojis/{Section}/{name}.png 를 Image 로 렌더링.</summary>
     public static Wpf.Inline BuildInline(Run run,
-        IReadOnlyDictionary<string, int>? fnNums = null,
-        IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? fnNums    = null,
+        IReadOnlyDictionary<string, int>? enNums    = null,
+        FieldRenderContext?               fieldCtx  = null)
     {
         // 각주/미주 참조 런 — 위첨자 숫자로 렌더링, Tag 에 원본 Run 보관.
         if (run.FootnoteId is { Length: > 0 } fnId)
@@ -3182,7 +3192,7 @@ public static class FlowDocumentBuilder
         }
 
         if (run.Field is { } fieldType)
-            return BuildFieldInline(run, fieldType);
+            return BuildFieldInline(run, fieldType, fieldCtx);
 
         if (run.LatexSource is { Length: > 0 } latex)
             return BuildEquationInline(run, latex);
@@ -3244,16 +3254,23 @@ public static class FlowDocumentBuilder
         return wpfRun;
     }
 
-    private static Wpf.Inline BuildFieldInline(Run run, FieldType fieldType)
+    private static Wpf.Inline BuildFieldInline(Run run, FieldType fieldType, FieldRenderContext? fieldCtx = null)
     {
+        var now  = fieldCtx?.Now ?? System.DateTime.Now;
         var text = fieldType switch
         {
-            FieldType.Date     => System.DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            FieldType.Time     => System.DateTime.Now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
-            FieldType.Page     => "‹페이지›",
-            FieldType.NumPages => "‹총페이지›",
-            FieldType.Author   => string.IsNullOrEmpty(run.Text) ? "‹작성자›" : run.Text,
-            FieldType.Title    => string.IsNullOrEmpty(run.Text) ? "‹제목›"   : run.Text,
+            FieldType.Date     => now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            FieldType.Time     => now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
+            FieldType.Page     => fieldCtx is not null
+                                    ? fieldCtx.PageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                    : "‹페이지›",
+            FieldType.NumPages => fieldCtx is not null
+                                    ? fieldCtx.TotalPages.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                    : "‹총페이지›",
+            FieldType.Author   => fieldCtx?.Author is { Length: > 0 } a ? a
+                                    : string.IsNullOrEmpty(run.Text) ? "‹작성자›" : run.Text,
+            FieldType.Title    => fieldCtx?.Title  is { Length: > 0 } t ? t
+                                    : string.IsNullOrEmpty(run.Text) ? "‹제목›"   : run.Text,
             _                  => $"‹{fieldType}›",
         };
 

@@ -106,7 +106,16 @@ public static class PerPageDocumentSplitter
                 var coreBlocks = parentMap.Count > 0
                     ? ReassembleContainerBlocks(rawBlocks, parentMap)
                     : rawBlocks;
-                var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers, fnNums, enNums);
+
+                var fieldCtx = new FieldRenderContext
+                {
+                    PageNumber = pageIdx + 1,
+                    TotalPages = paginated.PageCount,
+                    Author     = paginated.Source.Metadata?.Author,
+                    Title      = paginated.Source.Metadata?.Title,
+                    Now        = DateTime.Now,
+                };
+                var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers, fnNums, enNums, fieldCtx);
 
                 if (firstBreakPara is not null)
                     firstBreakPara.Style.ForcePageBreakBefore = true;

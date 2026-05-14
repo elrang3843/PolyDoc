@@ -3452,12 +3452,27 @@ public partial class MainWindow : Window
             .GetInsertionPosition(System.Windows.Documents.LogicalDirection.Forward)
             ?? editor.CaretPosition;
 
+        // 현재 편집 중인 RTB의 페이지 번호를 실제 값으로 사용.
+        int currentPageNum = 1;
+        int totalPageNum   = _currentPageCount > 0 ? _currentPageCount : 1;
+        var activeEditor   = GetActiveTextEditor();
+        var editorIdx      = PageEditorHost.PageEditors
+                                .Select((rtb, idx) => (rtb, idx))
+                                .FirstOrDefault(x => ReferenceEquals(x.rtb, activeEditor)).idx;
+        if (editorIdx >= 0)
+        {
+            // RTB 인덱스는 페이지×단 순이므로 페이지 번호는 (colCount가 1이면 editorIdx+1).
+            // 다단의 경우 같은 페이지에 여러 RTB — 첫 단 인덱스로 계산.
+            int colCount = _pageGeometry?.ColumnCount ?? 1;
+            currentPageNum = editorIdx / Math.Max(1, colCount) + 1;
+        }
+        var now = System.DateTime.Now;
         var fieldText = fieldType switch
         {
-            PolyDonky.Core.FieldType.Date     => System.DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            PolyDonky.Core.FieldType.Time     => System.DateTime.Now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
-            PolyDonky.Core.FieldType.Page     => "‹페이지›",
-            PolyDonky.Core.FieldType.NumPages => "‹총페이지›",
+            PolyDonky.Core.FieldType.Date     => now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.Time     => now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.Page     => currentPageNum.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.NumPages => totalPageNum.ToString(System.Globalization.CultureInfo.InvariantCulture),
             PolyDonky.Core.FieldType.Author   => _viewModel.Document.Metadata.Author is { Length: > 0 } a ? a : "‹작성자›",
             PolyDonky.Core.FieldType.Title    => _viewModel.Document.Metadata.Title  is { Length: > 0 } t ? t : "‹제목›",
             _                                 => $"‹{fieldType}›",
