@@ -1861,8 +1861,8 @@ public partial class MainWindow : Window
         // PageBackgroundCanvas 클리어 후 페이지마다 다시 그리기.
         PageBackgroundCanvas.Children.Clear();
 
-        // _currentPaginatedDoc에서 page를 가져온다 (ApplyPageSettings에서 적용된 최신 설정 반영)
-        var page = _currentPaginatedDoc?.Sections.FirstOrDefault()?.Page
+        // _currentPaginatedDoc.PageSettings 우선 사용 (ApplyPageSettings에서 적용된 최신 설정 반영)
+        var page = _currentPaginatedDoc?.PageSettings
             ?? _viewModel?.Document.Sections.FirstOrDefault()?.Page;
         bool showGuides = page?.ShowMarginGuides ?? true;
         WpfMedia.Brush pageBg = ResolvePaperBackground(page);
