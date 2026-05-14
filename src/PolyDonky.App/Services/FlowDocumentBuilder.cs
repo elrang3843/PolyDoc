@@ -246,7 +246,9 @@ public static class FlowDocumentBuilder
         IEnumerable<Block> blocks,
         PageSettings?      page           = null,
         OutlineStyleSet?   outlineStyles  = null,
-        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null)
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
+        IReadOnlyDictionary<string, int>? fnNums = null,
+        IReadOnlyDictionary<string, int>? enNums = null)
     {
         page          ??= new PageSettings();
         outlineStyles ??= OutlineStyleSet.CreateDefault();
@@ -279,7 +281,7 @@ public static class FlowDocumentBuilder
             fd.IsColumnWidthFlexible = false;
         }
 
-        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles, outlineNumbers: outlineNumbers);
+        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles, fnNums: fnNums, enNums: enNums, outlineNumbers: outlineNumbers);
         return fd;
     }
 

@@ -39,6 +39,16 @@ public static class PerPageDocumentSplitter
             ?? paginated.Source.OutlineStyles
             ?? OutlineStyleSet.CreateDefault();
 
+        // 각주/미주 번호 맵 — 문서 전체 순서 기준으로 번호 부여.
+        var fnNums = paginated.Source.Footnotes.Count > 0
+            ? paginated.Source.Footnotes.Select((f, i) => (f.Id, Num: i + 1))
+                .ToDictionary(x => x.Id, x => x.Num)
+            : null;
+        var enNums = paginated.Source.Endnotes.Count > 0
+            ? paginated.Source.Endnotes.Select((e, i) => (e.Id, Num: i + 1))
+                .ToDictionary(x => x.Id, x => x.Num)
+            : null;
+
         // 원본 문서의 ContainerBlock 계층 복원에 사용할 부모 맵.
         var parentMap      = BuildParentMap(paginated.Source);
         var outlineNumbers = FlowDocumentBuilder.ComputeOutlineNumbers(paginated.Source, styles);
@@ -84,7 +94,7 @@ public static class PerPageDocumentSplitter
                 var coreBlocks = parentMap.Count > 0
                     ? ReassembleContainerBlocks(rawBlocks, parentMap)
                     : rawBlocks;
-                var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers);
+                var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers, fnNums, enNums);
 
                 if (firstBreakPara is not null)
                     firstBreakPara.Style.ForcePageBreakBefore = true;

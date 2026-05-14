@@ -202,6 +202,8 @@ public sealed class IwpfWriter : IDocumentWriter
             Styles     = new StyleSheet(),
             Provenance = new Provenance(),
             Watermark  = document.Watermark,
+            Footnotes  = document.Footnotes,
+            Endnotes   = document.Endnotes,
         };
         return JsonSerializer.SerializeToUtf8Bytes(detached, JsonDefaults.Options);
     }
