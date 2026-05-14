@@ -2550,8 +2550,8 @@ public partial class MainWindow : Window
             ? vm2.Document.OutlineStyles
             : PolyDonky.Core.OutlineStyleSet.CreateDefault();
         var dlg = new OutlineStyleWindow(current) { Owner = this };
-        // live FlowDocument 를 함께 전달해 재빌드 전 모델 동기화 — 편집 중 이미지·글상자 손실 방지.
-        dlg.StyleApplied += (_, styleSet) => _viewModel?.ApplyOutlineStyles(styleSet, BodyEditor.Document);
+        // 모든 페이지 에디터의 변경사항을 포함해 동기화 — ApplyOutlineStyles 가 LiveDocumentProvider 로 처리.
+        dlg.StyleApplied += (_, styleSet) => _viewModel?.ApplyOutlineStyles(styleSet);
         dlg.ShowDialog();
     }
 
