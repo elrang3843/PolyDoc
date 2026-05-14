@@ -28,6 +28,7 @@ public sealed class PerPageEditorHost : Canvas
 {
     private readonly List<RichTextBox> _pageEditors = new();
     private int                        _physicalPageCount;
+    private int                        _endnotePageStartIndex = -1;
 
     /// <summary>현재 키보드 포커스를 가진 페이지 RTB.</summary>
     public RichTextBox? ActiveEditor { get; private set; }
@@ -35,8 +36,17 @@ public sealed class PerPageEditorHost : Canvas
     /// <summary>첫 번째 RTB. 없으면 null.</summary>
     public RichTextBox? FirstEditor => _pageEditors.Count > 0 ? _pageEditors[0] : null;
 
-    /// <summary>물리 페이지 수 (단 수와 무관하게 실제 페이지 수).</summary>
+    /// <summary>물리 페이지 수 (미주 페이지 포함 전체 페이지 수).</summary>
     public int PageCount => _physicalPageCount;
+
+    /// <summary>미주 페이지 제외 본문 페이지 수.</summary>
+    public int BodyPageCount => HasEndnotePage ? _physicalPageCount - 1 : _physicalPageCount;
+
+    /// <summary>미주 페이지가 있으면 true.</summary>
+    public bool HasEndnotePage => _endnotePageStartIndex >= 0;
+
+    /// <summary>미주 페이지의 첫 번째 PageIndex. 없으면 -1.</summary>
+    public int EndnotePageStartIndex => _endnotePageStartIndex;
 
     /// <summary>생성된 모든 RTB 목록 (페이지 순, 단 순).</summary>
     public IReadOnlyList<RichTextBox> PageEditors => _pageEditors;
@@ -71,12 +81,14 @@ public sealed class PerPageEditorHost : Canvas
         foreach (var e in _pageEditors) e.TextChanged -= OnPageTextChanged;
         _pageEditors.Clear();
         Children.Clear();
-        ActiveEditor        = null;
-        _physicalPageCount  = 0;
+        ActiveEditor           = null;
+        _physicalPageCount     = 0;
+        _endnotePageStartIndex = -1;
 
         if (slices.Count == 0) return;
 
-        _physicalPageCount = slices.Max(s => s.PageIndex) + 1;
+        _physicalPageCount     = slices.Max(s => s.PageIndex) + 1;
+        _endnotePageStartIndex = slices.FirstOrDefault(s => s.IsEndnotePage)?.PageIndex ?? -1;
 
         // 페이지별 PageGeometry 캐시 및 누적 Y 좌표 계산.
         var pageGeos = new Dictionary<int, PageGeometry>(_physicalPageCount);

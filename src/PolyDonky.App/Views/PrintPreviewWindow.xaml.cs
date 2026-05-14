@@ -232,7 +232,7 @@ public partial class PrintPreviewWindow : Window
             var geo       = new PageGeometry(_printPage);
 
             _geo       = geo;
-            _pageCount = paginated.PageCount;
+            _pageCount = paginated.PageCount;  // 본문 페이지 수 (미주 제외)
 
             // 3. 읽기 전용 per-page RTB 구성 (편집창 ConfigurePageRtb 와 동일 구조, 편집 잠금)
             PreviewPageHost.SetupPages(slices, geo, rtb =>
@@ -246,11 +246,15 @@ public partial class PrintPreviewWindow : Window
                 rtb.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
             });
 
-            // 4. 페이지 배경 프레임
+            int totalPageCount   = PreviewPageHost.PageCount;  // 미주 포함 전체 페이지 수
+            int endnotePageStart = PreviewPageHost.EndnotePageStartIndex;
+
+            // 4. 페이지 배경 프레임 (미주 페이지 포함)
             var pageSettings = docForBuild.Sections.FirstOrDefault()?.Page;
             PageViewBuilder.BuildPageFrames(
-                PreviewPageBgCanvas, geo, _pageCount, pageSettings,
-                pageBg: Brushes.White, showShadow: true, showGuides: false, showLabels: true);
+                PreviewPageBgCanvas, geo, totalPageCount, pageSettings,
+                pageBg: Brushes.White, showShadow: true, showGuides: false, showLabels: true,
+                endnotePageStart: endnotePageStart);
 
             // 5. 오버레이 캔버스 채우기
             PageViewBuilder.PopulateOverlayCanvases(
@@ -279,7 +283,7 @@ public partial class PrintPreviewWindow : Window
             // 6. 오버레이 캔버스 클립 — 본문 텍스트가 per-page RTB 에서 페이지마다 잘려 보이는 것과
             // 동일하게, 모든 부유 객체(글상자·도형·이미지·표) 도 페이지 경계 밖(특히 페이지 간 갭) 에서
             // 잘려 보이도록 한다. 편집창과 동일한 시각 결과를 보장한다.
-            var clip = PageViewBuilder.BuildPageClipGeometry(geo, _pageCount);
+            var clip = PageViewBuilder.BuildPageClipGeometry(geo, totalPageCount);
             PreviewOverlayShapeCanvas.Clip  = clip;
             PreviewUnderlayShapeCanvas.Clip = clip;
             PreviewOverlayImageCanvas.Clip  = clip;
@@ -290,9 +294,9 @@ public partial class PrintPreviewWindow : Window
             PreviewWatermarkCanvas.Clip     = clip;
             PreviewHeaderFooterCanvas.Clip  = clip;
 
-            // 7. PaperHost 크기 설정
+            // 7. PaperHost 크기 설정 (미주 페이지 포함 전체 높이)
             PreviewPaperHost.Width     = geo.PageWidthDip;
-            PreviewPaperHost.MinHeight = geo.TotalHeightDip(_pageCount);
+            PreviewPaperHost.MinHeight = geo.TotalHeightDip(totalPageCount);
 
             PageInfoText.Text = $"총 {_pageCount}페이지";
 

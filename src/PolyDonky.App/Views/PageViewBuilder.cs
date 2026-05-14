@@ -21,17 +21,19 @@ public static class PageViewBuilder
         Canvas        target,
         PageGeometry  geo,
         int           pageCount,
-        PageSettings? pageSettings = null,
-        Brush?        pageBg       = null,
-        bool          showShadow   = true,
-        bool          showGuides   = true,
-        bool          showLabels   = true)
+        PageSettings? pageSettings    = null,
+        Brush?        pageBg          = null,
+        bool          showShadow      = true,
+        bool          showGuides      = true,
+        bool          showLabels      = true,
+        int           endnotePageStart = -1)
     {
         target.Children.Clear();
         pageBg ??= Brushes.White;
 
         for (int i = 0; i < pageCount; i++)
         {
+            bool isEndnotePage = endnotePageStart >= 0 && i >= endnotePageStart;
             double topY = i * geo.PageStrideDip;
 
             var border = new Border
@@ -56,7 +58,7 @@ public static class PageViewBuilder
             Canvas.SetTop (border, topY);
             target.Children.Add(border);
 
-            if (showGuides && (pageSettings?.ShowMarginGuides ?? true))
+            if (!isEndnotePage && showGuides && (pageSettings?.ShowMarginGuides ?? true))
             {
                 var guide = new System.Windows.Shapes.Rectangle
                 {
@@ -77,7 +79,7 @@ public static class PageViewBuilder
             {
                 var label = new System.Windows.Controls.TextBlock
                 {
-                    Text             = $"{i + 1}페이지",
+                    Text             = isEndnotePage ? "미주" : $"{i + 1}페이지",
                     FontSize         = 10,
                     Foreground       = new SolidColorBrush(WpfColor.FromArgb(0xA0, 0x50, 0x50, 0xB4)),
                     IsHitTestVisible = false,

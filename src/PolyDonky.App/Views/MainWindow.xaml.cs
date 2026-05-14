@@ -1843,23 +1843,26 @@ public partial class MainWindow : Window
         _columnDividerLines.Clear();
 
         // 페이지 수 계산.
-        // 1순위: WPF DocumentPaginator 로 산출한 정확값 (_currentPaginatedDoc).
-        // 2순위: 편집 중간 짧은 구간 — PageEditorHost 현재 페이지 수 또는 오버레이 anchor max.
+        // 본문 페이지(bodyPageCount): 머리말/꼬리말·워터마크·조판 기호 등 적용 범위.
+        // 전체 페이지(totalPageCount): 미주 페이지 포함 — 페이지 프레임·MinHeight·클립 등에 사용.
         int maxAnchorIndex = ComputeMaxAnchorPageIndex();
-        int pageCount = _currentPaginatedDoc?.PageCount
-            ?? Math.Max(PageEditorHost.PageCount, maxAnchorIndex + 1);
-        if (pageCount < 1) pageCount = 1;
-        _currentPageCount = pageCount;
+        int bodyPageCount = _currentPaginatedDoc?.PageCount
+            ?? Math.Max(PageEditorHost.BodyPageCount, maxAnchorIndex + 1);
+        if (bodyPageCount < 1) bodyPageCount = 1;
+        _currentPageCount = bodyPageCount;
 
-        // PaperHost 의 전체 높이 = N 페이지 + (N-1) 갭.
-        double totalHeight = pg.TotalHeightDip(pageCount);
+        int endnotePageStart = PageEditorHost.EndnotePageStartIndex;
+        int totalPageCount   = bodyPageCount + (PageEditorHost.HasEndnotePage ? 1 : 0);
+
+        // PaperHost 의 전체 높이 = N 페이지 + (N-1) 갭 (미주 페이지 포함).
+        double totalHeight = pg.TotalHeightDip(totalPageCount);
         if (Math.Abs(PaperHost.MinHeight - totalHeight) > 0.5)
             PaperHost.MinHeight = totalHeight;
 
         // 오버레이 캔버스를 페이지 경계에서 클립 — 본문 텍스트가 per-page RTB 에서 페이지마다
         // 잘려 보이는 것과 동일하게, 모든 부유 객체(글상자·도형·이미지·표) 도 페이지 경계 밖
         // (특히 페이지 간 갭) 에서 잘려 보이도록 한다. 미리보기/인쇄와 동일한 시각 결과를 보장한다.
-        var overlayClip = PageViewBuilder.BuildPageClipGeometry(pg, pageCount);
+        var overlayClip = PageViewBuilder.BuildPageClipGeometry(pg, totalPageCount);
         OverlayShapeCanvas.Clip  = overlayClip;
         UnderlayShapeCanvas.Clip = overlayClip;
         OverlayImageCanvas.Clip  = overlayClip;
@@ -1881,8 +1884,9 @@ public partial class MainWindow : Window
         // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 클리어한 뒤 마지막에 올린다.
         var pendingDebugLabels = new List<(System.Windows.Controls.TextBlock label, double left, double top)>();
 
-        for (int i = 0; i < pageCount; i++)
+        for (int i = 0; i < totalPageCount; i++)
         {
+            bool isEndnotePage = endnotePageStart >= 0 && i >= endnotePageStart;
             double topY = i * pg.PageStrideDip;
 
             // 페이지 외곽 (흰색 Border + 그림자)
@@ -1907,8 +1911,8 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (pageBorder, topY);
             PageBackgroundCanvas.Children.Add(pageBorder);
 
-            // 여백 가이드 (점선 사각형) — 본문 영역
-            if (showGuides)
+            // 여백 가이드 (점선 사각형) — 본문 영역. 미주 페이지는 생략.
+            if (showGuides && !isEndnotePage)
             {
                 var guide = new System.Windows.Shapes.Rectangle
                 {
@@ -1925,10 +1929,9 @@ public partial class MainWindow : Window
                 PageBackgroundCanvas.Children.Add(guide);
             }
 
-            // 단 구분선 — 다단인 경우 단 사이 갭 중앙에 세로선.
-            // 표시 여부/색/두께/스타일은 PageSettings.ColumnDivider* 로 사용자 설정.
-            // ShowMarginGuides 와는 독립적이며, 인쇄에는 출력되지 않는 편집창 전용 가이드.
-            if (pg.ColumnCount > 1
+            // 단 구분선 — 다단인 경우 단 사이 갭 중앙에 세로선. 미주 페이지는 생략.
+            if (!isEndnotePage
+                && pg.ColumnCount > 1
                 && page is not null
                 && page.ColumnDividerVisible
                 && page.ColumnDividerStyle != ColumnDividerStyle.None)
@@ -1966,10 +1969,10 @@ public partial class MainWindow : Window
                 }
             }
 
-            // 페이지 번호 라벨 (좌상단)
+            // 페이지 번호 라벨 (좌상단). 미주 페이지는 "미주" 로 표시.
             var label = new System.Windows.Controls.TextBlock
             {
-                Text       = $"{i + 1}페이지",
+                Text       = isEndnotePage ? "미주" : $"{i + 1}페이지",
                 FontSize   = 10,
                 Foreground = new SolidColorBrush(WpfMedia.Color.FromArgb(0xA0, 0x50, 0x50, 0xB4)),
                 IsHitTestVisible = false,
@@ -1978,11 +1981,10 @@ public partial class MainWindow : Window
             System.Windows.Controls.Canvas.SetTop (label, topY + 2);
             PageBackgroundCanvas.Children.Add(label);
 
-            // 디버그 정보 — 페이지 높이/본문 가용 높이/여백 + 페이지네이션 측정 fill (육안 검증용).
-            // 좌측 하단 여백 안쪽. 페이지네이션 측정값과 실제 렌더 높이를 비교해
-            // 클리핑·공백 원인을 추적할 때 사용.
-            // measured fill = MapBodyBlocksToPages 에서 이 슬롯에 누적된 블록 높이 합 — 이 값이
-            // body H 를 초과(혹은 근접) 하면 페이지가 꽉 찼다고 판단해 다음 페이지로 넘긴다.
+            // 디버그 정보 — 미주 페이지는 생략.
+            if (isEndnotePage) continue;
+
+            // 페이지 높이/본문 가용 높이/여백 + 페이지네이션 측정 fill (육안 검증용).
             double dbgBodyH      = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
             double dbgPageHmm    = FlowDocumentBuilder.DipToMm(pg.PageHeightDip);
             double dbgBodyHmm    = FlowDocumentBuilder.DipToMm(dbgBodyH);
@@ -2051,8 +2053,8 @@ public partial class MainWindow : Window
             pendingDebugLabels.Add((debugLabel, pg.PageWidthDip + 8, topY + 4));
         }
 
-        RenderWatermark(pg, pageCount);
-        RebuildHeaderFooterLayer(pg, pageCount);
+        RenderWatermark(pg, bodyPageCount);
+        RebuildHeaderFooterLayer(pg, bodyPageCount);
         RebuildTypesettingMarks();
 
         // 디버그 오버레이는 RebuildTypesettingMarks 가 캔버스를 비운 뒤 한꺼번에 올린다.
