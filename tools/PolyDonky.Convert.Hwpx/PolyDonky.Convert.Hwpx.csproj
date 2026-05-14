@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\PolyDonky.Core\PolyDonky.Core.csproj" />
     <ProjectReference Include="..\..\src\PolyDonky.Iwpf\PolyDonky.Iwpf.csproj" />
     <ProjectReference Include="..\..\src\PolyDonky.Codecs.Hwpx\PolyDonky.Codecs.Hwpx.csproj" />
+    <ProjectReference Include="..\PolyDonky.Convert.Common\PolyDonky.Convert.Common.csproj" />
   </ItemGroup>
 
 </Project>

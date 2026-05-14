@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using PolyDonky.Convert.Common;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 using PdXmlReader = PolyDonky.Codecs.Xml.XmlReader;
@@ -28,12 +29,7 @@ using PdXmlWriter = PolyDonky.Codecs.Xml.XmlWriter;
 //   3 지원하지 않는 변환 쌍
 //   4 입출력 실패
 //   5 변환 실패
-
-const int ExitOk            = 0;
-const int ExitBadArgs       = 2;
-const int ExitUnsupportedOp = 3;
-const int ExitIoError       = 4;
-const int ExitConvertError  = 5;
+// (상수는 PolyDonky.Convert.Common.ConverterExitCodes 에 정의됨)
 
 try { Console.OutputEncoding = Encoding.UTF8; } catch { /* 무시 */ }
 
@@ -66,10 +62,10 @@ for (int i = 0; i < args.Length; i++)
     {
         case "--version" or "-v":
             Console.WriteLine("PolyDonky.Convert.Xml 1.0");
-            return ExitOk;
+            return ConverterExitCodes.Ok;
         case "--help" or "-h" or "/?":
             PrintHelp();
-            return ExitOk;
+            return ConverterExitCodes.Ok;
         case "--fragment":
             fragmentOut = true;
             break;
@@ -77,7 +73,7 @@ for (int i = 0; i < args.Length; i++)
             if (i + 1 >= args.Length)
             {
                 Console.Error.WriteLine("--title 다음에 텍스트가 와야 합니다.");
-                return ExitBadArgs;
+                return ConverterExitCodes.BadArgs;
             }
             titleOut = args[++i];
             break;
@@ -87,14 +83,14 @@ for (int i = 0; i < args.Length; i++)
             else if (a.StartsWith("--", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"알 수 없는 옵션: {a}");
-                return ExitBadArgs;
+                return ConverterExitCodes.BadArgs;
             }
             else if (positional.Count < 2)
                 positional.Add(a);
             else
             {
                 Console.Error.WriteLine("위치 인자는 2개여야 합니다 (input, output).");
-                return ExitBadArgs;
+                return ConverterExitCodes.BadArgs;
             }
             break;
     }
@@ -104,7 +100,7 @@ if (positional.Count != 2)
 {
     Console.Error.WriteLine("Usage: PolyDonky.Convert.Xml <input> <output> [--fragment] [--title <text>]");
     Console.Error.WriteLine("  '--help' 로 자세한 도움말과 종료 코드 안내를 볼 수 있습니다.");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string inPath, outPath;
@@ -116,7 +112,7 @@ try
 catch (Exception ex)
 {
     Console.Error.WriteLine($"경로 해석 실패: {ex.Message}");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string Ext(string p) => Path.GetExtension(p).TrimStart('.').ToLowerInvariant();
@@ -128,7 +124,7 @@ if (string.Equals(inPath, outPath, StringComparison.OrdinalIgnoreCase))
 {
     Console.Error.WriteLine($"입력과 출력 경로가 같습니다 — 자기 자신을 덮어쓸 수 없습니다: {inPath}");
     Console.Error.Flush();
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 bool isImport = (inExt is "xml" or "xhtml") && outExt == "iwpf";
@@ -138,34 +134,34 @@ if (!isImport && !isExport)
     Console.Error.WriteLine($"지원하지 않는 변환: .{inExt} → .{outExt}");
     Console.Error.WriteLine("  지원: .xml|.xhtml → .iwpf, .iwpf → .xml|.xhtml");
     Console.Error.Flush();
-    return ExitUnsupportedOp;
+    return ConverterExitCodes.UnsupportedOp;
 }
 
 if (fragmentOut && !isExport)
 {
     Console.Error.WriteLine("--fragment 는 export 모드(*.iwpf → *.xml) 에서만 사용 가능합니다.");
     Console.Error.Flush();
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 if (titleOut is not null && !isExport)
 {
     Console.Error.WriteLine("--title 은 export 모드(*.iwpf → *.xml) 에서만 사용 가능합니다.");
     Console.Error.Flush();
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 if (!File.Exists(inPath))
 {
     Console.Error.WriteLine($"입력 파일이 없습니다: {inPath}");
     Console.Error.Flush();
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 if (new FileInfo(inPath).Length == 0)
 {
     Console.Error.WriteLine($"입력 파일이 비어 있습니다(0 byte): {inPath}");
     Console.Error.Flush();
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 var outDir = Path.GetDirectoryName(outPath);
@@ -176,7 +172,7 @@ if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
     {
         Console.Error.WriteLine($"출력 디렉터리 생성 실패: {outDir}\n  → {ex.Message}");
         Console.Error.Flush();
-        return ExitIoError;
+        return ConverterExitCodes.IoError;
     }
 }
 
@@ -195,7 +191,7 @@ if (isImport)
     {
         Console.Error.WriteLine($"입력 파일 읽기 실패: {ex.Message}");
         Console.Error.Flush();
-        return ExitIoError;
+        return ConverterExitCodes.IoError;
     }
 
     if (LooksBinary(xmlBytes))
@@ -203,7 +199,7 @@ if (isImport)
         Console.Error.WriteLine(
             $"XML 텍스트 파일이 아닙니다 (NUL 바이트 다수 감지 — 바이너리 파일?): {inPath}");
         Console.Error.Flush();
-        return ExitConvertError;
+        return ConverterExitCodes.ConvertError;
     }
 
     (xmlEnc, encLabel) = DetectEncoding(xmlBytes);
@@ -217,22 +213,22 @@ try
 {
     if (isImport)
     {
-        WriteProgress(0, $"XML 읽는 중 (인코딩 {encLabel})");
+        ConverterProgress.Write(0, $"XML 읽는 중 (인코딩 {encLabel})");
         var text = xmlEnc.GetString(xmlBytes!);
         var doc  = PdXmlReader.FromXml(text);
 
-        WriteProgress(60, "IWPF 로 변환 중");
+        ConverterProgress.Write(60, "IWPF 로 변환 중");
         using (var ofs = File.Create(tempOut))
             new IwpfWriter().Write(doc, ofs);
     }
     else
     {
-        WriteProgress(0, "IWPF 읽는 중");
+        ConverterProgress.Write(0, "IWPF 읽는 중");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new IwpfReader().Read(fs);
 
-        WriteProgress(60, fragmentOut ? "XHTML fragment 로 변환 중" : "XHTML 로 변환 중");
+        ConverterProgress.Write(60, fragmentOut ? "XHTML fragment 로 변환 중" : "XHTML 로 변환 중");
         var writer = new PdXmlWriter { FullDocument = !fragmentOut, DocumentTitle = titleOut };
         using (var ofs = File.Create(tempOut))
             writer.Write(doc, ofs);
@@ -241,31 +237,31 @@ try
     if (File.Exists(outPath)) File.Delete(outPath);
     File.Move(tempOut, outPath);
     tempCleanupPath = null;
-    WriteProgress(100, "완료");
+    ConverterProgress.Write(100, "완료");
     Console.WriteLine($"OK: {Path.GetFileName(inPath)} → {Path.GetFileName(outPath)}");
     Console.Out.Flush();
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 catch (FileNotFoundException ex)
 {
     Console.Error.WriteLine($"파일을 찾을 수 없습니다: {ex.FileName ?? inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (DirectoryNotFoundException ex)
 {
     Console.Error.WriteLine($"디렉터리를 찾을 수 없습니다: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (UnauthorizedAccessException ex)
 {
     Console.Error.WriteLine($"권한 거부: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (DecoderFallbackException ex)
 {
     Console.Error.WriteLine(
         $"문자열 디코딩 실패 (감지된 인코딩 {encLabel} 으로는 일부 바이트를 변환할 수 없음): {inPath}\n  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (System.Xml.XmlException ex)
 {
@@ -283,23 +279,23 @@ catch (System.Xml.XmlException ex)
             $"XML 형식이 유효하지 않습니다: {inPath}\n" +
             $"  줄 {ex.LineNumber}, 위치 {ex.LinePosition}: {ex.Message}");
     }
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (System.IO.InvalidDataException ex)
 {
     Console.Error.WriteLine(
         $"파일 형식이 유효하지 않습니다: {inPath}\n  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (IOException ex)
 {
     Console.Error.WriteLine($"I/O 실패: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"변환 실패: {ex.GetType().Name}: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 finally
 {
@@ -309,12 +305,6 @@ finally
 }
 
 // ── 헬퍼 ────────────────────────────────────────────────────────────
-
-static void WriteProgress(int percent, string message)
-{
-    Console.WriteLine($"PROGRESS:{percent}:{message}");
-    Console.Out.Flush();
-}
 
 /// <summary>NUL 바이트가 5% 이상이면 바이너리로 간주.</summary>
 static bool LooksBinary(byte[] bytes)

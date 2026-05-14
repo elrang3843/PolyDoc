@@ -1,6 +1,7 @@
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using PolyDonky.Codecs.Docx;
+using PolyDonky.Convert.Common;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 
@@ -24,13 +25,7 @@ using PolyDonky.Iwpf;
 //   4 입출력 실패 (파일 없음·권한·디렉터리 없음·디스크 잠금 등)
 //   5 변환 실패 (DOCX 구조 손상·내부 예외)
 //   6 지원하지 않는 옛 버전 (Word 2013 미만)
-
-const int ExitOk            = 0;
-const int ExitBadArgs       = 2;
-const int ExitUnsupportedOp = 3;
-const int ExitIoError       = 4;
-const int ExitConvertError  = 5;
-const int ExitOldVersion    = 6;
+// (상수는 PolyDonky.Convert.Common.ConverterExitCodes 에 정의됨)
 
 // Windows cmd.exe 의 기본 cp949 에서 한글 깨짐 방지.
 try { Console.OutputEncoding = Encoding.UTF8; } catch { /* 일부 환경(redirected pipe) 무시 */ }
@@ -52,13 +47,13 @@ Console.CancelKeyPress += (_, e) =>
 if (args.Length == 1 && (args[0] is "--version" or "-v"))
 {
     Console.WriteLine("PolyDonky.Convert.Docx 1.0");
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 
 if (args.Length == 1 && (args[0] is "--help" or "-h" or "/?"))
 {
     PrintHelp();
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 
 if (args.Length != 2)
@@ -66,7 +61,7 @@ if (args.Length != 2)
     Console.Error.WriteLine("Usage: PolyDonky.Convert.Docx <input> <output>");
     Console.Error.WriteLine("  Supported: .docx <-> .iwpf");
     Console.Error.WriteLine("  '--help' 로 자세한 도움말과 종료 코드 안내를 볼 수 있습니다.");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string inPath, outPath;
@@ -78,7 +73,7 @@ try
 catch (Exception ex)
 {
     Console.Error.WriteLine($"경로 해석 실패: {ex.Message}");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string Ext(string p) => Path.GetExtension(p).TrimStart('.').ToLowerInvariant();
@@ -90,7 +85,7 @@ string outExt = Ext(outPath);
 if (string.Equals(inPath, outPath, StringComparison.OrdinalIgnoreCase))
 {
     Console.Error.WriteLine($"입력과 출력 경로가 같습니다 — 자기 자신을 덮어쓸 수 없습니다: {inPath}");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 // 2. 변환 쌍 검사
@@ -100,14 +95,14 @@ if (!isImport && !isExport)
 {
     Console.Error.WriteLine($"지원하지 않는 변환: .{inExt} → .{outExt}");
     Console.Error.WriteLine("  지원: .docx → .iwpf, .iwpf → .docx");
-    return ExitUnsupportedOp;
+    return ConverterExitCodes.UnsupportedOp;
 }
 
 // 3. 입력 파일 존재
 if (!File.Exists(inPath))
 {
     Console.Error.WriteLine($"입력 파일이 없습니다: {inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 // 4. 입력 파일 비어있지 않음
@@ -115,7 +110,7 @@ var inInfo = new FileInfo(inPath);
 if (inInfo.Length == 0)
 {
     Console.Error.WriteLine($"입력 파일이 비어 있습니다(0 byte): {inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 // 5. 출력 디렉터리 보장
@@ -126,7 +121,7 @@ if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
     catch (Exception ex)
     {
         Console.Error.WriteLine($"출력 디렉터리 생성 실패: {outDir}\n  → {ex.Message}");
-        return ExitIoError;
+        return ConverterExitCodes.IoError;
     }
 }
 
@@ -146,26 +141,26 @@ try
             Console.Error.WriteLine(
                 $"지원하지 않는 버전 — DOCX AppVersion {av:0.0}. " +
                 $"PolyDonky 는 Word 2013 (AppVersion {DocxVersionPolicy.MinSupportedAppVersion:0.0}) 이상만 처리합니다.");
-            return ExitOldVersion;
+            return ConverterExitCodes.OldVersion;
         }
 
-        WriteProgress(0, $"DOCX 읽는 중 (AppVersion {av?.ToString("0.0") ?? "?"})");
+        ConverterProgress.Write(0, $"DOCX 읽는 중 (AppVersion {av?.ToString("0.0") ?? "?"})");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new DocxReader().Read(fs);
 
-        WriteProgress(60, "IWPF 로 변환 중");
+        ConverterProgress.Write(60, "IWPF 로 변환 중");
         using (var ofs = File.Create(tempOut))
             new IwpfWriter().Write(doc, ofs);
     }
     else // isExport
     {
-        WriteProgress(0, "IWPF 읽는 중");
+        ConverterProgress.Write(0, "IWPF 읽는 중");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new IwpfReader().Read(fs);
 
-        WriteProgress(60, "DOCX 로 변환 중");
+        ConverterProgress.Write(60, "DOCX 로 변환 중");
         using (var ofs = File.Create(tempOut))
             new DocxWriter().Write(doc, ofs);
     }
@@ -174,32 +169,32 @@ try
     if (File.Exists(outPath)) File.Delete(outPath);
     File.Move(tempOut, outPath);
     tempCleanupPath = null;  // Move 성공 후엔 SIGINT 핸들러가 outPath 를 지우지 않게 함.
-    WriteProgress(100, "완료");
+    ConverterProgress.Write(100, "완료");
     Console.WriteLine($"OK: {Path.GetFileName(inPath)} → {Path.GetFileName(outPath)}");
     Console.Out.Flush();
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 catch (FileNotFoundException ex)
 {
     Console.Error.WriteLine($"파일을 찾을 수 없습니다: {ex.FileName ?? inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (DirectoryNotFoundException ex)
 {
     Console.Error.WriteLine($"디렉터리를 찾을 수 없습니다: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (UnauthorizedAccessException ex)
 {
     Console.Error.WriteLine($"권한 거부: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (OpenXmlPackageException ex)
 {
     Console.Error.WriteLine(
         $"DOCX 패키지가 손상되었거나 유효하지 않습니다: {inPath}\n" +
         $"  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (System.IO.FileFormatException ex)
 {
@@ -207,26 +202,26 @@ catch (System.IO.FileFormatException ex)
     Console.Error.WriteLine(
         $"DOCX 형식이 아닙니다 (OOXML 컨테이너로 인식 안 됨): {inPath}\n" +
         $"  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (System.IO.InvalidDataException ex)
 {
     Console.Error.WriteLine(
         $"파일 형식이 유효하지 않습니다 (ZIP/OOXML 파싱 실패): {inPath}\n" +
         $"  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (IOException ex)
 {
     // 디스크 가득·다른 프로세스의 잠금·네트워크 끊김 등.
     Console.Error.WriteLine($"I/O 실패: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"변환 실패: {ex.GetType().Name}: {ex.Message}");
     Console.Error.WriteLine(ex.StackTrace);
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 finally
 {
@@ -239,11 +234,7 @@ finally
 // ── 진행 막대 출력 ────────────────────────────────────────────────────
 // 메인 앱(Services/ExternalConverter) 가 stdout 을 한 줄씩 읽고 "PROGRESS:" 접두로
 // 시작하는 줄을 파싱해 IProgress 로 보고한다.
-static void WriteProgress(int percent, string message)
-{
-    Console.WriteLine($"PROGRESS:{percent}:{message}");
-    Console.Out.Flush();
-}
+// (함수는 ConverterProgress.Write 로 이동됨)
 
 static void PrintHelp()
 {
