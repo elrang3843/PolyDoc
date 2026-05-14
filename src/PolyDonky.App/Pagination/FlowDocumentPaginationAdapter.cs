@@ -1955,4 +1955,80 @@ public static class FlowDocumentPaginationAdapter
         if (maxPt <= 0) maxPt = table.BorderThicknessPt;
         return maxPt * PtToDip;
     }
+
+    // ── 섹션별 페이지네이션 ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// 각 섹션을 독립적으로 페이지네이션해 하나의 <see cref="PaginatedDocument"/> 로 합산한다.
+    /// 섹션별 <see cref="PageSettings"/> 가 다른 경우(여백·다단·배경색 등)를 올바르게 처리한다.
+    /// 섹션이 1개이면 <see cref="Paginate(PolyDonkyument, PageSettings?)"/> 에 위임한다.
+    /// </summary>
+    public static PaginatedDocument PaginateAllSections(PolyDonkyument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.Sections.Count <= 1)
+            return Paginate(document);
+
+        var allPages        = new System.Collections.Generic.List<PaginatedPage>();
+        var perPageSettings = new System.Collections.Generic.List<PageSettings>();
+        int offset          = 0;
+
+        for (int si = 0; si < document.Sections.Count; si++)
+        {
+            var section = document.Sections[si];
+
+            // 섹션을 임시 문서로 감싸서 독립 페이지네이션
+            var sectionDoc = new PolyDonkyument
+            {
+                Metadata      = document.Metadata,
+                Styles        = document.Styles,
+                OutlineStyles = document.OutlineStyles,
+                Footnotes     = document.Footnotes,
+                Endnotes      = document.Endnotes,
+            };
+            sectionDoc.Sections.Add(section);
+
+            var paginated = Paginate(sectionDoc, section.Page);
+
+            for (int pi = 0; pi < paginated.PageCount; pi++)
+            {
+                var orig      = paginated.Pages[pi];
+                int globalIdx = orig.PageIndex + offset;
+
+                allPages.Add(new PaginatedPage
+                {
+                    PageIndex = globalIdx,
+                    BodyBlocks = orig.BodyBlocks
+                        .Select(b => new BlockOnPage
+                        {
+                            Source        = b.Source,
+                            PageIndex     = b.PageIndex + offset,
+                            ColumnIndex   = b.ColumnIndex,
+                            BodyLocalRect = b.BodyLocalRect,
+                        })
+                        .ToArray(),
+                    OverlayBlocks = orig.OverlayBlocks
+                        .Select(o => new OverlayOnPage
+                        {
+                            Source          = o.Source,
+                            AnchorPageIndex = o.AnchorPageIndex + offset,
+                            XMm             = o.XMm,
+                            YMm             = o.YMm,
+                        })
+                        .ToArray(),
+                });
+                perPageSettings.Add(section.Page);
+            }
+            offset += paginated.PageCount;
+        }
+
+        return new PaginatedDocument
+        {
+            Source          = document,
+            PageSettings    = document.Sections.First().Page,
+            Pages           = allPages,
+            PerPageSettings = perPageSettings,
+        };
+    }
 }

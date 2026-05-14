@@ -16,6 +16,8 @@ public sealed class PerPageDocumentSlice
     public int                        PageIndex     { get; init; }
     /// <summary>이 슬라이스가 속한 단 인덱스 (0-based). 단일 단 문서에서는 항상 0.</summary>
     public int                        ColumnIndex   { get; init; }
+    /// <summary>이 슬라이스를 담당하는 섹션 인덱스 (0-based). 페이지별 서식 구분에 사용.</summary>
+    public int                        SectionIndex  { get; init; }
     /// <summary>이 페이지의 총 단 수. 1이면 단일 단.</summary>
     public int                        ColumnCount   { get; init; } = 1;
     /// <summary>

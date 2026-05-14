@@ -964,8 +964,17 @@ public partial class MainWindow : Window
     {
         var doc = _viewModel?.Document;
         if (doc is null || _pageGeometry is null) return;
-        _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(doc);
+        _currentPaginatedDoc = PaginateDoc(doc);
     }
+
+    /// <summary>
+    /// 섹션 수에 따라 적절한 페이지네이션 방식을 선택한다.
+    /// 2개 이상의 섹션이 있으면 섹션별 독립 페이지네이션으로 각 섹션의 PageSettings 를 반영한다.
+    /// </summary>
+    private static Pagination.PaginatedDocument PaginateDoc(PolyDonkyument doc)
+        => doc.Sections.Count > 1
+            ? FlowDocumentPaginationAdapter.PaginateAllSections(doc)
+            : FlowDocumentPaginationAdapter.Paginate(doc);
 
     /// <summary>
     /// _currentPaginatedDoc 으로부터 페이지별 슬라이스를 만들고 PageEditorHost 를 초기화한다.
@@ -975,6 +984,7 @@ public partial class MainWindow : Window
     {
         if (_currentPaginatedDoc is null || _pageGeometry is null) return;
         var slices = PerPageDocumentSplitter.Split(_currentPaginatedDoc);
+        _currentSlices = slices;
 
         // 오프스크린 측정 vs per-page 렌더 높이 차이로 인한 오버플로 후처리 보정.
         // fast-path(MaxBlocksForPreciseMapping 초과) 는 블록별 Y 측정을 수행하지 않으므로
@@ -1075,12 +1085,9 @@ public partial class MainWindow : Window
             freshDoc.Provenance    = original.Provenance;
             freshDoc.Watermark     = original.Watermark;
             freshDoc.OutlineStyles = original.OutlineStyles;
+            freshDoc.Footnotes     = original.Footnotes;
+            freshDoc.Endnotes      = original.Endnotes;
         }
-
-        var section = new PolyDonky.Core.Section();
-        if (original?.Sections.FirstOrDefault() is { } origSection)
-            section.Page = origSection.Page;
-        freshDoc.Sections.Add(section);
 
         // 각 페이지 RTB 를 파싱해 본문 블록 수집 (오버레이는 제외 — per-page RTB 에는 없다)
         var rawBlocks = new System.Collections.Generic.List<PolyDonky.Core.Block>();
@@ -1092,28 +1099,104 @@ public partial class MainWindow : Window
                     rawBlocks.Add(b);
         }
         // 줄 단위 분할로 생성된 조각 단락(§f0/§f1 접미사)을 원본 단락으로 재결합한다.
-        // 표 조각은 각 페이지에서 독립 표로 취급되므로 별도 병합 없이 그대로 유지한다.
-        foreach (var b in MergeColumnFragments(rawBlocks))
-            section.Blocks.Add(b);
+        var mergedBlocks = MergeColumnFragments(rawBlocks).ToList();
 
-        // 오버레이 블록 (_viewModel.Document 가 stable source) — 글상자는 RTB 에 앵커가 없고,
-        // 오버레이 모드 표/그림/도형의 앵커 단락은 PerPageDocumentSplitter 가 BodyBlocks 에서 제외하므로
-        // 둘 다 RTB 파싱으로 복원되지 않는다. 따라서 모델에서 직접 인계.
-        // 주의: Table/ImageBlock/ShapeObject 는 모두 IOverlayAnchored 를 구현하므로 단순히
-        // `b is IOverlayAnchored` 로 거르면 block-mode 표 등 본문 블록까지 포함되어 RTB 파싱본과
-        // 중복되고 ("표가 한 개 더 맨 끝에 붙는" 증상) 페이지 끝에 추가 배정된다.
-        // IsOverlayMode 로 진짜 오버레이만 추린다.
-        if (original?.Sections.FirstOrDefault() is { } origOverlay)
+        // 섹션 경계 단락 Id → 사용자 지정 PageSettings 맵.
+        // ForcePageBreakBefore=true 인 단락의 Id 를 키로, 그 단락이 시작하는 섹션의 PageSettings 를 저장.
+        // 이전 렌더링 사이클에서 사용자가 설정한 페이지 서식을 복원한다.
+        var boundaryMap = BuildSectionBoundaryMap(original);
+
+        // 첫 번째 섹션 시작
+        var firstPage = original?.Sections.FirstOrDefault()?.Page
+                        ?? new PolyDonky.Core.PageSettings();
+        var currentSection = new PolyDonky.Core.Section { Page = firstPage };
+        freshDoc.Sections.Add(currentSection);
+
+        foreach (var block in mergedBlocks)
+        {
+            // ForcePageBreakBefore 단락 = 섹션 경계. 새 섹션을 시작한다.
+            if (block is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore)
+            {
+                // 이전 사이클에서 사용자가 설정한 PageSettings 복원; 없으면 이전 섹션에서 상속.
+                var newPage = (bp.Id is not null && boundaryMap.TryGetValue(bp.Id, out var saved))
+                    ? saved
+                    : ClonePageSettings(currentSection.Page);
+                currentSection = new PolyDonky.Core.Section { Page = newPage };
+                freshDoc.Sections.Add(currentSection);
+            }
+            currentSection.Blocks.Add(block);
+        }
+
+        // 오버레이 블록 (_viewModel.Document 가 stable source) — 첫 섹션에서만 인계.
+        // 글상자·오버레이 모드 표/그림/도형은 RTB 파싱으로 복원되지 않으므로 모델에서 직접 가져온다.
+        if (original?.Sections.FirstOrDefault() is { } origOverlay
+            && freshDoc.Sections.FirstOrDefault() is { } firstFresh)
         {
             foreach (var b in origOverlay.Blocks)
             {
                 if (Pagination.FlowDocumentPaginationAdapter.IsOverlayMode(b))
-                    section.Blocks.Add(b);
+                    firstFresh.Blocks.Add(b);
             }
         }
 
         return freshDoc;
     }
+
+    /// <summary>
+    /// 원본 문서의 섹션 경계 단락 Id → PageSettings 맵을 구성한다.
+    /// 각 섹션에서 ForcePageBreakBefore=true 인 첫 단락의 Id 가 키다.
+    /// </summary>
+    private static System.Collections.Generic.Dictionary<string, PolyDonky.Core.PageSettings>
+        BuildSectionBoundaryMap(PolyDonkyument? original)
+    {
+        var map = new System.Collections.Generic.Dictionary<string, PolyDonky.Core.PageSettings>();
+        if (original is null) return map;
+        foreach (var sec in original.Sections)
+        {
+            foreach (var b in sec.Blocks)
+            {
+                if (b is PolyDonky.Core.Paragraph bp && bp.Style.ForcePageBreakBefore
+                    && bp.Id is { } id)
+                {
+                    map[id] = sec.Page;
+                    break;
+                }
+            }
+        }
+        return map;
+    }
+
+    /// <summary>PageSettings 얕은 복사 — 섹션 경계 자동 상속용.</summary>
+    private static PolyDonky.Core.PageSettings ClonePageSettings(PolyDonky.Core.PageSettings src)
+        => new()
+        {
+            SizeKind                 = src.SizeKind,
+            WidthMm                  = src.WidthMm,
+            HeightMm                 = src.HeightMm,
+            Orientation              = src.Orientation,
+            TextOrientation          = src.TextOrientation,
+            TextProgression          = src.TextProgression,
+            PaperColor               = src.PaperColor,
+            MarginTopMm              = src.MarginTopMm,
+            MarginBottomMm           = src.MarginBottomMm,
+            MarginLeftMm             = src.MarginLeftMm,
+            MarginRightMm            = src.MarginRightMm,
+            MarginHeaderMm           = src.MarginHeaderMm,
+            MarginFooterMm           = src.MarginFooterMm,
+            ColumnCount              = src.ColumnCount,
+            ColumnGapMm              = src.ColumnGapMm,
+            ColumnWidthsMm           = src.ColumnWidthsMm is { } cw ? new(cw) : null,
+            ColumnDividerVisible     = src.ColumnDividerVisible,
+            ColumnDividerColor       = src.ColumnDividerColor,
+            ColumnDividerThicknessPt = src.ColumnDividerThicknessPt,
+            ColumnDividerStyle       = src.ColumnDividerStyle,
+            PageNumberStart          = src.PageNumberStart,
+            Header                   = src.Header.Clone(),
+            Footer                   = src.Footer.Clone(),
+            DifferentFirstPage       = src.DifferentFirstPage,
+            DifferentOddEven         = src.DifferentOddEven,
+            ShowMarginGuides         = src.ShowMarginGuides,
+        };
 
     /// <summary>
     /// MapBodyBlocksToPages 의 줄 단위 분할이 생성한 조각 단락들을 재결합한다.
@@ -1268,7 +1351,7 @@ public partial class MainWindow : Window
             {
                 // 모든 페이지 RTB 를 파싱해 결합된 PolyDonkyument 를 만들고 재페이지네이트.
                 var freshDoc = ParseAllPageEditors();
-                _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+                _currentPaginatedDoc = PaginateDoc(freshDoc);
 
                 // 재구성 필요 판정:
                 //   ① 페이지 수가 달라졌거나
@@ -1701,6 +1784,7 @@ public partial class MainWindow : Window
     private PolyDonky.App.Services.PageGeometry? _pageGeometry;
     private int                _currentPageCount    = 1;
     private PaginatedDocument? _currentPaginatedDoc;           // 로드 시점 또는 ScheduleLivePaginationRefresh 후 최신
+    private IReadOnlyList<Pagination.PerPageDocumentSlice>? _currentSlices; // SetupPageEditors 에서 최신화
     private bool               _suppressPageFrameRebuild;      // RebuildPageFrames 안에서 MinHeight 변경이 재귀로 돌아오는 것을 차단
 
     private void ApplyPageSettings(PolyDonky.Core.PageSettings? page)
@@ -1716,7 +1800,7 @@ public partial class MainWindow : Window
         {
             var freshDoc = ParseAllPageEditors();
             if (freshDoc.Sections.FirstOrDefault() is { } s) s.Page = page;
-            _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(freshDoc);
+            _currentPaginatedDoc = PaginateDoc(freshDoc);
             SetupPageEditors();
             RebuildOverlays();
 
@@ -1731,7 +1815,7 @@ public partial class MainWindow : Window
                 if (_pageGeometry is null) return;
                 var redoFresh = ParseAllPageEditors();
                 if (redoFresh.Sections.FirstOrDefault() is { } rs) rs.Page = page;
-                var redoPaginated = FlowDocumentPaginationAdapter.Paginate(redoFresh);
+                var redoPaginated = PaginateDoc(redoFresh);
                 _currentPaginatedDoc = redoPaginated;
                 if (NeedsPageRebuild())
                 {
@@ -2861,19 +2945,43 @@ public partial class MainWindow : Window
 
     private void OpenPageFormatDialog(int initialTab)
     {
-        var current = _viewModel?.Document.Sections.FirstOrDefault()?.Page
-                      ?? new PolyDonky.Core.PageSettings();
+        if (_viewModel?.Document is not { } doc) return;
+
+        // 현재 활성 RTB → 슬라이스 → 섹션 인덱스 결정
+        int sectionIdx = GetActiveSectionIndex();
+        var targetSection = sectionIdx >= 0 && sectionIdx < doc.Sections.Count
+            ? doc.Sections[sectionIdx]
+            : doc.Sections.FirstOrDefault();
+
+        var current = targetSection?.Page ?? new PolyDonky.Core.PageSettings();
         var dlg = new PageFormatWindow(current, initialTab) { Owner = this };
-        if (dlg.ShowDialog() == true)
-        {
-            if (_viewModel?.Document.Sections.FirstOrDefault() is { } section)
-                section.Page = dlg.ResultSettings;
-            // PageSettings 는 FlowDocument 블록 내용과 무관하다 (종이 크기·여백·배경색만 바뀜).
-            // RebuildFlowDocument() 로 전체 재구성하면 저장 이후 편집한 이미지·글상자를 잃으므로
-            // 레이아웃 속성만 직접 갱신한다.
-            ApplyPageSettings(dlg.ResultSettings);
-            _viewModel?.MarkDirty();
-        }
+        if (dlg.ShowDialog() != true) return;
+
+        // 현재 페이지의 섹션만 수정한다.
+        if (targetSection is not null)
+            targetSection.Page = dlg.ResultSettings;
+
+        // PageSettings 는 FlowDocument 블록 내용과 무관하다 (종이 크기·여백·배경색만 바뀜).
+        // ApplyPageSettings 로 레이아웃 속성만 직접 갱신한다.
+        ApplyPageSettings(dlg.ResultSettings);
+        _viewModel?.MarkDirty();
+    }
+
+    /// <summary>
+    /// 현재 활성 RTB 가 속한 섹션 인덱스를 반환한다.
+    /// 슬라이스 정보가 없으면 0 을 반환한다.
+    /// </summary>
+    private int GetActiveSectionIndex()
+    {
+        if (_currentSlices is null) return 0;
+        var active = PageEditorHost.ActiveEditor;
+        if (active is null) return 0;
+        var editors = PageEditorHost.PageEditors;
+        int rtbIdx  = -1;
+        for (int i = 0; i < editors.Count; i++)
+            if (ReferenceEquals(editors[i], active)) { rtbIdx = i; break; }
+        if (rtbIdx < 0 || rtbIdx >= _currentSlices.Count) return 0;
+        return _currentSlices[rtbIdx].SectionIndex;
     }
 
     private void OnInsertSpecialChar(object sender, RoutedEventArgs e)
@@ -4265,7 +4373,7 @@ public partial class MainWindow : Window
                 {
                     GroupBlocks(selBlocks);
                     var fdGrp = ParseAllPageEditors();
-                    _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(fdGrp);
+                    _currentPaginatedDoc = PaginateDoc(fdGrp);
                     SetupPageEditors();
                     RebuildOverlays();
                 }));
@@ -6790,7 +6898,7 @@ public partial class MainWindow : Window
         {
             UngroupSection(groupSec);
             var fdUng = ParseAllPageEditors();
-            _currentPaginatedDoc = FlowDocumentPaginationAdapter.Paginate(fdUng);
+            _currentPaginatedDoc = PaginateDoc(fdUng);
             SetupPageEditors();
             RebuildOverlays();
         }));

@@ -72,10 +72,25 @@ public sealed class PerPageEditorHost : Canvas
 
         _physicalPageCount = slices.Max(s => s.PageIndex) + 1;
 
+        // 페이지별 누적 Y 좌표 — 각 페이지가 다른 PageSettings(높이)를 가질 수 있다.
+        // 키 = pageIndex, 값 = 해당 페이지 상단 Y (Canvas 좌표).
+        var pageTopY = new Dictionary<int, double>();
+        double cumulY = 0;
+        for (int pi = 0; pi < _physicalPageCount; pi++)
+        {
+            pageTopY[pi] = cumulY;
+            // 이 페이지의 PageSettings: 해당 pageIndex 의 첫 슬라이스에서 가져온다.
+            var pageSlice = slices.FirstOrDefault(s => s.PageIndex == pi);
+            var pageGeoForHeight = pageSlice is not null
+                ? new PageGeometry(pageSlice.PageSettings)
+                : geo;
+            cumulY += pageGeoForHeight.PageStrideDip;
+        }
+
         for (int i = 0; i < slices.Count; i++)
         {
-            var slice = slices[i];
-            RichTextBox rtb;
+            var slice    = slices[i];
+            var sliceGeo = new PageGeometry(slice.PageSettings);
 
             // 단일 단 / 다단 모두 동일하게 — 콘텐츠 영역(BodyWidth × BodyHeight)만 차지하는 RTB 를
             // Canvas 좌표로 페이지 여백 안쪽에 배치한다. 단일 단에서 RTB.Width = PageWidth + Padding
@@ -83,7 +98,7 @@ public sealed class PerPageEditorHost : Canvas
             // 미세하게 어긋나(WPF 가 RTB.Padding 과 fd.PageWidth 를 다르게 처리) pagination 측정값
             // 과 실렌더 길이가 달라져 페이지 끝에서 클리핑이 일어났다. 두 RTB 의 layout 조건을
             // 동일하게 맞추는 것이 측정 정확도의 전제 — 단일 단도 다단과 동일 패턴으로 통일.
-            rtb = new RichTextBox
+            var rtb = new RichTextBox
             {
                 Document      = slice.FlowDocument,
                 Width         = slice.BodyWidthDip,
@@ -102,8 +117,8 @@ public sealed class PerPageEditorHost : Canvas
                 FlowDirection     = FlowDirection.LeftToRight,
                 IsDocumentEnabled = true,
             };
-            double xPos = geo.PadLeftDip + slice.XOffsetDip;
-            double yPos = slice.PageIndex * geo.PageStrideDip + geo.PadTopDip;
+            double xPos = sliceGeo.PadLeftDip + slice.XOffsetDip;
+            double yPos = pageTopY[slice.PageIndex] + sliceGeo.PadTopDip;
             SetLeft(rtb, xPos);
             SetTop (rtb, yPos);
 
@@ -119,7 +134,7 @@ public sealed class PerPageEditorHost : Canvas
 
         ActiveEditor = _pageEditors[0];
         Width  = geo.PageWidthDip;
-        Height = geo.TotalHeightDip(_physicalPageCount);
+        Height = cumulY;
     }
 
     private void OnPageTextChanged(object sender, TextChangedEventArgs e)
