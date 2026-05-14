@@ -262,8 +262,9 @@ public static class FlowDocumentPaginationAdapter
             int fastBlockIdx = 0;
             foreach (var wpfBlock in flat)
             {
+                // 부동소수점으로 계산해 정수 나눗셈에 의한 초반 블록 쏠림을 방지한다.
                 int fastPageIdx = pageCount <= 1 ? 0
-                    : Math.Min(fastBlockIdx * pageCount / totalFlatCount, pageCount - 1);
+                    : Math.Min((int)((double)fastBlockIdx * pageCount / totalFlatCount), pageCount - 1);
                 int fastSlot = fastPageIdx * colCount;
                 // fast-path: ContainerBlock Section 은 자식 코어 블록을 직접 추가.
                 if (wpfBlock is WpfDocs.Section fastSect && fastSect.Tag is ContainerBlock)

@@ -51,6 +51,13 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **표/셀 속성 역직렬화 시 손실 수정**: FlowDocumentParser.ParseTable이 역변환 시 Table.BorderCollapse, BorderTop/Bottom/Left/Right, InnerBorderHorizontal/Vertical, WidthMm, HeightMm, IsFlexLayout, TableRow.BackgroundColor/VerticalAlign, TableCell.VerticalAlign/BorderTop~Right를 복원하지 않던 문제. 해당 속성이 편집 후 초기화되거나 저장 시 손실되던 현상 수정. (`FlowDocumentParser.cs`)
+- **HTML 표 행 배경색·세로정렬 import 손실 수정**: HtmlReader가 행 배경색을 파싱 후 셀에 직접 복사하고 row.BackgroundColor에 저장하지 않아, 행 배경색 변경이 라운드트립 이후 개별 셀 색으로 굳어지던 문제. 행 `valign` 속성도 파싱하지 않던 문제. row.BackgroundColor/VerticalAlign 저장 및 셀 배경색 분리 수정. (`HtmlReader.cs`)
+- **오버레이 객체 AnchorPageIndex 음수/범위 초과 시 화면 밖 렌더링 수정**: HTML에서 import된 도형/이미지의 sentinel 값(-2)이 페이지네이션 후 해결되지 않거나, 사용자 편집으로 페이지 수가 줄어 AnchorPageIndex가 범위를 초과할 때 객체가 화면 밖에 렌더링되던 문제. PlaceAt에서 pageIndex < 0이면 숨김 처리, PopulateOverlayCanvases에서 범위 초과 인덱스 건너뜀. (`PageViewBuilder.cs`)
+- **텍스트 burst 파싱 실패 시 stale _document로 Undo 스냅샷 저장 수정**: EndTextEditUndoBurst에서 ParseAllPageEditors가 예외를 던지면 _document가 최신화되지 않은 채 BeginUndoableAction이 stale 상태를 PushUndo하던 문제. 파싱 실패 플래그(_textEditBurstSyncFailed)를 도입해 실패 시 PushUndo 건너뜀. (`MainWindow.xaml.cs`)
+- **표 기본 셀 여백 폴백 값 불일치 수정**: FlowDocumentBuilder, TablePropertiesWindow가 각자 1.0/1.5mm를 하드코딩해 값을 일치시키기 어려웠던 문제. Table.FallbackCellPaddingVerticalMm/HorizontalMm 상수를 Core에 추가하고 모든 참조를 통일. (`Table.cs`, `FlowDocumentBuilder.cs`, `TablePropertiesWindow.xaml.cs`)
+- **Fast-path 페이지 배정 정수 나눗셈 블록 쏠림 수정**: 블록 수 2,500 초과 문서에서 fast-path 페이지 분배 시 정수 나눗셈으로 인해 초반 블록이 첫 페이지에 몰리던 문제. 부동소수점 나눗셈으로 전환해 균등 분배. (`FlowDocumentPaginationAdapter.cs`)
+
 - **HTML 변환 시 절대 위치 표 드래그앤드롭 지원 안 됨**: HTML의 `position:absolute` CSS를 가진 표를 import할 때, 절대 좌표(`left`, `top`)를 파싱하지 않아 오버레이 모드에서도 올바른 위치에 배치되지 않음. 이제 `position:absolute`를 감지하면 `WrapMode=InFrontOfText`로 설정하고 `left`/`top` CSS 값을 `OverlayXMm`/`OverlayYMm`에 저장하여 드래그앤드롭으로 정상 편집 가능. (`HtmlReader.cs`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
 

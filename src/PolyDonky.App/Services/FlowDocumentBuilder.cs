@@ -1026,10 +1026,10 @@ public static class FlowDocumentBuilder
         }
         wcell.BorderThickness = new Thickness(leftDip, topDip, rightDip, bottomDip);
 
-        double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : 1.0;
-        double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : 1.0;
-        double defLeft   = tableDefaults?.DefaultCellPaddingLeftMm   > 0 ? tableDefaults.DefaultCellPaddingLeftMm   : 1.5;
-        double defRight  = tableDefaults?.DefaultCellPaddingRightMm  > 0 ? tableDefaults.DefaultCellPaddingRightMm  : 1.5;
+        double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : Table.FallbackCellPaddingVerticalMm;
+        double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : Table.FallbackCellPaddingVerticalMm;
+        double defLeft   = tableDefaults?.DefaultCellPaddingLeftMm   > 0 ? tableDefaults.DefaultCellPaddingLeftMm   : Table.FallbackCellPaddingHorizontalMm;
+        double defRight  = tableDefaults?.DefaultCellPaddingRightMm  > 0 ? tableDefaults.DefaultCellPaddingRightMm  : Table.FallbackCellPaddingHorizontalMm;
 
         double padTop   = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : defTop);
         double padBottom= MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : defBottom);
@@ -1416,10 +1416,10 @@ public static class FlowDocumentBuilder
                          TryParseColor(cell.BackgroundColor) is { } bg)
                     cellBg = new WpfMedia.SolidColorBrush(bg);
 
-                double padL = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : 1.5);
-                double padT = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : 1.0);
-                double padR = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : 1.5);
-                double padB = MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : 1.0);
+                double padL = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : Table.FallbackCellPaddingHorizontalMm);
+                double padT = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : Table.FallbackCellPaddingVerticalMm);
+                double padR = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : Table.FallbackCellPaddingHorizontalMm);
+                double padB = MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : Table.FallbackCellPaddingVerticalMm);
 
                 // 셀 내용 텍스트 (첫 Paragraph 의 텍스트만 표시)
                 string text = string.Concat(

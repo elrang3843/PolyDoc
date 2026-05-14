@@ -2387,6 +2387,8 @@ public partial class MainWindow : Window
 
     private System.Windows.Threading.DispatcherTimer? _textEditUndoIdleTimer;
     private bool                                      _textEditUndoBurstActive;
+    // EndTextEditUndoBurst 에서 ParseAllPageEditors 실패 시 true — BeginUndoableAction 이 stale PushUndo 를 건너뜀.
+    private bool                                      _textEditBurstSyncFailed;
 
     /// <summary>텍스트 입력 burst idle 임계 (이 시간 동안 입력이 없으면 burst 가 종료된다).</summary>
     private static readonly TimeSpan TextEditBurstIdle = TimeSpan.FromMilliseconds(1500);
@@ -2434,15 +2436,21 @@ public partial class MainWindow : Window
 
         if (_viewModel is null) return;
         if (PageEditorHost.PageCount == 0) return;
+
+        // 파싱 성공 여부를 추적해 이후 BeginUndoableAction 에 stale _document 로
+        // PushUndo 되는 것을 막는다.
+        bool synced = false;
         try
         {
             var live = ParseAllPageEditors();
             _viewModel.SyncDocumentFromLive(live);
+            synced = true;
         }
         catch
         {
-            // 파싱 실패해도 burst 만 종료하고 계속 (다음 BeginTextEditUndoBurst 가 새 스냅샷을 만든다).
+            // 파싱 실패 시에도 burst 는 종료. synced=false 이므로 _burstSyncFailed 플래그 설정.
         }
+        _textEditBurstSyncFailed = !synced;
     }
 
     /// <summary>
@@ -2454,6 +2462,8 @@ public partial class MainWindow : Window
     {
         if (_viewModel is null) return;
         EndTextEditUndoBurst();
+        // burst 파싱이 실패한 경우 stale _document 를 undo 스택에 올리지 않는다.
+        if (_textEditBurstSyncFailed) return;
         _viewModel.UndoRedo.PushUndo(_viewModel.Document);
     }
 

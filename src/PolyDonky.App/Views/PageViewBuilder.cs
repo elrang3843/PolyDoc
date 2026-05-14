@@ -148,10 +148,15 @@ public static class PageViewBuilder
         overlayTable.Children.Clear();  underlayTable.Children.Clear();
         floatingCanvas.Children.Clear();
 
+        int validPageCount = paginated.Pages.Count;
         foreach (var page in paginated.Pages)
         {
             foreach (var oop in page.OverlayBlocks)
             {
+                // AnchorPageIndex 가 유효 범위를 벗어나면 건너뜀.
+                if (oop.AnchorPageIndex < 0 || oop.AnchorPageIndex >= validPageCount)
+                    continue;
+
                 switch (oop.Source)
                 {
                     case TextBoxObject tb:
@@ -206,6 +211,12 @@ public static class PageViewBuilder
 
     private static void PlaceAt(FrameworkElement ctrl, PageGeometry geo, int pageIndex, double xMm, double yMm)
     {
+        // pageIndex < 0: -2(HTML sentinel 미해결) 등 유효하지 않은 페이지 — 화면 밖 렌더링 방지.
+        if (pageIndex < 0)
+        {
+            ctrl.Visibility = System.Windows.Visibility.Collapsed;
+            return;
+        }
         var (xDip, yDip) = geo.ToAbsoluteDip(pageIndex, xMm, yMm);
         Canvas.SetLeft(ctrl, xDip);
         Canvas.SetTop (ctrl, yDip);

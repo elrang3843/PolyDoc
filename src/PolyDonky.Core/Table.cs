@@ -108,6 +108,11 @@ public sealed class Table : Block, IOverlayAnchored
     public bool BorderCollapse { get; set; } = true;
 
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
+    /// <summary>DefaultCellPadding*Mm 이 0 이하일 때 모든 렌더러가 공통으로 사용하는 폴백 상하 여백 (mm).</summary>
+    public const double FallbackCellPaddingVerticalMm   = 1.0;
+    /// <summary>DefaultCellPadding*Mm 이 0 이하일 때 모든 렌더러가 공통으로 사용하는 폴백 좌우 여백 (mm).</summary>
+    public const double FallbackCellPaddingHorizontalMm = 1.5;
+
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }
     public double DefaultCellPaddingLeftMm   { get; set; }

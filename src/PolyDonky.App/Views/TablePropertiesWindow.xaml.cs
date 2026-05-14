@@ -56,10 +56,10 @@ public partial class TablePropertiesWindow : Window
 
         BgColorPicker.ColorText = _table.BackgroundColor ?? string.Empty;
 
-        CellPadTopBox.Text    = _table.DefaultCellPaddingTopMm    > 0 ? _table.DefaultCellPaddingTopMm.ToString("F1")    : "1.0";
-        CellPadBottomBox.Text = _table.DefaultCellPaddingBottomMm > 0 ? _table.DefaultCellPaddingBottomMm.ToString("F1") : "1.0";
-        CellPadLeftBox.Text   = _table.DefaultCellPaddingLeftMm   > 0 ? _table.DefaultCellPaddingLeftMm.ToString("F1")   : "1.5";
-        CellPadRightBox.Text  = _table.DefaultCellPaddingRightMm  > 0 ? _table.DefaultCellPaddingRightMm.ToString("F1")  : "1.5";
+        CellPadTopBox.Text    = _table.DefaultCellPaddingTopMm    > 0 ? _table.DefaultCellPaddingTopMm.ToString("F1")    : Table.FallbackCellPaddingVerticalMm.ToString("F1");
+        CellPadBottomBox.Text = _table.DefaultCellPaddingBottomMm > 0 ? _table.DefaultCellPaddingBottomMm.ToString("F1") : Table.FallbackCellPaddingVerticalMm.ToString("F1");
+        CellPadLeftBox.Text   = _table.DefaultCellPaddingLeftMm   > 0 ? _table.DefaultCellPaddingLeftMm.ToString("F1")   : Table.FallbackCellPaddingHorizontalMm.ToString("F1");
+        CellPadRightBox.Text  = _table.DefaultCellPaddingRightMm  > 0 ? _table.DefaultCellPaddingRightMm.ToString("F1")  : Table.FallbackCellPaddingHorizontalMm.ToString("F1");
 
         OuterMarginTopBox.Text    = _table.OuterMarginTopMm    > 0 ? _table.OuterMarginTopMm.ToString("F1")    : "0";
         OuterMarginBottomBox.Text = _table.OuterMarginBottomMm > 0 ? _table.OuterMarginBottomMm.ToString("F1") : "0";
