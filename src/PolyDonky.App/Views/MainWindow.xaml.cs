@@ -3008,12 +3008,8 @@ public partial class MainWindow : Window
         var section    = doc.Sections[sectionIdx];
         var blocks     = section.Blocks;
 
-        // 분할 위치 탐색
-        int splitIdx = -1;
-        for (int i = 0; i < blocks.Count; i++)
-        {
-            if (ReferenceEquals(blocks[i], splitBlock)) { splitIdx = i; break; }
-        }
+        // splitBlock 이 ContainerBlock 자식일 수 있으므로, 상위 top-level 블록을 찾는다.
+        int splitIdx = FindTopLevelBlockIndex(blocks, splitBlock);
         if (splitIdx <= 0) return sectionIdx;  // 첫 블록이거나 못 찾음 → 분할 불필요
 
         // splitIdx 위치부터 새 섹션으로 분리
@@ -3043,6 +3039,34 @@ public partial class MainWindow : Window
 
         doc.Sections.Insert(sectionIdx + 1, newSection);
         return sectionIdx + 1;
+    }
+
+    /// <summary>
+    /// top-level 블록 목록에서 target 을 직접 참조하거나
+    /// ContainerBlock 내부에 포함하고 있는 첫 번째 top-level 블록의 인덱스를 반환한다.
+    /// 없으면 -1 반환.
+    /// </summary>
+    private static int FindTopLevelBlockIndex(IList<PolyDonky.Core.Block> topLevel, PolyDonky.Core.Block target)
+    {
+        for (int i = 0; i < topLevel.Count; i++)
+        {
+            if (ReferenceEquals(topLevel[i], target)) return i;
+            if (topLevel[i] is PolyDonky.Core.ContainerBlock cb
+                && ContainsBlockDeep(cb.Children, target))
+                return i;
+        }
+        return -1;
+    }
+
+    private static bool ContainsBlockDeep(IList<PolyDonky.Core.Block> blocks, PolyDonky.Core.Block target)
+    {
+        foreach (var b in blocks)
+        {
+            if (ReferenceEquals(b, target)) return true;
+            if (b is PolyDonky.Core.ContainerBlock cb && ContainsBlockDeep(cb.Children, target))
+                return true;
+        }
+        return false;
     }
 
     private void OnInsertSpecialChar(object sender, RoutedEventArgs e)
