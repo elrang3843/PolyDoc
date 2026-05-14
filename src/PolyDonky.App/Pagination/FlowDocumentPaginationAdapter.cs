@@ -1996,27 +1996,38 @@ public static class FlowDocumentPaginationAdapter
                 var orig      = paginated.Pages[pi];
                 int globalIdx = orig.PageIndex + offset;
 
+                // LINQ Select().ToArray() 할당 오버헤드 제거 — manual loop로 전환.
+                var bodyBlocks = new BlockOnPage[orig.BodyBlocks.Count];
+                for (int j = 0; j < orig.BodyBlocks.Count; j++)
+                {
+                    var b = orig.BodyBlocks[j];
+                    bodyBlocks[j] = new BlockOnPage
+                    {
+                        Source        = b.Source,
+                        PageIndex     = b.PageIndex + offset,
+                        ColumnIndex   = b.ColumnIndex,
+                        BodyLocalRect = b.BodyLocalRect,
+                    };
+                }
+
+                var overlayBlocks = new OverlayOnPage[orig.OverlayBlocks.Count];
+                for (int j = 0; j < orig.OverlayBlocks.Count; j++)
+                {
+                    var o = orig.OverlayBlocks[j];
+                    overlayBlocks[j] = new OverlayOnPage
+                    {
+                        Source          = o.Source,
+                        AnchorPageIndex = o.AnchorPageIndex + offset,
+                        XMm             = o.XMm,
+                        YMm             = o.YMm,
+                    };
+                }
+
                 allPages.Add(new PaginatedPage
                 {
                     PageIndex = globalIdx,
-                    BodyBlocks = orig.BodyBlocks
-                        .Select(b => new BlockOnPage
-                        {
-                            Source        = b.Source,
-                            PageIndex     = b.PageIndex + offset,
-                            ColumnIndex   = b.ColumnIndex,
-                            BodyLocalRect = b.BodyLocalRect,
-                        })
-                        .ToArray(),
-                    OverlayBlocks = orig.OverlayBlocks
-                        .Select(o => new OverlayOnPage
-                        {
-                            Source          = o.Source,
-                            AnchorPageIndex = o.AnchorPageIndex + offset,
-                            XMm             = o.XMm,
-                            YMm             = o.YMm,
-                        })
-                        .ToArray(),
+                    BodyBlocks = bodyBlocks,
+                    OverlayBlocks = overlayBlocks,
                 });
                 perPageSettings.Add(section.Page);
             }

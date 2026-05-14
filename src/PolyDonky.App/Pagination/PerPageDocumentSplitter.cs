@@ -103,7 +103,8 @@ public static class PerPageDocumentSplitter
     /// <summary>문서의 모든 섹션을 순회해 최상위 블록 → 섹션 인덱스 맵을 만든다.</summary>
     private static Dictionary<Block, int> BuildBlockToSectionIndexMap(PolyDonkyument doc)
     {
-        var map = new Dictionary<Block, int>(ReferenceEqualityComparer.Instance);
+        int totalBlocks = doc.Sections.Sum(s => s.Blocks.Count);
+        var map = new Dictionary<Block, int>(totalBlocks, ReferenceEqualityComparer.Instance);
         for (int si = 0; si < doc.Sections.Count; si++)
             foreach (var block in doc.Sections[si].Blocks)
                 map[block] = si;
@@ -113,7 +114,8 @@ public static class PerPageDocumentSplitter
     /// <summary>원본 문서를 순회해 ContainerBlock 의 직접 자식 → 부모 ContainerBlock 맵을 만든다.</summary>
     private static Dictionary<Block, ContainerBlock> BuildParentMap(PolyDonkyument doc)
     {
-        var map = new Dictionary<Block, ContainerBlock>(ReferenceEqualityComparer.Instance);
+        int totalBlocks = doc.Sections.Sum(s => s.Blocks.Count);
+        var map = new Dictionary<Block, ContainerBlock>(totalBlocks, ReferenceEqualityComparer.Instance);
         foreach (var section in doc.Sections)
             CollectParents(section.Blocks, map);
         return map;

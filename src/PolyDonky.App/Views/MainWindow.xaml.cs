@@ -1120,7 +1120,7 @@ public partial class MainWindow : Window
                 // 이전 사이클에서 사용자가 설정한 PageSettings 복원; 없으면 이전 섹션에서 상속.
                 var newPage = (bp.Id is not null && boundaryMap.TryGetValue(bp.Id, out var saved))
                     ? saved
-                    : ClonePageSettings(currentSection.Page);
+                    : Services.PageSettingsCloner.Clone(currentSection.Page);
                 currentSection = new PolyDonky.Core.Section { Page = newPage };
                 freshDoc.Sections.Add(currentSection);
             }
@@ -1165,38 +1165,6 @@ public partial class MainWindow : Window
         }
         return map;
     }
-
-    /// <summary>PageSettings 얕은 복사 — 섹션 경계 자동 상속용.</summary>
-    private static PolyDonky.Core.PageSettings ClonePageSettings(PolyDonky.Core.PageSettings src)
-        => new()
-        {
-            SizeKind                 = src.SizeKind,
-            WidthMm                  = src.WidthMm,
-            HeightMm                 = src.HeightMm,
-            Orientation              = src.Orientation,
-            TextOrientation          = src.TextOrientation,
-            TextProgression          = src.TextProgression,
-            PaperColor               = src.PaperColor,
-            MarginTopMm              = src.MarginTopMm,
-            MarginBottomMm           = src.MarginBottomMm,
-            MarginLeftMm             = src.MarginLeftMm,
-            MarginRightMm            = src.MarginRightMm,
-            MarginHeaderMm           = src.MarginHeaderMm,
-            MarginFooterMm           = src.MarginFooterMm,
-            ColumnCount              = src.ColumnCount,
-            ColumnGapMm              = src.ColumnGapMm,
-            ColumnWidthsMm           = src.ColumnWidthsMm is { } cw ? new(cw) : null,
-            ColumnDividerVisible     = src.ColumnDividerVisible,
-            ColumnDividerColor       = src.ColumnDividerColor,
-            ColumnDividerThicknessPt = src.ColumnDividerThicknessPt,
-            ColumnDividerStyle       = src.ColumnDividerStyle,
-            PageNumberStart          = src.PageNumberStart,
-            Header                   = src.Header.Clone(),
-            Footer                   = src.Footer.Clone(),
-            DifferentFirstPage       = src.DifferentFirstPage,
-            DifferentOddEven         = src.DifferentOddEven,
-            ShowMarginGuides         = src.ShowMarginGuides,
-        };
 
     /// <summary>
     /// MapBodyBlocksToPages 의 줄 단위 분할이 생성한 조각 단락들을 재결합한다.

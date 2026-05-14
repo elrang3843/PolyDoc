@@ -72,25 +72,27 @@ public sealed class PerPageEditorHost : Canvas
 
         _physicalPageCount = slices.Max(s => s.PageIndex) + 1;
 
-        // 페이지별 누적 Y 좌표 — 각 페이지가 다른 PageSettings(높이)를 가질 수 있다.
-        // 키 = pageIndex, 값 = 해당 페이지 상단 Y (Canvas 좌표).
-        var pageTopY = new Dictionary<int, double>();
+        // 페이지별 PageGeometry 캐시 및 누적 Y 좌표 계산.
+        // 각 페이지가 다른 PageSettings(높이)를 가질 수 있으므로, 슬라이스 루프에서
+        // 재생성하지 않고 미리 계산해둔다. 또한 FirstOrDefault O(N²) 문제 회피.
+        var pageGeos = new Dictionary<int, PageGeometry>(_physicalPageCount);
+        var pageTopY = new Dictionary<int, double>(_physicalPageCount);
         double cumulY = 0;
         for (int pi = 0; pi < _physicalPageCount; pi++)
         {
-            pageTopY[pi] = cumulY;
-            // 이 페이지의 PageSettings: 해당 pageIndex 의 첫 슬라이스에서 가져온다.
             var pageSlice = slices.FirstOrDefault(s => s.PageIndex == pi);
-            var pageGeoForHeight = pageSlice is not null
+            var pageGeo = pageSlice is not null
                 ? new PageGeometry(pageSlice.PageSettings)
                 : geo;
-            cumulY += pageGeoForHeight.PageStrideDip;
+            pageGeos[pi] = pageGeo;
+            pageTopY[pi] = cumulY;
+            cumulY += pageGeo.PageStrideDip;
         }
 
         for (int i = 0; i < slices.Count; i++)
         {
             var slice    = slices[i];
-            var sliceGeo = new PageGeometry(slice.PageSettings);
+            var sliceGeo = pageGeos[slice.PageIndex];
 
             // 단일 단 / 다단 모두 동일하게 — 콘텐츠 영역(BodyWidth × BodyHeight)만 차지하는 RTB 를
             // Canvas 좌표로 페이지 여백 안쪽에 배치한다. 단일 단에서 RTB.Width = PageWidth + Padding
