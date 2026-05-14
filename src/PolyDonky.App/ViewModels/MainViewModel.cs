@@ -444,9 +444,9 @@ public partial class MainViewModel : ObservableObject
         string? errorMessage = null;
         while (true)
         {
-            var prompt = new PasswordPromptWindow { Owner = Application.Current.MainWindow };
+            var prompt = new PasswordPromptWindow();
             if (errorMessage is not null) prompt.ShowError(errorMessage);
-            if (prompt.ShowDialog() != true)
+            if (prompt.ShowModal() != true)
             {
                 password = null;
                 return null;
@@ -510,21 +510,15 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void About()
     {
-        var window = new AboutWindow
-        {
-            Owner = Application.Current.MainWindow,
-        };
-        window.ShowDialog();
+        var window = new AboutWindow();
+        window.ShowModal();
     }
 
     [RelayCommand]
     private void LicenseInfo()
     {
-        var window = new LicenseInfoWindow
-        {
-            Owner = Application.Current.MainWindow,
-        };
-        window.ShowDialog();
+        var window = new LicenseInfoWindow();
+        window.ShowModal();
     }
 
     [RelayCommand]
@@ -532,10 +526,9 @@ public partial class MainViewModel : ObservableObject
     {
         var window = new UserGuideWindow
         {
-            Owner       = Application.Current.MainWindow,
             SelectedTab = UserGuideWindow.Tab.UserGuide,
         };
-        window.ShowDialog();
+        window.ShowModal();
     }
 
     [RelayCommand]
@@ -543,10 +536,9 @@ public partial class MainViewModel : ObservableObject
     {
         var window = new UserGuideWindow
         {
-            Owner       = Application.Current.MainWindow,
             SelectedTab = UserGuideWindow.Tab.IwpfFormat,
         };
-        window.ShowDialog();
+        window.ShowModal();
     }
 
     [RelayCommand]
@@ -624,8 +616,8 @@ public partial class MainViewModel : ObservableObject
             };
         }
 
-        var dlg = new DocumentInfoWindow(info) { Owner = Application.Current.MainWindow };
-        if (dlg.ShowDialog() != true) return;
+        var dlg = new DocumentInfoWindow(info);
+        if (dlg.ShowModal() != true) return;
 
         ApplyDocumentInfoChanges(info);
 
