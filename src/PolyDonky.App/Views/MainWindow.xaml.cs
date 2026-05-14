@@ -1984,6 +1984,7 @@ public partial class MainWindow : Window
             // 디버그 정보 — 미주 페이지는 생략.
             if (isEndnotePage) continue;
 
+#if DEBUG
             // 페이지 높이/본문 가용 높이/여백 + 페이지네이션 측정 fill (육안 검증용).
             double dbgBodyH      = pg.PageHeightDip - pg.PadTopDip - pg.PadBottomDip;
             double dbgPageHmm    = FlowDocumentBuilder.DipToMm(pg.PageHeightDip);
@@ -2015,8 +2016,6 @@ public partial class MainWindow : Window
                 dbgSb.AppendLine("fill: (fast-path/N/A)");
             }
 
-            // 블록별 측정 진단: 이 페이지에 배정된 블록의 topY / blockH / gap 표시
-            // blockH=0 인 항목은 과소평가 의심 → '!' 마킹
             if (_currentPaginatedDoc is { } paginated3 && paginated3.DebugBlockMeasurements.Count > 0)
             {
                 int colCount3 = Math.Max(1, pg.ColumnCount);
@@ -2032,7 +2031,6 @@ public partial class MainWindow : Window
                         string gapStr = e.Gap > 0.5 ? $" g+{e.Gap:F0}" : "";
                         string topStr = double.IsNaN(e.TopY) ? "Y=?" : $"Y={e.TopY:F0}";
                         string hStr   = double.IsNaN(e.BlockH) ? "h=?" : $"h={e.BlockH:F0}";
-                        // 레이블은 30자 이내로 자름
                         string lbl = e.Label.Length > 28 ? e.Label[..28] : e.Label;
                         dbgSb.AppendLine($"{flag}{lbl} {topStr} {hStr}{gapStr}");
                     }
@@ -2049,8 +2047,8 @@ public partial class MainWindow : Window
                 Padding          = new Thickness(3, 1, 3, 1),
                 IsHitTestVisible = false,
             };
-            // 페이지 오른쪽 바깥 여백에 배치 — 본문과 겹치지 않도록.
             pendingDebugLabels.Add((debugLabel, pg.PageWidthDip + 8, topY + 4));
+#endif
         }
 
         RenderWatermark(pg, bodyPageCount);
