@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **서식 툴바 두 번째 행 추가**: 글꼴 이름·크기 콤보박스, 굵게/기울임꼴/밑줄/취소선/위첨자/아래첨자 토글 버튼, 좌·가운데·우·양쪽 정렬 버튼, 글머리 기호·번호 매기기 목록, 들여쓰기/내어쓰기 버튼을 포함한 서식 툴바 행을 메인 창에 추가. RTB 선택 변경 시 버튼 상태가 현재 서식에 맞게 즉시 반영된다. (`MainWindow.xaml`, `MainWindow.xaml.cs`, `ToolbarIcons.xaml`, `Resources.resx`, `Resources.en-US.resx`)
+
 - **블록 그룹/해제 기능**: 여러 블록을 `ContainerBlock{Role=Group}`으로 묶는 "블록 그룹으로 묶기"와 그룹을 해제하는 "그룹 해제" 우클릭 메뉴 항목 추가. 캐럿이 그룹 안에 있을 때 "그룹 해제", 텍스트 선택이 2개 이상의 최상위 블록을 걸칠 때 "블록 그룹으로 묶기" 메뉴가 활성화된다. (`MainWindow.xaml.cs`, `FlowDocumentBuilder.cs`)
 - **복수 도형 SVG → 편집 가능한 ShapeObject 그룹으로 분해**: HTML 파일 안의 다중 도형 SVG (`<svg>` 내 rect/circle/ellipse/line/polyline/polygon/path 복수)를 `ImageBlock`(읽기 전용)이 아닌 개별 `ShapeObject`들로 분해하여 `ContainerBlock{Role=Group}`으로 묶어 가져온다. 그룹 해제 후 각 도형의 색상·크기·회전 등을 편집 가능. `<g>` 래퍼의 `transform="rotate()"` 도 전파. (`HtmlReader.cs`, `ContainerBlock.cs`)
 

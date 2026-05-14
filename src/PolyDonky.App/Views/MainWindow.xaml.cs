@@ -1034,6 +1034,7 @@ public partial class MainWindow : Window
         // RTB 내부 ScrollViewer 가 휠 이벤트를 소비해 본문만 내부 스크롤되는 것을 막고
         // 외부 EditorScrollViewer 로 전달 — 본문·오버레이가 함께 스크롤되도록 한다.
         rtb.PreviewMouseWheel          += OnPreviewMouseWheelMaster;
+        rtb.SelectionChanged += OnAnyEditorSelectionChanged;
 
         rtb.ContextMenu             = new System.Windows.Controls.ContextMenu();
         rtb.ContextMenuOpening      += OnEmbeddedObjectContextMenuOpening;
@@ -2579,6 +2580,251 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(editor, overlay.InnerEditor)) return;
         if (!editor.Selection.IsEmpty) return;
         editor.SelectAll();
+    }
+
+    // ── 서식 툴바 ──────────────────────────────────────────────────
+    // 두 번째 툴바 행: 글꼴·크기·B/I/U/S/위첨자/아래첨자·정렬·목록·들여쓰기
+
+    private bool _suppressToolbarUpdate;
+
+    private void OnFormatToolBarLoaded(object sender, RoutedEventArgs e)
+    {
+        var fonts = System.Windows.Media.Fonts.SystemFontFamilies
+            .OrderBy(f => f.Source, StringComparer.OrdinalIgnoreCase)
+            .Select(f => f.Source)
+            .ToList();
+        CboToolbarFont.ItemsSource = fonts;
+    }
+
+    private void OnAnyEditorSelectionChanged(object? sender, RoutedEventArgs e)
+    {
+        if (sender is RichTextBox rtb)
+            UpdateFormatToolbar(rtb);
+    }
+
+    private void UpdateFormatToolbar(RichTextBox? rtb = null)
+    {
+        rtb ??= GetActiveTextEditor();
+        var sel = rtb.Selection;
+
+        _suppressToolbarUpdate = true;
+        try
+        {
+            // 굵게
+            var weightVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontWeightProperty);
+            TbBold.IsChecked = weightVal is FontWeight fw &&
+                               fw.ToOpenTypeWeight() >= FontWeights.Bold.ToOpenTypeWeight();
+
+            // 기울임꼴
+            var styleVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontStyleProperty);
+            TbItalic.IsChecked = styleVal is FontStyle fs && fs == FontStyles.Italic;
+
+            // 밑줄·취소선
+            var tdVal = sel.GetPropertyValue(System.Windows.Documents.Inline.TextDecorationsProperty);
+            var tdCol = tdVal as System.Windows.TextDecorationCollection;
+            TbUnderline.IsChecked     = tdCol?.Any(d => d.Location == System.Windows.TextDecorationLocation.Underline)     ?? false;
+            TbStrikethrough.IsChecked = tdCol?.Any(d => d.Location == System.Windows.TextDecorationLocation.Strikethrough) ?? false;
+
+            // 위/아래첨자
+            var baseVal = sel.GetPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty);
+            TbSuperscript.IsChecked = baseVal is BaselineAlignment baSup && baSup == BaselineAlignment.Superscript;
+            TbSubscript.IsChecked   = baseVal is BaselineAlignment baSub && baSub == BaselineAlignment.Subscript;
+
+            // 글꼴 이름
+            var ffVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty);
+            if (ffVal is System.Windows.Media.FontFamily ff)
+                CboToolbarFont.Text = ff.Source.Split(',')[0].Trim();
+
+            // 글자 크기 (DIP → pt)
+            var fsVal = sel.GetPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty);
+            if (fsVal is double dip && dip > 0)
+                CboToolbarFontSize.Text = Services.FlowDocumentBuilder.DipToPt(dip).ToString("0.#");
+
+            // 정렬
+            var para = sel.Start.Paragraph;
+            if (para is not null)
+            {
+                var align = para.TextAlignment;
+                TbAlignLeft.IsChecked    = align == TextAlignment.Left;
+                TbAlignCenter.IsChecked  = align == TextAlignment.Center;
+                TbAlignRight.IsChecked   = align == TextAlignment.Right;
+                TbAlignJustify.IsChecked = align == TextAlignment.Justify;
+            }
+        }
+        finally
+        {
+            _suppressToolbarUpdate = false;
+        }
+    }
+
+    private void OnToolbarBold(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool bold = TbBold.IsChecked == true;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontWeightProperty,
+            bold ? FontWeights.Bold : FontWeights.Normal);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarItalic(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool italic = TbItalic.IsChecked == true;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontStyleProperty,
+            italic ? FontStyles.Italic : FontStyles.Normal);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarUnderline(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        ApplyToolbarTextDecorations(rtb.Selection,
+            TbUnderline.IsChecked == true,
+            TbStrikethrough.IsChecked == true);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarStrikethrough(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        ApplyToolbarTextDecorations(rtb.Selection,
+            TbUnderline.IsChecked == true,
+            TbStrikethrough.IsChecked == true);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private static void ApplyToolbarTextDecorations(System.Windows.Documents.TextSelection sel,
+        bool underline, bool strikethrough)
+    {
+        var decos = new System.Windows.TextDecorationCollection();
+        if (underline)     foreach (var d in System.Windows.TextDecorations.Underline)     decos.Add(d);
+        if (strikethrough) foreach (var d in System.Windows.TextDecorations.Strikethrough) decos.Add(d);
+        sel.ApplyPropertyValue(System.Windows.Documents.Inline.TextDecorationsProperty, decos);
+    }
+
+    private void OnToolbarSuperscript(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool sup = TbSuperscript.IsChecked == true;
+        if (sup) TbSubscript.IsChecked = false;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty,
+            sup ? BaselineAlignment.Superscript : BaselineAlignment.Baseline);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarSubscript(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        bool sub = TbSubscript.IsChecked == true;
+        if (sub) TbSuperscript.IsChecked = false;
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty,
+            sub ? BaselineAlignment.Subscript : BaselineAlignment.Baseline);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarAlignLeft(object sender, RoutedEventArgs e)    => ApplyToolbarAlignment(TextAlignment.Left);
+    private void OnToolbarAlignCenter(object sender, RoutedEventArgs e)  => ApplyToolbarAlignment(TextAlignment.Center);
+    private void OnToolbarAlignRight(object sender, RoutedEventArgs e)   => ApplyToolbarAlignment(TextAlignment.Right);
+    private void OnToolbarAlignJustify(object sender, RoutedEventArgs e) => ApplyToolbarAlignment(TextAlignment.Justify);
+
+    private void ApplyToolbarAlignment(TextAlignment align)
+    {
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Paragraph.TextAlignmentProperty, align);
+        // 정렬 버튼 상태 즉시 갱신 (SelectionChanged 가 비동기 발생할 수 있으므로)
+        TbAlignLeft.IsChecked    = align == TextAlignment.Left;
+        TbAlignCenter.IsChecked  = align == TextAlignment.Center;
+        TbAlignRight.IsChecked   = align == TextAlignment.Right;
+        TbAlignJustify.IsChecked = align == TextAlignment.Justify;
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarListBullet(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.ToggleBullets.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarListNumber(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.ToggleNumbering.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarIndent(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.IncreaseIndentation.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarOutdent(object sender, RoutedEventArgs e)
+    {
+        var rtb = GetActiveTextEditor();
+        System.Windows.Documents.EditingCommands.DecreaseIndentation.Execute(null, rtb);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarFontSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_suppressToolbarUpdate) return;
+        if (CboToolbarFont.SelectedItem is not string fontName) return;
+        if (string.IsNullOrWhiteSpace(fontName)) return;
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty,
+            new System.Windows.Media.FontFamily(fontName));
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarFontKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Return && e.Key != Key.Enter) return;
+        var fontName = CboToolbarFont.Text?.Trim();
+        if (string.IsNullOrEmpty(fontName)) return;
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty,
+            new System.Windows.Media.FontFamily(fontName));
+        _viewModel?.MarkDirty();
+        rtb.Focus();
+    }
+
+    private void OnToolbarFontSizeSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_suppressToolbarUpdate) return;
+        ApplyToolbarFontSizeFromText();
+    }
+
+    private void OnToolbarFontSizeKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Return && e.Key != Key.Enter) return;
+        ApplyToolbarFontSizeFromText();
+        GetActiveTextEditor().Focus();
+    }
+
+    private void ApplyToolbarFontSizeFromText()
+    {
+        var text = CboToolbarFontSize.Text?.Trim();
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pt)
+            || pt < 1 || pt > 999) return;
+        var rtb = GetActiveTextEditor();
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty,
+            Services.FlowDocumentBuilder.PtToDip(pt));
+        _viewModel?.MarkDirty();
     }
 
     private void OnFormatChar(object sender, RoutedEventArgs e)

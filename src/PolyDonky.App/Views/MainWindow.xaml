@@ -276,6 +276,146 @@
             </StackPanel>
         </Grid>
 
+        <!-- 서식 툴바 행 — 글자/문단 서식 자주 쓰는 버튼 -->
+        <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceAlt}">
+            <ToolBarTray Background="Transparent" IsLocked="True">
+                <ToolBar x:Name="FormatToolBar"
+                         Background="Transparent"
+                         Foreground="{DynamicResource OnSurface}"
+                         ToolBarTray.IsLocked="True"
+                         Loaded="OnFormatToolBarLoaded">
+                    <!-- 글꼴 이름 -->
+                    <ComboBox x:Name="CboToolbarFont"
+                              Width="140" Margin="2,1"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              MaxDropDownHeight="300"
+                              Background="{DynamicResource SurfaceAlt}"
+                              Foreground="{DynamicResource OnSurface}"
+                              ToolTip="{Binding ToolbarFontFamily, Source={x:Static svc:LocalizedStrings.Instance}}"
+                              SelectionChanged="OnToolbarFontSelectionChanged"
+                              KeyDown="OnToolbarFontKeyDown" />
+                    <!-- 글자 크기 -->
+                    <ComboBox x:Name="CboToolbarFontSize"
+                              Width="58" Margin="2,1"
+                              IsEditable="True"
+                              Background="{DynamicResource SurfaceAlt}"
+                              Foreground="{DynamicResource OnSurface}"
+                              ToolTip="{Binding ToolbarFontSize, Source={x:Static svc:LocalizedStrings.Instance}}"
+                              SelectionChanged="OnToolbarFontSizeSelectionChanged"
+                              KeyDown="OnToolbarFontSizeKeyDown">
+                        <ComboBoxItem>7</ComboBoxItem>
+                        <ComboBoxItem>8</ComboBoxItem>
+                        <ComboBoxItem>9</ComboBoxItem>
+                        <ComboBoxItem>10</ComboBoxItem>
+                        <ComboBoxItem>10.5</ComboBoxItem>
+                        <ComboBoxItem>11</ComboBoxItem>
+                        <ComboBoxItem>12</ComboBoxItem>
+                        <ComboBoxItem>14</ComboBoxItem>
+                        <ComboBoxItem>16</ComboBoxItem>
+                        <ComboBoxItem>18</ComboBoxItem>
+                        <ComboBoxItem>20</ComboBoxItem>
+                        <ComboBoxItem>22</ComboBoxItem>
+                        <ComboBoxItem>24</ComboBoxItem>
+                        <ComboBoxItem>28</ComboBoxItem>
+                        <ComboBoxItem>32</ComboBoxItem>
+                        <ComboBoxItem>36</ComboBoxItem>
+                        <ComboBoxItem>40</ComboBoxItem>
+                        <ComboBoxItem>48</ComboBoxItem>
+                        <ComboBoxItem>56</ComboBoxItem>
+                        <ComboBoxItem>72</ComboBoxItem>
+                    </ComboBox>
+                    <Separator />
+                    <!-- 굵게 -->
+                    <ToggleButton x:Name="TbBold" Padding="5,2" Margin="1,0"
+                                  Click="OnToolbarBold"
+                                  ToolTip="{Binding ToolbarBold, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <TextBlock Text="B" FontWeight="Bold" FontSize="13"
+                                   Foreground="{DynamicResource OnSurface}" />
+                    </ToggleButton>
+                    <!-- 기울임꼴 -->
+                    <ToggleButton x:Name="TbItalic" Padding="5,2" Margin="1,0"
+                                  Click="OnToolbarItalic"
+                                  ToolTip="{Binding ToolbarItalic, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <TextBlock Text="I" FontStyle="Italic" FontSize="13"
+                                   Foreground="{DynamicResource OnSurface}" />
+                    </ToggleButton>
+                    <!-- 밑줄 -->
+                    <ToggleButton x:Name="TbUnderline" Padding="5,2" Margin="1,0"
+                                  Click="OnToolbarUnderline"
+                                  ToolTip="{Binding ToolbarUnderline, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <TextBlock Text="U" TextDecorations="Underline" FontSize="13"
+                                   Foreground="{DynamicResource OnSurface}" />
+                    </ToggleButton>
+                    <!-- 취소선 -->
+                    <ToggleButton x:Name="TbStrikethrough" Padding="5,2" Margin="1,0"
+                                  Click="OnToolbarStrikethrough"
+                                  ToolTip="{Binding ToolbarStrikethrough, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <TextBlock Text="S" TextDecorations="Strikethrough" FontSize="13"
+                                   Foreground="{DynamicResource OnSurface}" />
+                    </ToggleButton>
+                    <!-- 위첨자 -->
+                    <ToggleButton x:Name="TbSuperscript" Padding="4,2" Margin="1,0"
+                                  Click="OnToolbarSuperscript"
+                                  ToolTip="{Binding ToolbarSuperscript, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <TextBlock FontSize="11" Foreground="{DynamicResource OnSurface}"><Run Text="x"/><Run Text="2" FontSize="7" BaselineAlignment="Superscript"/></TextBlock>
+                    </ToggleButton>
+                    <!-- 아래첨자 -->
+                    <ToggleButton x:Name="TbSubscript" Padding="4,2" Margin="1,0"
+                                  Click="OnToolbarSubscript"
+                                  ToolTip="{Binding ToolbarSubscript, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <TextBlock FontSize="11" Foreground="{DynamicResource OnSurface}"><Run Text="x"/><Run Text="2" FontSize="7" BaselineAlignment="Subscript"/></TextBlock>
+                    </ToggleButton>
+                    <Separator />
+                    <!-- 왼쪽 정렬 -->
+                    <ToggleButton x:Name="TbAlignLeft" Padding="3,2" Margin="1,0"
+                                  Click="OnToolbarAlignLeft"
+                                  ToolTip="{Binding ToolbarAlignLeft, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatAlignLeft}" Width="20" Height="20" />
+                    </ToggleButton>
+                    <!-- 가운데 정렬 -->
+                    <ToggleButton x:Name="TbAlignCenter" Padding="3,2" Margin="1,0"
+                                  Click="OnToolbarAlignCenter"
+                                  ToolTip="{Binding ToolbarAlignCenter, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatAlignCenter}" Width="20" Height="20" />
+                    </ToggleButton>
+                    <!-- 오른쪽 정렬 -->
+                    <ToggleButton x:Name="TbAlignRight" Padding="3,2" Margin="1,0"
+                                  Click="OnToolbarAlignRight"
+                                  ToolTip="{Binding ToolbarAlignRight, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatAlignRight}" Width="20" Height="20" />
+                    </ToggleButton>
+                    <!-- 양쪽 정렬 -->
+                    <ToggleButton x:Name="TbAlignJustify" Padding="3,2" Margin="1,0"
+                                  Click="OnToolbarAlignJustify"
+                                  ToolTip="{Binding ToolbarAlignJustify, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatAlignJustify}" Width="20" Height="20" />
+                    </ToggleButton>
+                    <Separator />
+                    <!-- 글머리 기호 목록 -->
+                    <Button Padding="3,2" Margin="1,0" Click="OnToolbarListBullet"
+                            ToolTip="{Binding ToolbarListBullet, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatListBullet}" Width="20" Height="20" />
+                    </Button>
+                    <!-- 번호 매기기 목록 -->
+                    <Button Padding="3,2" Margin="1,0" Click="OnToolbarListNumber"
+                            ToolTip="{Binding ToolbarListNumber, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatListNumber}" Width="20" Height="20" />
+                    </Button>
+                    <Separator />
+                    <!-- 내어쓰기 -->
+                    <Button Padding="3,2" Margin="1,0" Click="OnToolbarOutdent"
+                            ToolTip="{Binding ToolbarOutdent, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatOutdent}" Width="20" Height="20" />
+                    </Button>
+                    <!-- 들여쓰기 -->
+                    <Button Padding="3,2" Margin="1,0" Click="OnToolbarIndent"
+                            ToolTip="{Binding ToolbarIndent, Source={x:Static svc:LocalizedStrings.Instance}}">
+                        <Image Source="{StaticResource Icon_FormatIndent}" Width="20" Height="20" />
+                    </Button>
+                </ToolBar>
+            </ToolBarTray>
+        </Grid>
+
         <!-- 상태 바 — 좌측: 상태 메시지 (가변 너비) / 우측: 파일경로·메모리·Insert·Caps·Num 고정 그룹.
              ItemsPanel 을 DockPanel 로 교체하고 상태 메시지만 Left dock, 나머지는 Right dock 으로 우측에 모은다.
              자식 순서대로 우측에서부터 stacking 되므로 XAML 작성 순서 = 시각상 좌→우. -->
