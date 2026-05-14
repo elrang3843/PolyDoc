@@ -3136,11 +3136,24 @@ public static class FlowDocumentBuilder
             _                  => $"‹{fieldType}›",
         };
 
-        return new Wpf.Run(text)
-        {
-            Tag        = run,
-            Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(45, 0, 102, 204)),
-        };
+        var s      = run.Style;
+        var wpfRun = new Wpf.Run(text) { Tag = run };
+
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            wpfRun.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+        if (Math.Abs(s.FontSizePt - 11) > 0.001)
+            wpfRun.FontSize = PtToDip(s.FontSizePt);
+        if (s.Bold)   wpfRun.FontWeight = FontWeights.Bold;
+        if (s.Italic) wpfRun.FontStyle  = FontStyles.Italic;
+        if (s.Foreground is { } fg)
+            wpfRun.Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+
+        // 필드 강조 배경: 모델 배경색이 없을 때만 기본 파란 반투명 적용.
+        wpfRun.Background = s.Background is { } bg
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B))
+            : new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(45, 0, 102, 204));
+
+        return wpfRun;
     }
 
     private static Wpf.Inline BuildEquationInline(Run run, string latex)
