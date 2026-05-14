@@ -49,6 +49,35 @@
                   Checked="OnOverwriteProtectionChanged"
                   Unchecked="OnOverwriteProtectionChanged" />
 
+        <Separator Margin="0,14,0,10" />
+
+        <!-- LibreOffice -->
+        <Label Content="{Binding SettingsLibreOffice, Source={x:Static svc:LocalizedStrings.Instance}}"
+               FontWeight="SemiBold" Padding="0,0,0,4" />
+        <StackPanel Orientation="Horizontal" Margin="0,4">
+            <TextBox x:Name="LibreOfficePathBox"
+                     Text="{Binding LibreOfficePath, Mode=OneWay}"
+                     IsReadOnly="True"
+                     VerticalAlignment="Center"
+                     Margin="0,0,8,0"
+                     Foreground="{DynamicResource OnSurfaceVariant}" />
+            <Button Content="{Binding SettingsLibreOfficeDetect, Source={x:Static svc:LocalizedStrings.Instance}}"
+                    Padding="12,5" Click="OnDetectLibreOffice"
+                    Foreground="{DynamicResource Primary}"
+                    Background="Transparent"
+                    BorderThickness="0" />
+        </StackPanel>
+        <TextBlock Foreground="{DynamicResource OnSurfaceVariant}"
+                   Margin="0,6,0,4"
+                   Text="{Binding SettingsLibreOfficeHelp, Source={x:Static svc:LocalizedStrings.Instance}}"
+                   TextWrapping="Wrap"
+                   FontSize="11" />
+        <Hyperlink NavigateUri="https://www.libreoffice.org/download/"
+                   RequestNavigate="OnLibreOfficeDownloadClick"
+                   Foreground="{DynamicResource Primary}">
+            <TextBlock Text="{Binding SettingsLibreOfficeDownload, Source={x:Static svc:LocalizedStrings.Instance}}" />
+        </Hyperlink>
+
         <Separator Margin="0,14,0,12" />
 
         <!-- 닫기 버튼 -->
