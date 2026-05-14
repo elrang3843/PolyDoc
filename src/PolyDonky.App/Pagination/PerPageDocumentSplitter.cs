@@ -327,7 +327,8 @@ public static class PerPageDocumentSplitter
                     FontSize = 11,
                     Margin   = new Thickness(0, 0, 0, 6),
                 };
-                wpfPara.Inlines.Add(new WpfRun($"{num}. ") { FontWeight = FontWeights.Bold });
+                var romanLabel = FlowDocumentBuilder.ToRoman(num, lower: true);
+                wpfPara.Inlines.Add(new WpfRun($"{romanLabel}. ") { FontWeight = FontWeights.Bold });
                 foreach (var coreRun in coreBlock.Runs)
                     wpfPara.Inlines.Add(new WpfRun(coreRun.Text ?? string.Empty));
                 fd.Blocks.Add(wpfPara);

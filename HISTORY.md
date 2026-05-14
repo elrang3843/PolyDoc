@@ -59,7 +59,7 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Changed
 
-- **미주(EndnoteId) 참조 마커를 로마 숫자 소문자로 변경**: 각주(1, 2, 3…)와 미주(i, ii, iii…)가 같은 숫자로 표시돼 구분이 어렵던 문제 해결. 미주 번호가 할당된 경우 소문자 로마 숫자(`i`, `ii`, `iii`, `iv`…)로 렌더링. 번호 미할당 시 폴백 기호는 기존 `‡` 유지. (`FlowDocumentBuilder.cs`)
+- **미주(EndnoteId) 참조 마커를 로마 숫자 소문자로 변경**: 각주(1, 2, 3…)와 미주(i, ii, iii…)가 같은 숫자로 표시돼 구분이 어렵던 문제 해결. 본문 참조 Run과 미주 전용 페이지의 번호 레이블 모두 소문자 로마 숫자(`i`, `ii`, `iii`, `iv`…)로 렌더링. 번호 미할당 시 폴백 기호는 기존 `‡` 유지. (`FlowDocumentBuilder.cs`, `PerPageDocumentSplitter.cs`)
 
 ### Fixed
 
