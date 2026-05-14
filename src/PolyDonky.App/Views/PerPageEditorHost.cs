@@ -18,6 +18,10 @@ namespace PolyDonky.App.Views;
 /// 단일 단: RTB 1개/페이지, 전체 페이지 크기 + 여백(padding).
 /// 다단: RTB N개/페이지 (N = 단 수), 각 RTB 는 단 폭 × 본문 높이, 여백·단 오프셋은 Canvas 위치로.
 /// </para>
+/// <para>
+/// 각주 레이아웃: 본문 RTB 높이는 각주 크기만큼 줄어든다. 각주 구분선·내용은
+/// RTB 바로 아래(= 꼬리말 위)에 배치돼 꼬리말 영역을 침범하지 않는다.
+/// </para>
 /// <para>STA 스레드 전용.</para>
 /// </summary>
 public sealed class PerPageEditorHost : Canvas
@@ -75,8 +79,6 @@ public sealed class PerPageEditorHost : Canvas
         _physicalPageCount = slices.Max(s => s.PageIndex) + 1;
 
         // 페이지별 PageGeometry 캐시 및 누적 Y 좌표 계산.
-        // 각 페이지가 다른 PageSettings(높이)를 가질 수 있으므로, 슬라이스 루프에서
-        // 재생성하지 않고 미리 계산해둔다. 또한 FirstOrDefault O(N²) 문제 회피.
         var pageGeos = new Dictionary<int, PageGeometry>(_physicalPageCount);
         var pageTopY = new Dictionary<int, double>(_physicalPageCount);
         double cumulY = 0;
@@ -96,22 +98,17 @@ public sealed class PerPageEditorHost : Canvas
             var slice    = slices[i];
             var sliceGeo = pageGeos[slice.PageIndex];
 
-            // 단일 단 / 다단 모두 동일하게 — 콘텐츠 영역(BodyWidth × BodyHeight)만 차지하는 RTB 를
-            // Canvas 좌표로 페이지 여백 안쪽에 배치한다. 단일 단에서 RTB.Width = PageWidth + Padding
-            // = 여백 으로 두면 측정 RTB(Padding=0, fd.PageWidth=ColWidth)와 콘텐츠 영역 layout 이
-            // 미세하게 어긋나(WPF 가 RTB.Padding 과 fd.PageWidth 를 다르게 처리) pagination 측정값
-            // 과 실렌더 길이가 달라져 페이지 끝에서 클리핑이 일어났다. 두 RTB 의 layout 조건을
-            // 동일하게 맞추는 것이 측정 정확도의 전제 — 단일 단도 다단과 동일 패턴으로 통일.
+            double xPos = sliceGeo.PadLeftDip + slice.XOffsetDip;
+            double yPos = pageTopY[slice.PageIndex] + sliceGeo.PadTopDip;
+
+            // 본문 RTB
             var rtb = new RichTextBox
             {
                 Document      = slice.FlowDocument,
                 Width         = slice.BodyWidthDip,
-                // ClipRenderingTolerance 만큼 높이를 늘려 mm→DIP 반올림 오차로 인한
-                // 마지막 줄 하단 클리핑을 방지한다. 추가 영역은 하단 여백 안에 위치.
+                // ClipRenderingTolerance: mm→DIP 반올림 오차로 인한 마지막 줄 클리핑 방지.
                 Height        = slice.BodyHeightDip + ClipRenderingTolerance,
                 Padding       = new Thickness(0),
-                // Disabled 로 설정해야 RTB 가 슬롯 높이를 초과하는 콘텐츠를 내부 스크롤로
-                // 처리하지 않는다(Hidden 이면 스크롤이 발생해 편집창과 인쇄 미리보기가 달라진다).
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 AcceptsReturn     = true,
@@ -121,31 +118,45 @@ public sealed class PerPageEditorHost : Canvas
                 FlowDirection     = FlowDirection.LeftToRight,
                 IsDocumentEnabled = true,
             };
-            double xPos = sliceGeo.PadLeftDip + slice.XOffsetDip;
-            double yPos = pageTopY[slice.PageIndex] + sliceGeo.PadTopDip;
+
+            // 미주 페이지는 편집 불가.
+            if (slice.IsEndnotePage)
+            {
+                rtb.IsReadOnly = true;
+                rtb.Focusable  = false;
+            }
+
             SetLeft(rtb, xPos);
             SetTop (rtb, yPos);
 
-            rtb.PreviewMouseLeftButtonDown += (_, _) => ActiveEditor = rtb;
-            rtb.GotKeyboardFocus           += (_, _) => ActiveEditor = rtb;
-            rtb.TextChanged                += OnPageTextChanged;
+            if (!slice.IsEndnotePage)
+            {
+                rtb.PreviewMouseLeftButtonDown += (_, _) => ActiveEditor = rtb;
+                rtb.GotKeyboardFocus           += (_, _) => ActiveEditor = rtb;
+                rtb.TextChanged                += OnPageTextChanged;
+            }
 
             configure?.Invoke(rtb);
-
             Children.Add(rtb);
-            _pageEditors.Add(rtb);
 
-            // 각주/미주가 있으면 RTB 아래에 렌더
-            if (slice.PageFootnotes.Count > 0 || slice.PageEndnotes.Count > 0)
+            if (!slice.IsEndnotePage)
+                _pageEditors.Add(rtb);
+
+            // 각주 영역 — 본문 RTB 바로 아래, 꼬리말 위.
+            // yPos + BodyHeightDip + ClipRenderingTolerance = RTB 하단 좌표.
+            if (slice.PageFootnotes.Count > 0 && slice.FootnoteAreaHeightDip > 0)
             {
-                var footnotesPanel = BuildFootnotesPanel(slice, slice.BodyWidthDip);
-                SetLeft(footnotesPanel, xPos);
-                SetTop(footnotesPanel, yPos + slice.BodyHeightDip + ClipRenderingTolerance + 4);
-                Children.Add(footnotesPanel);
+                double fnY = yPos + slice.BodyHeightDip + ClipRenderingTolerance;
+                var fnPanel = BuildFootnotesPanel(slice, sliceGeo);
+                SetLeft(fnPanel, xPos);
+                SetTop (fnPanel, fnY);
+                Children.Add(fnPanel);
             }
         }
 
-        ActiveEditor = _pageEditors[0];
+        if (_pageEditors.Count > 0)
+            ActiveEditor = _pageEditors[0];
+
         Width  = geo.PageWidthDip;
         Height = cumulY;
     }
@@ -153,108 +164,60 @@ public sealed class PerPageEditorHost : Canvas
     private void OnPageTextChanged(object sender, TextChangedEventArgs e)
         => PageTextChanged?.Invoke(sender, e);
 
-    private static Panel BuildFootnotesPanel(PerPageDocumentSlice slice, double width)
+    // ── 각주 패널 렌더링 ──────────────────────────────────────────────────────
+
+    private static StackPanel BuildFootnotesPanel(PerPageDocumentSlice slice, PageGeometry sliceGeo)
     {
         var panel = new StackPanel
         {
-            Width = width,
+            Width       = slice.BodyWidthDip,
             Orientation = Orientation.Vertical,
-            Background = Brushes.Transparent,
+            Background  = Brushes.Transparent,
         };
 
-        var hasFootnotes = slice.PageFootnotes.Count > 0;
-        var hasEndnotes  = slice.PageEndnotes.Count > 0;
-
-        if (hasFootnotes)
+        // 구분선
+        panel.Children.Add(new Border
         {
-            panel.Children.Add(CreateNoteSeparator());
-            foreach (var (note, index) in slice.PageFootnotes.Select((n, i) => (n, i + 1)))
-            {
-                panel.Children.Add(CreateNoteBlock(note, index, "각주", width));
-            }
-        }
+            Height          = 1,
+            Margin          = new Thickness(0, 4, 0, 4),
+            BorderBrush     = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Width           = Math.Min(slice.BodyWidthDip / 3.0, 100),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        });
 
-        if (hasEndnotes)
+        // 각주 본문 RTB (실제 측정에 사용한 것과 동일한 FlowDocument)
+        var fnNums = slice.PageFootnotes.Count > 0
+            ? BuildLocalFnNums(slice.PageFootnotes)
+            : null;
+
+        var fd = PerPageDocumentSplitter.BuildFootnoteFlowDocument(
+            slice.PageFootnotes, fnNums, slice.BodyWidthDip);
+
+        var noteRtb = new RichTextBox
         {
-            if (hasFootnotes)
-                panel.Children.Add(new Border { Height = 6, Background = Brushes.Transparent });
-            panel.Children.Add(CreateNoteSeparator());
-            foreach (var (note, index) in slice.PageEndnotes.Select((n, i) => (n, i + 1)))
-            {
-                panel.Children.Add(CreateNoteBlock(note, index, "미주", width));
-            }
-        }
+            Document                      = fd,
+            IsReadOnly                    = true,
+            BorderThickness               = new Thickness(0),
+            Background                    = Brushes.Transparent,
+            Padding                       = new Thickness(0),
+            VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Width                         = slice.BodyWidthDip,
+            Focusable                     = false,
+        };
+        panel.Children.Add(noteRtb);
 
         return panel;
     }
 
-    private static Border CreateNoteSeparator()
+    // BuildFootnotesPanel 에서 사용할 로컬 번호 맵 (1-based 슬라이스 내 순번)
+    private static IReadOnlyDictionary<string, int> BuildLocalFnNums(
+        IReadOnlyList<FootnoteEntry> footnotes)
     {
-        return new Border
-        {
-            Height = 1,
-            Margin = new Thickness(0, 4, 0, 4),
-            BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
-            BorderThickness = new Thickness(0, 1, 0, 0),
-        };
-    }
-
-    private static StackPanel CreateNoteBlock(FootnoteEntry note, int index, string noteType, double width)
-    {
-        var container = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 2, 0, 2),
-            Width = width,
-        };
-
-        var numBlock = new TextBlock
-        {
-            Text = index.ToString(),
-            FontSize = 10,
-            Margin = new Thickness(0, 0, 4, 0),
-            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 100, 100)),
-            MinWidth = 12,
-        };
-
-        var fd = new FlowDocument
-        {
-            PageWidth = width - 20,
-            PagePadding = new Thickness(0),
-        };
-
-        foreach (var coreBlock in note.Blocks)
-        {
-            if (coreBlock is PolyDonky.Core.Paragraph corePara)
-            {
-                var wpfPara = new System.Windows.Documents.Paragraph
-                {
-                    FontSize = 10,
-                    Margin = new Thickness(0),
-                };
-                foreach (var coreRun in corePara.Runs)
-                {
-                    wpfPara.Inlines.Add(new System.Windows.Documents.Run { Text = coreRun.Text });
-                }
-                fd.Blocks.Add(wpfPara);
-            }
-        }
-
-        var noteRtb = new RichTextBox
-        {
-            Document = fd,
-            IsReadOnly = true,
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
-            Padding = new Thickness(0),
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Height = 40,
-        };
-
-        container.Children.Add(numBlock);
-        container.Children.Add(noteRtb);
-
-        return container;
+        var d = new Dictionary<string, int>(footnotes.Count);
+        for (int i = 0; i < footnotes.Count; i++)
+            d[footnotes[i].Id] = i + 1;
+        return d;
     }
 }

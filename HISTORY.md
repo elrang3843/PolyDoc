@@ -55,6 +55,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **각주 표시 위치 수정 — 꼬리말 영역 침범 방지 + 본문 RTB 높이 축소**: 이전 구현은 각주 패널을 RTB 아래에 임의로 추가해 꼬리말 영역을 침범했다. 수정: `PerPageDocumentSplitter` 에서 페이지별 각주를 수집한 뒤, 오프스크린 RichTextBox 로 각주 FlowDocument 를 Measure() 해 정확한 높이(`FootnoteAreaHeightDip`)를 산출. 본문 RTB 의 `BodyHeightDip` 을 각주 크기만큼 줄여 각주가 본문 영역(상·하 여백 내부) 아래쪽에만 위치하고 꼬리말 위에 표시된다. (`PerPageDocumentSplitter.cs`, `PerPageDocumentSlice.cs`, `PerPageEditorHost.cs`)
+
+- **미주를 페이지마다 표시하던 오류 수정 — 문서 끝 별도 페이지로 변경**: 이전 구현은 미주를 각 페이지 하단에 개별 표시했다(잘못된 동작). 수정: `PerPageDocumentSplitter` 에서 미주 페이지별 수집 제거, 문서 Endnotes 가 존재할 때 마지막 슬라이스 다음에 `IsEndnotePage = true` 인 특수 슬라이스를 추가. "미주" 제목·구분선·번호 매긴 미주 본문으로 구성된 FlowDocument 를 빌드해 독립 페이지로 표시. `PerPageEditorHost` 에서 미주 페이지를 읽기 전용 RTB 로 렌더링하고 편집 이벤트를 구독하지 않는다. (`PerPageDocumentSplitter.cs`, `PerPageDocumentSlice.cs`, `PerPageEditorHost.cs`)
+
 - **머리말/꼬리말이 페이지마다 해당 섹션의 설정을 사용하도록 수정**: `BuildHeaderFooterLayer`가 단일 `PageSettings`를 모든 페이지에 적용하던 방식을 `Func<int, PageSettings>` 위임 방식으로 변경하여, 각 페이지가 `PaginatedDocument.GetPageSettings(i)`로부터 올바른 섹션별 머리말/꼬리말을 표시한다. 편집 창과 인쇄 미리보기 모두 적용. (`PageViewBuilder.cs`, `MainWindow.xaml.cs`, `PrintPreviewWindow.xaml.cs`)
 
 - **페이지별 독립 서식 자동 섹션 분할**: 커서가 현재 섹션의 첫 페이지가 아닌 페이지에 있을 때 "용지 서식" 다이얼로그를 확인하면, 해당 페이지 위치에서 섹션을 자동 분할하여 해당 페이지만의 독립 `PageSettings`(머리말/꼬리말·여백 등)가 생성된다. 이후 `ParseAllPageEditors` 재구성 시에도 섹션 경계가 유지되도록 `ForcePageBreakBefore` 마커를 사용하며, `FlowDocumentParser`가 Tag 기반으로 마커 값을 보존한다. (`MainWindow.xaml.cs`, `FlowDocumentParser.cs`, `PerPageDocumentSplitter.cs`)

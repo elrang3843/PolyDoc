@@ -2,8 +2,6 @@ using System.Collections.Generic;
 using System.Windows.Documents;
 using PolyDonky.Core;
 
-using FootnoteEntry = PolyDonky.Core.FootnoteEntry;
-
 namespace PolyDonky.App.Pagination;
 
 /// <summary>
@@ -38,12 +36,25 @@ public sealed class PerPageDocumentSlice
 
     /// <summary>단 너비 (DIP). 다단이면 단 폭, 단일 단이면 본문 폭.</summary>
     public double BodyWidthDip  { get; init; }
-    /// <summary>본문 영역 높이 (DIP). 종이 높이 − 상·하 여백.</summary>
+
+    /// <summary>
+    /// 본문 RTB 에 할당된 높이 (DIP). 각주가 있으면 전체 본문 영역에서 각주 크기만큼 뺀 값.
+    /// 종이 높이 − 상·하 여백 − FootnoteAreaHeightDip.
+    /// </summary>
     public double BodyHeightDip { get; init; }
 
-    /// <summary>이 페이지/단에 나타나는 각주 목록 (ID 순, 페이지 내 출현 순서).</summary>
+    /// <summary>
+    /// 각주 구분선 + 각주 본문 높이 (DIP). 각주가 없으면 0.
+    /// 이 영역은 본문 RTB 바로 아래, 꼬리말 위에 위치한다 — 꼬리말 영역을 침범하지 않는다.
+    /// </summary>
+    public double FootnoteAreaHeightDip { get; init; }
+
+    /// <summary>이 페이지/단에 나타나는 각주 목록 (페이지 내 출현 순서).</summary>
     public IReadOnlyList<FootnoteEntry> PageFootnotes { get; init; } = System.Array.Empty<FootnoteEntry>();
 
-    /// <summary>이 페이지/단에 나타나는 미주 목록 (ID 순, 페이지 내 출현 순서).</summary>
-    public IReadOnlyList<FootnoteEntry> PageEndnotes { get; init; } = System.Array.Empty<FootnoteEntry>();
+    /// <summary>
+    /// 미주 전용 페이지 여부. true 이면 이 슬라이스는 문서 끝의 미주 페이지다.
+    /// PerPageEditorHost 에서 읽기 전용 RTB 로 렌더링하고 편집 이벤트를 걸지 않는다.
+    /// </summary>
+    public bool IsEndnotePage { get; init; }
 }

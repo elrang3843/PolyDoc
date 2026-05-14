@@ -2,8 +2,20 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
 using PolyDonky.App.Services;
 using PolyDonky.Core;
+
+// WPF 타입과의 이름 충돌 회피
+using CoreBlock          = PolyDonky.Core.Block;
+using CoreParagraph      = PolyDonky.Core.Paragraph;
+using CoreContainerBlock = PolyDonky.Core.ContainerBlock;
+using CoreTable          = PolyDonky.Core.Table;
+using CoreTextBox        = PolyDonky.Core.TextBoxObject;
+using WpfRun             = System.Windows.Documents.Run;
+using WpfParagraph       = System.Windows.Documents.Paragraph;
 
 namespace PolyDonky.App.Pagination;
 
@@ -84,8 +96,8 @@ public static class PerPageDocumentSplitter
 
                 // ForcePageBreakBefore 는 섹션 경계 마커일 뿐 — per-page RTB 의 첫 블록에
                 // WPF BreakPageBefore 를 적용하면 RTB 상단에 공백이 생기므로 잠시 억제한다.
-                Paragraph? firstBreakPara = rawBlocks.Count > 0
-                    && rawBlocks[0] is Paragraph fbp && fbp.Style.ForcePageBreakBefore
+                CoreParagraph? firstBreakPara = rawBlocks.Count > 0
+                    && rawBlocks[0] is CoreParagraph fbp && fbp.Style.ForcePageBreakBefore
                     ? fbp : null;
                 if (firstBreakPara is not null)
                     firstBreakPara.Style.ForcePageBreakBefore = false;
@@ -99,8 +111,16 @@ public static class PerPageDocumentSplitter
                 if (firstBreakPara is not null)
                     firstBreakPara.Style.ForcePageBreakBefore = true;
 
-                // 이 페이지/단에 나타나는 각주/미주 수집.
-                var (pageFootnotes, pageEndnotes) = CollectPageNotes(coreBlocks, paginated.Source);
+                // 이 페이지/단에 나타나는 각주 수집.
+                var pageFootnotes = CollectPageFootnotes(coreBlocks, paginated.Source);
+
+                // 각주 영역 높이 측정 — 각주가 있으면 본문 RTB 높이를 줄인다.
+                // 각주는 본문 RTB 바로 아래, 꼬리말 위에 배치된다.
+                double footnoteAreaH = pageFootnotes.Count > 0
+                    ? MeasureFootnoteAreaHeight(pageFootnotes, fnNums, colWidth)
+                    : 0.0;
+
+                double effectiveBodyH = Math.Max(20.0, bodyH - footnoteAreaH);
 
                 // per-column RTB는 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
                 fd.PageWidth   = colWidth;
@@ -108,30 +128,226 @@ public static class PerPageDocumentSplitter
 
                 slices.Add(new PerPageDocumentSlice
                 {
-                    PageIndex     = pageIdx,
-                    ColumnIndex   = col,
-                    ColumnCount   = colCount,
-                    SectionIndex  = sectionIdx,
-                    XOffsetDip    = geo.ColumnXOffsetDip(col),
-                    PageSettings  = page,
-                    BodyBlocks    = colBlocks,
-                    FlowDocument  = fd,
-                    BodyWidthDip  = colWidth,
-                    BodyHeightDip = bodyH,
-                    PageFootnotes = pageFootnotes,
-                    PageEndnotes  = pageEndnotes,
+                    PageIndex           = pageIdx,
+                    ColumnIndex         = col,
+                    ColumnCount         = colCount,
+                    SectionIndex        = sectionIdx,
+                    XOffsetDip          = geo.ColumnXOffsetDip(col),
+                    PageSettings        = page,
+                    BodyBlocks          = colBlocks,
+                    FlowDocument        = fd,
+                    BodyWidthDip        = colWidth,
+                    BodyHeightDip       = effectiveBodyH,
+                    FootnoteAreaHeightDip = footnoteAreaH,
+                    PageFootnotes       = pageFootnotes,
                 });
             }
+        }
+
+        // 미주가 있으면 문서 끝에 미주 전용 페이지 슬라이스를 추가한다.
+        if (paginated.Source.Endnotes.Count > 0)
+        {
+            var lastPage = paginated.PageCount > 0
+                ? paginated.GetPageSettings(paginated.PageCount - 1)
+                : new PageSettings();
+            var endnotePage = BuildEndnotePage(
+                paginated.Source.Endnotes,
+                enNums,
+                lastPage,
+                pageIndex: paginated.PageCount);
+            slices.Add(endnotePage);
         }
 
         return slices;
     }
 
+    // ── 각주 수집 ─────────────────────────────────────────────────────────────
+
+    /// <summary>블록 목록을 재귀 순회해 이 페이지에 나타나는 각주 목록을 반환한다.</summary>
+    private static IReadOnlyList<FootnoteEntry> CollectPageFootnotes(
+        List<CoreBlock> pageBlocks,
+        PolyDonkyument doc)
+    {
+        if (doc.Footnotes.Count == 0) return Array.Empty<FootnoteEntry>();
+
+        var fnIds = new Dictionary<string, int>();
+        CollectFootnoteIds(pageBlocks, fnIds);
+
+        return fnIds.OrderBy(x => x.Value)
+            .Select(x => doc.Footnotes.FirstOrDefault(f => f.Id == x.Key))
+            .Where(f => f is not null)
+            .Cast<FootnoteEntry>()
+            .ToList();
+    }
+
+    private static void CollectFootnoteIds(IList<CoreBlock> blocks, Dictionary<string, int> fnIds, int seed = 0)
+    {
+        int order = seed;
+        foreach (var block in blocks)
+        {
+            if (block is CoreParagraph para)
+            {
+                foreach (var run in para.Runs)
+                    if (!string.IsNullOrEmpty(run.FootnoteId) && !fnIds.ContainsKey(run.FootnoteId))
+                        fnIds[run.FootnoteId] = order++;
+            }
+            else if (block is CoreTable table)
+            {
+                foreach (var row in table.Rows)
+                    foreach (var cell in row.Cells)
+                        CollectFootnoteIds(cell.Blocks, fnIds, order);
+            }
+            else if (block is CoreTextBox textbox)
+                CollectFootnoteIds(textbox.Content, fnIds, order);
+            else if (block is CoreContainerBlock container)
+                CollectFootnoteIds(container.Children, fnIds, order);
+        }
+    }
+
+    // ── 각주 영역 높이 측정 ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// 각주 FlowDocument 를 오프스크린으로 Measure() 해 정확한 각주 영역 높이를 반환한다.
+    /// STA 스레드 전용.
+    /// </summary>
+    private static double MeasureFootnoteAreaHeight(
+        IReadOnlyList<FootnoteEntry> footnotes,
+        IReadOnlyDictionary<string, int>? fnNums,
+        double colWidth)
+    {
+        const double SeparatorH = 1 + 4 + 4; // 1px 선 + 위아래 여백
+
+        var fd = BuildFootnoteFlowDocument(footnotes, fnNums, colWidth);
+
+        var tempRtb = new RichTextBox
+        {
+            Document                      = fd,
+            Width                         = colWidth,
+            Padding                       = new Thickness(0),
+            BorderThickness               = new Thickness(0),
+            VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        tempRtb.Measure(new Size(colWidth, double.PositiveInfinity));
+
+        return SeparatorH + tempRtb.DesiredSize.Height;
+    }
+
+    /// <summary>각주 표시용 FlowDocument — 오프스크린 측정과 실제 렌더링에 공용으로 사용.</summary>
+    internal static FlowDocument BuildFootnoteFlowDocument(
+        IReadOnlyList<FootnoteEntry> footnotes,
+        IReadOnlyDictionary<string, int>? fnNums,
+        double width)
+    {
+        var fd = new FlowDocument
+        {
+            PageWidth   = width,
+            PagePadding = new Thickness(0),
+        };
+
+        int autoIdx = 0;
+        foreach (var note in footnotes)
+        {
+            autoIdx++;
+            int num = (fnNums != null && fnNums.TryGetValue(note.Id, out var n)) ? n : autoIdx;
+
+            foreach (var coreBlock in note.Blocks.OfType<CoreParagraph>())
+            {
+                var wpfPara = new WpfParagraph
+                {
+                    FontSize = 10,
+                    Margin   = new Thickness(0, 0, 0, 2),
+                };
+                wpfPara.Inlines.Add(new WpfRun($"{num} ") { FontWeight = FontWeights.Bold });
+                foreach (var coreRun in coreBlock.Runs)
+                    wpfPara.Inlines.Add(new WpfRun(coreRun.Text ?? string.Empty));
+                fd.Blocks.Add(wpfPara);
+            }
+        }
+        return fd;
+    }
+
+    // ── 미주 전용 페이지 ──────────────────────────────────────────────────────
+
+    private static PerPageDocumentSlice BuildEndnotePage(
+        IList<FootnoteEntry> endnotes,
+        IReadOnlyDictionary<string, int>? enNums,
+        PageSettings page,
+        int pageIndex)
+    {
+        var geo      = new PageGeometry(page);
+        double bodyW = geo.ColWidthsDip[0];
+        double bodyH = Math.Max(1.0, geo.PageHeightDip - geo.PadTopDip - geo.PadBottomDip);
+
+        var fd = new FlowDocument
+        {
+            PageWidth   = bodyW,
+            PagePadding = new Thickness(0),
+        };
+
+        // 미주 페이지 제목
+        var title = new WpfParagraph
+        {
+            FontSize   = 14,
+            FontWeight = FontWeights.Bold,
+            Margin     = new Thickness(0, 0, 0, 6),
+        };
+        title.Inlines.Add(new WpfRun("미주"));
+        fd.Blocks.Add(title);
+
+        // 구분선 역할의 빈 단락 (하단 보더)
+        var hr = new WpfParagraph
+        {
+            Margin          = new Thickness(0, 0, 0, 8),
+            BorderBrush     = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+        };
+        fd.Blocks.Add(hr);
+
+        // 미주 본문
+        int autoIdx = 0;
+        foreach (var note in endnotes)
+        {
+            autoIdx++;
+            int num = (enNums != null && enNums.TryGetValue(note.Id, out var n)) ? n : autoIdx;
+
+            foreach (var coreBlock in note.Blocks.OfType<CoreParagraph>())
+            {
+                var wpfPara = new WpfParagraph
+                {
+                    FontSize = 11,
+                    Margin   = new Thickness(0, 0, 0, 6),
+                };
+                wpfPara.Inlines.Add(new WpfRun($"{num}. ") { FontWeight = FontWeights.Bold });
+                foreach (var coreRun in coreBlock.Runs)
+                    wpfPara.Inlines.Add(new WpfRun(coreRun.Text ?? string.Empty));
+                fd.Blocks.Add(wpfPara);
+            }
+        }
+
+        return new PerPageDocumentSlice
+        {
+            PageIndex    = pageIndex,
+            ColumnIndex  = 0,
+            ColumnCount  = 1,
+            SectionIndex = 0,
+            XOffsetDip   = 0,
+            PageSettings = page,
+            BodyBlocks   = Array.Empty<BlockOnPage>(),
+            FlowDocument = fd,
+            BodyWidthDip = bodyW,
+            BodyHeightDip = bodyH,
+            IsEndnotePage = true,
+        };
+    }
+
+    // ── 문서 모델 헬퍼 ────────────────────────────────────────────────────────
+
     /// <summary>문서의 모든 섹션을 순회해 최상위 블록 → 섹션 인덱스 맵을 만든다.</summary>
-    private static Dictionary<Block, int> BuildBlockToSectionIndexMap(PolyDonkyument doc)
+    private static Dictionary<CoreBlock, int> BuildBlockToSectionIndexMap(PolyDonkyument doc)
     {
         int totalBlocks = doc.Sections.Sum(s => s.Blocks.Count);
-        var map = new Dictionary<Block, int>(totalBlocks, ReferenceEqualityComparer.Instance);
+        var map = new Dictionary<CoreBlock, int>(totalBlocks, ReferenceEqualityComparer.Instance);
         for (int si = 0; si < doc.Sections.Count; si++)
             foreach (var block in doc.Sections[si].Blocks)
                 map[block] = si;
@@ -139,39 +355,37 @@ public static class PerPageDocumentSplitter
     }
 
     /// <summary>원본 문서를 순회해 ContainerBlock 의 직접 자식 → 부모 ContainerBlock 맵을 만든다.</summary>
-    private static Dictionary<Block, ContainerBlock> BuildParentMap(PolyDonkyument doc)
+    private static Dictionary<CoreBlock, CoreContainerBlock> BuildParentMap(PolyDonkyument doc)
     {
         int totalBlocks = doc.Sections.Sum(s => s.Blocks.Count);
-        var map = new Dictionary<Block, ContainerBlock>(totalBlocks, ReferenceEqualityComparer.Instance);
+        var map = new Dictionary<CoreBlock, CoreContainerBlock>(totalBlocks, ReferenceEqualityComparer.Instance);
         foreach (var section in doc.Sections)
             CollectParents(section.Blocks, map);
         return map;
     }
 
-    private static void CollectParents(IEnumerable<Block> blocks, Dictionary<Block, ContainerBlock> map)
+    private static void CollectParents(IEnumerable<CoreBlock> blocks, Dictionary<CoreBlock, CoreContainerBlock> map)
     {
         foreach (var block in blocks)
         {
-            if (block is not ContainerBlock container) continue;
+            if (block is not CoreContainerBlock container) continue;
             foreach (var child in container.Children)
                 map[child] = container;
-            // 중첩 컨테이너도 재귀 처리.
             CollectParents(container.Children, map);
         }
     }
 
     /// <summary>
-    /// 평탄화된 블록 목록에서 같은 <see cref="ContainerBlock"/> 부모를 가진 연속 블록을
-    /// 새 <see cref="ContainerBlock"/> 으로 다시 감싼다 — 배경·보더·마진 복원.
-    /// 부모가 없는 블록은 그대로 통과시킨다.
+    /// 평탄화된 블록 목록에서 같은 ContainerBlock 부모를 가진 연속 블록을
+    /// 새 ContainerBlock 으로 다시 감싼다 — 배경·보더·패딩 복원.
     /// </summary>
-    private static List<Block> ReassembleContainerBlocks(
-        List<Block> flat,
-        Dictionary<Block, ContainerBlock> parentMap)
+    private static List<CoreBlock> ReassembleContainerBlocks(
+        List<CoreBlock> flat,
+        Dictionary<CoreBlock, CoreContainerBlock> parentMap)
     {
         if (flat.Count == 0) return flat;
 
-        var result = new List<Block>(flat.Count);
+        var result = new List<CoreBlock>(flat.Count);
         int i = 0;
         while (i < flat.Count)
         {
@@ -183,15 +397,13 @@ public static class PerPageDocumentSplitter
                 continue;
             }
 
-            // 같은 부모를 가진 연속 블록 범위를 구한다.
             int j = i + 1;
             while (j < flat.Count &&
                    parentMap.TryGetValue(flat[j], out var p) &&
                    ReferenceEquals(p, parent))
                 j++;
 
-            // 부모의 스타일을 그대로 복사하되 자식은 이 페이지/단에 속하는 것만 포함.
-            var wrapped = new ContainerBlock
+            var wrapped = new CoreContainerBlock
             {
                 BorderTopPt       = parent.BorderTopPt,       BorderTopColor    = parent.BorderTopColor,
                 BorderRightPt     = parent.BorderRightPt,     BorderRightColor  = parent.BorderRightColor,
@@ -209,72 +421,5 @@ public static class PerPageDocumentSplitter
             i = j;
         }
         return result;
-    }
-
-    /// <summary>
-    /// 블록 목록을 재귀 순회해 각주/미주 ID를 수집하고,
-    /// 문서에서 대응하는 FootnoteEntry 를 출현 순서대로 반환한다.
-    /// </summary>
-    private static (IReadOnlyList<FootnoteEntry>, IReadOnlyList<FootnoteEntry>) CollectPageNotes(
-        List<Block> pageBlocks,
-        PolyDonkyument doc)
-    {
-        var fnIds = new Dictionary<string, int>();  // ID → first-appearance order
-        var enIds = new Dictionary<string, int>();
-
-        CollectNoteIds(pageBlocks, fnIds, enIds);
-
-        // 출현 순서대로 footnote/endnote 맵을 만든다.
-        var fnByOrder = fnIds.OrderBy(x => x.Value).Select(x => x.Key).ToList();
-        var enByOrder = enIds.OrderBy(x => x.Value).Select(x => x.Key).ToList();
-
-        var pageFootnotes = fnByOrder
-            .Select(id => doc.Footnotes.FirstOrDefault(f => f.Id == id))
-            .Where(f => f is not null)
-            .Cast<FootnoteEntry>()
-            .ToList();
-
-        var pageEndnotes = enByOrder
-            .Select(id => doc.Endnotes.FirstOrDefault(e => e.Id == id))
-            .Where(e => e is not null)
-            .Cast<FootnoteEntry>()
-            .ToList();
-
-        return (pageFootnotes, pageEndnotes);
-    }
-
-    private static void CollectNoteIds(
-        IList<Block> blocks,
-        Dictionary<string, int> fnIds,
-        Dictionary<string, int> enIds,
-        int nextOrder = 0)
-    {
-        foreach (var block in blocks)
-        {
-            if (block is Paragraph para)
-            {
-                foreach (var run in para.Runs)
-                {
-                    if (!string.IsNullOrEmpty(run.FootnoteId) && !fnIds.ContainsKey(run.FootnoteId))
-                        fnIds[run.FootnoteId] = nextOrder++;
-                    if (!string.IsNullOrEmpty(run.EndnoteId) && !enIds.ContainsKey(run.EndnoteId))
-                        enIds[run.EndnoteId] = nextOrder++;
-                }
-            }
-            else if (block is Table table)
-            {
-                foreach (var row in table.Rows)
-                    foreach (var cell in row.Cells)
-                        CollectNoteIds(cell.Blocks, fnIds, enIds, nextOrder);
-            }
-            else if (block is TextBoxObject textbox)
-            {
-                CollectNoteIds(textbox.Content, fnIds, enIds, nextOrder);
-            }
-            else if (block is ContainerBlock container)
-            {
-                CollectNoteIds(container.Children, fnIds, enIds, nextOrder);
-            }
-        }
     }
 }
