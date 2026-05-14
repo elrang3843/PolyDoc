@@ -80,6 +80,7 @@
   <data name="MenuInsertFieldNumPages" xml:space="preserve"><value>총 페이지</value></data>
   <data name="MenuInsertFieldAuthor" xml:space="preserve"><value>작성자</value></data>
   <data name="MenuInsertFieldTitle"  xml:space="preserve"><value>문서 제목</value></data>
+  <data name="MenuUpdateField"       xml:space="preserve"><value>필드 업데이트(_U)</value></data>
   <data name="MsgNoTocToRefresh"     xml:space="preserve"><value>문서에 목차 블록이 없습니다. 먼저 '목차 삽입'을 실행해 주세요.</value></data>
 
   <!-- 각주/미주 편집 패널 -->

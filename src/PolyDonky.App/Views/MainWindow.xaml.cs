@@ -3490,6 +3490,19 @@ public partial class MainWindow : Window
         _viewModel.MarkDirty();
     }
 
+    private void OnUpdateFields(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.Document is null) return;
+
+        // 현재 RTB 들의 내용을 Core 모델로 재파싱 → 필드 enum 값 보존.
+        ParseAllPageEditors();
+
+        // 재페이지네이션 및 렌더링 수행.
+        // PerPageDocumentSplitter.Split 에서 FieldRenderContext 를 주입해
+        // Page/NumPages/Author/Title 필드가 최신 값으로 갱신됨.
+        ScheduleLivePaginationRefresh();
+    }
+
     private void OnToggleFootnotePanel(object sender, RoutedEventArgs e)
         => SetFootnotePanelVisible(MiFootnotePanel.IsChecked);
 

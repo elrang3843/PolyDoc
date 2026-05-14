@@ -55,6 +55,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **필드 코드 자동 갱신 (E20)**: 편집창·미리보기에서 `{PAGE}` / `{NUMPAGES}` 필드가 실제 페이지 번호로 렌더링된다. `FieldRenderContext`(페이지 번호·총 페이지 수·저자·제목·기준 시각)를 `FlowDocumentBuilder.BuildFromBlocks` 파이프라인에 주입하고, `PerPageDocumentSplitter.Split`에서 각 슬라이스 빌드 시 해당 페이지의 컨텍스트를 전달. `{AUTHOR}` / `{TITLE}`은 문서 메타데이터를 실시간 반영. `{DATE}` / `{TIME}`은 렌더링 시점 `DateTime.Now` 사용. 필드 삽입(`OnInsertField`) 시에도 현재 페이지 번호로 즉시 표시. (`FieldRenderContext.cs`, `FlowDocumentBuilder.cs`, `PerPageDocumentSplitter.cs`, `MainWindow.xaml.cs`)
 
+- **입력 > 필드 업데이트 메뉴 추가**: 사용자가 강제로 문서의 모든 필드를 갱신할 수 있는 메뉴 항목 추가. "입력 > 필드 삽입" 아래에 구분선과 함께 "필드 업데이트(_U)" 메뉴 배치. 클릭 시 `ParseAllPageEditors()` → `ScheduleLivePaginationRefresh()` 파이프라인 호출로 문서 재파싱 및 페이지네이션 수행. 이로써 Page/NumPages/Author/Title 필드가 최신 값으로 갱신. (`MainWindow.xaml`, `MainWindow.xaml.cs`, `Resources.resx`, `Resources.en-US.resx`)
+
 ### Fixed
 
 - **각주 표시 위치 수정 — 꼬리말 영역 침범 방지 + 본문 RTB 높이 축소**: 이전 구현은 각주 패널을 RTB 아래에 임의로 추가해 꼬리말 영역을 침범했다. 수정: `PerPageDocumentSplitter` 에서 페이지별 각주를 수집한 뒤, 오프스크린 RichTextBox 로 각주 FlowDocument 를 Measure() 해 정확한 높이(`FootnoteAreaHeightDip`)를 산출. 본문 RTB 의 `BodyHeightDip` 을 각주 크기만큼 줄여 각주가 본문 영역(상·하 여백 내부) 아래쪽에만 위치하고 꼬리말 위에 표시된다. (`PerPageDocumentSplitter.cs`, `PerPageDocumentSlice.cs`, `PerPageEditorHost.cs`)

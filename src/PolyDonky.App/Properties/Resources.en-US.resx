@@ -80,6 +80,7 @@
   <data name="MenuInsertFieldNumPages" xml:space="preserve"><value>Total Pages</value></data>
   <data name="MenuInsertFieldAuthor" xml:space="preserve"><value>Author</value></data>
   <data name="MenuInsertFieldTitle"  xml:space="preserve"><value>Document Title</value></data>
+  <data name="MenuUpdateField"       xml:space="preserve"><value>Update Fields (_U)</value></data>
   <data name="MsgNoTocToRefresh"     xml:space="preserve"><value>No table of contents found. Please use 'Insert TOC' first.</value></data>
 
   <!-- Footnote/Endnote editor panel -->
