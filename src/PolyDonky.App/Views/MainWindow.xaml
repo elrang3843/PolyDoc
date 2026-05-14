@@ -148,6 +148,9 @@
                     <MenuItem Header="{Binding MenuInsertFieldTitle,    Source={x:Static svc:LocalizedStrings.Instance}}"
                               Click="OnInsertField" Tag="Title" />
                 </MenuItem>
+                <Separator />
+                <MenuItem Header="{Binding MenuUpdateField, Source={x:Static svc:LocalizedStrings.Instance}}"
+                          Click="OnUpdateFields" />
             </MenuItem>
 
             <MenuItem Header="{Binding MenuFormat, Source={x:Static svc:LocalizedStrings.Instance}}">

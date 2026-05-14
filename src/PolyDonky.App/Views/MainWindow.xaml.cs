@@ -3452,12 +3452,27 @@ public partial class MainWindow : Window
             .GetInsertionPosition(System.Windows.Documents.LogicalDirection.Forward)
             ?? editor.CaretPosition;
 
+        // 현재 편집 중인 RTB의 페이지 번호를 실제 값으로 사용.
+        int currentPageNum = 1;
+        int totalPageNum   = _currentPageCount > 0 ? _currentPageCount : 1;
+        var activeEditor   = GetActiveTextEditor();
+        var editorIdx      = PageEditorHost.PageEditors
+                                .Select((rtb, idx) => (rtb, idx))
+                                .FirstOrDefault(x => ReferenceEquals(x.rtb, activeEditor)).idx;
+        if (editorIdx >= 0)
+        {
+            // RTB 인덱스는 페이지×단 순이므로 페이지 번호는 (colCount가 1이면 editorIdx+1).
+            // 다단의 경우 같은 페이지에 여러 RTB — 첫 단 인덱스로 계산.
+            int colCount = _pageGeometry?.ColumnCount ?? 1;
+            currentPageNum = editorIdx / Math.Max(1, colCount) + 1;
+        }
+        var now = System.DateTime.Now;
         var fieldText = fieldType switch
         {
-            PolyDonky.Core.FieldType.Date     => System.DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            PolyDonky.Core.FieldType.Time     => System.DateTime.Now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
-            PolyDonky.Core.FieldType.Page     => "‹페이지›",
-            PolyDonky.Core.FieldType.NumPages => "‹총페이지›",
+            PolyDonky.Core.FieldType.Date     => now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.Time     => now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.Page     => currentPageNum.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PolyDonky.Core.FieldType.NumPages => totalPageNum.ToString(System.Globalization.CultureInfo.InvariantCulture),
             PolyDonky.Core.FieldType.Author   => _viewModel.Document.Metadata.Author is { Length: > 0 } a ? a : "‹작성자›",
             PolyDonky.Core.FieldType.Title    => _viewModel.Document.Metadata.Title  is { Length: > 0 } t ? t : "‹제목›",
             _                                 => $"‹{fieldType}›",
@@ -3473,6 +3488,19 @@ public partial class MainWindow : Window
 
         try { editor.CaretPosition = wpfRun.ElementEnd; } catch { }
         _viewModel.MarkDirty();
+    }
+
+    private void OnUpdateFields(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.Document is null) return;
+
+        // 현재 RTB 들의 내용을 Core 모델로 재파싱 → 필드 enum 값 보존.
+        ParseAllPageEditors();
+
+        // 재페이지네이션 및 렌더링 수행.
+        // PerPageDocumentSplitter.Split 에서 FieldRenderContext 를 주입해
+        // Page/NumPages/Author/Title 필드가 최신 값으로 갱신됨.
+        ScheduleLivePaginationRefresh();
     }
 
     private void OnToggleFootnotePanel(object sender, RoutedEventArgs e)

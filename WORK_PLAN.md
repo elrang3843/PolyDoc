@@ -158,7 +158,7 @@ PolyDonky/
 - ✅ E16 페이지 나누기 (PageBreakPadding)
 - ✅ E17 머리말/꼬리말 (PerPageEditorHost, PageViewBuilder 통합)
 - ✅ E19 목차 자동 생성 (전 페이지 스캔 + 페이지 번호 삽입 구현)
-- ☐ E20 필드 코드 자동 갱신 (수동 삽입 가능, 갱신 미구현)
+- ✅ E20 필드 코드 자동 갱신 — FieldRenderContext 도입, 페이지네이션 시 Page/NumPages/Author/Title 실제 값 반영
 
 ### Phase F — DOC/HWP ingest (LibreOffice 브리지 방식, **G4 결정 완료**)
 
