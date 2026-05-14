@@ -44,6 +44,10 @@
                       ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\..\tools\PolyDonky.Convert.Hwpx\PolyDonky.Convert.Hwpx.csproj"
                       ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\..\tools\PolyDonky.Convert.Doc\PolyDonky.Convert.Doc.csproj"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\..\tools\PolyDonky.Convert.Hwp\PolyDonky.Convert.Hwp.csproj"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <!-- CLI 출력을 메인 앱 출력 디렉터리로 복사. ExternalConverter 가
@@ -54,11 +58,15 @@
       <_ConvXmlFiles  Include="..\..\tools\PolyDonky.Convert.Xml\bin\$(Configuration)\net10.0\**\*.*" />
       <_ConvDocxFiles Include="..\..\tools\PolyDonky.Convert.Docx\bin\$(Configuration)\net10.0\**\*.*" />
       <_ConvHwpxFiles Include="..\..\tools\PolyDonky.Convert.Hwpx\bin\$(Configuration)\net10.0\**\*.*" />
+      <_ConvDocFiles  Include="..\..\tools\PolyDonky.Convert.Doc\bin\$(Configuration)\net10.0\**\*.*" />
+      <_ConvHwpFiles  Include="..\..\tools\PolyDonky.Convert.Hwp\bin\$(Configuration)\net10.0\**\*.*" />
     </ItemGroup>
     <Copy SourceFiles="@(_ConvHtmlFiles)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ConvXmlFiles)"  DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ConvDocxFiles)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ConvHwpxFiles)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ConvDocFiles)"  DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ConvHwpFiles)"  DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
 

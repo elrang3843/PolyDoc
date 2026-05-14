@@ -173,21 +173,20 @@ DOC/HWP → LibreOffice headless (→ DOCX 임시 파일) → PolyDonky.Convert.
 IWPF → PolyDonky.Convert.Docx (→ DOCX 임시 파일) → LibreOffice headless (→ DOC/HWP)
 ```
 
-**F0 LibreOffice 경로 자동 탐지 및 설정 등록** ☐
+**F0 LibreOffice 경로 자동 탐지 및 설정 등록** ✅
 - Windows 레지스트리 + 일반 설치 경로(`Program Files`) 에서 `soffice.exe` 자동 탐색
 - 설정 창(`SettingsWindow`)에 LibreOffice 경로 필드 추가 — 자동 탐지 실패 시 수동 지정
-- `AppSettings.LibreOfficePath` 저장, `ExternalConverter` 에서 참조
+- `LanguageService.LibreOfficePath` 저장, `ExternalConverter.ConvertAsync` 가 `LIBREOFFICE_PATH` 환경변수로 전달
 - LibreOffice 미설치 시 "LibreOffice 다운로드" 링크 안내 다이얼로그 표시
 
-**F1 DOC import** ☐
-- `.doc` 열기 시 F0 탐지 경로의 LibreOffice headless 로 DOCX 변환
-- 변환된 임시 DOCX를 `PolyDonky.Convert.Docx` CLI 로 IWPF 변환 후 로드
-- 저장 시 역순 (IWPF → DOCX → LibreOffice → DOC)
+**F1 DOC import/export** ✅
+- `tools/PolyDonky.Convert.Doc` CLI: DOC → LibreOffice headless → DOCX → IwpfWriter
+- 저장 시 역순: IwpfReader → DocxWriter → LibreOffice → DOC
+- `ExternalConverter.GetConverter("doc")` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 갱신
 
-**F2 HWP import** ☐
-- `.hwp` 열기 시 LibreOffice headless 로 DOCX 변환 (LibreOffice Writer 가 HWP 지원)
-- 이후 F1 과 동일 파이프라인
-- 저장 시 역순 (IWPF → DOCX → LibreOffice → HWP)
+**F2 HWP import/export** ✅
+- `tools/PolyDonky.Convert.Hwp` CLI: HWP → LibreOffice headless → DOCX → IwpfWriter
+- 저장 시 역순: IwpfReader → DocxWriter → LibreOffice → HWP
 - ⚠️ LibreOffice 의 HWP 지원 수준에 따라 충실도 제한 있음 — 사용자에게 "한컴 오피스에서 확인 권장" 안내
 
 **F3 Opaque island 정책 전면 적용** ☐

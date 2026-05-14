@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **Phase F — DOC/HWP import·export (LibreOffice 브리지)**: `.doc` / `.hwp` 파일을 LibreOffice headless 경유 IWPF 로 import 하고 역방향으로 export 하는 CLI 변환기 2종 추가. `tools/PolyDonky.Convert.Doc` 및 `tools/PolyDonky.Convert.Hwp` 프로젝트를 솔루션에 등록. `ExternalConverter.GetConverter` 에 `"doc"`/`"hwp"` 연결, `LIBREOFFICE_PATH` 환경변수를 `LanguageService.LibreOfficePath` 에서 자동으로 전달. `KnownFormats.OpenFilter`/`SaveFilter` 에 DOC/HWP 항목 추가. F0 LibreOffice 경로 자동 탐지(레지스트리+일반 경로) 및 설정 창 UI 포함. (`tools/PolyDonky.Convert.Doc/`, `tools/PolyDonky.Convert.Hwp/`, `tools/PolyDonky.Convert.Common/LibreOfficeBridge.cs`, `ExternalConverter.cs`, `KnownFormats.cs`, `LanguageService.cs`, `LibreOfficeLocator.cs`, `SettingsWindow.xaml`)
+
 - **페이지별 서식 설정 지원**: 물리 페이지마다 독립적인 용지 크기·여백·단 수를 설정 가능. `Section` 단위로 `PageSettings`를 분리 관리하며, 강제 페이지 나누기(`Ctrl+Enter`) 또는 콘텐츠 오버플로 시 이전 페이지 설정을 자동 상속. 커서가 있는 페이지에서 서식 → 용지 설정 시 해당 페이지만 변경. (`PaginatedDocument.cs`, `PerPageDocumentSlice.cs`, `FlowDocumentPaginationAdapter.cs`, `PerPageDocumentSplitter.cs`, `PerPageEditorHost.cs`, `MainWindow.xaml.cs`)
 
 - **서식 툴바 두 번째 행 추가**: 글꼴 이름·크기 콤보박스, 굵게/기울임꼴/밑줄/취소선/위첨자/아래첨자 토글 버튼, 좌·가운데·우·양쪽 정렬 버튼, 글머리 기호·번호 매기기 목록, 들여쓰기/내어쓰기 버튼을 포함한 서식 툴바 행을 메인 창에 추가. RTB 선택 변경 시 버튼 상태가 현재 서식에 맞게 즉시 반영된다. (`MainWindow.xaml`, `MainWindow.xaml.cs`, `ToolbarIcons.xaml`, `Resources.resx`, `Resources.en-US.resx`)
