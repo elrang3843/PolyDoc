@@ -48,7 +48,8 @@ public static class PerPageDocumentSplitter
         // 원본 문서의 ContainerBlock 계층 복원에 사용할 부모 맵.
         // FlattenBlocks 가 Section 자식들을 낱개로 꺼내므로 빌더에 전달되는
         // coreBlocks 에서 ContainerBlock 이 사라진다 — 부모 맵으로 다시 감싼다.
-        var parentMap = BuildParentMap(paginated.Source);
+        var parentMap      = BuildParentMap(paginated.Source);
+        var outlineNumbers = FlowDocumentBuilder.ComputeOutlineNumbers(paginated.Source, styles);
 
         int totalSlices = paginated.PageCount * colCount;
         var slices      = new PerPageDocumentSlice[totalSlices];
@@ -67,7 +68,7 @@ public static class PerPageDocumentSplitter
                 var coreBlocks = parentMap.Count > 0
                     ? ReassembleContainerBlocks(rawBlocks, parentMap)
                     : rawBlocks;
-                var fd         = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles);
+                var fd = FlowDocumentBuilder.BuildFromBlocks(coreBlocks, page, styles, outlineNumbers);
 
                 // per-column RTB는 단 폭만 담당; 여백·단 오프셋은 PerPageEditorHost 가 위치로 처리.
                 fd.PageWidth   = colWidth;

@@ -2601,7 +2601,8 @@ public partial class MainWindow : Window
         var dlg = new ParaFormatWindow(editor) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
-            _viewModel?.MarkDirty();
+            // 전체 재빌드 — 개요 수준 변경 시 폰트 크기·굵기 등 OutlineStyleSet 효과가 즉시 반영되게.
+            _viewModel?.ApplyParaFormatRebuild();
             editor.Focus();
         }
     }

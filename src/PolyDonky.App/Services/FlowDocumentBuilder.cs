@@ -104,18 +104,123 @@ public static class FlowDocumentBuilder
             ? document.Endnotes.Select((e, i) => (e.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2)
             : null;
 
+        var outlineNumbers = ComputeOutlineNumbers(document, outlineStyles);
+
         foreach (var section in document.Sections)
         {
-            BuildSection(fd, section, outlineStyles, fnNums, enNums);
+            BuildSection(fd, section, outlineStyles, outlineNumbers, fnNums, enNums);
         }
 
         return fd;
     }
 
     private static void BuildSection(Wpf.FlowDocument fd, Section section, OutlineStyleSet outlineStyles,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
         IReadOnlyDictionary<string, int>? fnNums = null, IReadOnlyDictionary<string, int>? enNums = null)
     {
-        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles, fnNums, enNums);
+        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles, fnNums, enNums, outlineNumbers);
+    }
+
+    /// <summary>
+    /// 문서 전체를 순회해 각 개요 단락에 붙일 번호 문자열을 미리 계산한다.
+    /// 반환된 딕셔너리는 <see cref="Paragraph"/> 참조를 키로 사용한다.
+    /// </summary>
+    internal static IReadOnlyDictionary<Paragraph, string> ComputeOutlineNumbers(
+        PolyDonkyument doc, OutlineStyleSet? styles = null)
+    {
+        styles ??= doc.OutlineStyles ?? OutlineStyleSet.CreateDefault();
+        var result   = new Dictionary<Paragraph, string>(ReferenceEqualityComparer.Instance);
+        var counters = new int[7]; // index = (int)OutlineLevel; 0=Body unused
+        foreach (var section in doc.Sections)
+            CollectOutlineNumbers(section.Blocks, styles, counters, result);
+        return result;
+    }
+
+    private static void CollectOutlineNumbers(
+        IEnumerable<Block> blocks,
+        OutlineStyleSet styles,
+        int[] counters,
+        Dictionary<Paragraph, string> result)
+    {
+        foreach (var block in blocks)
+        {
+            switch (block)
+            {
+                case Paragraph p when p.Style.Outline > OutlineLevel.Body:
+                {
+                    var ls = styles.GetLevel(p.Style.Outline);
+                    if (ls.Numbering.Style != NumberingStyle.None)
+                    {
+                        int idx = (int)p.Style.Outline;
+                        counters[idx]++;
+                        if (ls.Numbering.RestartFromHigher)
+                            for (int i = idx + 1; i < counters.Length; i++) counters[i] = 0;
+                        result[p] = ls.Numbering.Prefix
+                            + FormatOutlineNumber(counters[idx], ls.Numbering.Style)
+                            + ls.Numbering.Suffix + " ";
+                    }
+                    break;
+                }
+                case ContainerBlock cb:
+                    CollectOutlineNumbers(cb.Children, styles, counters, result);
+                    break;
+            }
+        }
+    }
+
+    private static string FormatOutlineNumber(int n, NumberingStyle style) => style switch
+    {
+        NumberingStyle.Decimal        => n.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        NumberingStyle.AlphaLower     => ToAlpha(n, lower: true),
+        NumberingStyle.AlphaUpper     => ToAlpha(n, lower: false),
+        NumberingStyle.RomanLower     => ToRoman(n, lower: true),
+        NumberingStyle.RomanUpper     => ToRoman(n, lower: false),
+        NumberingStyle.HangulSyllable => ToHangulSyllable(n),
+        NumberingStyle.HangulOrdinal  => ToHangulOrdinal(n),
+        _                             => n.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    private static string ToAlpha(int n, bool lower)
+    {
+        if (n <= 0) return lower ? "a" : "A";
+        var sb = new System.Text.StringBuilder();
+        while (n > 0)
+        {
+            n--;
+            sb.Insert(0, (char)((lower ? 'a' : 'A') + n % 26));
+            n /= 26;
+        }
+        return sb.ToString();
+    }
+
+    private static string ToRoman(int n, bool lower)
+    {
+        if (n <= 0) return lower ? "i" : "I";
+        var vals = new[] { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
+        var syms = new[] { "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I" };
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < vals.Length; i++)
+            while (n >= vals[i]) { sb.Append(syms[i]); n -= vals[i]; }
+        return lower ? sb.ToString().ToLowerInvariant() : sb.ToString();
+    }
+
+    private static readonly string[] KoreanSyllables =
+        { "가", "나", "다", "라", "마", "바", "사", "아", "자", "차", "카", "타", "파", "하" };
+
+    private static string ToHangulSyllable(int n)
+    {
+        if (n <= 0) return KoreanSyllables[0];
+        return KoreanSyllables[(n - 1) % KoreanSyllables.Length];
+    }
+
+    private static readonly string[] KoreanOrdinals =
+        { "첫째", "둘째", "셋째", "넷째", "다섯째", "여섯째", "일곱째", "여덟째", "아홉째", "열째" };
+
+    private static string ToHangulOrdinal(int n)
+    {
+        if (n <= 0) return KoreanOrdinals[0];
+        if (n <= KoreanOrdinals.Length) return KoreanOrdinals[n - 1];
+        return n.ToString(System.Globalization.CultureInfo.InvariantCulture) + "번째";
     }
 
     /// <summary>
@@ -139,8 +244,9 @@ public static class FlowDocumentBuilder
     /// </summary>
     internal static Wpf.FlowDocument BuildFromBlocks(
         IEnumerable<Block> blocks,
-        PageSettings?      page          = null,
-        OutlineStyleSet?   outlineStyles = null)
+        PageSettings?      page           = null,
+        OutlineStyleSet?   outlineStyles  = null,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null)
     {
         page          ??= new PageSettings();
         outlineStyles ??= OutlineStyleSet.CreateDefault();
@@ -173,7 +279,7 @@ public static class FlowDocumentBuilder
             fd.IsColumnWidthFlexible = false;
         }
 
-        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles);
+        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles, outlineNumbers: outlineNumbers);
         return fd;
     }
 
@@ -181,7 +287,8 @@ public static class FlowDocumentBuilder
     internal static void AppendBlocks(System.Collections.IList target, IList<Block> blocks,
         OutlineStyleSet? outlineStyles = null,
         IReadOnlyDictionary<string, int>? fnNums = null,
-        IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? enNums = null,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null)
     {
         // 중첩 리스트 지원: (WPF List, Kind) 스택.
         // 인덱스 0 = 최상위 리스트, 인덱스 n = n 단계 중첩 리스트.
@@ -289,10 +396,21 @@ public static class FlowDocumentBuilder
                     break;
 
                 case Paragraph p:
+                {
                     listStack.Clear();
-                    target.Add(BuildParagraph(p, outlineStyles, fnNums, enNums));
+                    var wpfP = BuildParagraph(p, outlineStyles, fnNums, enNums);
+                    if (outlineNumbers is not null && outlineNumbers.TryGetValue(p, out var numPrefix))
+                    {
+                        var numRun = new Wpf.Run(numPrefix);
+                        if (wpfP.Inlines.FirstInline is { } first)
+                            wpfP.Inlines.InsertBefore(first, numRun);
+                        else
+                            wpfP.Inlines.Add(numRun);
+                    }
+                    target.Add(wpfP);
                     MergeAdjacentBlockquoteMargins(target);
                     break;
+                }
 
                 case Table t:
                     listStack.Clear();
@@ -397,7 +515,7 @@ public static class FlowDocumentBuilder
                     }
                     else
                     {
-                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums, outlineNumbers));
                     }
                     break;
             }
@@ -412,7 +530,8 @@ public static class FlowDocumentBuilder
     /// 으로 빌드한다 — Section 은 BorderBrush/BorderThickness/Background/Padding 을 모두 지원하며 Block 트리를 그대로 품을 수 있다.
     /// 자식 블록은 본문과 동일한 dispatch 를 거쳐 Section.Blocks 에 추가된다.</summary>
     private static Wpf.Section BuildContainer(ContainerBlock box, OutlineStyleSet? outlineStyles,
-        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null)
+        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null)
     {
         var section = new Wpf.Section { Tag = box };
 
@@ -475,7 +594,7 @@ public static class FlowDocumentBuilder
         }
 
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
-        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
+        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums, outlineNumbers);
 
         // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
         // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Grid 로 감싸 배경·테두리·패딩을 직접 적용한다.

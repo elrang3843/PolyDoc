@@ -55,6 +55,10 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **개요 서식 적용이 멀티페이지 문서에서 동작하지 않던 버그 수정**: `ApplyOutlineStyles`가 활성 RTB의 FlowDocument만 파싱하여 다른 페이지의 편집 내용이 손실되던 문제. 이제 `LiveDocumentProvider`를 통해 모든 페이지 RTB를 포함한 완전한 라이브 모델을 동기화한 뒤 OutlineStyles를 적용한다. (`MainViewModel.cs`, `MainWindow.xaml.cs`)
 
+- **문단 서식 창에서 개요 수준 변경 시 즉시 스타일 미반영 수정**: 문단 서식(`Ctrl+T`) 다이얼로그에서 개요 수준(H1~H6)을 설정하고 확인해도 글자 크기·굵기 등 OutlineStyleSet 시각 효과가 적용되지 않던 문제. `OnFormatPara`가 `MarkDirty()`만 호출하고 FlowDocument를 재빌드하지 않아 Core 모델의 `Outline` 변경이 WPF 단락에 반영되지 않던 원인. 이제 다이얼로그 OK 시 `ApplyParaFormatRebuild()`(LiveDocumentProvider 동기화 + 전체 재빌드)를 호출한다. (`MainViewModel.cs`, `MainWindow.xaml.cs`)
+
+- **개요 서식 번호 매기기 미표시 수정**: `OutlineStyleSet`에 번호 스타일(Decimal, AlphaLower, RomanUpper, 한글음절/서수 등)이 설정되어 있어도 단락 앞에 번호가 표시되지 않던 문제. `FlowDocumentBuilder`에 `ComputeOutlineNumbers` 전처리 메서드를 추가해 문서 전체 단락을 순서대로 스캔하며 각 개요 단락의 번호 문자열을 계산하고, `Build()` 및 페이지별 `BuildFromBlocks()` 모두에 번호 맵을 전달해 단락 앞에 번호 Run을 삽입한다. 십진수·알파벳·로마자·한글음절·한글서수 다섯 종류의 형식 변환기 포함. (`FlowDocumentBuilder.cs`, `PerPageDocumentSplitter.cs`)
+
 - **표/셀 속성 역직렬화 시 손실 수정**: FlowDocumentParser.ParseTable이 역변환 시 Table.BorderCollapse, BorderTop/Bottom/Left/Right, InnerBorderHorizontal/Vertical, WidthMm, HeightMm, IsFlexLayout, TableRow.BackgroundColor/VerticalAlign, TableCell.VerticalAlign/BorderTop~Right를 복원하지 않던 문제. 해당 속성이 편집 후 초기화되거나 저장 시 손실되던 현상 수정. (`FlowDocumentParser.cs`)
 - **HTML 표 행 배경색·세로정렬 import 손실 수정**: HtmlReader가 행 배경색을 파싱 후 셀에 직접 복사하고 row.BackgroundColor에 저장하지 않아, 행 배경색 변경이 라운드트립 이후 개별 셀 색으로 굳어지던 문제. 행 `valign` 속성도 파싱하지 않던 문제. row.BackgroundColor/VerticalAlign 저장 및 셀 배경색 분리 수정. (`HtmlReader.cs`)
 - **오버레이 객체 AnchorPageIndex 음수/범위 초과 시 화면 밖 렌더링 수정**: HTML에서 import된 도형/이미지의 sentinel 값(-2)이 페이지네이션 후 해결되지 않거나, 사용자 편집으로 페이지 수가 줄어 AnchorPageIndex가 범위를 초과할 때 객체가 화면 밖에 렌더링되던 문제. PlaceAt에서 pageIndex < 0이면 숨김 처리, PopulateOverlayCanvases에서 범위 초과 인덱스 건너뜀. (`PageViewBuilder.cs`)

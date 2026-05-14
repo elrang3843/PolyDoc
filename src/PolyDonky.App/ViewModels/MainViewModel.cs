@@ -834,6 +834,18 @@ public partial class MainViewModel : ObservableObject
         RebuildFlowDocument();
     }
 
+    /// <summary>
+    /// 문단 서식 다이얼로그 OK 후 호출. LiveDocumentProvider 로 전체 페이지 동기화 후 재빌드한다.
+    /// 개요 수준 변경이 시각적으로 즉시 반영되도록 전체 FlowDocument 를 재구성한다.
+    /// </summary>
+    public void ApplyParaFormatRebuild()
+    {
+        var live = LiveDocumentProvider?.Invoke();
+        if (live is not null)
+            _document = live;
+        RebuildFlowDocument();
+    }
+
     /// <summary>미리보기·인쇄용 — 현재 live FlowDocument 를 Core 로 동기화한 스냅샷을 반환.</summary>
     public PolyDonkyument GetPreviewDocument()
         => FlowDocumentParser.Parse(FlowDocument, _document);
