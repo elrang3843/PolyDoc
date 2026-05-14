@@ -88,7 +88,6 @@ public partial class TablePropertiesWindow : Window
 
         // 페이지 분할
         RepeatHeaderRowsCheck.IsChecked = _table.RepeatHeaderRowsOnBreak;
-        HeaderColumnCountBox.Text       = _table.HeaderColumnCount.ToString();
 
         // 테두리 병합
         BorderCollapseCheck.IsChecked = _table.BorderCollapse;
@@ -218,14 +217,6 @@ public partial class TablePropertiesWindow : Window
         _table.OuterMarginLeftMm   = oml;
         _table.OuterMarginRightMm  = omr;
 
-        if (!int.TryParse(HeaderColumnCountBox.Text.Trim(), out int headerColCount) || headerColCount < 0)
-        {
-            MessageBox.Show(this, "헤더 열 수는 0 이상의 정수로 입력하세요.", "표 속성",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            HeaderColumnCountBox.Focus();
-            return;
-        }
-
         _table.BorderThicknessPt = borderPt;
         _table.BorderColor       = borderColor.Length > 0 ? borderColor : null;
 
@@ -248,7 +239,6 @@ public partial class TablePropertiesWindow : Window
 
         // 페이지 분할
         _table.RepeatHeaderRowsOnBreak = RepeatHeaderRowsCheck.IsChecked == true;
-        _table.HeaderColumnCount       = headerColCount;
 
         // 테두리 병합
         _table.BorderCollapse = BorderCollapseCheck.IsChecked == true;

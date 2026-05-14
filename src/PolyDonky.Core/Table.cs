@@ -94,9 +94,6 @@ public sealed class Table : Block, IOverlayAnchored
     // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
     /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
     public bool RepeatHeaderRowsOnBreak { get; set; } = true;
-    /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
-    public int HeaderColumnCount { get; set; }
-
     /// <summary>CSS display:flex/grid 에서 변환된 레이아웃용 표 여부.
     /// true 이면 렌더러가 Wpf.Table(클리핑) 대신 BlockUIContainer(WPF Grid)로 렌더링해
     /// 회전 도형 등의 시각적 오버플로를 허용한다.</summary>

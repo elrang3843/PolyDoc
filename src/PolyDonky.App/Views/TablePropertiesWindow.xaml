@@ -241,15 +241,6 @@
                           Content="헤더 행 반복 — 페이지를 넘을 때 헤더 행을 각 조각 상단에 표시(_R)"
                           IsChecked="True"
                           Margin="0,0,0,6" />
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="헤더 열 수(_H):" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox x:Name="HeaderColumnCountBox"
-                             Width="48" Text="0"
-                             TextAlignment="Right" VerticalContentAlignment="Center"
-                             ToolTip="열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음, 열 분할은 추후 지원)" />
-                    <TextBlock Text=" 열" VerticalAlignment="Center"
-                               Foreground="{DynamicResource OnSurfaceMuted}" />
-                </StackPanel>
             </StackPanel>
         </GroupBox>
 

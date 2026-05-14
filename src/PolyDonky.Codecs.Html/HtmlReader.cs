@@ -4413,7 +4413,6 @@ public sealed class HtmlReader : IDocumentReader
             BackgroundColor          = source.BackgroundColor,
             Caption                  = null, // 분할 조각에는 캡션 없음
             RepeatHeaderRowsOnBreak  = source.RepeatHeaderRowsOnBreak,
-            HeaderColumnCount        = source.HeaderColumnCount,
             BorderCollapse           = source.BorderCollapse,
             BorderThicknessPt        = source.BorderThicknessPt,
             BorderColor              = source.BorderColor,

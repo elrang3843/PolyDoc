@@ -352,7 +352,6 @@ public static class FlowDocumentParser
                 InnerBorderHorizontal        = original.InnerBorderHorizontal,
                 InnerBorderVertical          = original.InnerBorderVertical,
                 RepeatHeaderRowsOnBreak      = original.RepeatHeaderRowsOnBreak,
-                HeaderColumnCount            = original.HeaderColumnCount,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();
