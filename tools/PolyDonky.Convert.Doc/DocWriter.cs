@@ -13,6 +13,7 @@ namespace PolyDonky.Convert.Doc;
 public class DocWriter
 {
     private List<RtfColor> _colorTable = new();
+    private List<RtfColor> _highlightTable = new();  // 배경색 전용 테이블
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
 
@@ -20,9 +21,11 @@ public class DocWriter
     {
         _colorTable.Clear();
         _fontTable.Clear();
+        _highlightTable.Clear();
 
         _colorTable.Add(new RtfColor(0, 0, 0));  // Color 0: default black
         _fontTable.Add(DefaultFont);             // Font 0: default Arial
+        _highlightTable.Add(new RtfColor(0, 0, 0));  // Highlight 0: none/default
 
         var paragraphs = ExtractParagraphs(doc);
         var rtf = GenerateRtf(paragraphs);
@@ -94,7 +97,7 @@ public class DocWriter
                                 }
                             }
 
-                            // 색상 테이블에 배경색 추가 (Background)
+                            // 하이라이트 테이블에 배경색 추가 (Background)
                             if (runInfo.Style.Background.HasValue)
                             {
                                 var bgColor = new RtfColor(
@@ -102,11 +105,11 @@ public class DocWriter
                                     runInfo.Style.Background.Value.G,
                                     runInfo.Style.Background.Value.B
                                 );
-                                int idx = _colorTable.FindIndex(c => c.R == bgColor.R && c.G == bgColor.G && c.B == bgColor.B);
+                                int idx = _highlightTable.FindIndex(c => c.R == bgColor.R && c.G == bgColor.G && c.B == bgColor.B);
                                 if (idx < 0)
                                 {
-                                    _colorTable.Add(bgColor);
-                                    runInfo.BackgroundColorIndex = _colorTable.Count - 1;
+                                    _highlightTable.Add(bgColor);
+                                    runInfo.BackgroundColorIndex = _highlightTable.Count - 1;
                                 }
                                 else
                                 {
@@ -165,6 +168,14 @@ public class DocWriter
         }
         sb.AppendLine("}");
 
+        // Highlight/Shading color table (배경색용)
+        sb.Append(@"{\*\colortbl0");
+        foreach (var color in _highlightTable)
+        {
+            sb.Append($@";\red{color.R}\green{color.G}\blue{color.B}");
+        }
+        sb.AppendLine("}");
+
         sb.AppendLine(@"\viewkind4\uc1");
 
         // Content
@@ -212,9 +223,9 @@ public class DocWriter
                 else
                     sb.Append(@"\cf0");
 
-                // 배경색
+                // 배경색 (highlight)
                 if (run.BackgroundColorIndex > 0)
-                    sb.Append($@"\cb{run.BackgroundColorIndex}");
+                    sb.Append($@"\highlight{run.BackgroundColorIndex}");
 
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
                 double fontSize = run.Style.FontSizePt;
