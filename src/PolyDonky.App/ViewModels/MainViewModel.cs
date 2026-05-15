@@ -394,37 +394,60 @@ public partial class MainViewModel : ObservableObject
             }
             catch (UnsupportedFormatVersionException ex)
             {
-                // LibreOffice 관련 오류인 경우 특별 처리 (설치 페이지 링크 포함)
+                // LibreOffice 관련 오류인 경우 특별 처리
                 if (ex.Message.Contains("LibreOffice"))
                 {
-                    var msg = string.Format(SR.DlgLibreOfficeNotFoundPrompt, Path.GetFileName(sourcePath));
-                    var result = MessageBox.Show(
-                        msg,
-                        SR.DlgLibreOfficeNotFoundTitle,
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Information,
-                        MessageBoxResult.Yes);
+                    bool conversionSucceeded = false;
 
-                    if (result == MessageBoxResult.Yes)
+                    // 한 번 더 자동 탐지 시도 (사용자가 설정창에서 탐지하지 않은 경우)
+                    var autoDetectedPath = LibreOfficeLocator.DetectLibreOfficePath();
+                    if (autoDetectedPath != null && string.IsNullOrEmpty(LanguageService.LibreOfficePath))
                     {
                         try
                         {
-                            Process.Start(new ProcessStartInfo("https://www.libreoffice.org/download/")
-                            {
-                                UseShellExecute = true
-                            });
+                            LanguageService.SetLibreOfficePath(autoDetectedPath);
+                            // 탐지 성공 — 다시 한 번 시도
+                            await ExternalConverter.ConvertAsync(converter, sourcePath, iwpfPath, reporter);
+                            conversionSucceeded = true;
                         }
-                        catch { /* 브라우저 실행 실패 무시 */ }
+                        catch (UnsupportedFormatVersionException) { /* 여전히 실패하면 아래로 진행 */ }
+                        catch (Exception ex2) { ReportError(SR.DlgOpenError, ex2); return; }
                     }
+
+                    if (!conversionSucceeded)
+                    {
+                        // 자동 탐지 실패 또는 재시도 실패 — 사용자에게 안내
+                        var msg = string.Format(SR.DlgLibreOfficeNotFoundPrompt, Path.GetFileName(sourcePath));
+                        var result = MessageBox.Show(
+                            msg,
+                            SR.DlgLibreOfficeNotFoundTitle,
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Information,
+                            MessageBoxResult.Yes);
+
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            try
+                            {
+                                Process.Start(new ProcessStartInfo("https://www.libreoffice.org/download/")
+                                {
+                                    UseShellExecute = true
+                                });
+                            }
+                            catch { /* 브라우저 실행 실패 무시 */ }
+                        }
+                        return;
+                    }
+                }
+                else
+                {
+                    // 기타 UnsupportedFormatVersionException (HWPX/DOCX 버전 문제 등)
+                    MessageBox.Show(
+                        string.Format(SR.DlgUnsupportedVersionPrompt, Path.GetFileName(sourcePath), ex.Message),
+                        SR.DlgUnsupportedVersionTitle,
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
-
-                // 기타 UnsupportedFormatVersionException (HWPX/DOCX 버전 문제 등)
-                MessageBox.Show(
-                    string.Format(SR.DlgUnsupportedVersionPrompt, Path.GetFileName(sourcePath), ex.Message),
-                    SR.DlgUnsupportedVersionTitle,
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
             }
             catch (Exception ex)
             {

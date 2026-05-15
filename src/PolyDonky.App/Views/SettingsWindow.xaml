@@ -56,7 +56,6 @@
                FontWeight="SemiBold" Padding="0,0,0,4" />
         <StackPanel Orientation="Horizontal" Margin="0,4">
             <TextBox x:Name="LibreOfficePathBox"
-                     Text="{Binding LibreOfficePath, Mode=OneWay}"
                      IsReadOnly="True"
                      VerticalAlignment="Center"
                      Margin="0,0,8,0"
