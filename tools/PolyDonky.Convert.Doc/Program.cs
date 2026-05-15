@@ -1,5 +1,6 @@
 using System.Text;
 using PolyDonky.Convert.Common;
+using PolyDonky.Convert.Doc;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 

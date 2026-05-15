@@ -7,8 +7,6 @@
     <Nullable>enable</Nullable>
     <RootNamespace>PolyDonky.Convert.Doc</RootNamespace>
     <AssemblyName>PolyDonky.Convert.Doc</AssemblyName>
-    <!-- NPOI dependency SixLabors.ImageSharp has known vulnerabilities but we accept the risk -->
-    <NoWarn>$(NoWarn);NU1903;NU1902</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,8 +16,5 @@
     <ProjectReference Include="..\PolyDonky.Convert.Common\PolyDonky.Convert.Common.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="NPOI" />
-  </ItemGroup>
 
 </Project>
