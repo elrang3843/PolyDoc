@@ -209,11 +209,6 @@ public static class LibreOfficeBridge
     {
         var programDir = Path.GetDirectoryName(sofficeBin) ?? "";
 
-        // Isolated user profile prevents lock-file conflicts when multiple conversions run.
-        var userInstallDir = Path.Combine(workDir, "lo-user-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(userInstallDir);
-        var userInstallUri = "file:///" + userInstallDir.Replace('\\', '/');
-
         var psi = new ProcessStartInfo
         {
             FileName               = sofficeBin,
@@ -226,7 +221,7 @@ public static class LibreOfficeBridge
             CreateNoWindow         = true,
         };
 
-        // Prepend LibreOffice's program dir so its Python runtime finds platform libraries.
+        // Prepend LibreOffice's program dir so its DLLs and libraries are found.
         if (!string.IsNullOrEmpty(programDir))
         {
             var existing = Environment.GetEnvironmentVariable("PATH") ?? "";
@@ -242,7 +237,6 @@ public static class LibreOfficeBridge
 
         psi.ArgumentList.Add("--headless");
         psi.ArgumentList.Add("--norestore");
-        psi.ArgumentList.Add($"-env:UserInstallation={userInstallUri}");
         return psi;
     }
 }
