@@ -655,6 +655,19 @@ public sealed class DocxReader : IDocumentReader
             }
         }
 
+        // 문자 배경색 (shading)
+        if (rPr.Shading?.Fill?.Value is { Length: 6 } shadingHex && !shadingHex.Equals("auto", System.StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                style.Background = Color.FromHex(shadingHex);
+            }
+            catch (FormatException)
+            {
+                // 잘못된 색상 표기는 무시.
+            }
+        }
+
         if (rPr.VerticalTextAlignment?.Val?.Value is { } vert)
         {
             if (vert.Equals(W.VerticalPositionValues.Superscript))

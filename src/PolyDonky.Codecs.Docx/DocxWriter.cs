@@ -337,6 +337,16 @@ public sealed class DocxWriter : IDocumentWriter
             rPr.Color = new W.Color { Val = $"{fg.R:X2}{fg.G:X2}{fg.B:X2}" };
         }
 
+        if (run.Style.Background is { } bg)
+        {
+            rPr.Shading = new W.Shading
+            {
+                Val   = W.ShadingPatternValues.Clear,
+                Color = "auto",
+                Fill  = $"{bg.R:X2}{bg.G:X2}{bg.B:X2}",
+            };
+        }
+
         if (rPr.HasChildren)
         {
             wrun.AppendChild(rPr);
