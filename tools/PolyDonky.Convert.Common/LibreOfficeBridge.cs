@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -80,27 +81,13 @@ public static class LibreOfficeBridge
 
         progress?.Report((5, $"LibreOffice 실행 중…"));
 
-        // soffice --headless --convert-to docx --outdir <dir> <input>
-        // 필터: Writer MS Word 2007 XML (DOC/HWP → DOCX 범용)
-        // WorkingDirectory 를 soffice 폴더로 설정해야 LibreOffice 가 자신의 라이브러리를 찾을 수 있다.
-        // ArgumentList 사용 시 필터 이름에 따옴표를 넣으면 안 된다 — ArgumentList 가 자동 처리.
-        var psi = new ProcessStartInfo
-        {
-            FileName               = sofficeBin,
-            WorkingDirectory       = Path.GetDirectoryName(sofficeBin) ?? "",
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding  = Encoding.UTF8,
-            CreateNoWindow         = true,
-        };
-        psi.ArgumentList.Add("--headless");
+        // soffice --headless --norestore --env:UserInstallation=... --convert-to docx --outdir <dir> <input>
+        var psi = BuildProcessStartInfo(sofficeBin, outDir);
         psi.ArgumentList.Add("--convert-to");
         psi.ArgumentList.Add("docx:MS Word 2007 XML");
         psi.ArgumentList.Add("--outdir");
         psi.ArgumentList.Add(outDir);
-        psi.ArgumentList.Add(inputPath);
+        psi.ArgumentList.Add(Path.GetFullPath(inputPath));
 
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException($"soffice 실행 실패: {sofficeBin}");
@@ -175,23 +162,12 @@ public static class LibreOfficeBridge
             _ => throw new ArgumentException($"지원하지 않는 출력 포맷: {targetExt}"),
         };
 
-        var psi = new ProcessStartInfo
-        {
-            FileName               = sofficeBin,
-            WorkingDirectory       = Path.GetDirectoryName(sofficeBin) ?? "",
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding  = Encoding.UTF8,
-            CreateNoWindow         = true,
-        };
-        psi.ArgumentList.Add("--headless");
+        var psi = BuildProcessStartInfo(sofficeBin, outDir);
         psi.ArgumentList.Add("--convert-to");
         psi.ArgumentList.Add(filterSpec);
         psi.ArgumentList.Add("--outdir");
         psi.ArgumentList.Add(outDir);
-        psi.ArgumentList.Add(inputDocxPath);
+        psi.ArgumentList.Add(Path.GetFullPath(inputDocxPath));
 
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException($"soffice 실행 실패: {sofficeBin}");
@@ -227,5 +203,39 @@ public static class LibreOfficeBridge
 
         progress?.Report((95, "LibreOffice 변환 완료"));
         return outFile;
+    }
+
+    private static ProcessStartInfo BuildProcessStartInfo(string sofficeBin, string workDir)
+    {
+        var programDir = Path.GetDirectoryName(sofficeBin) ?? "";
+
+        // Isolated user profile prevents lock-file conflicts when multiple conversions run.
+        var userInstallDir = Path.Combine(workDir, "lo-user-" + Guid.NewGuid().ToString("N")[..8]);
+        var userInstallUri = "file:///" + userInstallDir.Replace('\\', '/');
+
+        var psi = new ProcessStartInfo
+        {
+            FileName               = sofficeBin,
+            WorkingDirectory       = programDir,
+            UseShellExecute        = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding  = Encoding.UTF8,
+            CreateNoWindow         = true,
+        };
+
+        // Prepend LibreOffice's program dir so its Python runtime finds platform libraries.
+        if (!string.IsNullOrEmpty(programDir))
+        {
+            var existing = Environment.GetEnvironmentVariable("PATH") ?? "";
+            if (!existing.Contains(programDir, StringComparison.OrdinalIgnoreCase))
+                psi.Environment["PATH"] = programDir + Path.PathSeparator + existing;
+        }
+
+        psi.ArgumentList.Add("--headless");
+        psi.ArgumentList.Add("--norestore");
+        psi.ArgumentList.Add($"--env:UserInstallation={userInstallUri}");
+        return psi;
     }
 }
