@@ -745,6 +745,40 @@ public sealed class HtmlWriter : IDocumentWriter
 
     private static void WriteImage(StringBuilder sb, ImageBlock img, string indent)
     {
+        // 오버레이 이미지(InFrontOfText/BehindText) — figure + data-pd-* 로 직렬화해 재임포트 시 복원.
+        if (img.WrapMode is ImageWrapMode.InFrontOfText or ImageWrapMode.BehindText)
+        {
+            var ovrSrc  = img.ResourcePath ?? BuildDataUri(img);
+            var ovrAlt  = EscapeAttr(img.Description ?? "");
+            var sizeA   = new System.Text.StringBuilder();
+            if (img.WidthMm  > 0) sizeA.Append(" width=\"") .Append(MmToPx(img.WidthMm) .ToString("0", CultureInfo.InvariantCulture)).Append('"');
+            if (img.HeightMm > 0) sizeA.Append(" height=\"").Append(MmToPx(img.HeightMm).ToString("0", CultureInfo.InvariantCulture)).Append('"');
+            var pdAttrs = new System.Text.StringBuilder();
+            pdAttrs.Append(" data-pd-wrap-mode=\"").Append(img.WrapMode).Append('"');
+            pdAttrs.Append(" data-pd-anchor-page=\"").Append(img.AnchorPageIndex).Append('"');
+            pdAttrs.Append(" data-pd-overlay-x=\"").Append(FmtNum(img.OverlayXMm)).Append("mm\"");
+            pdAttrs.Append(" data-pd-overlay-y=\"").Append(FmtNum(img.OverlayYMm)).Append("mm\"");
+            if (img.ShowTitle && !string.IsNullOrEmpty(img.Title))
+            {
+                var capStyle     = BuildImageCaptionStyle(img);
+                var capStyleAttr = capStyle.Length > 0 ? $" style=\"{capStyle}\"" : "";
+                sb.Append(indent).Append("<figure").Append(pdAttrs).Append(">\n");
+                sb.Append(indent).Append("  <img src=\"").Append(EscapeAttr(ovrSrc))
+                  .Append("\" alt=\"").Append(ovrAlt).Append('"').Append(sizeA).Append(">\n");
+                sb.Append(indent).Append("  <figcaption").Append(capStyleAttr).Append('>')
+                  .Append(EscapeHtml(img.Title!)).Append("</figcaption>\n");
+                sb.Append(indent).Append("</figure>\n");
+            }
+            else
+            {
+                sb.Append(indent).Append("<figure").Append(pdAttrs).Append(">\n");
+                sb.Append(indent).Append("  <img src=\"").Append(EscapeAttr(ovrSrc))
+                  .Append("\" alt=\"").Append(ovrAlt).Append('"').Append(sizeA).Append(">\n");
+                sb.Append(indent).Append("</figure>\n");
+            }
+            return;
+        }
+
         var imgStyle  = BuildImageStyle(img);
         var styleAttr = imgStyle.Length > 0 ? $" style=\"{imgStyle}\"" : "";
 

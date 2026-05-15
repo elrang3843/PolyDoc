@@ -1495,8 +1495,8 @@ public sealed class HwpxWriter : IDocumentWriter
                 var shapeElem = XElement.Parse(op.Xml);
                 // 보존된 opaque XML 의 *IDRef 가 원본 HWPX 의 charPr/paraPr 테이블을
                 // 가리키는데 우리 새 헤더에는 그 id 가 없을 수 있다 — 한컴이 lookup
-                // 하다 무한 루프에 빠지므로 모든 ID 참조를 "0" 으로 재작성한다.
-                SanitizeIdRefs(shapeElem);
+                // 하다 무한 루프에 빠지므로 존재하지 않는 ID 참조를 "0" 으로 재작성한다.
+                ValidateAndSanitizeIdRefs(shapeElem, ctx);
                 // 한컴 실파일 패턴: 도형 → 빈 hp:t → 단락 끝에 linesegarray.
                 // linesegarray 가 없으면 한컴이 레이아웃 계산 중 무한 루프에 빠진다.
                 var run = new XElement(Hp + "run",
@@ -1523,7 +1523,7 @@ public sealed class HwpxWriter : IDocumentWriter
     }
 
     // *IDRef 들이 원본 헤더의 ID 를 가리키므로 새 헤더에서 빈 id 가 되면 한컴이 거부.
-    // 안전하게 0 으로 재작성. (style 손실보다 한컴 호환이 우선)
+    // 존재하는 style ID 는 보존하고 없는 ID 만 "0" 으로 재작성. (style 손실 최소화)
     private static readonly string[] s_idRefAttrs = [
         "paraPrIDRef", "charPrIDRef", "styleIDRef",
         "borderFillIDRef", "tabPrIDRef",
@@ -1533,17 +1533,45 @@ public sealed class HwpxWriter : IDocumentWriter
         "masterPageIDRef",
     ];
 
-    private static void SanitizeIdRefs(XElement root)
+    private static void ValidateAndSanitizeIdRefs(XElement root, WriteContext ctx)
     {
         foreach (var elem in root.DescendantsAndSelf())
         {
+            var charPrAttr = elem.Attribute("charPrIDRef");
+            if (charPrAttr is not null)
+            {
+                if (!TryParseInt(charPrAttr.Value, out int charPrId) || charPrId >= ctx.RunStyles.Count)
+                    charPrAttr.Value = "0";
+            }
+
+            var paraPrAttr = elem.Attribute("paraPrIDRef");
+            if (paraPrAttr is not null)
+            {
+                if (!TryParseInt(paraPrAttr.Value, out int paraPrId) || paraPrId >= ctx.ParaStyles.Count)
+                    paraPrAttr.Value = "0";
+            }
+
+            var styleAttr = elem.Attribute("styleIDRef");
+            if (styleAttr is not null)
+            {
+                if (!TryParseInt(styleAttr.Value, out int styleId) || styleId >= ctx.ParaStyles.Count)
+                    styleAttr.Value = "0";
+            }
+
+            // 나머지 *IDRef 는 검증 불가능하므로 항상 "0" 으로 안전 처리.
             foreach (var name in s_idRefAttrs)
             {
+                if (name == "charPrIDRef" || name == "paraPrIDRef" || name == "styleIDRef")
+                    continue;
                 var attr = elem.Attribute(name);
                 if (attr is not null) attr.Value = "0";
             }
         }
     }
+
+    private static bool TryParseInt(string value, out int result)
+        => int.TryParse(value, System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out result);
 
     // ── table ────────────────────────────────────────────────────────────────
 

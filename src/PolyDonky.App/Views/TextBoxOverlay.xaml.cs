@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
+using PolyDonky.App.Services;
 using PolyDonky.Core;
 using WpfMedia = System.Windows.Media;
 
@@ -914,8 +915,8 @@ public partial class TextBoxOverlay : UserControl
 
     private void OnContextMenuProperties(object sender, RoutedEventArgs e)
     {
-        var dlg = new TextBoxPropertiesWindow(Model) { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() == true)
+        var dlg = new TextBoxPropertiesWindow(Model);
+        if (dlg.ShowModalFor(this) == true)
         {
             Model.Shape              = dlg.ResultShape;
             Model.BorderColor        = dlg.ResultBorderColor;
@@ -997,8 +998,8 @@ public partial class TextBoxOverlay : UserControl
         // 글자 속성: 선택이 있으면 그 영역, 없으면 caret 위치(이후 입력에 적용) — SelectAll 강제 안 함.
         // 사용자가 "글상자 전체가 바뀌는" 동작을 원하지 않을 때 selection 없이 호출 가능.
         var ed = ActiveEditor;
-        var dlg = new CharFormatWindow(ed) { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() == true)
+        var dlg = new CharFormatWindow(ed);
+        if (dlg.ShowModalFor(this) == true)
         {
             SyncEditorToModel();
             Model.Status = NodeStatus.Modified;
@@ -1014,8 +1015,8 @@ public partial class TextBoxOverlay : UserControl
         // (CharFormat 과 다름: 글자 속성은 chars 가 선택돼야 의미 있어 SelectAll 강제하지만,
         //  문단 속성은 caret 만 있어도 ParaFormatWindow.CollectParagraphs 가 caret 단락 1개 반환.)
         var ed = ActiveEditor;
-        var dlg = new ParaFormatWindow(ed) { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() == true)
+        var dlg = new ParaFormatWindow(ed);
+        if (dlg.ShowModalFor(this) == true)
         {
             SyncEditorToModel();
             Model.Status = NodeStatus.Modified;

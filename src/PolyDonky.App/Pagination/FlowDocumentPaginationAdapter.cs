@@ -36,6 +36,13 @@ public static class FlowDocumentPaginationAdapter
     public const int MaxBlocksForPreciseMapping = 2_500;
 
     /// <summary>
+    /// fast-path(대용량) 문서에서 표 행 분할을 위해 paginator 가 계산할 최대 페이지 수.
+    /// 이 페이지 범위 안에 있는 표는 정확히 분할되고, 범위 밖 행은 마지막 알려진 페이지에 귀속.
+    /// 값이 클수록 정확하지만 열기 시간이 늘어난다 — 20은 일반 업무 문서 기준 충분한 값.
+    /// </summary>
+    private const int MaxPagesForFastPathTableSplit = 20;
+
+    /// <summary>
     /// 문서를 페이지 단위로 분할해 <see cref="PaginatedDocument"/> 로 반환한다.
     /// </summary>
     /// <param name="document">분할할 문서.</param>
@@ -63,34 +70,84 @@ public static class FlowDocumentPaginationAdapter
         // sentinel 블록(PageBreakPadder 삽입 잔존물)이 있으면 제거
         PageBreakPadder.RemoveAll(fd.Blocks);
 
-        // 2. DocumentPaginator 로 정확한 페이지 수 산출.
-        // ComputePageCountSync 내부에서 모든 페이지를 GetPage(n) 으로 강제 레이아웃하므로
-        // 반환 시점에 paginator 는 완전한 페이지 배치 정보를 갖고 있다.
-        var paginator = (WpfDocs.DynamicDocumentPaginator)
-            ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
-        int pageCount = ComputePageCountSync(fd, geo, paginator);
+        // ── 조기 fast-path 감지 ────────────────────────────────────────────────
+        // FlattenBlocks 로 블록 수를 먼저 확인한다. 임계 초과 시 이후의
+        // ComputePageCountSync 와 tableFragmentMap 구성을 완전히 건너뛴다.
+        // 두 작업 모두 WPF paginator 레이아웃을 전체 문서에 대해 수행하므로
+        // 대용량 문서에서 분 단위로 UI 스레드를 멈출 수 있다.
+        int earlyBlockCount = FlattenBlocks(fd.Blocks).Count();
+        bool isFastPathDoc  = earlyBlockCount > MaxBlocksForPreciseMapping;
 
-        // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
-        // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
-        // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
-        // Y 좌표 측정 방식은 오프스크린 RTB 에서 표 셀 내부 rect 를 신뢰할 수 없어 여러 번
-        // 실패했으므로 paginator 의 확정 값으로 대체한다.
+        // 2. 페이지 수 산출: 정밀(paginator) 또는 추정(fast-path).
         var tableFragmentMap =
             new System.Collections.Generic.Dictionary<
                 WpfDocs.Table,
                 System.Collections.Generic.List<(Core.Table coreFragment, int slotIdx)>>();
-        foreach (var b in FlattenBlocks(fd.Blocks))
+        int pageCount;
+
+        if (isFastPathDoc)
         {
-            if (b is not WpfDocs.Table wpfTbl) continue;
-            if (b.Tag is not Core.Table coreTbl) continue;
-            if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+            // 정밀 레이아웃 없이 블록 수 기반으로 페이지 수를 추정한다.
+            // A4 기준 경험치: ~200 블록/페이지 (텍스트·이미지 혼합 기준).
+            const int EstimatedBlocksPerPage = 200;
+            pageCount = Math.Max(1,
+                (earlyBlockCount + EstimatedBlocksPerPage - 1) / EstimatedBlocksPerPage);
 
-            var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
-            var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+            // 표가 있으면 최대 MaxPagesForFastPathTableSplit 페이지까지만 paginator 를 실행해
+            // 표 행 분할을 수행한다. 전체 페이지를 계산하지 않으므로 대용량 문서에서도 멈추지 않는다.
+            // 해당 페이지 범위 밖에 있는 행은 GetPageNumber catch 경로로 마지막 알려진 페이지에 귀속.
+            if (FlattenBlocks(fd.Blocks).OfType<WpfDocs.Table>().Any())
+            {
+                var limitedPaginator = (WpfDocs.DynamicDocumentPaginator)
+                    ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
+                limitedPaginator.PageSize = new Size(geo.PageWidthDip, geo.PageHeightDip);
 
-            tableFragmentMap[wpfTbl] = fragments
-                .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
-                .ToList();
+                int pg = 0;
+                while (!limitedPaginator.IsPageCountValid && pg < MaxPagesForFastPathTableSplit)
+                {
+                    limitedPaginator.GetPage(pg);
+                    pg++;
+                }
+
+                foreach (var b in FlattenBlocks(fd.Blocks))
+                {
+                    if (b is not WpfDocs.Table wpfTbl) continue;
+                    if (b.Tag is not Core.Table coreTbl) continue;
+                    if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+
+                    var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, limitedPaginator);
+                    var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+                    tableFragmentMap[wpfTbl] = fragments
+                        .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                        .ToList();
+                }
+            }
+        }
+        else
+        {
+            // DocumentPaginator 로 정확한 페이지 수 산출.
+            // ComputePageCountSync 내부에서 모든 페이지를 GetPage(n) 으로 강제 레이아웃하므로
+            // 반환 시점에 paginator 는 완전한 페이지 배치 정보를 갖고 있다.
+            var paginator = (WpfDocs.DynamicDocumentPaginator)
+                ((WpfDocs.IDocumentPaginatorSource)fd).DocumentPaginator;
+            pageCount = ComputePageCountSync(fd, geo, paginator);
+
+            // 표(Wpf.Table) 전용 조각(fragment) 맵: fd 치수를 colWidth/no-padding 으로 바꾸기 *전*에
+            // 완전한 용지 기하로 레이아웃된 paginator 에게 각 표·행이 속한 페이지를 직접 질의한다.
+            // 페이지를 넘는 표는 TableRowSplitter 로 행 기준 조각으로 분할한다.
+            foreach (var b in FlattenBlocks(fd.Blocks))
+            {
+                if (b is not WpfDocs.Table wpfTbl) continue;
+                if (b.Tag is not Core.Table coreTbl) continue;
+                if (tableFragmentMap.ContainsKey(wpfTbl)) continue;
+
+                var rowGroups = TableRowSplitter.GetRowGroups(wpfTbl, coreTbl, paginator);
+                var fragments = TableRowSplitter.BuildFragments(coreTbl, rowGroups);
+
+                tableFragmentMap[wpfTbl] = fragments
+                    .Select(f => (f.fragment, f.pageIdx * geo.ColumnCount))
+                    .ToList();
+            }
         }
 
         // 3. 오프스크린 RichTextBox 에서 본문 블록 Y 좌표 측정 → (페이지, 단) 배정.
@@ -198,17 +255,28 @@ public static class FlowDocumentPaginationAdapter
         var flat = FlattenBlocks(fd.Blocks).ToList();
         if (flat.Count > MaxBlocksForPreciseMapping)
         {
+            // 블록을 page 0 에 일괄 배정하는 대신 pageCount 에 균등 분배한다.
+            // 이렇게 하면 PerPageDocumentSplitter 가 N 개의 슬라이스를 만들고,
+            // 각 슬라이스당 블록 수가 적어 SetupPageEditors → PageEditorHost RTB 생성이 빠르다.
+            int totalFlatCount = flat.Count;
+            int fastBlockIdx = 0;
             foreach (var wpfBlock in flat)
             {
+                // 부동소수점으로 계산해 정수 나눗셈에 의한 초반 블록 쏠림을 방지한다.
+                int fastPageIdx = pageCount <= 1 ? 0
+                    : Math.Min((int)((double)fastBlockIdx * pageCount / totalFlatCount), pageCount - 1);
+                int fastSlot = fastPageIdx * colCount;
                 // fast-path: ContainerBlock Section 은 자식 코어 블록을 직접 추가.
                 if (wpfBlock is WpfDocs.Section fastSect && fastSect.Tag is ContainerBlock)
                 {
-                    AssignSectionCoreBlocks(fastSect, 0, colCount, result);
+                    AssignSectionCoreBlocks(fastSect, fastSlot, colCount, result);
+                    fastBlockIdx++;
                     continue;
                 }
+                fastBlockIdx++;
                 if (wpfBlock.Tag is not Block coreBlock) continue;
                 if (IsOverlayMode(coreBlock)) continue;
-                result.Add((0, 0, coreBlock, Rect.Empty));
+                result.Add((fastPageIdx, 0, coreBlock, Rect.Empty));
             }
             return (result, new System.Collections.Generic.Dictionary<int, double>(), measurements);
         }
@@ -485,21 +553,68 @@ public static class FlowDocumentPaginationAdapter
             double gap;
 
             // 표(Wpf.Table) 는 paginator 가 확정한 조각(fragment) 목록을 우선 사용한다.
+            // paginator 기반 분할이 불충분(단일 fragment)하면 RTB Y좌표 기반으로 재시도한다.
             // 단일 페이지 표 → 조각 1개(원본), 여러 페이지 표 → 행 기준 분할 조각 N개.
-            if (wpfBlock is WpfDocs.Table wTbl
-                && tableFragmentMap is not null
-                && tableFragmentMap.TryGetValue(wTbl, out var tblFragments)
-                && tblFragments.Count > 0)
+            if (wpfBlock is WpfDocs.Table wTbl && wpfBlock.Tag is Core.Table coreTblForSplit)
             {
-                foreach (var (coreFragment, slotIdx) in tblFragments)
+                // paginator 기반 분할은 연속 좌표계에서 동작해 부정확하다.
+                // 항상 페이지별 독립 RTB 측정(SplitTableByPageMeasurement)을 우선 실행한다.
+                List<(Core.Table coreFragment, int slotIdx)>? tblFragments = null;
+
+                if (!double.IsNaN(topY))
                 {
-                    int tblSlot = Math.Max(minSlot, slotIdx);
-                    result.Add((tblSlot / colCount, tblSlot % colCount, coreFragment, Rect.Empty));
-                    prevSlot = tblSlot;
-                    minSlot  = Math.Max(minSlot, tblSlot);
+                    // 첫 페이지에서 표 이전에 이미 쌓인 높이: slotFill 이 topY 보다 정확하다.
+                    // topY 는 전체 문서 RTB 의 연속 Y 좌표라 제목·단락 마진 등이 과다 반영되어
+                    // availH 를 잘못 산출하는 문제를 slotFill 로 보정한다.
+                    double effTopY4Tbl  = (!double.IsNaN(prevContBottom) && topY < prevContBottom)
+                        ? prevContBottom : topY;
+                    int    tblFirstSlot = Math.Max(minSlot, (int)(effTopY4Tbl / bodyH));
+                    double tblPageFill  = slotFill.GetValueOrDefault(tblFirstSlot, 0.0);
+
+                    var (rowGroupsByPage, fragmentHeightsMm) = SplitTableByPageMeasurement(
+                        coreTblForSplit, tblFirstSlot, tblPageFill, bodyH, colWidth);
+                    if (rowGroupsByPage.Count > 1)
+                    {
+                        var pageFragments = TableRowSplitter.BuildFragments(coreTblForSplit, rowGroupsByPage);
+                        for (int fi2 = 0; fi2 < pageFragments.Count; fi2++)
+                        {
+                            if (fi2 < fragmentHeightsMm.Count)
+                                pageFragments[fi2].fragment.HeightMm = fragmentHeightsMm[fi2];
+                        }
+                        tblFragments = pageFragments
+                            .Select(f => (f.fragment, f.pageIdx * colCount))
+                            .ToList();
+                    }
+                    // rowGroupsByPage.Count <= 1: 표가 한 페이지에 들어감 — tblFragments=null 유지 (아래 단일 블록 처리)
                 }
-                if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
-                continue;
+
+                if (tblFragments != null && tblFragments.Count > 0)
+                {
+                    for (int fi = 0; fi < tblFragments.Count; fi++)
+                    {
+                        var (coreFragment, slotIdx) = tblFragments[fi];
+                        int tblSlot;
+                        if (fi == 0)
+                        {
+                            // 첫 조각: minSlot 과 paginator 슬롯 중 큰 쪽
+                            tblSlot = Math.Max(minSlot, slotIdx);
+                        }
+                        else
+                        {
+                            // 두 번째 이상 조각: 이전 조각 다음 페이지로 강제 이동 (Page Break 효과)
+                            tblSlot = ((prevSlot / colCount) + 1) * colCount;
+                            tblSlot = Math.Max(minSlot, tblSlot);
+                        }
+                        int tblPage = tblSlot / colCount;
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[Table] placed on page={tblPage} id={coreFragment.Id ?? "(null)"} heightMm={coreFragment.HeightMm:F2} rowCount={coreFragment.Rows.Count}");
+                        result.Add((tblPage, tblSlot % colCount, coreFragment, Rect.Empty));
+                        prevSlot = tblSlot;
+                        minSlot  = Math.Max(minSlot, tblSlot);
+                    }
+                    if (!double.IsNaN(bottomY)) prevContBottom = bottomY;
+                    continue;
+                }
             }
 
             // Y 를 측정할 수 없으면 직전 블록과 같은 슬롯에 배정한다.
@@ -518,6 +633,11 @@ public static class FlowDocumentPaginationAdapter
                     BlockH  = 0,
                     Gap     = 0,
                 });
+                // BUC(이미지) 등 topY 측정 불가 블록이 슬롯 최초 콘텐츠일 때,
+                // slotContentStartY 가 누락되어 ContainerBlock actualFillOverflow 검사가
+                // 발동하지 않는 문제를 방지한다. prevContBottom 을 슬롯 진입 위치 대리값으로 사용.
+                if (!double.IsNaN(prevContBottom) && !slotContentStartY.ContainsKey(nanSlot))
+                    slotContentStartY[nanSlot] = prevContBottom;
                 prevSlot = nanSlot;
                 continue;
             }
@@ -694,6 +814,9 @@ public static class FlowDocumentPaginationAdapter
 
             var bodyLocalRect = TryGetColumnLocalRect(
                 wpfBlock, slotTop / colCount, slotTop % colCount, bodyH, colWidth, colCount);
+            if (coreBlock is Core.Table tblSingle)
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Table] placed on page={slotTop / colCount} id={tblSingle.Id ?? "(null)"} heightMm={tblSingle.HeightMm:F2} rowCount={tblSingle.Rows.Count}");
             result.Add((slotTop / colCount, slotTop % colCount, coreBlock, bodyLocalRect));
             if (!double.IsNaN(topY) && !slotContentStartY.ContainsKey(slotTop))
                 slotContentStartY[slotTop] = topY;
@@ -1430,15 +1553,18 @@ public static class FlowDocumentPaginationAdapter
         {
             foreach (var block in section.Blocks)
             {
-                if (block is Paragraph p && p.StyleId == "pd-flex-shape-spacer")
+                if (block is Paragraph p &&
+                    (p.StyleId == "pd-flex-shape-spacer" || p.StyleId == "image-spacer"))
                 {
-                    if (lookup.TryGetValue(p, out var info)
-                        && info.bodyLocalRect != Rect.Empty)
+                    if (lookup.TryGetValue(p, out var info))
                     {
+                        // pageIdx 는 fast-path 에서도 유효(균등 분배 결과).
+                        // bodyLocalRect 가 Rect.Empty(fast-path) 이면 Y=0(페이지 상단) 으로 폴백.
                         currentSpacerPage = info.pageIdx;
-                        currentSpacerYMm  = FlowDocumentBuilder.DipToMm(info.bodyLocalRect.Top);
+                        currentSpacerYMm  = info.bodyLocalRect != Rect.Empty
+                            ? FlowDocumentBuilder.DipToMm(info.bodyLocalRect.Top)
+                            : 0.0;
                     }
-                    // bodyLocalRect 가 Rect.Empty 이면 이전 값 유지 (fallback).
                 }
                 else if (block is ShapeObject shape && shape.AnchorPageIndex == -2)
                 {
@@ -1446,6 +1572,12 @@ public static class FlowDocumentPaginationAdapter
                     // OverlayXMm/YMm 은 콘텐츠 영역 기준 상대값 → 페이지 절대 좌표로 변환.
                     shape.OverlayXMm += marginLeftMm;
                     shape.OverlayYMm += marginTopMm + currentSpacerYMm;
+                }
+                else if (block is ImageBlock imgBlock && imgBlock.AnchorPageIndex == -2)
+                {
+                    imgBlock.AnchorPageIndex = currentSpacerPage;
+                    imgBlock.OverlayXMm     += marginLeftMm;
+                    imgBlock.OverlayYMm     += marginTopMm + currentSpacerYMm;
                 }
             }
         }
@@ -1524,5 +1656,390 @@ public static class FlowDocumentPaginationAdapter
             };
         }
         return pages;
+    }
+
+    // ── 페이지별 독립 RTB 측정으로 표 행 그룹화 ────────────────────────────────
+
+    /// <summary>
+    /// <summary>
+    /// 표를 페이지별 독립 RTB 측정으로 분할한다. 이진 탐색 + DesiredSize.Height 방식.
+    /// GetCharacterRect 를 쓰지 않으며, 각 측정은 완전히 독립된 RTB 에서 수행된다.
+    /// </summary>
+    private static (List<(int pageNum, List<int> bodyRowIndices)> groups, List<double> fragmentHeightsMm)
+        SplitTableByPageMeasurement(
+        Core.Table coreTable,
+        int    startPage,
+        double pageStartFill,   // 첫 페이지에서 표 이전에 이미 쌓인 높이 (slotFill 기반)
+        double bodyH,
+        double colWidth)
+    {
+        var allBodyIndices = new List<int>();
+        for (int i = 0; i < coreTable.Rows.Count; i++)
+            if (!coreTable.Rows[i].IsHeader) allBodyIndices.Add(i);
+
+        if (allBodyIndices.Count == 0)
+            return (new List<(int, List<int>)>(), new List<double>());
+
+        int firstBodySrcIdx = allBodyIndices[0];
+        var leadingHeaderIndices = new List<int>();
+        for (int i = 0; i < firstBodySrcIdx; i++)
+            if (coreTable.Rows[i].IsHeader) leadingHeaderIndices.Add(i);
+
+        var result          = new List<(int, List<int>)>();
+        var fragmentHeights = new List<double>();
+        int startBodyIdx    = 0;
+        int pageOffset      = 0;
+
+        while (startBodyIdx < allBodyIndices.Count)
+        {
+            double availH = pageOffset == 0
+                ? Math.Max(bodyH * 0.1, bodyH - pageStartFill)
+                : bodyH;
+
+            int pageNum     = startPage + pageOffset;
+            int remainCount = allBodyIndices.Count - startBodyIdx;
+
+            // 테두리·렌더링 오차 흡수용 안전 여유 (DIP).
+            // DesiredSize.Height 와 실제 렌더 높이 사이의 미세 차이로 인해
+            // 마지막 행의 하단 테두리가 페이지 경계를 살짝 넘어 잘리는 현상을 방지한다.
+            const double BorderSafetyDip = 8.0;
+            double effectiveAvailH = Math.Max(availH - BorderSafetyDip, availH * 0.5);
+
+            // 남은 행 전체가 이 페이지에 들어가는지 먼저 확인 (빠른 경로)
+            double fullH = MeasureFragmentHeight(
+                coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, remainCount, colWidth);
+
+            int    fitsCount;
+            double fragHeightDip;
+
+            if (fullH <= effectiveAvailH || remainCount == 1)
+            {
+                // 전부 들어가거나 행이 1개뿐
+                fitsCount     = remainCount;
+                fragHeightDip = fullH;
+            }
+            else
+            {
+                // 이진 탐색: effectiveAvailH 에 들어가는 최대 행 수
+                int lo = 1, hi = remainCount - 1;
+                while (lo < hi)
+                {
+                    int    mid = (lo + hi + 1) / 2;
+                    double h   = MeasureFragmentHeight(
+                        coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, mid, colWidth);
+                    if (h <= effectiveAvailH) lo = mid; else hi = mid - 1;
+                }
+                fitsCount     = Math.Max(1, lo);
+                fragHeightDip = fitsCount == remainCount
+                    ? fullH
+                    : MeasureFragmentHeight(
+                        coreTable, leadingHeaderIndices, allBodyIndices, startBodyIdx, fitsCount, colWidth);
+            }
+
+            var pageIndices = allBodyIndices.GetRange(startBodyIdx, fitsCount);
+            result.Add((pageNum, pageIndices));
+
+            double fragHeightMm = fragHeightDip * (25.4 / 96.0);
+            fragmentHeights.Add(fragHeightMm);
+            System.Diagnostics.Debug.WriteLine(
+                $"[TableSplit] page={pageNum} bodyRows={fitsCount} heightMm={fragHeightMm:F2} availH={availH:F0}dip fill={pageStartFill:F0}dip");
+
+            startBodyIdx += fitsCount;
+            pageOffset++;
+        }
+
+        return (result, fragmentHeights);
+    }
+
+    /// <summary>
+    /// 앞머리 헤더 + 지정 범위 본문 행으로 독립 표를 구성해 RTB DesiredSize.Height 를 반환한다.
+    /// </summary>
+    private static double MeasureFragmentHeight(
+        Core.Table source,
+        List<int> leadingHeaderIndices,
+        List<int> allBodyIndices,
+        int startBodyIdx,
+        int bodyCount,
+        double colWidth)
+    {
+        var t = BuildMeasurementCoreTable(source, leadingHeaderIndices, allBodyIndices, startBodyIdx, bodyCount);
+        var wpfTable = FlowDocumentBuilder.BuildTable(t);
+        var fd = new WpfDocs.FlowDocument { PagePadding = new Thickness(0) };
+        fd.Blocks.Add(wpfTable);
+        var rtb = new RichTextBox
+        {
+            Document        = fd,
+            Padding         = new Thickness(0),
+            BorderThickness = new Thickness(0),
+        };
+        rtb.Measure(new Size(colWidth, double.PositiveInfinity));
+        rtb.Arrange(new Rect(rtb.DesiredSize));
+        rtb.UpdateLayout();
+        double h = rtb.DesiredSize.Height;
+        rtb.Document = new WpfDocs.FlowDocument(); // 분리
+        return h;
+    }
+
+    /// <summary>
+    /// 측정용 임시 Core.Table 을 만든다: 앞머리 헤더 행 + 지정 범위 본문 행.
+    /// 표 수준 속성은 원본에서 그대로 복사한다.
+    /// </summary>
+    private static Core.Table BuildMeasurementCoreTable(
+        Core.Table source,
+        List<int> leadingHeaderIndices,
+        List<int> allBodyIndices,
+        int startBodyIdx,
+        int bodyCount)
+    {
+        var t = new Core.Table
+        {
+            WidthMm                    = source.WidthMm,
+            IsFlexLayout               = source.IsFlexLayout,
+            BorderCollapse             = source.BorderCollapse,
+            BorderThicknessPt          = source.BorderThicknessPt,
+            BorderColor                = source.BorderColor,
+            BorderTop                  = source.BorderTop,
+            BorderBottom               = source.BorderBottom,
+            BorderLeft                 = source.BorderLeft,
+            BorderRight                = source.BorderRight,
+            InnerBorderHorizontal      = source.InnerBorderHorizontal,
+            InnerBorderVertical        = source.InnerBorderVertical,
+            DefaultCellPaddingTopMm    = source.DefaultCellPaddingTopMm,
+            DefaultCellPaddingBottomMm = source.DefaultCellPaddingBottomMm,
+            DefaultCellPaddingLeftMm   = source.DefaultCellPaddingLeftMm,
+            DefaultCellPaddingRightMm  = source.DefaultCellPaddingRightMm,
+            BackgroundColor            = source.BackgroundColor,
+            RepeatHeaderRowsOnBreak    = source.RepeatHeaderRowsOnBreak,
+            HAlign                     = source.HAlign,
+        };
+        foreach (var col in source.Columns)
+            t.Columns.Add(new Core.TableColumn { WidthMm = col.WidthMm });
+
+        foreach (int hi in leadingHeaderIndices)
+            t.Rows.Add(source.Rows[hi]);
+
+        for (int k = 0; k < bodyCount; k++)
+            t.Rows.Add(source.Rows[allBodyIndices[startBodyIdx + k]]);
+
+        return t;
+    }
+
+    /// <summary>
+    /// (구) RTB Y좌표 기반 그룹화 — 전체 표를 단일 연속 좌표계에서 측정한다.
+    /// SplitTableByPageMeasurement 로 교체됨. 삭제 예정.
+    /// </summary>
+    private static List<(int pageNum, List<int> bodyRowIndices)> GetRowGroupsByRtbY(
+        WpfDocs.Table wpfTable,
+        Core.Table coreTable,
+        double tableTopY,
+        double bodyH)
+    {
+        const double MmToDip = 96.0 / 25.4;
+        const double FallbackRowHeightDip = 6.0 * MmToDip; // 6mm 기본 행 높이
+
+        int totalRows = coreTable.Rows.Count;
+
+        // ── 전처리: 병합 셀(RowSpan>1) 기준 행 → 병합 그룹의 마지막 행 인덱스 맵 ──
+        // spanGroupEnd[i] = i 행이 속하거나 시작하는 RowSpan 병합 그룹의 마지막 행 인덱스.
+        // 병합이 없으면 spanGroupEnd[i] == i.
+        // IsHeader 행은 병합 그룹에서 제외 — RowSpan 이 헤더 경계를 넘지 않도록 제한.
+        var spanGroupEnd = new int[totalRows];
+        for (int i = 0; i < totalRows; i++) spanGroupEnd[i] = i;
+        for (int i = 0; i < totalRows; i++)
+        {
+            if (coreTable.Rows[i].IsHeader) continue;
+            foreach (var cell in coreTable.Rows[i].Cells)
+            {
+                if (cell.RowSpan <= 1) continue;
+                // 헤더 경계를 넘지 않는 범위 내에서 end 산출
+                int end = i;
+                for (int j = i + 1; j < totalRows && j <= i + cell.RowSpan - 1; j++)
+                {
+                    if (coreTable.Rows[j].IsHeader) break;
+                    end = j;
+                }
+                for (int j = i; j <= end; j++)
+                    spanGroupEnd[j] = System.Math.Max(spanGroupEnd[j], end);
+            }
+        }
+
+        var result  = new List<(int, List<int>)>();
+        var wpfRows = wpfTable.RowGroups.SelectMany(rg => rg.Rows).ToList();
+
+        int    curPage    = -1;
+        List<int>? curGroup = null;
+        // tableTopY 가 음수이면 표가 페이지 상단 위에 위치 — 0 으로 클램프
+        double accumY     = (double.IsNaN(tableTopY) || tableTopY < 0) ? 0 : tableTopY;
+
+        // 행별 rowY / stepH 를 미리 계산 (병합 하단 검사에서 재참조)
+        var rowTopY = new double[totalRows];
+        var rowH    = new double[totalRows];
+
+        for (int i = 0; i < totalRows; i++)
+        {
+            double y = double.NaN;
+            double h = double.NaN;
+            if (i < wpfRows.Count)
+            {
+                try
+                {
+                    var rect = wpfRows[i].ContentStart.GetCharacterRect(
+                        WpfDocs.LogicalDirection.Forward);
+                    if (!double.IsNaN(rect.Y) && rect.Y >= 0) y = rect.Y;
+                }
+                catch { }
+
+                try
+                {
+                    var r0 = wpfRows[i].ContentStart.GetCharacterRect(WpfDocs.LogicalDirection.Forward);
+                    var r1 = wpfRows[i].ContentEnd.GetCharacterRect(WpfDocs.LogicalDirection.Backward);
+                    if (!double.IsNaN(r0.Y) && !double.IsNaN(r1.Bottom) && r1.Bottom > r0.Y)
+                        h = r1.Bottom - r0.Y;
+                }
+                catch { }
+            }
+            if (double.IsNaN(y)) y = accumY;
+            if (double.IsNaN(h))
+                h = coreTable.Rows[i].HeightMm > 0
+                    ? coreTable.Rows[i].HeightMm * MmToDip
+                    : FallbackRowHeightDip;
+
+            rowTopY[i] = y;
+            rowH[i]    = h;
+            accumY     = y + h;
+        }
+
+        for (int i = 0; i < totalRows; i++)
+        {
+            if (coreTable.Rows[i].IsHeader) continue;
+
+            // 병합 그룹의 마지막 행까지의 하단 + 하단 외곽선을 페이지 경계 기준으로 사용
+            int endRow = spanGroupEnd[i];
+            double borderBottomDip = GetRowBottomBorderDip(coreTable, endRow);
+            double groupBottomY = rowTopY[endRow] + rowH[endRow] + borderBottomDip;
+
+            int pg = bodyH > 0 ? (int)(rowTopY[i] / bodyH) : 0;
+            // 병합 그룹 하단(외곽선 포함)이 현재 페이지 끝을 넘으면 이 행부터 다음 페이지
+            if (bodyH > 0 && groupBottomY > (pg + 1) * bodyH)
+                pg += 1;
+
+            if (pg != curPage)
+            {
+                curGroup = new System.Collections.Generic.List<int>();
+                result.Add((pg, curGroup));
+                curPage = pg;
+            }
+            curGroup!.Add(i);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 지정 행의 하단 외곽선 두께를 DIP 로 반환한다.
+    /// 셀별 BorderBottom → 셀 공통 BorderThicknessPt → 표 공통 BorderThicknessPt 순으로 폴백.
+    /// </summary>
+    private static double GetRowBottomBorderDip(Core.Table table, int rowIdx)
+    {
+        const double PtToDip = 96.0 / 72.0;
+        if (rowIdx < 0 || rowIdx >= table.Rows.Count) return 0;
+        var row = table.Rows[rowIdx];
+        double maxPt = 0;
+        foreach (var cell in row.Cells)
+        {
+            double pt = cell.BorderBottom.HasValue
+                ? cell.BorderBottom.Value.ThicknessPt
+                : (cell.BorderThicknessPt > 0 ? cell.BorderThicknessPt : table.BorderThicknessPt);
+            if (pt > maxPt) maxPt = pt;
+        }
+        if (maxPt <= 0) maxPt = table.BorderThicknessPt;
+        return maxPt * PtToDip;
+    }
+
+    // ── 섹션별 페이지네이션 ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// 각 섹션을 독립적으로 페이지네이션해 하나의 <see cref="PaginatedDocument"/> 로 합산한다.
+    /// 섹션별 <see cref="PageSettings"/> 가 다른 경우(여백·다단·배경색 등)를 올바르게 처리한다.
+    /// 섹션이 1개이면 <see cref="Paginate(PolyDonkyument, PageSettings?)"/> 에 위임한다.
+    /// </summary>
+    public static PaginatedDocument PaginateAllSections(PolyDonkyument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.Sections.Count <= 1)
+            return Paginate(document);
+
+        var allPages        = new System.Collections.Generic.List<PaginatedPage>();
+        var perPageSettings = new System.Collections.Generic.List<PageSettings>();
+        int offset          = 0;
+
+        for (int si = 0; si < document.Sections.Count; si++)
+        {
+            var section = document.Sections[si];
+
+            // 섹션을 임시 문서로 감싸서 독립 페이지네이션
+            var sectionDoc = new PolyDonkyument
+            {
+                Metadata      = document.Metadata,
+                Styles        = document.Styles,
+                OutlineStyles = document.OutlineStyles,
+                Footnotes     = document.Footnotes,
+                Endnotes      = document.Endnotes,
+            };
+            sectionDoc.Sections.Add(section);
+
+            var paginated = Paginate(sectionDoc, section.Page);
+
+            for (int pi = 0; pi < paginated.PageCount; pi++)
+            {
+                var orig      = paginated.Pages[pi];
+                int globalIdx = orig.PageIndex + offset;
+
+                // LINQ Select().ToArray() 할당 오버헤드 제거 — manual loop로 전환.
+                var bodyBlocks = new BlockOnPage[orig.BodyBlocks.Count];
+                for (int j = 0; j < orig.BodyBlocks.Count; j++)
+                {
+                    var b = orig.BodyBlocks[j];
+                    bodyBlocks[j] = new BlockOnPage
+                    {
+                        Source        = b.Source,
+                        PageIndex     = b.PageIndex + offset,
+                        ColumnIndex   = b.ColumnIndex,
+                        BodyLocalRect = b.BodyLocalRect,
+                    };
+                }
+
+                var overlayBlocks = new OverlayOnPage[orig.OverlayBlocks.Count];
+                for (int j = 0; j < orig.OverlayBlocks.Count; j++)
+                {
+                    var o = orig.OverlayBlocks[j];
+                    overlayBlocks[j] = new OverlayOnPage
+                    {
+                        Source          = o.Source,
+                        AnchorPageIndex = o.AnchorPageIndex + offset,
+                        XMm             = o.XMm,
+                        YMm             = o.YMm,
+                    };
+                }
+
+                allPages.Add(new PaginatedPage
+                {
+                    PageIndex = globalIdx,
+                    BodyBlocks = bodyBlocks,
+                    OverlayBlocks = overlayBlocks,
+                });
+                perPageSettings.Add(section.Page);
+            }
+            offset += paginated.PageCount;
+        }
+
+        return new PaginatedDocument
+        {
+            Source          = document,
+            PageSettings    = document.Sections.First().Page,
+            Pages           = allPages,
+            PerPageSettings = perPageSettings,
+        };
     }
 }

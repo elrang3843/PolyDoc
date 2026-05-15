@@ -46,6 +46,9 @@ public enum TableWrapMode
 /// <summary>셀 텍스트 수평 정렬.</summary>
 public enum CellTextAlign { Left, Center, Right, Justify }
 
+/// <summary>셀 텍스트 세로 정렬.</summary>
+public enum CellVerticalAlign { Top, Middle, Bottom }
+
 /// <summary>
 /// 행·열 구조의 표. 셀은 임의의 Block(주로 Paragraph) 들을 포함한다.
 /// 셀 병합은 <see cref="TableCell.RowSpan"/> / <see cref="TableCell.ColumnSpan"/> 로 표현하고,
@@ -78,12 +81,19 @@ public sealed class Table : Block, IOverlayAnchored
     /// null 이면 캡션 없음. 렌더러는 표 위에 가운데 정렬 작은 단락으로 표시한다.</summary>
     public string? Caption { get; set; }
 
+    // ── 표 치수 ──────────────────────────────────────────────────────────────
+    /// <summary>표 너비 (mm). 0 이하면 페이지 본문 너비(100%).</summary>
+    public double WidthMm  { get; set; }
+    /// <summary>표 높이 (mm). 0 이하면 행 높이 합계로 자동 계산.</summary>
+    public double HeightMm { get; set; }
+
+    /// <summary>BlockWidth/Height 는 WidthMm/HeightMm 의 별칭.</summary>
+    public override double BlockWidth  { get => WidthMm;  set => WidthMm  = value; }
+    public override double BlockHeight { get => HeightMm; set => HeightMm = value; }
+
     // ── 페이지 분할 옵션 ─────────────────────────────────────────────────────
     /// <summary>행 방향으로 페이지를 넘을 때 헤더 행(IsHeader=true) 을 각 조각 상단에 반복할지 여부.</summary>
     public bool RepeatHeaderRowsOnBreak { get; set; } = true;
-    /// <summary>열 방향 분할 시 좌측에 반복할 헤더 열 수 (0 = 반복 없음). 열 분할은 추후 구현.</summary>
-    public int HeaderColumnCount { get; set; }
-
     /// <summary>CSS display:flex/grid 에서 변환된 레이아웃용 표 여부.
     /// true 이면 렌더러가 Wpf.Table(클리핑) 대신 BlockUIContainer(WPF Grid)로 렌더링해
     /// 회전 도형 등의 시각적 오버플로를 허용한다.</summary>
@@ -95,6 +105,11 @@ public sealed class Table : Block, IOverlayAnchored
     public bool BorderCollapse { get; set; } = true;
 
     // ── 기본 셀 안여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) ──
+    /// <summary>DefaultCellPadding*Mm 이 0 이하일 때 모든 렌더러가 공통으로 사용하는 폴백 상하 여백 (mm).</summary>
+    public const double FallbackCellPaddingVerticalMm   = 1.0;
+    /// <summary>DefaultCellPadding*Mm 이 0 이하일 때 모든 렌더러가 공통으로 사용하는 폴백 좌우 여백 (mm).</summary>
+    public const double FallbackCellPaddingHorizontalMm = 1.5;
+
     public double DefaultCellPaddingTopMm    { get; set; }
     public double DefaultCellPaddingBottomMm { get; set; }
     public double DefaultCellPaddingLeftMm   { get; set; }
@@ -147,6 +162,11 @@ public sealed class TableRow
     public double HeightMm { get; set; }
     /// <summary>머리글 행 여부. true 이면 렌더러가 배경색·굵기를 강조해 표시한다.</summary>
     public bool IsHeader { get; set; }
+    /// <summary>행 배경색 hex. null 이면 투명 (셀 배경색 우선).</summary>
+    public string? BackgroundColor { get; set; }
+    /// <summary>행 기본 세로 정렬. null 이면 셀별 VerticalAlign 을 따른다.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public CellVerticalAlign? VerticalAlign { get; set; }
 }
 
 public sealed class TableCell
@@ -159,6 +179,8 @@ public sealed class TableCell
 
     // ── 텍스트 정렬 ──────────────────────────────────────────────────────
     public CellTextAlign TextAlign { get; set; } = CellTextAlign.Left;
+    /// <summary>세로 정렬. 기본 Top. TableRow.VerticalAlign 이 설정되어 있으면 행 설정이 우선.</summary>
+    public CellVerticalAlign VerticalAlign { get; set; } = CellVerticalAlign.Top;
 
     // ── 여백 (mm). 0 이하면 렌더러 기본값(상하 1.0, 좌우 1.5) 사용 ───────
     public double PaddingTopMm    { get; set; }

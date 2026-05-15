@@ -6,6 +6,7 @@ using AngleSharp.Css;
 using AngleSharp.Css.Dom;
 using AngleSharp.Dom;
 using PolyDonky.Codecs.Html;
+using PolyDonky.Convert.Common;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 
@@ -32,12 +33,7 @@ using PolyDonky.Iwpf;
 //   3 지원하지 않는 변환 쌍
 //   4 입출력 실패
 //   5 변환 실패
-
-const int ExitOk            = 0;
-const int ExitBadArgs       = 2;
-const int ExitUnsupportedOp = 3;
-const int ExitIoError       = 4;
-const int ExitConvertError  = 5;
+// (상수는 PolyDonky.Convert.Common.ConverterExitCodes 에 정의됨)
 
 try { Console.OutputEncoding = Encoding.UTF8; } catch { /* redirected pipe 등 무시 */ }
 
@@ -70,10 +66,10 @@ for (int i = 0; i < args.Length; i++)
     {
         case "--version" or "-v":
             Console.WriteLine("PolyDonky.Convert.Html 1.0");
-            return ExitOk;
+            return ConverterExitCodes.Ok;
         case "--help" or "-h" or "/?":
             PrintHelp();
-            return ExitOk;
+            return ConverterExitCodes.Ok;
         case "--fragment":
             fragmentOut = true;
             break;
@@ -81,7 +77,7 @@ for (int i = 0; i < args.Length; i++)
             if (i + 1 >= args.Length)
             {
                 Console.Error.WriteLine("--title 다음에 텍스트가 와야 합니다.");
-                return ExitBadArgs;
+                return ConverterExitCodes.BadArgs;
             }
             titleOut = args[++i];
             break;
@@ -91,14 +87,14 @@ for (int i = 0; i < args.Length; i++)
             else if (a.StartsWith("--", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"알 수 없는 옵션: {a}");
-                return ExitBadArgs;
+                return ConverterExitCodes.BadArgs;
             }
             else if (positional.Count < 2)
                 positional.Add(a);
             else
             {
                 Console.Error.WriteLine("위치 인자는 2개여야 합니다 (input, output).");
-                return ExitBadArgs;
+                return ConverterExitCodes.BadArgs;
             }
             break;
     }
@@ -108,7 +104,7 @@ if (positional.Count != 2)
 {
     Console.Error.WriteLine("Usage: PolyDonky.Convert.Html <input> <output> [--fragment] [--title <text>]");
     Console.Error.WriteLine("  '--help' 로 자세한 도움말과 종료 코드 안내를 볼 수 있습니다.");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string inPath, outPath;
@@ -120,7 +116,7 @@ try
 catch (Exception ex)
 {
     Console.Error.WriteLine($"경로 해석 실패: {ex.Message}");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string Ext(string p) => Path.GetExtension(p).TrimStart('.').ToLowerInvariant();
@@ -132,7 +128,7 @@ if (string.Equals(inPath, outPath, StringComparison.OrdinalIgnoreCase))
 {
     Console.Error.WriteLine($"입력과 출력 경로가 같습니다 — 자기 자신을 덮어쓸 수 없습니다: {inPath}");
     Console.Error.Flush();
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 bool isImport = (inExt is "html" or "htm") && outExt == "iwpf";
@@ -142,34 +138,34 @@ if (!isImport && !isExport)
     Console.Error.WriteLine($"지원하지 않는 변환: .{inExt} → .{outExt}");
     Console.Error.WriteLine("  지원: .html|.htm → .iwpf, .iwpf → .html|.htm");
     Console.Error.Flush();
-    return ExitUnsupportedOp;
+    return ConverterExitCodes.UnsupportedOp;
 }
 
 if (fragmentOut && !isExport)
 {
     Console.Error.WriteLine("--fragment 는 export 모드(*.iwpf → *.html) 에서만 사용 가능합니다.");
     Console.Error.Flush();
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 if (titleOut is not null && !isExport)
 {
     Console.Error.WriteLine("--title 은 export 모드(*.iwpf → *.html) 에서만 사용 가능합니다.");
     Console.Error.Flush();
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 if (!File.Exists(inPath))
 {
     Console.Error.WriteLine($"입력 파일이 없습니다: {inPath}");
     Console.Error.Flush();
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 if (new FileInfo(inPath).Length == 0)
 {
     Console.Error.WriteLine($"입력 파일이 비어 있습니다(0 byte): {inPath}");
     Console.Error.Flush();
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 var outDir = Path.GetDirectoryName(outPath);
@@ -180,7 +176,7 @@ if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
     {
         Console.Error.WriteLine($"출력 디렉터리 생성 실패: {outDir}\n  → {ex.Message}");
         Console.Error.Flush();
-        return ExitIoError;
+        return ConverterExitCodes.IoError;
     }
 }
 
@@ -199,7 +195,7 @@ if (isImport)
     {
         Console.Error.WriteLine($"입력 파일 읽기 실패: {ex.Message}");
         Console.Error.Flush();
-        return ExitIoError;
+        return ConverterExitCodes.IoError;
     }
 
     if (LooksBinary(htmlBytes))
@@ -207,7 +203,7 @@ if (isImport)
         Console.Error.WriteLine(
             $"HTML 텍스트 파일이 아닙니다 (NUL 바이트 다수 감지 — 바이너리 파일?): {inPath}");
         Console.Error.Flush();
-        return ExitConvertError;
+        return ConverterExitCodes.ConvertError;
     }
 
     (htmlEnc, encLabel) = DetectEncoding(htmlBytes);
@@ -221,34 +217,53 @@ try
 {
     if (isImport)
     {
-        WriteProgress(0, $"HTML 읽는 중 (인코딩 {encLabel})");
+        ConverterProgress.Write(0, $"HTML 읽는 중 (인코딩 {encLabel})");
         // 한도 0 = 무제한 — CLI 호출자가 명시적으로 변환을 시작했으므로 잘림 없이 처리.
         var htmlBaseDir = Path.GetDirectoryName(inPath) ?? ".";
         var text = htmlEnc.GetString(htmlBytes!);
 
         // CSS 전처리: 외부 stylesheet 인라인 → 캐스케이드 계산 후 style="" 인라이닝.
-        WriteProgress(10, "CSS 인라이닝 중");
+        ConverterProgress.Write(10, "CSS 인라이닝 중");
         text = InlineExternalStylesheets(text, htmlBaseDir);
         text = ComputeAndInlineCss(text);
 
+        ConverterProgress.Write(20, "HTML 파싱 중");
         var doc = HtmlReader.FromHtml(text, maxBlocks: 0);
+        var blockCount = doc.Sections.Count > 0 ? doc.Sections[0].Blocks.Count : 0;
+        Console.Error.WriteLine($"[DEBUG] HTML 파싱 완료: 섹션 {doc.Sections.Count}, 블록 {blockCount}");
 
         // HTML 파일 기준 상대 경로 이미지를 디스크에서 읽어 data 로 내장.
-        WriteProgress(30, "이미지 내장 중");
+        ConverterProgress.Write(30, "이미지 내장 중");
+        long totalImageBytes = 0;
+        var imgCount = CountImages(doc);
         EmbedLocalImages(doc, htmlBaseDir);
+        foreach (var section in doc.Sections)
+            totalImageBytes += SumImageBytes(section.Blocks);
+        Console.Error.WriteLine($"[DEBUG] 이미지 내장 완료: 개수 {imgCount}, 총 크기 {totalImageBytes / (1024 * 1024)}MB");
 
-        WriteProgress(60, "IWPF 로 변환 중");
-        using (var ofs = File.Create(tempOut))
-            new IwpfWriter().Write(doc, ofs);
+        ConverterProgress.Write(60, "IWPF 로 변환 중");
+        Console.Error.WriteLine($"[DEBUG] IWPF 쓰기 시작");
+        try
+        {
+            using (var ofs = File.Create(tempOut))
+                new IwpfWriter().Write(doc, ofs);
+            var fileInfo = new FileInfo(tempOut);
+            Console.Error.WriteLine($"[DEBUG] IWPF 쓰기 완료: {fileInfo.Length / (1024 * 1024)}MB");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[DEBUG] IWPF 쓰기 실패: {ex.GetType().Name}: {ex.Message}");
+            throw;
+        }
     }
     else // isExport
     {
-        WriteProgress(0, "IWPF 읽는 중");
+        ConverterProgress.Write(0, "IWPF 읽는 중");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new IwpfReader().Read(fs);
 
-        WriteProgress(60, fragmentOut ? "HTML fragment 로 변환 중" : "HTML 로 변환 중");
+        ConverterProgress.Write(60, fragmentOut ? "HTML fragment 로 변환 중" : "HTML 로 변환 중");
         var writer = new HtmlWriter { FullDocument = !fragmentOut, DocumentTitle = titleOut };
         using (var ofs = File.Create(tempOut))
             writer.Write(doc, ofs);
@@ -257,47 +272,49 @@ try
     if (File.Exists(outPath)) File.Delete(outPath);
     File.Move(tempOut, outPath);
     tempCleanupPath = null;
-    WriteProgress(100, "완료");
+    ConverterProgress.Write(100, "완료");
     Console.WriteLine($"OK: {Path.GetFileName(inPath)} → {Path.GetFileName(outPath)}");
     Console.Out.Flush();
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 catch (FileNotFoundException ex)
 {
     Console.Error.WriteLine($"파일을 찾을 수 없습니다: {ex.FileName ?? inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (DirectoryNotFoundException ex)
 {
     Console.Error.WriteLine($"디렉터리를 찾을 수 없습니다: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (UnauthorizedAccessException ex)
 {
     Console.Error.WriteLine($"권한 거부: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (DecoderFallbackException ex)
 {
     Console.Error.WriteLine(
         $"문자열 디코딩 실패 (감지된 인코딩 {encLabel} 으로는 일부 바이트를 변환할 수 없음): {inPath}\n  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (System.IO.InvalidDataException ex)
 {
     Console.Error.WriteLine(
         $"파일 형식이 유효하지 않습니다: {inPath}\n  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (IOException ex)
 {
     Console.Error.WriteLine($"I/O 실패: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"변환 실패: {ex.GetType().Name}: {ex.Message}");
-    return ExitConvertError;
+    if (!string.IsNullOrEmpty(ex.StackTrace))
+        Console.Error.WriteLine($"스택 트레이스:\n{ex.StackTrace}");
+    return ConverterExitCodes.ConvertError;
 }
 finally
 {
@@ -307,12 +324,6 @@ finally
 }
 
 // ── 헬퍼 ────────────────────────────────────────────────────────────
-
-static void WriteProgress(int percent, string message)
-{
-    Console.WriteLine($"PROGRESS:{percent}:{message}");
-    Console.Out.Flush();
-}
 
 /// <summary>NUL 바이트가 5% 이상이면 바이너리로 간주.</summary>
 static bool LooksBinary(byte[] bytes)
@@ -328,8 +339,10 @@ static bool LooksBinary(byte[] bytes)
 /// <summary>
 /// 입력 바이트에서 HTML 인코딩 감지:
 ///   1. BOM (UTF-8 / UTF-16 LE/BE / UTF-32 LE/BE)
-///   2. 첫 4KB 안에서 &lt;meta charset="X"&gt; 또는 http-equiv Content-Type charset
-///   3. 위 모두 실패 → UTF-8 (HTML5 기본)
+///   2. 파일 전체가 유효한 UTF-8이면 meta charset 선언과 관계없이 UTF-8 우선 (HTML5 권고)
+///      — EUC-KR 을 선언했더라도 실제로 UTF-8로 저장된 파일이 많음.
+///   3. 첫 4KB 안에서 &lt;meta charset="X"&gt; 또는 http-equiv Content-Type charset
+///   4. 위 모두 실패 → UTF-8 (HTML5 기본)
 /// 감지된 .NET <see cref="Encoding"/> 와 사람이 읽는 라벨을 함께 반환.
 /// </summary>
 static (Encoding enc, string label) DetectEncoding(byte[] bytes)
@@ -348,6 +361,12 @@ static (Encoding enc, string label) DetectEncoding(byte[] bytes)
         if (bytes[0] == 0xFE && bytes[1] == 0xFF) return (Encoding.BigEndianUnicode, "UTF-16 BE (BOM)");
         if (bytes[0] == 0xFF && bytes[1] == 0xFE) return (Encoding.Unicode,           "UTF-16 LE (BOM)");
     }
+
+    // BOM 이 없으면 먼저 전체 바이트가 유효한 UTF-8인지 검사한다.
+    // 유효하고 non-ASCII 바이트(멀티바이트 시퀀스)를 하나라도 포함하면 UTF-8 로 확정한다.
+    // meta charset 이 다른 인코딩을 선언하더라도 실제 바이트가 UTF-8이면 UTF-8이 맞다.
+    if (IsValidUtf8WithNonAscii(bytes))
+        return (new UTF8Encoding(false), "UTF-8 (자동 감지)");
 
     int sniffLen = Math.Min(bytes.Length, 4096);
     // ASCII 로 1차 디코딩해 <meta> 만 찾는다 — 이 단계에선 비-ASCII 바이트는 모두 '?' 로 보여도 괜찮다.
@@ -373,10 +392,121 @@ static (Encoding enc, string label) DetectEncoding(byte[] bytes)
 }
 
 /// <summary>
+/// 바이트 배열이 유효한 UTF-8이고 ASCII 아닌 멀티바이트 문자를 하나 이상 포함하면 true.
+/// 순수 ASCII 파일은 EUC-KR/Shift-JIS 등과 구별 불가이므로 false 를 반환한다.
+/// </summary>
+static bool IsValidUtf8WithNonAscii(byte[] bytes)
+{
+    bool hasNonAscii = false;
+    int i = 0;
+    while (i < bytes.Length)
+    {
+        byte b = bytes[i];
+        int seqLen;
+        if (b < 0x80)           { seqLen = 1; }                                          // ASCII
+        else if (b < 0xC2)      { return false; }                                         // 연속 바이트 단독 or over-long
+        else if (b < 0xE0)      { seqLen = 2; hasNonAscii = true; }
+        else if (b < 0xF0)      { seqLen = 3; hasNonAscii = true; }
+        else if (b <= 0xF4)     { seqLen = 4; hasNonAscii = true; }
+        else                    { return false; }                                         // 유효하지 않은 바이트
+
+        for (int j = 1; j < seqLen; j++)
+        {
+            if (i + j >= bytes.Length) return false;
+            if ((bytes[i + j] & 0xC0) != 0x80) return false;                             // 연속 바이트 아님
+        }
+
+        // Over-long sequence 추가 검사.
+        if (seqLen == 2 && (b & 0x1E) == 0) return false;
+        if (seqLen == 3)
+        {
+            // 최소값: 0xE0 0xA0 이상이어야 함.
+            if (b == 0xE0 && i + 1 < bytes.Length && bytes[i + 1] < 0xA0) return false;
+            // Surrogate: U+D800~U+DFFF 금지.
+            if (b == 0xED && i + 1 < bytes.Length && bytes[i + 1] >= 0xA0) return false;
+        }
+        if (seqLen == 4)
+        {
+            // 최소값: 0xF0 0x90 이상, 최대: U+10FFFF.
+            if (b == 0xF0 && i + 1 < bytes.Length && bytes[i + 1] < 0x90) return false;
+            if (b == 0xF4 && i + 1 < bytes.Length && bytes[i + 1] > 0x8F) return false;
+        }
+
+        i += seqLen;
+    }
+    return hasNonAscii;
+}
+
+/// <summary>
 /// 문서 전체를 순회하며 ResourcePath 만 있고 Data 가 없는 ImageBlock 을
 /// 디스크에서 읽어 Data 에 내장한다.
 /// http(s):// · data: · // 등 외부 URL 은 건너뛴다.
 /// </summary>
+static int CountImages(PolyDonkyument doc)
+{
+    if (doc?.Sections is null) return 0;
+    int count = 0;
+    foreach (var section in doc.Sections)
+    {
+        if (section?.Blocks is not null)
+            count += CountImagesInBlocks(section.Blocks);
+    }
+    return count;
+}
+
+static int CountImagesInBlocks(IList<Block> blocks)
+{
+    if (blocks is null) return 0;
+    int count = 0;
+    foreach (var block in blocks)
+    {
+        if (block is null) continue;
+        else if (block is ImageBlock) count++;
+        else if (block is Table t && t.Rows is not null)
+            foreach (var row in t.Rows)
+            {
+                if (row?.Cells is null) continue;
+                foreach (var cell in row.Cells)
+                {
+                    if (cell?.Blocks is not null)
+                        count += CountImagesInBlocks(cell.Blocks);
+                }
+            }
+        else if (block is TextBoxObject tbo && tbo.Content is not null)
+            count += CountImagesInBlocks(tbo.Content);
+        else if (block is ContainerBlock cb && cb.Children is not null)
+            count += CountImagesInBlocks(cb.Children);
+    }
+    return count;
+}
+
+static long SumImageBytes(IList<Block> blocks)
+{
+    if (blocks is null) return 0;
+    long sum = 0;
+    foreach (var block in blocks)
+    {
+        if (block is null) continue;
+        else if (block is ImageBlock img)
+            sum += img.Data?.LongLength ?? 0;
+        else if (block is Table t && t.Rows is not null)
+            foreach (var row in t.Rows)
+            {
+                if (row?.Cells is null) continue;
+                foreach (var cell in row.Cells)
+                {
+                    if (cell?.Blocks is not null)
+                        sum += SumImageBytes(cell.Blocks);
+                }
+            }
+        else if (block is TextBoxObject tbo && tbo.Content is not null)
+            sum += SumImageBytes(tbo.Content);
+        else if (block is ContainerBlock cb && cb.Children is not null)
+            sum += SumImageBytes(cb.Children);
+    }
+    return sum;
+}
+
 static void EmbedLocalImages(PolyDonkyument doc, string baseDir)
 {
     foreach (var section in doc.Sections)
@@ -385,20 +515,38 @@ static void EmbedLocalImages(PolyDonkyument doc, string baseDir)
 
 static void EmbedImagesInBlocks(IList<Block> blocks, string baseDir)
 {
+    if (blocks is null) return;
+
     foreach (var block in blocks)
     {
+        if (block is null) continue;
+
         switch (block)
         {
-            case ImageBlock img when img.Data.Length == 0
+            case ImageBlock img when (img.Data?.Length ?? 0) == 0
                                   && !string.IsNullOrEmpty(img.ResourcePath)
                                   && !IsExternalUrl(img.ResourcePath):
                 TryEmbedImageFromDisk(img, baseDir);
                 break;
 
-            case Table t:
+            case Table t when t.Rows is not null:
                 foreach (var row in t.Rows)
+                {
+                    if (row?.Cells is null) continue;
                     foreach (var cell in row.Cells)
-                        EmbedImagesInBlocks(cell.Blocks, baseDir);
+                    {
+                        if (cell?.Blocks is not null)
+                            EmbedImagesInBlocks(cell.Blocks, baseDir);
+                    }
+                }
+                break;
+
+            case TextBoxObject tbo when tbo.Content is not null:
+                EmbedImagesInBlocks(tbo.Content, baseDir);
+                break;
+
+            case ContainerBlock cb when cb.Children is not null:
+                EmbedImagesInBlocks(cb.Children, baseDir);
                 break;
         }
     }
@@ -411,7 +559,6 @@ static bool IsExternalUrl(string path) =>
     path.StartsWith("ftp://",   StringComparison.OrdinalIgnoreCase) ||
     path.StartsWith("data:",    StringComparison.OrdinalIgnoreCase) ||
     path.StartsWith("mailto:",  StringComparison.OrdinalIgnoreCase);
-
 static void TryEmbedImageFromDisk(ImageBlock img, string baseDir)
 {
     try
@@ -584,8 +731,10 @@ static async Task<string> ComputeAndInlineCssAsync(string html)
 
 /// <summary>CSS selector 의 specificity 를 (a*100 + b*10 + c) 단일 정수로 근사. inline style 은 별도 처리이므로 제외.
 /// a = id 개수, b = class/attr/pseudo-class 개수, c = type/pseudo-element 개수.</summary>
-static int ComputeSpecificity(string selector)
+static int ComputeSpecificity(string? selector)
 {
+    if (string.IsNullOrEmpty(selector)) return 0;
+
     int a = 0, b = 0, c = 0;
     int i = 0;
     while (i < selector.Length)
@@ -652,8 +801,10 @@ static int SkipIdent(string s, int i)
 }
 
 /// <summary>"a, b, c" 형식의 selector 를 콤마 분기로 분리. 함수 인자 안의 콤마는 무시.</summary>
-static IEnumerable<string> SplitTopLevelCommas(string selector)
+static IEnumerable<string> SplitTopLevelCommas(string? selector)
 {
+    if (string.IsNullOrEmpty(selector)) yield break;
+
     int depth = 0;
     int start = 0;
     for (int i = 0; i < selector.Length; i++)
@@ -790,7 +941,8 @@ static void ResolveFirstLetter(IDocument document, List<(string Selector, ICssSt
         var letter    = text.Substring(firstNonWs, letterEnd - firstNonWs);
         var remainder = text.Substring(letterEnd);
 
-        var owner = el.Owner!;
+        var owner = el.Owner;
+        if (owner is null) continue;
         var span = owner.CreateElement("span");
         span.SetAttribute("data-pd-pseudo", "first-letter");
         span.TextContent = letter;
@@ -805,7 +957,8 @@ static void ResolveFirstLetter(IDocument document, List<(string Selector, ICssSt
         // 텍스트 노드 분할: prefix(텍스트) → span → remainder(텍스트). InsertBefore + NextSibling 으로
         // 정확히 firstText 바로 뒤에 삽입한다 (DOM 표준).
         firstText.Data = prefix;
-        var parent = firstText.Parent!;
+        var parent = firstText.Parent;
+        if (parent is null) continue;   // 부모가 없으면(detached node) 조용히 건너뜀
         var anchor = firstText.NextSibling;
         if (anchor is not null) parent.InsertBefore(span, anchor);
         else                    parent.AppendChild(span);
@@ -1032,11 +1185,13 @@ static bool StartsWithCi(string haystack, int idx, string needle)
     => idx + needle.Length <= haystack.Length &&
        string.Compare(haystack, idx, needle, 0, needle.Length, StringComparison.OrdinalIgnoreCase) == 0;
 
-static void CollectStyleRules(ICssRuleList ruleList, List<(string, ICssStyleDeclaration)> result)
+static void CollectStyleRules(ICssRuleList? ruleList, List<(string, ICssStyleDeclaration)> result)
 {
+    if (ruleList is null) return;
     foreach (var rule in ruleList)
     {
-        if (rule is ICssStyleRule styleRule)
+        if (rule is null) continue;
+        if (rule is ICssStyleRule styleRule && !string.IsNullOrEmpty(styleRule.SelectorText))
             result.Add((styleRule.SelectorText, styleRule.Style));
         else if (rule is ICssGroupingRule groupRule)
             CollectStyleRules(groupRule.Rules, result);

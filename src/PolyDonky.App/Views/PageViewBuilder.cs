@@ -21,17 +21,19 @@ public static class PageViewBuilder
         Canvas        target,
         PageGeometry  geo,
         int           pageCount,
-        PageSettings? pageSettings = null,
-        Brush?        pageBg       = null,
-        bool          showShadow   = true,
-        bool          showGuides   = true,
-        bool          showLabels   = true)
+        PageSettings? pageSettings    = null,
+        Brush?        pageBg          = null,
+        bool          showShadow      = true,
+        bool          showGuides      = true,
+        bool          showLabels      = true,
+        int           endnotePageStart = -1)
     {
         target.Children.Clear();
         pageBg ??= Brushes.White;
 
         for (int i = 0; i < pageCount; i++)
         {
+            bool isEndnotePage = endnotePageStart >= 0 && i >= endnotePageStart;
             double topY = i * geo.PageStrideDip;
 
             var border = new Border
@@ -56,7 +58,7 @@ public static class PageViewBuilder
             Canvas.SetTop (border, topY);
             target.Children.Add(border);
 
-            if (showGuides && (pageSettings?.ShowMarginGuides ?? true))
+            if (!isEndnotePage && showGuides && (pageSettings?.ShowMarginGuides ?? true))
             {
                 var guide = new System.Windows.Shapes.Rectangle
                 {
@@ -77,7 +79,7 @@ public static class PageViewBuilder
             {
                 var label = new System.Windows.Controls.TextBlock
                 {
-                    Text             = $"{i + 1}페이지",
+                    Text             = isEndnotePage ? "미주" : $"{i + 1}페이지",
                     FontSize         = 10,
                     Foreground       = new SolidColorBrush(WpfColor.FromArgb(0xA0, 0x50, 0x50, 0xB4)),
                     IsHitTestVisible = false,
@@ -94,6 +96,7 @@ public static class PageViewBuilder
                 double bodyHmm = FlowDocumentBuilder.DipToMm(bodyH);
                 double padTopMm    = FlowDocumentBuilder.DipToMm(geo.PadTopDip);
                 double padBottomMm = FlowDocumentBuilder.DipToMm(geo.PadBottomDip);
+#if DEBUG
                 var debugLabel = new System.Windows.Controls.TextBlock
                 {
                     Text =
@@ -108,10 +111,10 @@ public static class PageViewBuilder
                     Padding          = new Thickness(3, 1, 3, 1),
                     IsHitTestVisible = false,
                 };
-                // 우측 여백 안 — 본문 가이드 오른쪽 바깥 4 DIP. 좌측 상단 페이지 번호와 겹치지 않음.
                 Canvas.SetLeft(debugLabel, geo.PageWidthDip - geo.PadRightDip + 4);
                 Canvas.SetTop (debugLabel, topY + 4);
                 target.Children.Add(debugLabel);
+#endif
             }
         }
     }
@@ -148,10 +151,15 @@ public static class PageViewBuilder
         overlayTable.Children.Clear();  underlayTable.Children.Clear();
         floatingCanvas.Children.Clear();
 
+        int validPageCount = paginated.Pages.Count;
         foreach (var page in paginated.Pages)
         {
             foreach (var oop in page.OverlayBlocks)
             {
+                // AnchorPageIndex 가 유효 범위를 벗어나면 건너뜀.
+                if (oop.AnchorPageIndex < 0 || oop.AnchorPageIndex >= validPageCount)
+                    continue;
+
                 switch (oop.Source)
                 {
                     case TextBoxObject tb:
@@ -206,6 +214,12 @@ public static class PageViewBuilder
 
     private static void PlaceAt(FrameworkElement ctrl, PageGeometry geo, int pageIndex, double xMm, double yMm)
     {
+        // pageIndex < 0: -2(HTML sentinel 미해결) 등 유효하지 않은 페이지 — 화면 밖 렌더링 방지.
+        if (pageIndex < 0)
+        {
+            ctrl.Visibility = System.Windows.Visibility.Collapsed;
+            return;
+        }
         var (xDip, yDip) = geo.ToAbsoluteDip(pageIndex, xMm, yMm);
         Canvas.SetLeft(ctrl, xDip);
         Canvas.SetTop (ctrl, yDip);
@@ -265,27 +279,25 @@ public static class PageViewBuilder
     /// 모든 페이지에 머리말·꼬리말을 렌더링한다. 좌/가운데/우 3분할.
     /// 토큰(<c>{PAGE}</c>, <c>{NUMPAGES}</c>, <c>{TITLE}</c> …) 은 페이지마다 치환된다.
     /// 편집 차단(<see cref="UIElement.IsHitTestVisible"/> = false) — 편집은 PageFormatWindow 가 담당.
-    /// 1차 사이클: <c>DifferentFirstPage</c>/<c>DifferentOddEven</c> 모델 확장 전이라 모든 페이지 동일.
+    /// <paramref name="getPageSettings"/> 에 페이지 인덱스를 전달하면 해당 페이지의 PageSettings 를 반환한다.
+    /// 섹션별로 서로 다른 머리말/꼬리말을 표시할 때 활용된다.
     /// </summary>
     public static void BuildHeaderFooterLayer(
-        Canvas         target,
-        PageSettings   page,
-        PageGeometry   geo,
-        int            pageCount,
-        DocumentMetadata? metadata = null,
-        string?        fileNameWithoutExt = null,
-        DateTime?      now = null)
+        Canvas                   target,
+        Func<int, PageSettings>  getPageSettings,
+        PageGeometry             geo,
+        int                      pageCount,
+        DocumentMetadata?        metadata = null,
+        string?                  fileNameWithoutExt = null,
+        DateTime?                now = null)
     {
         ArgumentNullException.ThrowIfNull(target);
-        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(getPageSettings);
         ArgumentNullException.ThrowIfNull(geo);
 
         target.Children.Clear();
-        if ((page.Header is null || page.Header.IsEmpty) && (page.Footer is null || page.Footer.IsEmpty)) return;
 
         var resolvedNow = now ?? DateTime.Now;
-        double headerYDip = FlowDocumentBuilder.MmToDip(page.MarginHeaderMm);
-        double footerYDip = FlowDocumentBuilder.MmToDip(page.MarginFooterMm);
         double bodyWidthDip = Math.Max(1.0, geo.PageWidthDip - geo.PadLeftDip - geo.PadRightDip);
 
         var foreground = new SolidColorBrush(WpfColor.FromArgb(0xCC, 0x33, 0x33, 0x33));
@@ -293,7 +305,13 @@ public static class PageViewBuilder
 
         for (int i = 0; i < pageCount; i++)
         {
-            double topY = i * geo.PageStrideDip;
+            var page = getPageSettings(i);
+            if (page is null) continue;
+            if ((page.Header is null || page.Header.IsEmpty) && (page.Footer is null || page.Footer.IsEmpty)) continue;
+
+            double topY       = i * geo.PageStrideDip;
+            double headerYDip = FlowDocumentBuilder.MmToDip(page.MarginHeaderMm);
+            double footerYDip = FlowDocumentBuilder.MmToDip(page.MarginFooterMm);
             int pageNumber = page.PageNumberStart + i;
             var ctx = new HeaderFooterTokens.Context
             {
@@ -306,7 +324,7 @@ public static class PageViewBuilder
             };
 
             // 머리말: 페이지 상단 ~ 본문 시작 사이. baseline = topY + MarginHeaderMm
-            if (page.Header is { } header)
+            if (page.Header is { } header && !header.IsEmpty)
             {
                 AddSlot(target, header.Left,   ctx, topY + headerYDip, geo.PadLeftDip, bodyWidthDip,
                         TextAlignment.Left,   foreground);
@@ -317,7 +335,7 @@ public static class PageViewBuilder
             }
 
             // 꼬리말: 본문 끝 ~ 페이지 하단 사이. baseline = topY + pageHeight - MarginFooterMm - 행높이
-            if (page.Footer is { } footer)
+            if (page.Footer is { } footer && !footer.IsEmpty)
             {
                 // 한 줄 텍스트 가정 — 폰트 행높이 ≈ 14 DIP. 정확한 측정은 첫 자식 Measure 후 보정.
                 double approxLineHeight = 14.0;

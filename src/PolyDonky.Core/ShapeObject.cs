@@ -100,6 +100,10 @@ public sealed class ShapeObject : Block, IOverlayAnchored
     /// <summary>바운딩 박스 높이 (mm). Line 계열은 선 두께를 고려한 최소값.</summary>
     public double HeightMm { get; set; } = 30;
 
+    /// <summary>BlockWidth/Height 는 WidthMm/HeightMm 의 별칭.</summary>
+    public override double BlockWidth  { get => WidthMm;  set => WidthMm  = value; }
+    public override double BlockHeight { get => HeightMm; set => HeightMm = value; }
+
     /// <summary>오버레이 anchoring — 0-based 페이지 인덱스 (0 = 첫 페이지).</summary>
     public int AnchorPageIndex { get; set; }
 

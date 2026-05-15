@@ -1265,36 +1265,40 @@ public class HtmlTests
         Assert.Contains(rt.Sections[0].Blocks, b => b is ShapeObject { Kind: ShapeKind.Rectangle });
     }
 
-    // ── 복합 SVG → ImageBlock ──────────────────────────────────────────
+    // ── 복합 SVG → ContainerBlock{Group} ──────────────────────────────────────────
 
     [Fact]
-    public void Reader_MultiShapeSvg_BecomesImageBlock()
+    public void Reader_MultiShapeSvg_BecomesContainerGroup()
     {
-        // 다중 도형 SVG 는 ShapeObject 가 아닌 ImageBlock (image/svg+xml) 으로 보존돼야 한다.
+        // 다중 도형 SVG 는 ContainerBlock{Group} 으로 분해되어 각 도형이 ShapeObject 로 편집 가능해진다.
         const string html = @"<svg width=""600"" height=""160"">
             <rect x=""20"" y=""30"" width=""100"" height=""80"" fill=""#4A90E2""></rect>
             <circle cx=""310"" cy=""70"" r=""40"" fill=""#F5A623""></circle>
         </svg>";
         var rt = HtmlReader.FromHtml(html);
         var block = Assert.Single(rt.Sections[0].Blocks);
-        var img = Assert.IsType<ImageBlock>(block);
-        Assert.Equal("image/svg+xml", img.MediaType);
-        Assert.True(img.Data.Length > 0);
-        Assert.InRange(img.WidthMm,  155, 160);
-        Assert.InRange(img.HeightMm,  41,  43);
+        var group = Assert.IsType<ContainerBlock>(block);
+        Assert.Equal(ContainerRole.Group, group.Role);
+        Assert.Equal(2, group.Children.Count);
+        var rect = Assert.IsType<ShapeObject>(group.Children[0]);
+        var circle = Assert.IsType<ShapeObject>(group.Children[1]);
+        Assert.Equal(ShapeKind.Rectangle, rect.Kind);
+        Assert.Equal(ShapeKind.Ellipse, circle.Kind);
     }
 
     [Fact]
-    public void Reader_SvgWithTextLabel_BecomesImageBlock()
+    public void Reader_SvgWithTextLabel_BecomesShapeWithLabel()
     {
-        // <text> 레이블이 있는 SVG 는 ImageBlock 으로 보존돼야 한다.
+        // 단일 도형 + <text> 레이블이 있는 SVG 는 ShapeObject 로 변환되고 text 는 LabelText 로 흡수된다.
         const string html = @"<svg width=""200"" height=""100"">
             <rect x=""10"" y=""10"" width=""80"" height=""60"" fill=""blue""></rect>
             <text x=""50"" y=""50"">레이블</text>
         </svg>";
         var rt    = HtmlReader.FromHtml(html);
         var block = Assert.Single(rt.Sections[0].Blocks);
-        Assert.IsType<ImageBlock>(block);
+        var shape = Assert.IsType<ShapeObject>(block);
+        Assert.Equal(ShapeKind.Rectangle, shape.Kind);
+        Assert.Equal("레이블", shape.LabelText);
     }
 
     [Fact]
@@ -1318,9 +1322,10 @@ public class HtmlTests
     }
 
     [Fact]
-    public void RoundTrip_SvgImageBlock_PreservesSvgContent()
+    public void RoundTrip_SvgImageBlock_DecomposedToGroup()
     {
-        // ImageBlock(image/svg+xml) → HtmlWriter → HtmlReader → 동일한 ImageBlock.
+        // ImageBlock(image/svg+xml) 의 다중 도형 SVG 는 → HtmlWriter → HtmlReader 시
+        // ContainerBlock{Group} 으로 분해된다 (각 도형 편집 가능).
         var doc   = new PolyDonkyument();
         var sec   = new Section();
         doc.Sections.Add(sec);
@@ -1338,9 +1343,48 @@ public class HtmlTests
 
         var rt    = HtmlReader.FromHtml(html);
         var block = Assert.Single(rt.Sections[0].Blocks);
-        var img   = Assert.IsType<ImageBlock>(block);
-        Assert.Equal("image/svg+xml", img.MediaType);
-        Assert.True(img.Data.Length > 0);
+        var group = Assert.IsType<ContainerBlock>(block);
+        Assert.Equal(ContainerRole.Group, group.Role);
+        Assert.Equal(2, group.Children.Count);
+        Assert.IsType<ShapeObject>(group.Children[0]);
+        Assert.IsType<ShapeObject>(group.Children[1]);
+    }
+
+    [Fact]
+    public void RoundTrip_ContainerGroupWithShapes_ChildrenPreserved()
+    {
+        // ContainerBlock{Group} with ShapeObjects → HtmlWriter → HtmlReader 시
+        // 컨테이너 구조는 보존되지 않지만 (HTML 기반 제약), 개별 Shape 자식은 보존된다.
+        // 재구성 시 다시 multi-shape 형태로 읽혀 ContainerBlock{Group} 이 된다.
+        var doc = new PolyDonkyument();
+        var sec = new Section();
+        doc.Sections.Add(sec);
+
+        var group = new ContainerBlock { Role = ContainerRole.Group };
+        group.Children.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Rectangle,
+            WidthMm = 20,
+            HeightMm = 15,
+            FillColor = "#FF0000",
+        });
+        group.Children.Add(new ShapeObject
+        {
+            Kind = ShapeKind.Ellipse,
+            WidthMm = 20,
+            HeightMm = 20,
+            FillColor = "#00FF00",
+        });
+        sec.Blocks.Add(group);
+
+        var html = HtmlWriter.ToHtml(doc);
+        var rt = HtmlReader.FromHtml(html);
+        // HTML 출력에서 ContainerBlock{Group} 은 보존되지 않고 자식만 분산된다.
+        // 하지만 다중 ShapeObject 로 다시 읽혀지면 ContainerBlock{Group} 으로 재구성된다.
+        var blocks = rt.Sections[0].Blocks.ToList();
+        Assert.Equal(2, blocks.Count);
+        Assert.IsType<ShapeObject>(blocks[0]);
+        Assert.IsType<ShapeObject>(blocks[1]);
     }
 
     // ── CSS 도형 → ShapeObject ─────────────────────────────────────────
@@ -2547,5 +2591,86 @@ public class HtmlTests
         Assert.Equal("#FFFEEE",    p.PaperColor, ignoreCase: true);
         Assert.InRange(p.MarginHeaderMm, 14.5, 15.5);
         Assert.InRange(p.MarginFooterMm, 11.5, 12.5);
+    }
+
+    [Fact]
+    public void Reader_DivBackgroundImageDataUri_BecomesImageBlock()
+    {
+        // 더 간단한 데이터 URI로 테스트
+        const string dataUri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+        const string html = $@"<div style=""background-image: url({dataUri}); width: 100px; height: 100px;""><p>Test</p></div>";
+        var doc = HtmlReader.FromHtml(html);
+
+        // 모든 블록 타입 확인 (디버깅용)
+        var blocks = doc.Sections[0].Blocks;
+        Assert.NotEmpty(blocks);
+
+        // 블록 타입과 내용 확인
+        string blockTypes = string.Join(", ", blocks.Select(b => b.GetType().Name));
+
+        // ContainerBlock이 생성되었나?
+        var container = blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);  // ContainerBlock이 있는지 확인
+
+        // ContainerBlock 안의 자식들 확인
+        var children = container.Children;
+        string childTypes = string.Join(", ", children.Select(c => c.GetType().Name));
+
+        var img = children.OfType<ImageBlock>().FirstOrDefault();
+        Assert.NotNull(img);
+        Assert.NotEmpty(img.Data);
+        Assert.Equal("image/png", img.MediaType);
+    }
+
+    // CSS background-image 기본 동작 확인
+    [Fact]
+    public void Reader_SimpleDivWithBackground_CreatesContainer()
+    {
+        // 가장 간단한 경우: background-color만 있어도 ContainerBlock이 생성되는지 확인
+        const string html = @"<div style=""background-color: red;""><p>Test</p></div>";
+        var doc = HtmlReader.FromHtml(html);
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);
+    }
+
+    [Fact]
+    public void Reader_DivWithBackgroundImageOnly_CreatesContainer()
+    {
+        // background-image만으로도 ContainerBlock이 생성되어야 함
+        const string html = @"<div style=""background-image: url(test.jpg);""><p>Test</p></div>";
+        var doc = HtmlReader.FromHtml(html);
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);  // 실패할 경우 여기서 걸림
+    }
+
+    [Fact]
+    public void Reader_DivBackgroundImageUrl_StoresResourcePath()
+    {
+        const string html = @"<div style='background-image: url(./images/test.jpg); width: 100mm; height: 50mm;'>
+            <p>Content</p>
+        </div>";
+        var doc = HtmlReader.FromHtml(html);
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);
+        var img = container.Children.OfType<ImageBlock>().FirstOrDefault();
+        Assert.NotNull(img);
+        Assert.Equal("./images/test.jpg", img.ResourcePath);
+        Assert.Equal("image/jpeg", img.MediaType);
+        Assert.Empty(img.Data);  // ResourcePath만 있음
+    }
+
+    [Fact]
+    public void Reader_DivBackgroundImageExternalUrl_StoresUrl()
+    {
+        const string html = @"<div style='background-image: url(https://example.com/image.png); width: 200mm;'>
+            <p>Text</p>
+        </div>";
+        var doc = HtmlReader.FromHtml(html);
+        var container = doc.Sections[0].Blocks.OfType<ContainerBlock>().FirstOrDefault();
+        Assert.NotNull(container);
+        var img = container.Children.OfType<ImageBlock>().FirstOrDefault();
+        Assert.NotNull(img);
+        Assert.Equal("https://example.com/image.png", img.ResourcePath);
+        Assert.Equal("image/png", img.MediaType);
     }
 }

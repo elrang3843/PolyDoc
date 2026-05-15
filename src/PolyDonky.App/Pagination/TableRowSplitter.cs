@@ -7,7 +7,6 @@ namespace PolyDonky.App.Pagination;
 
 /// <summary>
 /// 페이지 경계를 가로지르는 <see cref="Table"/> 을 행 기준으로 조각(fragment) 으로 분할한다.
-/// <para>열 방향 분할은 추후 구현 예정 — 현재는 모델에 <see cref="Table.HeaderColumnCount"/> 만 보유.</para>
 /// </summary>
 internal static class TableRowSplitter
 {
@@ -180,7 +179,9 @@ internal static class TableRowSplitter
         if (rowGroups.Count == 1)
             return new List<(Table, int)> { (source, rowGroups[0].pageNum) };
 
-        // 여러 페이지에 걸친 표 — 조각 생성
+        // 여러 페이지에 걸친 표 — 조각 생성.
+        // 각 조각은 완전히 독립된 표로 취급되므로 고유 Id 를 부여한다.
+        // 형식: "{sourceId}§t{index}" (§t = table fragment separator)
         var fragments = new List<(Table, int)>();
 
         for (int gi = 0; gi < rowGroups.Count; gi++)
@@ -189,10 +190,15 @@ internal static class TableRowSplitter
             bool isLast  = gi == rowGroups.Count - 1;
             var (pageNum, bodyIndices) = rowGroups[gi];
 
-            // 첫 조각: 캡션 유지. 이후 조각: 캡션 제거(반복 방지).
             bool prependHeaders = !isFirst && source.RepeatHeaderRowsOnBreak;
             var frag = CreateFragment(source, bodyIndices, prependHeaders,
-                                      omitCaption: !isFirst, isLastFragment: isLast);
+                                      omitCaption: !isFirst, isLastFragment: isLast, isFirstFragment: isFirst);
+
+            // 각 조각에 고유 Id — MergeTableFragments 없이도 독립 표로 관리된다.
+            frag.Id = string.IsNullOrEmpty(source.Id)
+                ? $"§t{gi}"
+                : $"{source.Id}§t{gi}";
+
             fragments.Add((frag, pageNum));
         }
 
@@ -206,7 +212,8 @@ internal static class TableRowSplitter
         IReadOnlyList<int> bodyRowIndices,
         bool prependHeaders,
         bool omitCaption,
-        bool isLastFragment)
+        bool isLastFragment,
+        bool isFirstFragment = true)
     {
         var frag = new Table
         {
@@ -216,22 +223,37 @@ internal static class TableRowSplitter
             HAlign                     = source.HAlign,
             Caption                    = omitCaption ? null : source.Caption,
             BackgroundColor            = source.BackgroundColor,
+            WidthMm                    = source.WidthMm,
+            HeightMm                   = 0,  // 조각은 행 내용으로 높이를 결정, 원본 전체 높이 복사 금지
+            IsFlexLayout               = source.IsFlexLayout,
+            BorderCollapse             = source.BorderCollapse,
             BorderThicknessPt          = source.BorderThicknessPt,
             BorderColor                = source.BorderColor,
+            BorderTop                  = source.BorderTop,
+            BorderBottom               = source.BorderBottom,
+            BorderLeft                 = source.BorderLeft,
+            BorderRight                = source.BorderRight,
+            InnerBorderHorizontal      = source.InnerBorderHorizontal,
+            InnerBorderVertical        = source.InnerBorderVertical,
             DefaultCellPaddingTopMm    = source.DefaultCellPaddingTopMm,
             DefaultCellPaddingBottomMm = source.DefaultCellPaddingBottomMm,
             DefaultCellPaddingLeftMm   = source.DefaultCellPaddingLeftMm,
             DefaultCellPaddingRightMm  = source.DefaultCellPaddingRightMm,
-            OuterMarginTopMm           = source.OuterMarginTopMm,
-            OuterMarginBottomMm        = source.OuterMarginBottomMm,
+            // 후속 조각은 페이지 상단에 바로 붙으므로 위쪽 여백 제거.
+            // 마지막이 아닌 조각은 아래쪽 여백도 제거 (다음 조각과 이어지는 표).
+            OuterMarginTopMm           = isFirstFragment  ? source.OuterMarginTopMm    : 0,
+            OuterMarginBottomMm        = isLastFragment   ? source.OuterMarginBottomMm : 0,
             OuterMarginLeftMm          = source.OuterMarginLeftMm,
             OuterMarginRightMm         = source.OuterMarginRightMm,
             RepeatHeaderRowsOnBreak    = source.RepeatHeaderRowsOnBreak,
-            HeaderColumnCount          = source.HeaderColumnCount,
+            AnchorPageIndex            = source.AnchorPageIndex,
+            OverlayXMm                 = source.OverlayXMm,
+            OverlayYMm                 = source.OverlayYMm,
         };
 
+        // 원본 TableColumn 객체를 공유 — 드래그로 너비를 바꾸면 원본 테이블에도 즉시 반영됨.
         foreach (var col in source.Columns)
-            frag.Columns.Add(new TableColumn { WidthMm = col.WidthMm });
+            frag.Columns.Add(col);
 
         // 첫 번째 본문 행 / 마지막 본문 행의 원본 인덱스
         // (앞머리 IsHeader vs 꼬리 IsHeader 구분에 사용)
@@ -300,7 +322,13 @@ internal static class TableRowSplitter
 
     private static TableRow CloneRow(TableRow src, int? maxRowSpan)
     {
-        var row = new TableRow { IsHeader = src.IsHeader, HeightMm = src.HeightMm };
+        var row = new TableRow
+        {
+            IsHeader        = src.IsHeader,
+            HeightMm        = src.HeightMm,
+            BackgroundColor = src.BackgroundColor,
+            VerticalAlign   = src.VerticalAlign,
+        };
         foreach (var cell in src.Cells)
         {
             var c = new TableCell
@@ -309,6 +337,7 @@ internal static class TableRowSplitter
                 ColumnSpan      = cell.ColumnSpan,
                 WidthMm         = cell.WidthMm,
                 TextAlign       = cell.TextAlign,
+                VerticalAlign   = cell.VerticalAlign,
                 PaddingTopMm    = cell.PaddingTopMm,
                 PaddingBottomMm = cell.PaddingBottomMm,
                 PaddingLeftMm   = cell.PaddingLeftMm,

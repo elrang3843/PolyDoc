@@ -58,10 +58,17 @@ public static class FlowDocumentBuilder
         // 모든 우측 정렬 객체가 '우측 여백' 만큼 오른쪽으로 밀려 클리핑된다.
         double contentWDip = ComputeContentWidthDip(page);
 
+        var defaultFontFamily = !string.IsNullOrWhiteSpace(document.Metadata.DefaultFontFamily)
+            ? document.Metadata.DefaultFontFamily + ", 맑은 고딕, Malgun Gothic, Segoe UI"
+            : "맑은 고딕, Malgun Gothic, Segoe UI";
+        var defaultFontSizePt = document.Metadata.DefaultFontSizePt > 0
+            ? document.Metadata.DefaultFontSizePt
+            : 11.0;
+
         var fd = new Wpf.FlowDocument
         {
-            FontFamily  = new WpfMedia.FontFamily("맑은 고딕, Malgun Gothic, Segoe UI"),
-            FontSize    = PtToDip(11),
+            FontFamily  = new WpfMedia.FontFamily(defaultFontFamily),
+            FontSize    = PtToDip(defaultFontSizePt),
             PageWidth   = contentWDip,
             PagePadding = new Thickness(0),
         };
@@ -97,18 +104,123 @@ public static class FlowDocumentBuilder
             ? document.Endnotes.Select((e, i) => (e.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2)
             : null;
 
+        var outlineNumbers = ComputeOutlineNumbers(document, outlineStyles);
+
         foreach (var section in document.Sections)
         {
-            BuildSection(fd, section, outlineStyles, fnNums, enNums);
+            BuildSection(fd, section, outlineStyles, outlineNumbers, fnNums, enNums);
         }
 
         return fd;
     }
 
     private static void BuildSection(Wpf.FlowDocument fd, Section section, OutlineStyleSet outlineStyles,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
         IReadOnlyDictionary<string, int>? fnNums = null, IReadOnlyDictionary<string, int>? enNums = null)
     {
-        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles, fnNums, enNums);
+        AppendBlocks(fd.Blocks, section.Blocks, outlineStyles, fnNums, enNums, outlineNumbers);
+    }
+
+    /// <summary>
+    /// 문서 전체를 순회해 각 개요 단락에 붙일 번호 문자열을 미리 계산한다.
+    /// 반환된 딕셔너리는 <see cref="Paragraph"/> 참조를 키로 사용한다.
+    /// </summary>
+    internal static IReadOnlyDictionary<Paragraph, string> ComputeOutlineNumbers(
+        PolyDonkyument doc, OutlineStyleSet? styles = null)
+    {
+        styles ??= doc.OutlineStyles ?? OutlineStyleSet.CreateDefault();
+        var result   = new Dictionary<Paragraph, string>(ReferenceEqualityComparer.Instance);
+        var counters = new int[7]; // index = (int)OutlineLevel; 0=Body unused
+        foreach (var section in doc.Sections)
+            CollectOutlineNumbers(section.Blocks, styles, counters, result);
+        return result;
+    }
+
+    private static void CollectOutlineNumbers(
+        IEnumerable<Block> blocks,
+        OutlineStyleSet styles,
+        int[] counters,
+        Dictionary<Paragraph, string> result)
+    {
+        foreach (var block in blocks)
+        {
+            switch (block)
+            {
+                case Paragraph p when p.Style.Outline > OutlineLevel.Body:
+                {
+                    var ls = styles.GetLevel(p.Style.Outline);
+                    if (ls.Numbering.Style != NumberingStyle.None)
+                    {
+                        int idx = (int)p.Style.Outline;
+                        counters[idx]++;
+                        if (ls.Numbering.RestartFromHigher)
+                            for (int i = idx + 1; i < counters.Length; i++) counters[i] = 0;
+                        result[p] = ls.Numbering.Prefix
+                            + FormatOutlineNumber(counters[idx], ls.Numbering.Style)
+                            + ls.Numbering.Suffix + " ";
+                    }
+                    break;
+                }
+                case ContainerBlock cb:
+                    CollectOutlineNumbers(cb.Children, styles, counters, result);
+                    break;
+            }
+        }
+    }
+
+    private static string FormatOutlineNumber(int n, NumberingStyle style) => style switch
+    {
+        NumberingStyle.Decimal        => n.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        NumberingStyle.AlphaLower     => ToAlpha(n, lower: true),
+        NumberingStyle.AlphaUpper     => ToAlpha(n, lower: false),
+        NumberingStyle.RomanLower     => ToRoman(n, lower: true),
+        NumberingStyle.RomanUpper     => ToRoman(n, lower: false),
+        NumberingStyle.HangulSyllable => ToHangulSyllable(n),
+        NumberingStyle.HangulOrdinal  => ToHangulOrdinal(n),
+        _                             => n.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    private static string ToAlpha(int n, bool lower)
+    {
+        if (n <= 0) return lower ? "a" : "A";
+        var sb = new System.Text.StringBuilder();
+        while (n > 0)
+        {
+            n--;
+            sb.Insert(0, (char)((lower ? 'a' : 'A') + n % 26));
+            n /= 26;
+        }
+        return sb.ToString();
+    }
+
+    internal static string ToRoman(int n, bool lower)
+    {
+        if (n <= 0) return lower ? "i" : "I";
+        var vals = new[] { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
+        var syms = new[] { "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I" };
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < vals.Length; i++)
+            while (n >= vals[i]) { sb.Append(syms[i]); n -= vals[i]; }
+        return lower ? sb.ToString().ToLowerInvariant() : sb.ToString();
+    }
+
+    private static readonly string[] KoreanSyllables =
+        { "가", "나", "다", "라", "마", "바", "사", "아", "자", "차", "카", "타", "파", "하" };
+
+    private static string ToHangulSyllable(int n)
+    {
+        if (n <= 0) return KoreanSyllables[0];
+        return KoreanSyllables[(n - 1) % KoreanSyllables.Length];
+    }
+
+    private static readonly string[] KoreanOrdinals =
+        { "첫째", "둘째", "셋째", "넷째", "다섯째", "여섯째", "일곱째", "여덟째", "아홉째", "열째" };
+
+    private static string ToHangulOrdinal(int n)
+    {
+        if (n <= 0) return KoreanOrdinals[0];
+        if (n <= KoreanOrdinals.Length) return KoreanOrdinals[n - 1];
+        return n.ToString(System.Globalization.CultureInfo.InvariantCulture) + "번째";
     }
 
     /// <summary>
@@ -132,8 +244,12 @@ public static class FlowDocumentBuilder
     /// </summary>
     internal static Wpf.FlowDocument BuildFromBlocks(
         IEnumerable<Block> blocks,
-        PageSettings?      page          = null,
-        OutlineStyleSet?   outlineStyles = null)
+        PageSettings?      page           = null,
+        OutlineStyleSet?   outlineStyles  = null,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
+        IReadOnlyDictionary<string, int>? fnNums    = null,
+        IReadOnlyDictionary<string, int>? enNums    = null,
+        FieldRenderContext?               fieldCtx  = null)
     {
         page          ??= new PageSettings();
         outlineStyles ??= OutlineStyleSet.CreateDefault();
@@ -166,7 +282,7 @@ public static class FlowDocumentBuilder
             fd.IsColumnWidthFlexible = false;
         }
 
-        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles);
+        AppendBlocks(fd.Blocks, blocks.ToList(), outlineStyles, fnNums: fnNums, enNums: enNums, outlineNumbers: outlineNumbers, fieldCtx: fieldCtx);
         return fd;
     }
 
@@ -174,7 +290,9 @@ public static class FlowDocumentBuilder
     internal static void AppendBlocks(System.Collections.IList target, IList<Block> blocks,
         OutlineStyleSet? outlineStyles = null,
         IReadOnlyDictionary<string, int>? fnNums = null,
-        IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? enNums = null,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
+        FieldRenderContext? fieldCtx = null)
     {
         // 중첩 리스트 지원: (WPF List, Kind) 스택.
         // 인덱스 0 = 최상위 리스트, 인덱스 n = n 단계 중첩 리스트.
@@ -261,7 +379,7 @@ public static class FlowDocumentBuilder
                     int start = marker.Kind != ListKind.Bullet && marker.OrderedNumber is { } s && s >= 1 ? s : 1;
                     bool isTaskList = marker.Checked is not null;
                     var list  = EnsureList(level, marker.Kind, start, marker.UpperCase, isTaskList, marker.HideBullet);
-                    var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums);
+                    var wpfPara = BuildParagraph(p, outlineStyles, fnNums, enNums, fieldCtx);
                     if (isTaskList)
                     {
                         // CSS 의 :before 가상 요소처럼 ☐/☑ 를 단락 첫머리에 직접 삽입.
@@ -282,10 +400,21 @@ public static class FlowDocumentBuilder
                     break;
 
                 case Paragraph p:
+                {
                     listStack.Clear();
-                    target.Add(BuildParagraph(p, outlineStyles, fnNums, enNums));
+                    var wpfP = BuildParagraph(p, outlineStyles, fnNums, enNums, fieldCtx);
+                    if (outlineNumbers is not null && outlineNumbers.TryGetValue(p, out var numPrefix))
+                    {
+                        var numRun = new Wpf.Run(numPrefix);
+                        if (wpfP.Inlines.FirstInline is { } first)
+                            wpfP.Inlines.InsertBefore(first, numRun);
+                        else
+                            wpfP.Inlines.Add(numRun);
+                    }
+                    target.Add(wpfP);
                     MergeAdjacentBlockquoteMargins(target);
                     break;
+                }
 
                 case Table t:
                     listStack.Clear();
@@ -304,10 +433,10 @@ public static class FlowDocumentBuilder
                                 cell.Blocks.Any(b => b is ShapeObject s && s.RotationAngleDeg != 0)));
                             target.Add(hasRotatedShape
                                 ? BuildFlexContainer(t, outlineStyles)
-                                : BuildTable(t, outlineStyles));
+                                : BuildTable(t, outlineStyles, fnNums, enNums, fieldCtx));
                         }
                         else
-                            target.Add(BuildTable(t, outlineStyles));
+                            target.Add(BuildTable(t, outlineStyles, fnNums, enNums, fieldCtx));
                     }
                     else
                         target.Add(BuildTableAnchor(t));   // 오버레이 모드 — 앵커만 추가
@@ -390,18 +519,24 @@ public static class FlowDocumentBuilder
                     }
                     else
                     {
-                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums));
+                        target.Add(BuildContainer(box, outlineStyles, fnNums, enNums, outlineNumbers, fieldCtx));
                     }
                     break;
             }
         }
     }
 
+    /// <summary>MainWindow 에서 그룹 묶기 등 수동 그룹 생성에 사용. 자식 없는 빈 Section 반환.</summary>
+    internal static Wpf.Section BuildContainerSection(ContainerBlock box)
+        => BuildContainer(box, outlineStyles: null);
+
     /// <summary>박스 스타일을 가진 <see cref="ContainerBlock"/> 을 WPF FlowDocument 의 <see cref="Wpf.Section"/>
     /// 으로 빌드한다 — Section 은 BorderBrush/BorderThickness/Background/Padding 을 모두 지원하며 Block 트리를 그대로 품을 수 있다.
     /// 자식 블록은 본문과 동일한 dispatch 를 거쳐 Section.Blocks 에 추가된다.</summary>
     private static Wpf.Section BuildContainer(ContainerBlock box, OutlineStyleSet? outlineStyles,
-        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null)
+        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null,
+        IReadOnlyDictionary<Paragraph, string>? outlineNumbers = null,
+        FieldRenderContext? fieldCtx = null)
     {
         var section = new Wpf.Section { Tag = box };
 
@@ -451,8 +586,20 @@ public static class FlowDocumentBuilder
         section.Margin = new Thickness(0,
             MmToDip(box.MarginTopMm), rightSafetyDip, MmToDip(box.MarginBottomMm));
 
+        // Group 역할: 별도 테두리 지정 없이 얇은 점선 테두리로 시각 구분.
+        if (box.Role == ContainerRole.Group && !anyBorder)
+        {
+            section.BorderBrush     = new WpfMedia.SolidColorBrush(
+                WpfMedia.Color.FromRgb(0x80, 0x80, 0xCC));
+            section.BorderThickness = new Thickness(1);
+            section.Padding         = new Thickness(Math.Max(section.Padding.Left,  4),
+                                                    Math.Max(section.Padding.Top,   4),
+                                                    Math.Max(section.Padding.Right,  4),
+                                                    Math.Max(section.Padding.Bottom, 4));
+        }
+
         // 자식 dispatch — 본문 AppendBlocks 를 재사용해 일관 처리.
-        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums);
+        AppendBlocks(section.Blocks, box.Children, outlineStyles, fnNums, enNums, outlineNumbers, fieldCtx);
 
         // WPF FlowDocument 에서 Section.Background/BorderBrush 는 자식이 BlockUIContainer 하나뿐일 때
         // 렌더링되지 않는다. 이 경우 자식 UIElement 를 WPF Grid 로 감싸 배경·테두리·패딩을 직접 적용한다.
@@ -816,8 +963,11 @@ public static class FlowDocumentBuilder
         {
             if (run.Text is null) continue;
             var wr = new System.Windows.Documents.Run(run.Text);
-            if (run.Style.FontSizePt > 0)
-                wr.FontSize = PtToDip(run.Style.FontSizePt);
+
+            // FontSize는 항상 설정 (0이면 기본값 11pt 사용)
+            double fontSize = run.Style.FontSizePt > 0 ? run.Style.FontSizePt : 11;
+            wr.FontSize = PtToDip(fontSize);
+
             if (!string.IsNullOrEmpty(run.Style.FontFamily))
                 wr.FontFamily = new WpfMedia.FontFamily(run.Style.FontFamily);
             if (run.Style.Bold   == true) wr.FontWeight = System.Windows.FontWeights.Bold;
@@ -825,13 +975,30 @@ public static class FlowDocumentBuilder
             if (run.Style.Foreground is { } fg)
                 wr.Foreground = new WpfMedia.SolidColorBrush(
                     WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
-            tb.Inlines.Add(wr);
+
+            // 배경색이 있으면 Span으로 감싸기 (Run에는 Background 속성이 없음)
+            if (run.Style.Background is { } bg)
+            {
+                var span = new Wpf.Span
+                {
+                    Background = new WpfMedia.SolidColorBrush(
+                        WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B))
+                };
+                span.Inlines.Add(wr);
+                tb.Inlines.Add(span);
+            }
+            else
+            {
+                tb.Inlines.Add(wr);
+            }
         }
 
         return tb;
     }
 
-    internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null)
+    internal static Wpf.Table BuildTable(Table table, OutlineStyleSet? outlineStyles = null,
+        IReadOnlyDictionary<string,int>? fnNums = null, IReadOnlyDictionary<string,int>? enNums = null,
+        FieldRenderContext? fieldCtx = null)
     {
         var wtable = new Wpf.Table { CellSpacing = 0 };
 
@@ -882,11 +1049,12 @@ public static class FlowDocumentBuilder
                 bool atRight  = colIdx + colSpan - 1 >= colCount - 1;
 
                 ApplyCellPropertiesToWpf(wcell, cell, row.IsHeader, table,
-                    atTop, atBottom, atLeft, atRight);
-                AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles);
+                    atTop, atBottom, atLeft, atRight, row);
+                AppendBlocks(wcell.Blocks, cell.Blocks, outlineStyles, fnNums: fnNums, enNums: enNums, fieldCtx: fieldCtx);
                 if (wcell.Blocks.Count == 0)
                     wcell.Blocks.Add(new Wpf.Paragraph(new Wpf.Run(string.Empty)));
 
+                ApplyVerticalAlignmentToCell(wcell, cell, row);
                 wrow.Cells.Add(wcell);
                 colIdx += colSpan;
             }
@@ -953,7 +1121,8 @@ public static class FlowDocumentBuilder
         bool atTopEdge    = false,
         bool atBottomEdge = false,
         bool atLeftEdge   = false,
-        bool atRightEdge  = false)
+        bool atRightEdge  = false,
+        TableRow? row     = null)
     {
         // 면별 테두리 cascade — 셀 면 지정 > 표 외곽/안쪽 면 > 공통값.
         // 안쪽 면(table 내부) 일 때는 InnerBorderHorizontal/Vertical 을 default 로 쓴다.
@@ -987,6 +1156,7 @@ public static class FlowDocumentBuilder
         // border-collapse 시뮬레이션: WPF Table 은 셀별로 보더를 그려 인접 셀의 공유 모서리에서
         // doubled 라인이 생긴다. tableDefaults.BorderCollapse=true 인 경우 셀의 위/왼쪽 보더를
         // 가장자리에서만 그려 한쪽(오른쪽 + 아래) 으로 일관 — 인접 셀 사이엔 단일 라인만 남게 한다.
+        // 단, 셀에서 명시적으로 설정한 테두리는 BorderCollapse 를 무시하고 적용한다.
         bool collapse = tableDefaults?.BorderCollapse ?? true;
         double leftDip   = PtToDip(FallbackThk(left.ThicknessPt));
         double topDip    = PtToDip(FallbackThk(top.ThicknessPt));
@@ -994,15 +1164,16 @@ public static class FlowDocumentBuilder
         double bottomDip = PtToDip(FallbackThk(bottom.ThicknessPt));
         if (collapse)
         {
-            if (!atTopEdge)  topDip  = 0;
-            if (!atLeftEdge) leftDip = 0;
+            // 셀이 명시적으로 설정하지 않은 경우에만 BorderCollapse 적용
+            if (!atTopEdge && cell.BorderTop is null)  topDip  = 0;
+            if (!atLeftEdge && cell.BorderLeft is null) leftDip = 0;
         }
         wcell.BorderThickness = new Thickness(leftDip, topDip, rightDip, bottomDip);
 
-        double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : 1.0;
-        double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : 1.0;
-        double defLeft   = tableDefaults?.DefaultCellPaddingLeftMm   > 0 ? tableDefaults.DefaultCellPaddingLeftMm   : 1.5;
-        double defRight  = tableDefaults?.DefaultCellPaddingRightMm  > 0 ? tableDefaults.DefaultCellPaddingRightMm  : 1.5;
+        double defTop    = tableDefaults?.DefaultCellPaddingTopMm    > 0 ? tableDefaults.DefaultCellPaddingTopMm    : Table.FallbackCellPaddingVerticalMm;
+        double defBottom = tableDefaults?.DefaultCellPaddingBottomMm > 0 ? tableDefaults.DefaultCellPaddingBottomMm : Table.FallbackCellPaddingVerticalMm;
+        double defLeft   = tableDefaults?.DefaultCellPaddingLeftMm   > 0 ? tableDefaults.DefaultCellPaddingLeftMm   : Table.FallbackCellPaddingHorizontalMm;
+        double defRight  = tableDefaults?.DefaultCellPaddingRightMm  > 0 ? tableDefaults.DefaultCellPaddingRightMm  : Table.FallbackCellPaddingHorizontalMm;
 
         double padTop   = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : defTop);
         double padBottom= MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : defBottom);
@@ -1010,14 +1181,162 @@ public static class FlowDocumentBuilder
         double padRight = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : defRight);
         wcell.Padding = new Thickness(padLeft, padTop, padRight, padBottom);
 
-        if (!string.IsNullOrEmpty(cell.BackgroundColor) &&
-            TryParseColor(cell.BackgroundColor) is { } bg)
+        // 배경색: 셀 지정 > 행 지정 > null(투명)
+        var bgColor = !string.IsNullOrEmpty(cell.BackgroundColor) ? cell.BackgroundColor
+                    : (!string.IsNullOrEmpty(row?.BackgroundColor) ? row!.BackgroundColor : null);
+        if (bgColor is not null && TryParseColor(bgColor) is { } bg)
             wcell.Background = new WpfMedia.SolidColorBrush(bg);
         else
             wcell.Background = null;
 
         wcell.FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal;
         ApplyCellTextAlign(wcell, cell.TextAlign);
+    }
+
+    /// <summary>
+    /// 셀의 수직 정렬을 BlockUIContainer + Grid 로 구현한다.
+    /// TableCell 은 TextElement 이므로 VerticalAlignment 를 직접 지원하지 않지만,
+    /// BlockUIContainer 내 Grid 는 FrameworkElement 이므로 지원한다.
+    /// </summary>
+    private static void ApplyVerticalAlignmentToCell(Wpf.TableCell wcell, TableCell cell, TableRow? row)
+    {
+        // 유효한 수직 정렬 결정: 셀 > 행 > 기본값(Top)
+        var align = cell.VerticalAlign;
+        if (align == CellVerticalAlign.Top && row?.VerticalAlign.HasValue == true)
+            align = row.VerticalAlign.Value;
+        if (align == CellVerticalAlign.Top)
+            return; // 기본값이면 처리 안 함
+
+        // 셀의 기존 블록들을 모두 수집
+        var originalBlocks = wcell.Blocks.Cast<Wpf.Block>().ToList();
+        wcell.Blocks.Clear();
+
+        // Grid 생성: 높이는 자동으로 콘텐츠에 맞춤, VerticalAlignment 는 셀 내 정렬 결정
+        var grid = new System.Windows.Controls.Grid
+        {
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = align switch
+            {
+                CellVerticalAlign.Middle => System.Windows.VerticalAlignment.Center,
+                CellVerticalAlign.Bottom => System.Windows.VerticalAlignment.Bottom,
+                _ => System.Windows.VerticalAlignment.Top,
+            },
+        };
+
+        // StackPanel 에 모든 블록을 담는다
+        var stack = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Vertical,
+        };
+
+        foreach (var block in originalBlocks)
+        {
+            // 블록을 UIElement 로 변환하여 StackPanel 에 추가
+            if (block is Wpf.Paragraph para)
+            {
+                // 단락을 TextBlock 으로 변환 (가장 일반적인 경우)
+                var tb = new System.Windows.Controls.TextBlock
+                {
+                    TextWrapping = System.Windows.TextWrapping.Wrap,
+                    TextAlignment = para.TextAlignment,
+                    Foreground = para.Foreground ?? System.Windows.Media.Brushes.Black,
+                    Background = para.Background,
+                    Padding = para.Padding,
+                    Margin = para.Margin,
+                    FontFamily = para.FontFamily,
+                    FontSize = para.FontSize,
+                    FontWeight = para.FontWeight,
+                    FontStyle = para.FontStyle,
+                };
+
+                // 단락의 inlines 를 TextBlock 에 복사
+                foreach (var inline in para.Inlines)
+                    tb.Inlines.Add(CopyInline(inline));
+
+                stack.Children.Add(tb);
+            }
+            else if (block is Wpf.BlockUIContainer buc)
+            {
+                // BlockUIContainer 는 그대로 추가
+                stack.Children.Add(buc.Child as System.Windows.UIElement ?? new System.Windows.Controls.TextBlock { Text = "(UI element)" });
+            }
+            else if (block is Wpf.Table table)
+            {
+                // 표는 복잡하므로 별도 처리 필요 — 현재는 placeholder
+                stack.Children.Add(new System.Windows.Controls.TextBlock { Text = "[표 콘텐츠]" });
+            }
+            else
+            {
+                // 기타 블록 타입은 텍스트 placeholder
+                stack.Children.Add(new System.Windows.Controls.TextBlock { Text = "[블록]" });
+            }
+        }
+
+        grid.Children.Add(stack);
+
+        // Grid 를 BlockUIContainer 로 감싸서 wcell.Blocks 에 추가
+        wcell.Blocks.Add(new Wpf.BlockUIContainer(grid));
+    }
+
+    /// <summary>WPF Inline 을 복사한다. (Tag, 스타일 포함)</summary>
+    private static Wpf.Inline CopyInline(Wpf.Inline inline)
+    {
+        if (inline is Wpf.Run run)
+        {
+            return new Wpf.Run(run.Text)
+            {
+                Tag = run.Tag,
+                Foreground = run.Foreground,
+                Background = run.Background,
+                FontSize = run.FontSize,
+                FontWeight = run.FontWeight,
+                FontStyle = run.FontStyle,
+                TextDecorations = run.TextDecorations,
+                BaselineAlignment = run.BaselineAlignment,
+            };
+        }
+        else if (inline is Wpf.Span span)
+        {
+            var newSpan = new Wpf.Span
+            {
+                Tag = span.Tag,
+                Foreground = span.Foreground,
+                Background = span.Background,
+                FontSize = span.FontSize,
+                FontWeight = span.FontWeight,
+                FontStyle = span.FontStyle,
+                TextDecorations = span.TextDecorations,
+            };
+            foreach (var child in span.Inlines)
+                newSpan.Inlines.Add(CopyInline(child));
+            return newSpan;
+        }
+        else if (inline is Wpf.Hyperlink link)
+        {
+            var newLink = new Wpf.Hyperlink()
+            {
+                Tag = link.Tag,
+                NavigateUri = link.NavigateUri,
+                Foreground = link.Foreground,
+                Background = link.Background,
+                FontSize = link.FontSize,
+                FontWeight = link.FontWeight,
+                FontStyle = link.FontStyle,
+                TextDecorations = link.TextDecorations,
+            };
+            foreach (var child in link.Inlines)
+                newLink.Inlines.Add(CopyInline(child));
+            return newLink;
+        }
+        else if (inline is Wpf.InlineUIContainer iuc)
+        {
+            return new Wpf.InlineUIContainer(iuc.Child) { Tag = iuc.Tag };
+        }
+        else
+        {
+            // 기타 inline: 그냥 반환
+            return inline;
+        }
     }
 
     private static void ApplyCellTextAlign(Wpf.TableCell wcell, CellTextAlign align)
@@ -1052,7 +1371,7 @@ public static class FlowDocumentBuilder
     /// 바인딩이 visual tree 부착 후 동작하므로, 초기 0 폭 측정 문제를 우회한다.
     /// </para>
     /// </summary>
-    private static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
+    internal static Wpf.Block BuildThematicBreak(ThematicBreakBlock thb)
     {
         WpfMedia.Color lineColor = WpfMedia.Color.FromRgb(0xAA, 0xAA, 0xAA);
         if (!string.IsNullOrEmpty(thb.LineColor))
@@ -1241,10 +1560,10 @@ public static class FlowDocumentBuilder
                          TryParseColor(cell.BackgroundColor) is { } bg)
                     cellBg = new WpfMedia.SolidColorBrush(bg);
 
-                double padL = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : 1.5);
-                double padT = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : 1.0);
-                double padR = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : 1.5);
-                double padB = MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : 1.0);
+                double padL = MmToDip(cell.PaddingLeftMm   > 0 ? cell.PaddingLeftMm   : Table.FallbackCellPaddingHorizontalMm);
+                double padT = MmToDip(cell.PaddingTopMm    > 0 ? cell.PaddingTopMm    : Table.FallbackCellPaddingVerticalMm);
+                double padR = MmToDip(cell.PaddingRightMm  > 0 ? cell.PaddingRightMm  : Table.FallbackCellPaddingHorizontalMm);
+                double padB = MmToDip(cell.PaddingBottomMm > 0 ? cell.PaddingBottomMm : Table.FallbackCellPaddingVerticalMm);
 
                 // 셀 내용 텍스트 (첫 Paragraph 의 텍스트만 표시)
                 string text = string.Concat(
@@ -1271,6 +1590,8 @@ public static class FlowDocumentBuilder
                 System.Windows.Controls.Grid.SetColumn(border, c);
                 if (cell.ColumnSpan > 1) System.Windows.Controls.Grid.SetColumnSpan(border, cell.ColumnSpan);
                 if (cell.RowSpan    > 1) System.Windows.Controls.Grid.SetRowSpan(border, cell.RowSpan);
+
+                border.Tag = (r, c);
                 grid.Children.Add(border);
             }
         }
@@ -2502,7 +2823,9 @@ public static class FlowDocumentBuilder
     }
 
     internal static Wpf.Paragraph BuildParagraph(Paragraph p, OutlineStyleSet? outlineStyles = null,
-        IReadOnlyDictionary<string, int>? fnNums = null, IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? fnNums   = null,
+        IReadOnlyDictionary<string, int>? enNums   = null,
+        FieldRenderContext?               fieldCtx = null)
     {
         var wpfPara = new Wpf.Paragraph();
         ApplyParagraphStyle(wpfPara, p.Style, outlineStyles);
@@ -2511,7 +2834,7 @@ public static class FlowDocumentBuilder
             BuildCodeBlockWithLineNumbers(wpfPara, p.Runs);
         else
             foreach (var run in p.Runs)
-                AppendRunInlines(wpfPara, run, fnNums, enNums);
+                AppendRunInlines(wpfPara, run, fnNums, enNums, fieldCtx);
 
         // 원본 PolyDonky.Paragraph 를 Tag 에 보관 — Parser 가 머지할 때 비-FlowDocument 속성 복원에 사용.
         wpfPara.Tag = p;
@@ -2523,7 +2846,9 @@ public static class FlowDocumentBuilder
     /// '\n' 이 포함된 Run 텍스트를 분할해 LineBreak 요소를 사이에 끼워야 한다.
     /// LatexSource·EmojiKey 등 특수 Run 은 BuildInline 에 그대로 위임한다.
     private static void AppendRunInlines(Wpf.Paragraph wpfPara, Run run,
-        IReadOnlyDictionary<string, int>? fnNums, IReadOnlyDictionary<string, int>? enNums)
+        IReadOnlyDictionary<string, int>? fnNums,
+        IReadOnlyDictionary<string, int>? enNums,
+        FieldRenderContext?               fieldCtx = null)
     {
         // 특수 런(수식·이모지·각주 등)이나 '\n' 없는 일반 런은 직접 위임.
         if (run.LatexSource is not null || run.EmojiKey is not null
@@ -2531,7 +2856,7 @@ public static class FlowDocumentBuilder
             || run.Field is not null
             || !run.Text.Contains('\n'))
         {
-            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums));
+            wpfPara.Inlines.Add(BuildInline(run, fnNums, enNums, fieldCtx));
             return;
         }
 
@@ -2544,7 +2869,7 @@ public static class FlowDocumentBuilder
             if (parts[i].Length > 0)
             {
                 var sub = new Run { Text = parts[i], Style = run.Style, Url = run.Url };
-                wpfPara.Inlines.Add(BuildInline(sub, fnNums, enNums));
+                wpfPara.Inlines.Add(BuildInline(sub, fnNums, enNums, fieldCtx));
             }
         }
     }
@@ -2852,8 +3177,9 @@ public static class FlowDocumentBuilder
     /// LatexSource 가 있으면 WpfMath FormulaControl 로 렌더링.
     /// EmojiKey 가 있으면 Resources/Emojis/{Section}/{name}.png 를 Image 로 렌더링.</summary>
     public static Wpf.Inline BuildInline(Run run,
-        IReadOnlyDictionary<string, int>? fnNums = null,
-        IReadOnlyDictionary<string, int>? enNums = null)
+        IReadOnlyDictionary<string, int>? fnNums    = null,
+        IReadOnlyDictionary<string, int>? enNums    = null,
+        FieldRenderContext?               fieldCtx  = null)
     {
         // 각주/미주 참조 런 — 위첨자 숫자로 렌더링, Tag 에 원본 Run 보관.
         if (run.FootnoteId is { Length: > 0 } fnId)
@@ -2873,7 +3199,7 @@ public static class FlowDocumentBuilder
         {
             var enNum = 0;
             enNums?.TryGetValue(enId, out enNum);
-            var label = enNum > 0 ? enNum.ToString(System.Globalization.CultureInfo.InvariantCulture) : "‡";
+            var label = enNum > 0 ? ToRoman(enNum, lower: true) : "‡";
             var enWpfRun = new Wpf.Run(label)
             {
                 BaselineAlignment = BaselineAlignment.Superscript,
@@ -2884,7 +3210,7 @@ public static class FlowDocumentBuilder
         }
 
         if (run.Field is { } fieldType)
-            return BuildFieldInline(run, fieldType);
+            return BuildFieldInline(run, fieldType, fieldCtx);
 
         if (run.LatexSource is { Length: > 0 } latex)
             return BuildEquationInline(run, latex);
@@ -2892,11 +3218,15 @@ public static class FlowDocumentBuilder
         if (run.EmojiKey is { Length: > 0 } emojiKey)
             return BuildEmojiInline(run, emojiKey);
 
+        if (run.RubyText is { Length: > 0 })
+            return BuildRubyInline(run);
+
         var s = run.Style;
         if (NeedsContainer(s))
             return BuildScaledContainer(run);
 
-        var wpfRun = new Wpf.Run(run.Text);
+        var displayText = ApplyTextTransform(run.Text, s.TextTransform);
+        var wpfRun = new Wpf.Run(displayText);
 
         if (!string.IsNullOrEmpty(s.FontFamily))
             wpfRun.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
@@ -2924,6 +3254,9 @@ public static class FlowDocumentBuilder
         else if (s.Subscript)
             wpfRun.BaselineAlignment = BaselineAlignment.Subscript;
 
+        if (s.FontVariantSmallCaps)
+            Wpf.Typography.SetCapitals(wpfRun, System.Windows.FontCapitals.SmallCaps);
+
         wpfRun.Tag = run;
 
         // URL 이 있으면 WPF Hyperlink 로 감쌈 — Tag 에 원본 Run 보관(파서 라운드트립용).
@@ -2939,24 +3272,44 @@ public static class FlowDocumentBuilder
         return wpfRun;
     }
 
-    private static Wpf.Inline BuildFieldInline(Run run, FieldType fieldType)
+    private static Wpf.Inline BuildFieldInline(Run run, FieldType fieldType, FieldRenderContext? fieldCtx = null)
     {
+        var now  = fieldCtx?.Now ?? System.DateTime.Now;
         var text = fieldType switch
         {
-            FieldType.Date     => System.DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            FieldType.Time     => System.DateTime.Now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
-            FieldType.Page     => "‹페이지›",
-            FieldType.NumPages => "‹총페이지›",
-            FieldType.Author   => string.IsNullOrEmpty(run.Text) ? "‹작성자›" : run.Text,
-            FieldType.Title    => string.IsNullOrEmpty(run.Text) ? "‹제목›"   : run.Text,
+            FieldType.Date     => now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            FieldType.Time     => now.ToString("HH:mm",      System.Globalization.CultureInfo.InvariantCulture),
+            FieldType.Page     => fieldCtx is not null
+                                    ? fieldCtx.PageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                    : "‹페이지›",
+            FieldType.NumPages => fieldCtx is not null
+                                    ? fieldCtx.TotalPages.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                    : "‹총페이지›",
+            FieldType.Author   => fieldCtx?.Author is { Length: > 0 } a ? a
+                                    : string.IsNullOrEmpty(run.Text) ? "‹작성자›" : run.Text,
+            FieldType.Title    => fieldCtx?.Title  is { Length: > 0 } t ? t
+                                    : string.IsNullOrEmpty(run.Text) ? "‹제목›"   : run.Text,
             _                  => $"‹{fieldType}›",
         };
 
-        return new Wpf.Run(text)
-        {
-            Tag        = run,
-            Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(45, 0, 102, 204)),
-        };
+        var s      = run.Style;
+        var wpfRun = new Wpf.Run(text) { Tag = run };
+
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            wpfRun.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+        if (Math.Abs(s.FontSizePt - 11) > 0.001)
+            wpfRun.FontSize = PtToDip(s.FontSizePt);
+        if (s.Bold)   wpfRun.FontWeight = FontWeights.Bold;
+        if (s.Italic) wpfRun.FontStyle  = FontStyles.Italic;
+        if (s.Foreground is { } fg)
+            wpfRun.Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
+
+        // 필드 강조 배경: 모델 배경색이 없을 때만 기본 파란 반투명 적용.
+        wpfRun.Background = s.Background is { } bg
+            ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B))
+            : new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(45, 0, 102, 204));
+
+        return wpfRun;
     }
 
     private static Wpf.Inline BuildEquationInline(Run run, string latex)
@@ -3000,6 +3353,58 @@ public static class FlowDocumentBuilder
             },
         };
     }
+
+    private static Wpf.Inline BuildRubyInline(Run run)
+    {
+        var s        = run.Style;
+        double baseFontSize = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 11);
+        double rubyFontSize = baseFontSize * 0.55;
+
+        var baseText = ApplyTextTransform(run.Text, s.TextTransform);
+        var rubyText = run.RubyText!;
+
+        var baseTb = new System.Windows.Controls.TextBlock
+        {
+            Text          = baseText,
+            FontSize      = baseFontSize,
+            TextAlignment = TextAlignment.Center,
+        };
+        ApplyStyleToTextBlock(baseTb, s);
+
+        var rubyTb = new System.Windows.Controls.TextBlock
+        {
+            Text          = rubyText,
+            FontSize      = rubyFontSize,
+            TextAlignment = TextAlignment.Center,
+            Foreground    = s.Foreground is { } rfg
+                ? new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(rfg.A, rfg.R, rfg.G, rfg.B))
+                : System.Windows.SystemColors.ControlTextBrush,
+        };
+        if (!string.IsNullOrEmpty(s.FontFamily))
+            rubyTb.FontFamily = new WpfMedia.FontFamily(s.FontFamily);
+
+        var panel = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Vertical,
+        };
+        panel.Children.Add(rubyTb);
+        panel.Children.Add(baseTb);
+
+        return new Wpf.InlineUIContainer(panel)
+        {
+            Tag               = run,
+            BaselineAlignment = BaselineAlignment.Baseline,
+        };
+    }
+
+    private static string ApplyTextTransform(string text, TextTransform transform) => transform switch
+    {
+        TextTransform.Uppercase  => text.ToUpperInvariant(),
+        TextTransform.Lowercase  => text.ToLowerInvariant(),
+        TextTransform.Capitalize => System.Text.RegularExpressions.Regex.Replace(
+            text, @"(?:^|\s)\S", m => m.Value.ToUpperInvariant()),
+        _ => text,
+    };
 
     /// <summary>
     /// EmojiKey ("{Section}_{name}") → pack URI Image. 키가 잘못됐거나 리소스가 없으면 null.
@@ -3098,7 +3503,7 @@ public static class FlowDocumentBuilder
         var fontSize = PtToDip(s.FontSizePt > 0 ? s.FontSizePt : 11);
         var span = new Wpf.Span { Tag = run };
 
-        var text = run.Text.Length > 0 ? run.Text : " ";
+        var text = ApplyTextTransform(run.Text.Length > 0 ? run.Text : " ", s.TextTransform);
         bool hasSpacing = Math.Abs(s.LetterSpacingPx) > 0.01;
         for (int i = 0; i < text.Length; i++)
         {
@@ -3145,5 +3550,7 @@ public static class FlowDocumentBuilder
             tb.Foreground = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
         if (s.Background is { } bg)
             tb.Background = new WpfMedia.SolidColorBrush(WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+        if (s.FontVariantSmallCaps)
+            Wpf.Typography.SetCapitals(tb, System.Windows.FontCapitals.SmallCaps);
     }
 }

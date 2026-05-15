@@ -330,17 +330,54 @@ public sealed class DocxReader : IDocumentReader
             }
         }
 
-        foreach (var row in wtable.Elements<W.TableRow>())
+        // ── RowSpan 사전 계산: vMerge Restart 셀의 실제 병합 행 수를 미리 산출 ──
+        // vMergeSpan[(rowIdx, startColIdx)] = 실제 RowSpan 값
+        var rawRows = wtable.Elements<W.TableRow>().ToList();
+        var vMergeSpan = new System.Collections.Generic.Dictionary<(int r, int c), int>();
+        {
+            // 1단계: (rowIdx, colIdx) → isContinue 맵 구성
+            var isContinue = new System.Collections.Generic.HashSet<(int, int)>();
+            var isRestart  = new System.Collections.Generic.HashSet<(int, int)>();
+            for (int ri = 0; ri < rawRows.Count; ri++)
+            {
+                int colPos = 0;
+                foreach (var c in rawRows[ri].Elements<W.TableCell>())
+                {
+                    var p = c.Elements<W.TableCellProperties>().FirstOrDefault();
+                    int gs = (int)(p?.GridSpan?.Val?.Value ?? 1);
+                    var vm = p?.VerticalMerge;
+                    if (vm is not null)
+                    {
+                        if (vm.Val?.Value is null || vm.Val.Value.Equals(W.MergedCellValues.Continue))
+                            isContinue.Add((ri, colPos));
+                        else if (vm.Val.Value.Equals(W.MergedCellValues.Restart))
+                            isRestart.Add((ri, colPos));
+                    }
+                    colPos += gs;
+                }
+            }
+            // 2단계: Restart 셀마다 아래로 Continue 행 수를 센다
+            foreach (var key in isRestart)
+            {
+                int span = 1;
+                while (isContinue.Contains((key.Item1 + span, key.Item2))) span++;
+                vMergeSpan[key] = span;
+            }
+        }
+
+        int rowIdx = 0;
+        foreach (var row in rawRows)
         {
             var tableRow = new TableRow();
-            var rowHeight = row.Elements<W.TableRowProperties>()
-                .SelectMany(rp => rp.Elements<W.TableRowHeight>())
-                .FirstOrDefault();
+            var trPr = row.Elements<W.TableRowProperties>().FirstOrDefault();
+            var rowHeight = trPr?.Elements<W.TableRowHeight>().FirstOrDefault();
             if (rowHeight?.Val?.Value is uint h)
-            {
                 tableRow.HeightMm = h / 56.6929;        // twips → mm
-            }
+            // w:tblHeader → 머리글 행
+            if (trPr?.Elements<W.TableHeader>().Any() == true)
+                tableRow.IsHeader = true;
 
+            int colIdx = 0;
             foreach (var cell in row.Elements<W.TableCell>())
             {
                 var tcPr = cell.Elements<W.TableCellProperties>().FirstOrDefault();
@@ -352,17 +389,17 @@ public sealed class DocxReader : IDocumentReader
                 if (vMerge is not null && (vMerge.Val?.Value is null
                     || vMerge.Val.Value.Equals(W.MergedCellValues.Continue)))
                 {
+                    colIdx += (int)span;
                     continue;
                 }
 
                 var tableCell = new TableCell
                 {
-                    ColumnSpan = span,
+                    ColumnSpan = (int)span,
                 };
                 if (vMerge?.Val?.Value is { } mergeVal && mergeVal.Equals(W.MergedCellValues.Restart))
                 {
-                    // 시작 셀 — 실제 RowSpan 은 후속 행을 보고 확정해야 하지만 1차 사이클은 1 로 두고 다음 사이클에서 정밀화.
-                    tableCell.RowSpan = 1;
+                    tableCell.RowSpan = vMergeSpan.TryGetValue((rowIdx, colIdx), out var rs) ? rs : 1;
                 }
                 if (widthTwips is { } w && int.TryParse(w, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var twips))
                 {
@@ -389,9 +426,11 @@ public sealed class DocxReader : IDocumentReader
                 }
 
                 tableRow.Cells.Add(tableCell);
+                colIdx += (int)span;
             }
 
             table.Rows.Add(tableRow);
+            rowIdx++;
         }
 
         return table;
@@ -403,19 +442,36 @@ public sealed class DocxReader : IDocumentReader
     {
         if (tblPr is null) return;
 
-        // 표 외곽선: tblBorders > w:top 을 대표값으로 읽는다.
+        // 표 외곽선 — 면별로 읽고, 공통값은 top 대표값으로 유지
         var borders = tblPr.TableBorders;
         if (borders is not null)
         {
-            var top = borders.TopBorder;
-            if (top?.Val?.Value is { } tv && !tv.Equals(W.BorderValues.None)
-                && top.Size?.Value is { } sz && sz > 0)
+            table.BorderTop    = ReadBorderSide(borders.TopBorder);
+            table.BorderBottom = ReadBorderSide(borders.BottomBorder);
+            table.BorderLeft   = ReadBorderSide(borders.LeftBorder);
+            table.BorderRight  = ReadBorderSide(borders.RightBorder);
+            table.InnerBorderHorizontal = ReadBorderSide(borders.InsideHorizontalBorder);
+            table.InnerBorderVertical   = ReadBorderSide(borders.InsideVerticalBorder);
+
+            // 공통값: top 면이 있으면 대표값, 없으면 다른 면 중 첫번째 값
+            var rep = table.BorderTop ?? table.BorderBottom ?? table.BorderLeft ?? table.BorderRight;
+            if (rep is { } r)
             {
-                table.BorderThicknessPt = sz / 8.0;
+                if (r.ThicknessPt > 0) table.BorderThicknessPt = r.ThicknessPt;
+                if (r.Color is not null) table.BorderColor = r.Color;
             }
-            if (top?.Color?.Value is { Length: 6 } tc && tc != "auto")
-                table.BorderColor = "#" + tc.ToUpperInvariant();
         }
+
+        // 표 수평 정렬: tblPr > w:jc
+        if (tblPr.TableJustification?.Val?.Value is { } jc)
+        {
+            if      (jc == W.TableRowAlignmentValues.Center) table.HAlign = TableHAlign.Center;
+            else if (jc == W.TableRowAlignmentValues.Right)  table.HAlign = TableHAlign.Right;
+        }
+
+        // 표 바깥 여백: tblPr > w:tblInd (왼쪽 들여쓰기만 OOXML 에서 지원)
+        if (tblPr.TableIndentation?.Width?.Value is { } indTwips)
+            table.OuterMarginLeftMm = indTwips / 56.6929;
 
         // 표 배경색: tblPr > w:shd/@fill
         var shd = tblPr.Shading;
@@ -441,6 +497,31 @@ public sealed class DocxReader : IDocumentReader
                 if (t.ThicknessPt > 0) cell.BorderThicknessPt = t.ThicknessPt;
                 if (t.Color is not null) cell.BorderColor = t.Color;
             }
+        }
+
+        // 셀 패딩: tcPr > w:tcMar (twips → mm)
+        var mar = tcPr.TableCellMargin;
+        if (mar is not null)
+        {
+            if (mar.TopMargin?.Width?.Value is { } mt && int.TryParse(mt, out var mtv) && mtv > 0)
+                cell.PaddingTopMm    = mtv / 56.6929;
+            if (mar.BottomMargin?.Width?.Value is { } mb && int.TryParse(mb, out var mbv) && mbv > 0)
+                cell.PaddingBottomMm = mbv / 56.6929;
+            if (mar.StartMargin?.Width?.Value is { } ml && int.TryParse(ml, out var mlv) && mlv > 0)
+                cell.PaddingLeftMm   = mlv / 56.6929;
+            else if (mar.LeftMargin?.Width?.Value is { } ll && int.TryParse(ll, out var llv) && llv > 0)
+                cell.PaddingLeftMm   = llv / 56.6929;
+            if (mar.EndMargin?.Width?.Value is { } mr && int.TryParse(mr, out var mrv) && mrv > 0)
+                cell.PaddingRightMm  = mrv / 56.6929;
+            else if (mar.RightMargin?.Width?.Value is { } rr && int.TryParse(rr, out var rrv) && rrv > 0)
+                cell.PaddingRightMm  = rrv / 56.6929;
+        }
+
+        // 셀 세로 정렬: tcPr > w:vAlign
+        if (tcPr.TableCellVerticalAlignment?.Val?.Value is { } va)
+        {
+            if      (va == W.TableVerticalAlignmentValues.Center) cell.VerticalAlign = CellVerticalAlign.Middle;
+            else if (va == W.TableVerticalAlignmentValues.Bottom) cell.VerticalAlign = CellVerticalAlign.Bottom;
         }
 
         // 셀 배경색: tcPr > w:shd/@fill
@@ -567,6 +648,19 @@ public sealed class DocxReader : IDocumentReader
             try
             {
                 style.Foreground = Color.FromHex(colorHex);
+            }
+            catch (FormatException)
+            {
+                // 잘못된 색상 표기는 무시.
+            }
+        }
+
+        // 문자 배경색 (shading)
+        if (rPr.Shading?.Fill?.Value is { Length: 6 } shadingHex && !shadingHex.Equals("auto", System.StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                style.Background = Color.FromHex(shadingHex);
             }
             catch (FormatException)
             {

@@ -8,7 +8,7 @@ namespace PolyDonky.Codecs.Docx;
 ///
 /// DOCX 의 <c>docProps/app.xml</c> 에 <c>&lt;AppVersion&gt;</c> 요소가 있다(예: "15.0000" = Word 2013).
 /// Word 2010 = 14.0000, 2007 = 12.0000. 2013(=15.0000) 미만은 본 codec 의 호환 검증 범위
-/// 밖이므로 거부. 메타데이터 자체가 없는 DOCX(LibreOffice 등) 는 보수적으로 수락한다.
+/// 밖이므로 거부. 메타데이터 자체가 없는 DOCX 는 보수적으로 수락한다.
 /// </summary>
 public static class DocxVersionPolicy
 {

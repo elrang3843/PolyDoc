@@ -479,6 +479,11 @@ public sealed class HwpxReader : IDocumentReader
             ApplyTableBorderFromDef(table, tblBf);
         }
 
+        // 열 너비 집계용 임시 버퍼 — 첫 본문 행의 셀 WidthMm 에서 역산.
+        // 파싱 완료 후 Columns 에 반영한다.
+        var colWidthBuffer = new List<double>();
+        bool colWidthCaptured = false;
+
         foreach (var row in wtbl.Elements().Where(e => e.Name.LocalName == "tr"))
         {
             var tableRow = new TableRow();
@@ -548,8 +553,35 @@ public sealed class HwpxReader : IDocumentReader
                 }
                 tableRow.Cells.Add(tableCell);
             }
+
+            // 첫 본문 행에서 열 너비를 수집 (colspan 고려해 균등 분배)
+            if (!colWidthCaptured && !tableRow.IsHeader && tableRow.Cells.Count > 0)
+            {
+                foreach (var c in tableRow.Cells)
+                {
+                    int cs = Math.Max(c.ColumnSpan, 1);
+                    double perCol = c.WidthMm > 0 ? c.WidthMm / cs : 0;
+                    for (int i = 0; i < cs; i++) colWidthBuffer.Add(perCol);
+                }
+                colWidthCaptured = true;
+            }
+
             table.Rows.Add(tableRow);
         }
+
+        // 열 너비 Columns 에 반영 (기존 컬럼 수 확장 포함)
+        if (colWidthBuffer.Count > 0)
+        {
+            while (table.Columns.Count < colWidthBuffer.Count)
+                table.Columns.Add(new TableColumn());
+            for (int i = 0; i < colWidthBuffer.Count && i < table.Columns.Count; i++)
+                if (colWidthBuffer[i] > 0) table.Columns[i].WidthMm = colWidthBuffer[i];
+
+            // 표 총 너비 = 첫 본문 행 셀 너비 합계
+            double totalW = colWidthBuffer.Sum();
+            if (totalW > 0) table.WidthMm = totalW;
+        }
+
         return table;
     }
 

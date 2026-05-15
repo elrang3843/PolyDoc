@@ -68,4 +68,6 @@ public enum ContainerRole
     HeaderFooterSim,
     /// <summary>인용 박스 (HTML blockquote 보다 강한 시각 framing).</summary>
     QuoteBox,
+    /// <summary>사용자 또는 SVG 분해로 묶인 도형/블록 그룹. 해제(Ungroup) 가 가능하다.</summary>
+    Group,
 }

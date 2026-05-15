@@ -74,6 +74,20 @@ public sealed class PaginatedDocument
     /// </summary>
     public IReadOnlyList<BlockMeasurementEntry> DebugBlockMeasurements { get; init; }
         = Array.Empty<BlockMeasurementEntry>();
+
+    /// <summary>
+    /// 페이지별 PageSettings. 섹션별 다른 설정이 있을 때 사용.
+    /// null 이거나 인덱스 범위 밖이면 <see cref="PageSettings"/> 를 폴백으로 사용한다.
+    /// </summary>
+    public IReadOnlyList<PageSettings>? PerPageSettings { get; init; }
+
+    /// <summary>지정된 페이지의 <see cref="PageSettings"/> 를 반환한다.</summary>
+    public PageSettings GetPageSettings(int pageIndex)
+    {
+        if (PerPageSettings is { } list && (uint)pageIndex < (uint)list.Count)
+            return list[pageIndex];
+        return PageSettings;
+    }
 }
 
 /// <summary>블록 측정 진단 항목.</summary>

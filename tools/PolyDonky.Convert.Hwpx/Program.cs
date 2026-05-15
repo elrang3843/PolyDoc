@@ -1,5 +1,6 @@
 using System.Text;
 using PolyDonky.Codecs.Hwpx;
+using PolyDonky.Convert.Common;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 
@@ -23,13 +24,7 @@ using PolyDonky.Iwpf;
 //   4 입출력 실패
 //   5 변환 실패 (HWPX 구조 손상·내부 예외)
 //   6 지원하지 않는 옛 버전 (HWPX 1.2 미만)
-
-const int ExitOk            = 0;
-const int ExitBadArgs       = 2;
-const int ExitUnsupportedOp = 3;
-const int ExitIoError       = 4;
-const int ExitConvertError  = 5;
-const int ExitOldVersion    = 6;
+// (상수는 PolyDonky.Convert.Common.ConverterExitCodes 에 정의됨)
 
 try { Console.OutputEncoding = Encoding.UTF8; } catch { /* 무시 */ }
 
@@ -50,13 +45,13 @@ Console.CancelKeyPress += (_, e) =>
 if (args.Length == 1 && (args[0] is "--version" or "-v"))
 {
     Console.WriteLine("PolyDonky.Convert.Hwpx 1.0");
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 
 if (args.Length == 1 && (args[0] is "--help" or "-h" or "/?"))
 {
     PrintHelp();
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 
 if (args.Length != 2)
@@ -64,7 +59,7 @@ if (args.Length != 2)
     Console.Error.WriteLine("Usage: PolyDonky.Convert.Hwpx <input> <output>");
     Console.Error.WriteLine("  Supported: .hwpx <-> .iwpf");
     Console.Error.WriteLine("  '--help' 로 자세한 도움말과 종료 코드 안내를 볼 수 있습니다.");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string inPath, outPath;
@@ -76,7 +71,7 @@ try
 catch (Exception ex)
 {
     Console.Error.WriteLine($"경로 해석 실패: {ex.Message}");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 string Ext(string p) => Path.GetExtension(p).TrimStart('.').ToLowerInvariant();
@@ -86,7 +81,7 @@ string outExt = Ext(outPath);
 if (string.Equals(inPath, outPath, StringComparison.OrdinalIgnoreCase))
 {
     Console.Error.WriteLine($"입력과 출력 경로가 같습니다 — 자기 자신을 덮어쓸 수 없습니다: {inPath}");
-    return ExitBadArgs;
+    return ConverterExitCodes.BadArgs;
 }
 
 bool isImport = inExt == "hwpx" && outExt == "iwpf";
@@ -95,19 +90,19 @@ if (!isImport && !isExport)
 {
     Console.Error.WriteLine($"지원하지 않는 변환: .{inExt} → .{outExt}");
     Console.Error.WriteLine("  지원: .hwpx → .iwpf, .iwpf → .hwpx");
-    return ExitUnsupportedOp;
+    return ConverterExitCodes.UnsupportedOp;
 }
 
 if (!File.Exists(inPath))
 {
     Console.Error.WriteLine($"입력 파일이 없습니다: {inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 if (new FileInfo(inPath).Length == 0)
 {
     Console.Error.WriteLine($"입력 파일이 비어 있습니다(0 byte): {inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 
 var outDir = Path.GetDirectoryName(outPath);
@@ -117,7 +112,7 @@ if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
     catch (Exception ex)
     {
         Console.Error.WriteLine($"출력 디렉터리 생성 실패: {outDir}\n  → {ex.Message}");
-        return ExitIoError;
+        return ConverterExitCodes.IoError;
     }
 }
 
@@ -130,7 +125,7 @@ if (isImport)
             $"HWPX 파일이 아닙니다 — `mimetype` 이 '{HwpxFileChecker.ExpectedMimetype}' 와 다르고 " +
             $"Contents/header.xml · section*.xml 도 없습니다: {inPath}");
         Console.Error.Flush();
-        return ExitConvertError;
+        return ConverterExitCodes.ConvertError;
     }
 
     if (HwpxFileChecker.IsEncrypted(inPath))
@@ -139,7 +134,7 @@ if (isImport)
             $"암호화된 HWPX 는 지원되지 않습니다: {inPath}\n" +
             "  먼저 한컴오피스에서 암호를 해제해 다시 저장한 뒤 시도하세요.");
         Console.Error.Flush();
-        return ExitConvertError;
+        return ConverterExitCodes.ConvertError;
     }
 
     if (!HwpxFileChecker.HasCoreContent(inPath))
@@ -147,7 +142,7 @@ if (isImport)
         Console.Error.WriteLine(
             $"HWPX 콘텐츠가 비어 있거나 누락되었습니다 (Contents/header.xml 또는 section*.xml 없음): {inPath}");
         Console.Error.Flush();
-        return ExitConvertError;
+        return ConverterExitCodes.ConvertError;
     }
 }
 
@@ -166,7 +161,7 @@ try
                 $"지원하지 않는 버전 — HWPX 스키마 {ver}. " +
                 $"PolyDonky 는 HWPX {HwpxVersionPolicy.MinSupportedXmlVersion} 이상(HWP 2014 이후)만 처리합니다.");
             Console.Error.Flush();
-            return ExitOldVersion;
+            return ConverterExitCodes.OldVersion;
         }
 
         // 작성 앱 정보(있으면) — 진행 메시지에 보강.
@@ -174,24 +169,24 @@ try
         var label = app is not null && appVer is not null
             ? $"HWPX 읽는 중 (xmlVersion {ver ?? "?"}, {app} {appVer})"
             : $"HWPX 읽는 중 (xmlVersion {ver ?? "?"})";
-        WriteProgress(0, label);
+        ConverterProgress.Write(0, label);
 
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new HwpxReader().Read(fs);
 
-        WriteProgress(60, "IWPF 로 변환 중");
+        ConverterProgress.Write(60, "IWPF 로 변환 중");
         using (var ofs = File.Create(tempOut))
             new IwpfWriter().Write(doc, ofs);
     }
     else
     {
-        WriteProgress(0, "IWPF 읽는 중");
+        ConverterProgress.Write(0, "IWPF 읽는 중");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
             doc = new IwpfReader().Read(fs);
 
-        WriteProgress(60, "HWPX 로 변환 중");
+        ConverterProgress.Write(60, "HWPX 로 변환 중");
         using (var ofs = File.Create(tempOut))
             new HwpxWriter().Write(doc, ofs);
     }
@@ -199,25 +194,25 @@ try
     if (File.Exists(outPath)) File.Delete(outPath);
     File.Move(tempOut, outPath);
     tempCleanupPath = null;  // Move 성공 후엔 SIGINT 핸들러가 outPath 를 지우지 않게 함.
-    WriteProgress(100, "완료");
+    ConverterProgress.Write(100, "완료");
     Console.WriteLine($"OK: {Path.GetFileName(inPath)} → {Path.GetFileName(outPath)}");
     Console.Out.Flush();
-    return ExitOk;
+    return ConverterExitCodes.Ok;
 }
 catch (FileNotFoundException ex)
 {
     Console.Error.WriteLine($"파일을 찾을 수 없습니다: {ex.FileName ?? inPath}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (DirectoryNotFoundException ex)
 {
     Console.Error.WriteLine($"디렉터리를 찾을 수 없습니다: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (UnauthorizedAccessException ex)
 {
     Console.Error.WriteLine($"권한 거부: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (System.IO.InvalidDataException ex)
 {
@@ -225,35 +220,30 @@ catch (System.IO.InvalidDataException ex)
     Console.Error.WriteLine(
         $"HWPX 컨테이너가 유효하지 않습니다 (ZIP/OPC 파싱 실패): {inPath}\n" +
         $"  세부: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (System.Xml.XmlException ex)
 {
     Console.Error.WriteLine(
         $"HWPX 내부 XML 형식이 유효하지 않습니다: {inPath}\n" +
         $"  줄 {ex.LineNumber}, 위치 {ex.LinePosition}: {ex.Message}");
-    return ExitConvertError;
+    return ConverterExitCodes.ConvertError;
 }
 catch (IOException ex)
 {
     Console.Error.WriteLine($"I/O 실패: {ex.Message}");
-    return ExitIoError;
+    return ConverterExitCodes.IoError;
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"변환 실패: {ex.GetType().Name}: {ex.Message}");
-    return ExitConvertError;
+    Console.Error.WriteLine(ex.StackTrace);
+    return ConverterExitCodes.ConvertError;
 }
 finally
 {
     try { if (File.Exists(tempOut)) File.Delete(tempOut); } catch { /* 무시 */ }
     Console.Error.Flush();
-    Console.Out.Flush();
-}
-
-static void WriteProgress(int percent, string message)
-{
-    Console.WriteLine($"PROGRESS:{percent}:{message}");
     Console.Out.Flush();
 }
 

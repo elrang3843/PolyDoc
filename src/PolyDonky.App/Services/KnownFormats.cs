@@ -56,7 +56,7 @@ public static class KnownFormats
             "docx" or "hwpx"
             or "html" or "htm"
             or "xml"  or "xhtml"
-            or "hwp"  or "doc" => true,
+            or "hwp"  or "rtf" => true,
             _ => false,
         };
     }
@@ -69,12 +69,12 @@ public static class KnownFormats
         "텍스트 (*.txt)|*.txt|" +
         // 외부 CLI 변환 후 IWPF 정본을 통해 읽음
         "Word DOCX (*.docx) — 외부 변환|*.docx|" +
+        "Word RTF (*.rtf) — 외부 변환|*.rtf|" +
         "한글 HWPX (*.hwpx) — 외부 변환|*.hwpx|" +
         "HTML (*.html;*.htm) — 외부 변환|*.html;*.htm|" +
         "XML / XHTML (*.xml;*.xhtml) — 외부 변환|*.xml;*.xhtml|" +
-        // 외부 변환기 미구현
-        "한글 HWP (*.hwp) — 외부 컨버터 필요|*.hwp|" +
-        "Word 레거시 (*.doc) — 외부 컨버터 필요|*.doc|" +
+        // 외부 CLI 변환
+        "한글 HWP (*.hwp) — 외부 변환|*.hwp|" +
         "모든 파일 (*.*)|*.*";
 
     public const string SaveFilter =
@@ -84,9 +84,12 @@ public static class KnownFormats
         "텍스트 (*.txt)|*.txt|" +
         // 외부 CLI 변환 — IWPF 정본을 만든 후 CLI 가 대상 포맷으로 변환
         "Word DOCX (*.docx) — 외부 변환|*.docx|" +
+        "Word RTF (*.rtf) — 외부 변환|*.rtf|" +
         "한글 HWPX (*.hwpx) — 외부 변환|*.hwpx|" +
         "HTML (*.html) — 외부 변환|*.html|" +
-        "XML / XHTML (*.xml) — 외부 변환|*.xml";
+        "XML / XHTML (*.xml) — 외부 변환|*.xml|" +
+        // 외부 CLI 변환
+        "한글 HWP (*.hwp) — 외부 변환|*.hwp";
 
     private static string GetExtensionId(string path)
         => Path.GetExtension(path).TrimStart('.').ToLowerInvariant();

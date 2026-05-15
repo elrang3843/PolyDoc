@@ -331,6 +331,10 @@ public static class FlowDocumentParser
                 OverlayYMm = original.OverlayYMm,
                 Caption                      = original.Caption,
                 BackgroundColor              = original.BackgroundColor,
+                WidthMm                      = original.WidthMm,
+                HeightMm                     = original.HeightMm,
+                IsFlexLayout                 = original.IsFlexLayout,
+                BorderCollapse               = original.BorderCollapse,
                 DefaultCellPaddingTopMm      = original.DefaultCellPaddingTopMm,
                 DefaultCellPaddingBottomMm   = original.DefaultCellPaddingBottomMm,
                 DefaultCellPaddingLeftMm     = original.DefaultCellPaddingLeftMm,
@@ -341,8 +345,13 @@ public static class FlowDocumentParser
                 OuterMarginRightMm           = original.OuterMarginRightMm,
                 BorderThicknessPt            = original.BorderThicknessPt,
                 BorderColor                  = original.BorderColor,
+                BorderTop                    = original.BorderTop,
+                BorderBottom                 = original.BorderBottom,
+                BorderLeft                   = original.BorderLeft,
+                BorderRight                  = original.BorderRight,
+                InnerBorderHorizontal        = original.InnerBorderHorizontal,
+                InnerBorderVertical          = original.InnerBorderVertical,
                 RepeatHeaderRowsOnBreak      = original.RepeatHeaderRowsOnBreak,
-                HeaderColumnCount            = original.HeaderColumnCount,
                 Columns = new List<TableColumn>(original.Columns.Select(c => new TableColumn { WidthMm = c.WidthMm })),
             }
             : new Table();
@@ -357,7 +366,13 @@ public static class FlowDocumentParser
         {
             var wpfRow = rowGroup.Rows[rowIndex];
             var origRow = (wpfTable.Tag is Table o && rowIndex < o.Rows.Count) ? o.Rows[rowIndex] : null;
-            var row = new TableRow { HeightMm = origRow?.HeightMm ?? 0, IsHeader = origRow?.IsHeader ?? false };
+            var row = new TableRow
+            {
+                HeightMm      = origRow?.HeightMm      ?? 0,
+                IsHeader      = origRow?.IsHeader      ?? false,
+                BackgroundColor = origRow?.BackgroundColor,
+                VerticalAlign   = origRow?.VerticalAlign,
+            };
 
             for (int cellIndex = 0; cellIndex < wpfRow.Cells.Count; cellIndex++)
             {
@@ -369,12 +384,17 @@ public static class FlowDocumentParser
                     RowSpan           = wpfCell.RowSpan    > 0 ? wpfCell.RowSpan    : (origCell?.RowSpan    ?? 1),
                     WidthMm           = origCell?.WidthMm           ?? 0,
                     TextAlign         = origCell?.TextAlign         ?? CellTextAlign.Left,
+                    VerticalAlign     = origCell?.VerticalAlign     ?? CellVerticalAlign.Top,
                     PaddingTopMm      = origCell?.PaddingTopMm      ?? 0,
                     PaddingBottomMm   = origCell?.PaddingBottomMm   ?? 0,
                     PaddingLeftMm     = origCell?.PaddingLeftMm     ?? 0,
                     PaddingRightMm    = origCell?.PaddingRightMm    ?? 0,
                     BorderThicknessPt = origCell?.BorderThicknessPt ?? 0,
                     BorderColor       = origCell?.BorderColor,
+                    BorderTop         = origCell?.BorderTop,
+                    BorderBottom      = origCell?.BorderBottom,
+                    BorderLeft        = origCell?.BorderLeft,
+                    BorderRight       = origCell?.BorderRight,
                     BackgroundColor   = origCell?.BackgroundColor,
                 };
                 ParseInto(cell.Blocks, wpfCell.Blocks);
@@ -423,7 +443,11 @@ public static class FlowDocumentParser
             p.Style.Outline = InferHeadingFromFontSize(wpfPara.FontSize);
         }
 
-        p.Style.ForcePageBreakBefore = wpfPara.BreakPageBefore;
+        // OR 결합: WPF 값(사용자가 직접 설정) 또는 Tag 원본(PerPageDocumentSplitter 가
+        // RTB 상단 공백 방지를 위해 BreakPageBefore 를 억제한 뒤 Tag 로만 남아 있는 경우) 중
+        // 하나라도 true 이면 ForcePageBreakBefore = true.
+        bool taggedBefore = wpfPara.Tag is Paragraph taggedBreak && taggedBreak.Style.ForcePageBreakBefore;
+        p.Style.ForcePageBreakBefore = wpfPara.BreakPageBefore || taggedBefore;
 
         // 들여쓰기·간격은 사용자가 직접 변경할 가능성 높지만, 본 사이클에서는 단순 보존만.
         if (wpfPara.Tag is Paragraph baseP)

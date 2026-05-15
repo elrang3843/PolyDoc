@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using PolyDonky.App.Pagination;
 using PolyDonky.App.Services;
+using PolyDonky.Core;
 
 namespace PolyDonky.App.Views;
 
@@ -16,12 +18,17 @@ namespace PolyDonky.App.Views;
 /// 단일 단: RTB 1개/페이지, 전체 페이지 크기 + 여백(padding).
 /// 다단: RTB N개/페이지 (N = 단 수), 각 RTB 는 단 폭 × 본문 높이, 여백·단 오프셋은 Canvas 위치로.
 /// </para>
+/// <para>
+/// 각주 레이아웃: 본문 RTB 높이는 각주 크기만큼 줄어든다. 각주 구분선·내용은
+/// RTB 바로 아래(= 꼬리말 위)에 배치돼 꼬리말 영역을 침범하지 않는다.
+/// </para>
 /// <para>STA 스레드 전용.</para>
 /// </summary>
 public sealed class PerPageEditorHost : Canvas
 {
     private readonly List<RichTextBox> _pageEditors = new();
     private int                        _physicalPageCount;
+    private int                        _endnotePageStartIndex = -1;
 
     /// <summary>현재 키보드 포커스를 가진 페이지 RTB.</summary>
     public RichTextBox? ActiveEditor { get; private set; }
@@ -29,8 +36,17 @@ public sealed class PerPageEditorHost : Canvas
     /// <summary>첫 번째 RTB. 없으면 null.</summary>
     public RichTextBox? FirstEditor => _pageEditors.Count > 0 ? _pageEditors[0] : null;
 
-    /// <summary>물리 페이지 수 (단 수와 무관하게 실제 페이지 수).</summary>
+    /// <summary>물리 페이지 수 (미주 페이지 포함 전체 페이지 수).</summary>
     public int PageCount => _physicalPageCount;
+
+    /// <summary>미주 페이지 제외 본문 페이지 수.</summary>
+    public int BodyPageCount => HasEndnotePage ? _physicalPageCount - 1 : _physicalPageCount;
+
+    /// <summary>미주 페이지가 있으면 true.</summary>
+    public bool HasEndnotePage => _endnotePageStartIndex >= 0;
+
+    /// <summary>미주 페이지의 첫 번째 PageIndex. 없으면 -1.</summary>
+    public int EndnotePageStartIndex => _endnotePageStartIndex;
 
     /// <summary>생성된 모든 RTB 목록 (페이지 순, 단 순).</summary>
     public IReadOnlyList<RichTextBox> PageEditors => _pageEditors;
@@ -65,34 +81,46 @@ public sealed class PerPageEditorHost : Canvas
         foreach (var e in _pageEditors) e.TextChanged -= OnPageTextChanged;
         _pageEditors.Clear();
         Children.Clear();
-        ActiveEditor        = null;
-        _physicalPageCount  = 0;
+        ActiveEditor           = null;
+        _physicalPageCount     = 0;
+        _endnotePageStartIndex = -1;
 
         if (slices.Count == 0) return;
 
-        _physicalPageCount = slices.Max(s => s.PageIndex) + 1;
+        _physicalPageCount     = slices.Max(s => s.PageIndex) + 1;
+        _endnotePageStartIndex = slices.FirstOrDefault(s => s.IsEndnotePage)?.PageIndex ?? -1;
+
+        // 페이지별 PageGeometry 캐시 및 누적 Y 좌표 계산.
+        var pageGeos = new Dictionary<int, PageGeometry>(_physicalPageCount);
+        var pageTopY = new Dictionary<int, double>(_physicalPageCount);
+        double cumulY = 0;
+        for (int pi = 0; pi < _physicalPageCount; pi++)
+        {
+            var pageSlice = slices.FirstOrDefault(s => s.PageIndex == pi);
+            var pageGeo = pageSlice is not null
+                ? new PageGeometry(pageSlice.PageSettings)
+                : geo;
+            pageGeos[pi] = pageGeo;
+            pageTopY[pi] = cumulY;
+            cumulY += pageGeo.PageStrideDip;
+        }
 
         for (int i = 0; i < slices.Count; i++)
         {
-            var slice = slices[i];
-            RichTextBox rtb;
+            var slice    = slices[i];
+            var sliceGeo = pageGeos[slice.PageIndex];
 
-            // 단일 단 / 다단 모두 동일하게 — 콘텐츠 영역(BodyWidth × BodyHeight)만 차지하는 RTB 를
-            // Canvas 좌표로 페이지 여백 안쪽에 배치한다. 단일 단에서 RTB.Width = PageWidth + Padding
-            // = 여백 으로 두면 측정 RTB(Padding=0, fd.PageWidth=ColWidth)와 콘텐츠 영역 layout 이
-            // 미세하게 어긋나(WPF 가 RTB.Padding 과 fd.PageWidth 를 다르게 처리) pagination 측정값
-            // 과 실렌더 길이가 달라져 페이지 끝에서 클리핑이 일어났다. 두 RTB 의 layout 조건을
-            // 동일하게 맞추는 것이 측정 정확도의 전제 — 단일 단도 다단과 동일 패턴으로 통일.
-            rtb = new RichTextBox
+            double xPos = sliceGeo.PadLeftDip + slice.XOffsetDip;
+            double yPos = pageTopY[slice.PageIndex] + sliceGeo.PadTopDip;
+
+            // 본문 RTB
+            var rtb = new RichTextBox
             {
                 Document      = slice.FlowDocument,
                 Width         = slice.BodyWidthDip,
-                // ClipRenderingTolerance 만큼 높이를 늘려 mm→DIP 반올림 오차로 인한
-                // 마지막 줄 하단 클리핑을 방지한다. 추가 영역은 하단 여백 안에 위치.
+                // ClipRenderingTolerance: mm→DIP 반올림 오차로 인한 마지막 줄 클리핑 방지.
                 Height        = slice.BodyHeightDip + ClipRenderingTolerance,
                 Padding       = new Thickness(0),
-                // Disabled 로 설정해야 RTB 가 슬롯 높이를 초과하는 콘텐츠를 내부 스크롤로
-                // 처리하지 않는다(Hidden 이면 스크롤이 발생해 편집창과 인쇄 미리보기가 달라진다).
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 AcceptsReturn     = true,
@@ -102,26 +130,106 @@ public sealed class PerPageEditorHost : Canvas
                 FlowDirection     = FlowDirection.LeftToRight,
                 IsDocumentEnabled = true,
             };
-            double xPos = geo.PadLeftDip + slice.XOffsetDip;
-            double yPos = slice.PageIndex * geo.PageStrideDip + geo.PadTopDip;
+
+            // 미주 페이지는 편집 불가.
+            if (slice.IsEndnotePage)
+            {
+                rtb.IsReadOnly = true;
+                rtb.Focusable  = false;
+            }
+
             SetLeft(rtb, xPos);
             SetTop (rtb, yPos);
 
-            rtb.PreviewMouseLeftButtonDown += (_, _) => ActiveEditor = rtb;
-            rtb.GotKeyboardFocus           += (_, _) => ActiveEditor = rtb;
-            rtb.TextChanged                += OnPageTextChanged;
+            if (!slice.IsEndnotePage)
+            {
+                rtb.PreviewMouseLeftButtonDown += (_, _) => ActiveEditor = rtb;
+                rtb.GotKeyboardFocus           += (_, _) => ActiveEditor = rtb;
+                rtb.TextChanged                += OnPageTextChanged;
+            }
 
             configure?.Invoke(rtb);
-
             Children.Add(rtb);
-            _pageEditors.Add(rtb);
+
+            if (!slice.IsEndnotePage)
+                _pageEditors.Add(rtb);
+
+            // 각주 영역 — 본문 RTB 바로 아래, 꼬리말 위.
+            // yPos + BodyHeightDip + ClipRenderingTolerance = RTB 하단 좌표.
+            if (slice.PageFootnotes.Count > 0 && slice.FootnoteAreaHeightDip > 0)
+            {
+                double fnY = yPos + slice.BodyHeightDip + ClipRenderingTolerance;
+                var fnPanel = BuildFootnotesPanel(slice, sliceGeo);
+                SetLeft(fnPanel, xPos);
+                SetTop (fnPanel, fnY);
+                Children.Add(fnPanel);
+            }
         }
 
-        ActiveEditor = _pageEditors[0];
+        if (_pageEditors.Count > 0)
+            ActiveEditor = _pageEditors[0];
+
         Width  = geo.PageWidthDip;
-        Height = geo.TotalHeightDip(_physicalPageCount);
+        Height = cumulY;
     }
 
     private void OnPageTextChanged(object sender, TextChangedEventArgs e)
         => PageTextChanged?.Invoke(sender, e);
+
+    // ── 각주 패널 렌더링 ──────────────────────────────────────────────────────
+
+    private static StackPanel BuildFootnotesPanel(PerPageDocumentSlice slice, PageGeometry sliceGeo)
+    {
+        var panel = new StackPanel
+        {
+            Width       = slice.BodyWidthDip,
+            Orientation = Orientation.Vertical,
+            Background  = Brushes.Transparent,
+        };
+
+        // 구분선
+        panel.Children.Add(new Border
+        {
+            Height          = 1,
+            Margin          = new Thickness(0, 4, 0, 4),
+            BorderBrush     = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Width           = Math.Min(slice.BodyWidthDip / 3.0, 100),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        });
+
+        // 각주 본문 RTB (실제 측정에 사용한 것과 동일한 FlowDocument)
+        var fnNums = slice.PageFootnotes.Count > 0
+            ? BuildLocalFnNums(slice.PageFootnotes)
+            : null;
+
+        var fd = PerPageDocumentSplitter.BuildFootnoteFlowDocument(
+            slice.PageFootnotes, fnNums, slice.BodyWidthDip);
+
+        var noteRtb = new RichTextBox
+        {
+            Document                      = fd,
+            IsReadOnly                    = true,
+            BorderThickness               = new Thickness(0),
+            Background                    = Brushes.Transparent,
+            Padding                       = new Thickness(0),
+            VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Width                         = slice.BodyWidthDip,
+            Focusable                     = false,
+        };
+        panel.Children.Add(noteRtb);
+
+        return panel;
+    }
+
+    // BuildFootnotesPanel 에서 사용할 로컬 번호 맵 (1-based 슬라이스 내 순번)
+    private static IReadOnlyDictionary<string, int> BuildLocalFnNums(
+        IReadOnlyList<FootnoteEntry> footnotes)
+    {
+        var d = new Dictionary<string, int>(footnotes.Count);
+        for (int i = 0; i < footnotes.Count; i++)
+            d[footnotes[i].Id] = i + 1;
+        return d;
+    }
 }

@@ -51,7 +51,11 @@ public partial class TableInsertDialog : Window
     private static Table BuildTable(int rows, int cols, double totalWidthMm, bool headerRow)
     {
         double colWidth = totalWidthMm > 0 ? totalWidthMm / cols : 0;
-        var table = new Table();
+        var table = new Table
+        {
+            BorderThicknessPt = 0.75,      // 기본 테두리 두께
+            BorderColor = "#C8C8C8",       // 기본 연회색
+        };
 
         for (int c = 0; c < cols; c++)
             table.Columns.Add(new TableColumn { WidthMm = colWidth });

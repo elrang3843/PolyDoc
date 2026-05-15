@@ -75,4 +75,16 @@ public sealed class DocumentMetadata
     public DateTimeOffset Created { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset Modified { get; set; } = DateTimeOffset.UtcNow;
     public IDictionary<string, string> Custom { get; set; } = new Dictionary<string, string>();
+
+    /// <summary>문서 기본 글꼴. null 이면 앱 기본값 사용.
+    /// HTML <c>be-font-family</c> 메타 / <c>body { font-family }</c> CSS 에서 추출.</summary>
+    public string? DefaultFontFamily { get; set; }
+
+    /// <summary>문서 기본 글자 크기(pt). 0 이면 앱 기본값(11pt) 사용.
+    /// HTML <c>be-font-size</c> 메타에서 추출.</summary>
+    public double DefaultFontSizePt { get; set; }
+
+    /// <summary>문서 기본 줄 간격 배율. 0 이면 앱 기본값(1.2) 사용.
+    /// HTML <c>be-line-height</c> 메타에서 추출.</summary>
+    public double DefaultLineHeightFactor { get; set; }
 }

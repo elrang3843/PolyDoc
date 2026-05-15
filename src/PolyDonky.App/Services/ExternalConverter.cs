@@ -16,6 +16,8 @@ namespace PolyDonky.App.Services;
 ///   .xml  / .xhtml  — PolyDonky.Convert.Xml
 ///   .docx           — PolyDonky.Convert.Docx
 ///   .hwpx           — PolyDonky.Convert.Hwpx
+///   .rtf            — PolyDonky.Convert.Doc
+///   .hwp            — PolyDonky.Convert.Hwp
 /// </summary>
 public static class ExternalConverter
 {
@@ -32,6 +34,8 @@ public static class ExternalConverter
             "xml"  or "xhtml" => "PolyDonky.Convert.Xml",
             "docx"            => "PolyDonky.Convert.Docx",
             "hwpx"            => "PolyDonky.Convert.Hwpx",
+            "rtf"             => "PolyDonky.Convert.Doc",
+            "hwp"             => "PolyDonky.Convert.Hwp",
             _                 => null,
         };
         if (name is null) return null;
@@ -57,11 +61,13 @@ public static class ExternalConverter
     /// CLI 가 stdout 으로 보내는 <c>PROGRESS:&lt;percent&gt;:&lt;message&gt;</c> 줄을 파싱해
     /// (0~100, 메시지) 로 보고. null 이면 진행 정보 무시.
     /// </param>
+    /// <param name="timeoutMs">프로세스 타임아웃 (밀리초). 기본 600초 (600,000ms). 초과 시 프로세스 강제 종료.</param>
     public static async Task ConvertAsync(
         string converterPath,
         string inputPath,
         string outputPath,
-        IProgress<(int Percent, string Message)>? progress = null)
+        IProgress<(int Percent, string Message)>? progress = null,
+        int timeoutMs = 600_000)
     {
         ArgumentNullException.ThrowIfNull(converterPath);
         ArgumentNullException.ThrowIfNull(inputPath);
@@ -108,7 +114,21 @@ public static class ExternalConverter
         });
 
         var stderrTask = proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync().ConfigureAwait(false);
+        using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                proc.Kill(entireProcessTree: true);
+            }
+            catch { /* 이미 종료된 경우 무시 */ }
+            throw new InvalidOperationException(
+                $"외부 변환 타임아웃 ({timeoutMs}ms 초과): {converterPath}");
+        }
         await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
 

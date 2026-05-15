@@ -41,7 +41,7 @@
 | DOCX | DocumentFormat.OpenXml 3.5.1 (MIT) |
 | HTML/XML | AngleSharp (MIT) |
 | HWPX | 자체 구현 (KS X 6101) |
-| HWP·DOC | LibreOffice headless 위탁 노선 우선 (Phase F, G4 게이트에서 결정) |
+| HWP·DOC | v1.0.0 이후 자체 CLI 파서 예정 |
 | 직렬화 | System.Text.Json |
 
 라이선스는 모두 Apache 2.0 호스트 프로젝트와 호환.
@@ -137,7 +137,6 @@ PolyDonky/
 - ✅ D3 tools/PolyDonky.Convert.Docx — DOCX ↔ IWPF CLI
 - ✅ D4 tools/PolyDonky.Convert.Hwpx — HWPX ↔ IWPF CLI
 - ✅ D5 Services/ExternalConverter.cs — 메인 앱 ↔ CLI IPC (spawn, 인자/표준입출력/exit code)
-- ☐ G4 HWP/DOC 추가 시 LibreOffice 의존 노선 확정 vs 자체 결정
 
 ### Phase E — 편집 기능 (WPF App)
 - ✅ E1 표 삽입/편집 (TableInsertDialog, TablePropertiesWindow, CellPropertiesWindow)
@@ -157,21 +156,32 @@ PolyDonky/
 - ✅ E15 사전 (DictionaryWindow)
 - ✅ E16 페이지 나누기 (PageBreakPadding)
 - ✅ E17 머리말/꼬리말 (PerPageEditorHost, PageViewBuilder 통합)
-- ☐ E18 변경추적·주석 — Phase 3 고급 기능, 아직 미구현
-- ☐ E19 목차 자동 생성 (TocBlock 모델은 있음, UI 자동 생성 미구현)
-- ☐ E20 필드 코드 자동 갱신 (수동 삽입 가능, 갱신 미구현)
-- ☐ E21 맞춤법 검사 외부 모듈 연동 (DictionaryWindow shell 있음, 실제 검사 엔진 미연동)
+- ✅ E19 목차 자동 생성 (전 페이지 스캔 + 페이지 번호 삽입 구현)
+- ✅ E20 필드 코드 자동 갱신 — FieldRenderContext 도입, 페이지네이션 시 Page/NumPages/Author/Title 실제 값 반영
 
-### Phase F — DOC/HWP ingest
-- ☐ F1 DOC import (LibreOffice headless 우선, G4 결정 후 착수)
-- ☐ F2 HWP import (LibreOffice headless 우선)
-- ☐ F3 Opaque island 정책 전면 적용 — 이해 못 한 개체 read-only 보존, HWPX export 원형 직렬화
+### Phase F — RTF/HWP ingest
+
+**결정**: LibreOffice 미사용. RTF 는 자체 구현(`DocWriter`), HWP·DOC 는 v1.0.0 이후 자체 CLI 파서로 진행.
+
+**F1 RTF export/import** ✅
+- `tools/PolyDonky.Convert.Doc` CLI: IWPF ↔ RTF (`DocWriter`/`DocReader` 자체 구현)
+- `ExternalConverter.GetConverter("rtf")` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 갱신
+- 글자/단락 서식·위첨자/아래첨자·표·이미지·메타데이터 완전 지원
+- 도형(`\shp`) 아웃라인 지원: 위치·크기·종류·채우기/선 색상 ✅
+- OLE 개체(`\object`) 아웃라인 지원: OpaqueBlock 보존 ✅
+
+**F1-후속 RTF 도형/OLE 전체 지원** ☐ (v1.0.0 이후)
+- `\shp` 전체 속성: 그림자·3D·곡선 경로(polyline/spline)·텍스트 레이아웃 등
+- `\object` OLE 데이터 완전 복원: 바이너리 역직렬화 + 뷰어 연동
+
+**F2 HWP import/export** ☐ (v1.0.0 이후)
+- `tools/PolyDonky.Convert.Hwp` CLI: 자체 HWP 파서 구현 예정
+
+**F3 Opaque island 정책 전면 적용** ☐
+- 이해 못 한 개체를 read-only 보존, HWPX export 원형 직렬화
 
 ### Phase G — 고급 기능
 - ◑ G-Themes 다중 테마 — ThemeService 구현 완료, 테마 파일 추가 필요
-- ☐ G-Sign 사인 만들기 독립 앱
-- ☐ G-Spell 맞춤법/사전 외부 모듈 실제 연동
-- ☐ G-ChangeTrack 변경추적·주석 (E18과 동일)
 
 ### Phase H — 인스톨러 / `1.0.0` 릴리즈
 - ☐ H1 MSIX 인스톨러 패키징
@@ -204,7 +214,7 @@ PolyDonky/
 | G1 | Phase A 종료 | PR 리뷰 후 머지 | ✅ 완료 |
 | G2 | Phase B 시작 | Windows build/run 검증 | ✅ 완료 |
 | G3 | Phase C 종료 | HWPX·DOCX·HTML·XML 시각 검증 | ◑ HWPX writer 한컴 검증 대기 |
-| G4 | Phase F 진입 시 | LibreOffice 의존 노선 확정 vs 자체 구현 | ☐ 미진입 |
+| G4 | Phase F 진입 시 | HWP/DOC 변환 노선 확정 | ✅ **LibreOffice 미사용, 자체 CLI 파서로 결정** |
 | G5 | Phase H 진입 시 | "릴리즈하자" 명시 — `1.0.0` 컷 | ☐ 미진입 |
 
 ---
@@ -222,15 +232,11 @@ PolyDonky/
 
 1. **G3 완료** — 사용자가 PolyDonky 가 만든 `.hwpx` 를 한컴 오피스에서 열어 시각 확인. 문제가 있으면 `C6` (HWPX writer 한컴 호환 향상 — header.xml 동적 charPr/paraPr 생성) 진행.
 
-2. **E18 변경추적·주석** — Core 모델에 `ChangeRecord` / `Comment` 타입 추가, FlowDocumentBuilder 시각화, DOCX/HWPX 양방향.
+2. ~~**E19 목차 자동 생성**~~ ✅ 완료.
 
-3. **E19 목차 자동 생성** — `TocBlock` 모델 기반, H1~H6 스캔 → `TocEntry` 리스트 생성, 페이지 번호 삽입.
+3. **F2 HWP ingest** — v1.0.0 이후. 자체 CLI 파서(`tools/PolyDonky.Convert.Hwp`) 구현.
 
-4. **E21 맞춤법 검사 연동** — 외부 엔진(hunspell 또는 자체) 과 DictionaryWindow 실제 연결.
-
-5. **F1/F2 DOC/HWP ingest** — G4 게이트 통과 후 LibreOffice headless spawn 또는 자체 파서.
-
-6. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
+4. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
 
 ### 알려진 한계·주의사항
 
