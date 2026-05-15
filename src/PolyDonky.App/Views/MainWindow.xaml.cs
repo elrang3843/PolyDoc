@@ -2872,11 +2872,9 @@ public partial class MainWindow : Window
         if (_suppressToolbarUpdate) return;
         var rtb = GetActiveTextEditor();
 
-        // ApplyPropertyValue 호출 직전 최신값 읽기
         var text = CboToolbarFontSize.Text?.Trim();
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var pt)
-            || pt < 1 || pt > 999) return;
+        double.TryParse(text, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var pt);
         var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
@@ -2889,11 +2887,9 @@ public partial class MainWindow : Window
         if (e.Key != Key.Return && e.Key != Key.Enter) return;
         var rtb = GetActiveTextEditor();
 
-        // ApplyPropertyValue 호출 직전 최신값 읽기
         var text = CboToolbarFontSize.Text?.Trim();
-        if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var pt)
-            || pt < 1 || pt > 999) return;
+        double.TryParse(text, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var pt);
         var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
