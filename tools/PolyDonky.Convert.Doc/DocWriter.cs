@@ -49,6 +49,7 @@ public class DocWriter
         double minDistance = double.MaxValue;
         int bestIndex = 1;  // 기본값은 1 (Black)
 
+        LogDebug($"  MapToStandardHighlightColor: Input RGB({color.R},{color.G},{color.B})");
         for (int i = 0; i < StandardHighlightColors.Length; i++)
         {
             var stdColor = StandardHighlightColors[i];
@@ -57,12 +58,15 @@ public class DocWriter
                 Math.Pow(color.G - stdColor.G, 2) +
                 Math.Pow(color.B - stdColor.B, 2)
             );
+            LogDebug($"    Index {i+1}: RGB({stdColor.R},{stdColor.G},{stdColor.B}) distance={distance:F2}");
             if (distance < minDistance)
             {
                 minDistance = distance;
                 bestIndex = i + 1;  // 1부터 시작
+                LogDebug($"      -> New best: index {bestIndex}");
             }
         }
+        LogDebug($"  Final result: index {bestIndex}");
 
         return bestIndex;
     }
