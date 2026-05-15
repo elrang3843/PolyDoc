@@ -17,15 +17,51 @@ public class DocWriter
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
 
+    // Word RTF 표준 highlight 색상 팔레트
+    private static readonly RtfColor[] StandardHighlightColors = new[]
+    {
+        new RtfColor(0,   0,   0),      // 0: Black
+        new RtfColor(0,   0, 255),      // 1: Blue
+        new RtfColor(0, 255, 255),      // 2: Cyan
+        new RtfColor(0, 128,   0),      // 3: Dark Green
+        new RtfColor(255,   0, 255),    // 4: Magenta
+        new RtfColor(255,   0,   0),    // 5: Red
+        new RtfColor(255, 255,   0),    // 6: Yellow
+        new RtfColor(255, 255, 255),    // 7: White
+        new RtfColor(128, 128, 128),    // 8: Gray
+    };
+
+    /// <summary>RGB 색상을 가장 가까운 표준 highlight 색상으로 변환.</summary>
+    private static int MapToStandardHighlightColor(Color color)
+    {
+        double minDistance = double.MaxValue;
+        int bestIndex = 0;
+
+        for (int i = 0; i < StandardHighlightColors.Length; i++)
+        {
+            var stdColor = StandardHighlightColors[i];
+            double distance = Math.Sqrt(
+                Math.Pow(color.R - stdColor.R, 2) +
+                Math.Pow(color.G - stdColor.G, 2) +
+                Math.Pow(color.B - stdColor.B, 2)
+            );
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
     public void Write(PolyDonkyument doc, Stream output)
     {
         _colorTable.Clear();
         _fontTable.Clear();
-        _highlightTable.Clear();
 
         _colorTable.Add(new RtfColor(0, 0, 0));  // Color 0: default black
         _fontTable.Add(DefaultFont);             // Font 0: default Arial
-        _highlightTable.Add(new RtfColor(0, 0, 0));  // Highlight 0: none/default
 
         var paragraphs = ExtractParagraphs(doc);
         var rtf = GenerateRtf(paragraphs);
@@ -100,21 +136,9 @@ public class DocWriter
                             // 하이라이트 테이블에 배경색 추가 (Background)
                             if (runInfo.Style.Background.HasValue)
                             {
-                                var bgColor = new RtfColor(
-                                    runInfo.Style.Background.Value.R,
-                                    runInfo.Style.Background.Value.G,
-                                    runInfo.Style.Background.Value.B
-                                );
-                                int idx = _highlightTable.FindIndex(c => c.R == bgColor.R && c.G == bgColor.G && c.B == bgColor.B);
-                                if (idx < 0)
-                                {
-                                    _highlightTable.Add(bgColor);
-                                    runInfo.BackgroundColorIndex = _highlightTable.Count - 1;
-                                }
-                                else
-                                {
-                                    runInfo.BackgroundColorIndex = idx;
-                                }
+                                // 가장 가까운 표준 highlight 색상으로 매핑
+                                int highlightIndex = MapToStandardHighlightColor(runInfo.Style.Background.Value);
+                                runInfo.BackgroundColorIndex = highlightIndex;
                             }
 
                             info.Runs.Add(runInfo);
@@ -165,14 +189,6 @@ public class DocWriter
         foreach (var color in _colorTable)
         {
             sb.Append($@"\red{color.R}\green{color.G}\blue{color.B};");
-        }
-        sb.AppendLine("}");
-
-        // Highlight/Shading color table (배경색용)
-        sb.Append(@"{\*\colortbl0");
-        foreach (var color in _highlightTable)
-        {
-            sb.Append($@";\red{color.R}\green{color.G}\blue{color.B}");
         }
         sb.AppendLine("}");
 
