@@ -2878,7 +2878,11 @@ public partial class MainWindow : Window
         var rtb = GetActiveTextEditor();
         System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] rtb={rtb}");
 
-        var text = CboToolbarFontSize.Text?.Trim();
+        // SelectedItem을 사용하여 업데이트된 값을 읽음
+        var selectedItem = CboToolbarFontSize.SelectedItem;
+        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] SelectedItem={selectedItem}");
+
+        var text = selectedItem?.ToString()?.Trim();
         System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] text='{text}'");
         double.TryParse(text, System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture, out var pt);
