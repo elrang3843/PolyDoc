@@ -2870,18 +2870,21 @@ public partial class MainWindow : Window
     private void OnToolbarFontSizeSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (_suppressToolbarUpdate) return;
-        ApplyToolbarFontSizeFromText();
+        var text = CboToolbarFontSize.Text?.Trim();
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pt)
+            || pt < 1 || pt > 999) return;
+        var rtb = GetActiveTextEditor();
+        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
+
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
+        _viewModel?.MarkDirty();
+        rtb.Focus();
     }
 
     private void OnToolbarFontSizeKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Return && e.Key != Key.Enter) return;
-        ApplyToolbarFontSizeFromText();
-        GetActiveTextEditor().Focus();
-    }
-
-    private void ApplyToolbarFontSizeFromText()
-    {
         var text = CboToolbarFontSize.Text?.Trim();
         if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var pt)
