@@ -2722,13 +2722,23 @@ public partial class MainWindow : Window
         }
     }
 
+    // 서식 변경을 위한 헬퍼: 변경사항을 즉시 model 에 동기화
+    private void OnToolbarFormattingApplied(RichTextBox rtb)
+    {
+        // 서식 변경은 text content 변화가 아니므로 OnEditorTextChanged 가 발생하지 않는다.
+        // Explicit 하게 EndTextEditUndoBurst 를 호출해 변경사항을 model 에 동기화.
+        EndTextEditUndoBurst();
+        BeginUndoableAction();
+        _viewModel?.MarkDirty();
+    }
+
     private void OnToolbarBold(object sender, RoutedEventArgs e)
     {
         var rtb = GetActiveTextEditor();
         bool bold = TbBold.IsChecked == true;
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontWeightProperty,
             bold ? FontWeights.Bold : FontWeights.Normal);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2738,7 +2748,7 @@ public partial class MainWindow : Window
         bool italic = TbItalic.IsChecked == true;
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontStyleProperty,
             italic ? FontStyles.Italic : FontStyles.Normal);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2748,7 +2758,7 @@ public partial class MainWindow : Window
         ApplyToolbarTextDecorations(rtb.Selection,
             TbUnderline.IsChecked == true,
             TbStrikethrough.IsChecked == true);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2758,7 +2768,7 @@ public partial class MainWindow : Window
         ApplyToolbarTextDecorations(rtb.Selection,
             TbUnderline.IsChecked == true,
             TbStrikethrough.IsChecked == true);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2778,7 +2788,7 @@ public partial class MainWindow : Window
         if (sup) TbSubscript.IsChecked = false;
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty,
             sup ? BaselineAlignment.Superscript : BaselineAlignment.Baseline);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2789,7 +2799,7 @@ public partial class MainWindow : Window
         if (sub) TbSuperscript.IsChecked = false;
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.Inline.BaselineAlignmentProperty,
             sub ? BaselineAlignment.Subscript : BaselineAlignment.Baseline);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2807,7 +2817,7 @@ public partial class MainWindow : Window
         TbAlignCenter.IsChecked  = align == TextAlignment.Center;
         TbAlignRight.IsChecked   = align == TextAlignment.Right;
         TbAlignJustify.IsChecked = align == TextAlignment.Justify;
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2815,7 +2825,7 @@ public partial class MainWindow : Window
     {
         var rtb = GetActiveTextEditor();
         System.Windows.Documents.EditingCommands.ToggleBullets.Execute(null, rtb);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2823,7 +2833,7 @@ public partial class MainWindow : Window
     {
         var rtb = GetActiveTextEditor();
         System.Windows.Documents.EditingCommands.ToggleNumbering.Execute(null, rtb);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2831,7 +2841,7 @@ public partial class MainWindow : Window
     {
         var rtb = GetActiveTextEditor();
         System.Windows.Documents.EditingCommands.IncreaseIndentation.Execute(null, rtb);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2839,7 +2849,7 @@ public partial class MainWindow : Window
     {
         var rtb = GetActiveTextEditor();
         System.Windows.Documents.EditingCommands.DecreaseIndentation.Execute(null, rtb);
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2851,7 +2861,7 @@ public partial class MainWindow : Window
         var rtb = GetActiveTextEditor();
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty,
             new System.Windows.Media.FontFamily(fontName));
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2863,7 +2873,7 @@ public partial class MainWindow : Window
         var rtb = GetActiveTextEditor();
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontFamilyProperty,
             new System.Windows.Media.FontFamily(fontName));
-        _viewModel?.MarkDirty();
+        OnToolbarFormattingApplied(rtb);
         rtb.Focus();
     }
 
@@ -2887,9 +2897,10 @@ public partial class MainWindow : Window
                 System.Globalization.CultureInfo.InvariantCulture, out var pt)
             || pt < 1 || pt > 999) return;
         var rtb = GetActiveTextEditor();
-        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty,
-            Services.FlowDocumentBuilder.PtToDip(pt));
-        _viewModel?.MarkDirty();
+        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
+
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
+        OnToolbarFormattingApplied(rtb);
     }
 
     private void OnFormatChar(object sender, RoutedEventArgs e)
