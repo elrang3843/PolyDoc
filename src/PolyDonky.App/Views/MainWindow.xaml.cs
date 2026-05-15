@@ -2889,13 +2889,9 @@ public partial class MainWindow : Window
         var rtb = GetActiveTextEditor();
         var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
-        // WPF의 rendering pipeline이 완료되도록 Normal priority dispatcher를 거침
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
         _viewModel?.MarkDirty();
-
-        // Focus는 rendering 완료 후에 호출해야 visual update가 적용됨
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render,
-            new Action(() => rtb.Focus()));
+        rtb.Focus();
     }
 
     private void OnFormatChar(object sender, RoutedEventArgs e)
