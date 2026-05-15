@@ -16,15 +16,17 @@ public static class LibreOfficeLocator
     /// <returns>LibreOffice 설치 폴더 경로 (null이면 미설치)</returns>
     public static string? DetectLibreOfficePath()
     {
-        // 1순위: 레지스트리 검색
+        // 1순위: LibreOffice 전용 레지스트리 키
         var regPath = SearchRegistry();
-        if (regPath != null && ValidatePath(regPath))
-            return regPath;
+        if (regPath != null) return regPath;
 
-        // 2순위: 일반 설치 경로 검색
+        // 2순위: Windows 설치 정보 (Uninstall 레지스트리) — 사용자 지정 설치 경로도 포함
+        var uninstallPath = SearchUninstallRegistry();
+        if (uninstallPath != null) return uninstallPath;
+
+        // 3순위: 일반 설치 경로 (기본 폴더)
         var commonPath = SearchCommonPaths();
-        if (commonPath != null && ValidatePath(commonPath))
-            return commonPath;
+        if (commonPath != null) return commonPath;
 
         return null;
     }
@@ -90,6 +92,71 @@ public static class LibreOfficeLocator
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Windows 프로그램 추가/제거 정보(Uninstall 레지스트리)에서 LibreOffice 설치 위치를 조회.
+    /// 사용자가 기본 폴더가 아닌 곳에 설치했어도 찾을 수 있다.
+    /// </summary>
+    private static string? SearchUninstallRegistry()
+    {
+        string[] uninstallRoots =
+        [
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ];
+
+        foreach (var root in uninstallRoots)
+        {
+            var found = ScanUninstallKey(Registry.LocalMachine, root);
+            if (found != null) return found;
+        }
+
+        // 현재 사용자 설치 (HKCU)
+        var foundUser = ScanUninstallKey(Registry.CurrentUser,
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+        if (foundUser != null) return foundUser;
+
+        return null;
+    }
+
+    private static string? ScanUninstallKey(RegistryKey hive, string subKeyPath)
+    {
+        try
+        {
+            using var root = hive.OpenSubKey(subKeyPath);
+            if (root == null) return null;
+
+            foreach (var name in root.GetSubKeyNames())
+            {
+                using var entry = root.OpenSubKey(name);
+                if (entry == null) continue;
+
+                var displayName = entry.GetValue("DisplayName") as string ?? "";
+                if (!displayName.Contains("LibreOffice", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // InstallLocation 값이 설치 폴더를 가리킴
+                var installLocation = entry.GetValue("InstallLocation") as string;
+                if (!string.IsNullOrEmpty(installLocation) && ValidatePath(installLocation))
+                    return installLocation;
+
+                // InstallLocation 이 비어 있으면 UninstallString 에서 경로 추출
+                var uninstallStr = entry.GetValue("UninstallString") as string ?? "";
+                var exeStart     = uninstallStr.TrimStart('"');
+                var exeEnd       = exeStart.IndexOf('"');
+                var exePath      = exeEnd > 0 ? exeStart[..exeEnd] : exeStart.Split(' ')[0];
+                var dir          = Path.GetDirectoryName(exePath);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    if (ValidatePath(dir)) return dir;
+                    var parent = Path.GetDirectoryName(dir);
+                    if (!string.IsNullOrEmpty(parent) && ValidatePath(parent)) return parent;
+                }
+            }
+        }
+        catch { /* 레지스트리 접근 실패 무시 */ }
+        return null;
     }
 
     private static string? GetRegValue(string subKey, string? valueName)
