@@ -39,7 +39,7 @@ public class DocWriter
         new RtfColor(255,   0, 255),    // 5: Magenta
         new RtfColor(255,   0,   0),    // 6: Red
         new RtfColor(255, 255,   0),    // 7: Yellow
-        new RtfColor(255, 255, 255),    // 8: White
+        new RtfColor(128, 255, 255),    // 8: Light Cyan (원본 옥색)
         new RtfColor(128, 128, 128),    // 9: Gray
     };
 
