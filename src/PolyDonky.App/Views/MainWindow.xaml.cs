@@ -2899,8 +2899,46 @@ public partial class MainWindow : Window
         var rtb = GetActiveTextEditor();
         var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
-        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
-        OnToolbarFormattingApplied(rtb);
+        if (rtb.Selection.IsEmpty)
+        {
+            // 선택이 없으면 insertion point의 기본값 설정
+            rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
+        }
+        else
+        {
+            // 선택된 모든 Run 을 순회하며 FontSize 직접 설정
+            // ApplyPropertyValue 가 일부 환경에서 FontSize 적용이 느릴 수 있으므로
+            // 직접 Run.FontSize 를 설정하고 ApplyPropertyValue 도 호출
+            var start = rtb.Selection.Start;
+            var end = rtb.Selection.End;
+
+            rtb.BeginChange();
+
+            var pos = start;
+            while (pos != null && pos.CompareTo(end) < 0)
+            {
+                // TextPointer 의 parent 를 따라가서 Run 찾기
+                var parent = pos.Parent;
+                var run = parent as System.Windows.Documents.Run;
+                if (run != null && run.FontSize != dip)
+                {
+                    run.FontSize = dip;
+                    pos = run.ContentEnd.GetNextInsertionPosition(System.Windows.Documents.LogicalDirection.Forward);
+                }
+                else
+                {
+                    pos = pos.GetNextInsertionPosition(System.Windows.Documents.LogicalDirection.Forward);
+                }
+            }
+
+            // 추가로 ApplyPropertyValue 도 호출해서 WPF 의 일반적인 처리도 수행
+            rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
+
+            rtb.EndChange();
+        }
+
+        _viewModel?.MarkDirty();
+        rtb.Focus();
     }
 
     private void OnFormatChar(object sender, RoutedEventArgs e)
