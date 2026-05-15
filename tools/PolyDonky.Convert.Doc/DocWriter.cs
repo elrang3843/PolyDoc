@@ -7,8 +7,8 @@ using PolyDonky.Core;
 namespace PolyDonky.Convert.Doc;
 
 /// <summary>
-/// IWPF → DOC (97-2003) 변환기. 텍스트 + 포매팅 지원.
-/// RTF (Rich Text Format) 형식으로 생성하며, Word에서 .doc으로 열 수 있다.
+/// IWPF → RTF (Rich Text Format) 변환기. 텍스트 + 포매팅 지원.
+/// Word 97 이상에서 완전 호환.
 /// </summary>
 public class DocWriter
 {

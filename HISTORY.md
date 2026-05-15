@@ -95,6 +95,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **Fast-path 페이지 배정 정수 나눗셈 블록 쏠림 수정**: 블록 수 2,500 초과 문서에서 fast-path 페이지 분배 시 정수 나눗셈으로 인해 초반 블록이 첫 페이지에 몰리던 문제. 부동소수점 나눗셈으로 전환해 균등 분배. (`FlowDocumentPaginationAdapter.cs`)
 
 - **HTML 변환 시 절대 위치 표 드래그앤드롭 지원 안 됨**: HTML의 `position:absolute` CSS를 가진 표를 import할 때, 절대 좌표(`left`, `top`)를 파싱하지 않아 오버레이 모드에서도 올바른 위치에 배치되지 않음. 이제 `position:absolute`를 감지하면 `WrapMode=InFrontOfText`로 설정하고 `left`/`top` CSS 값을 `OverlayXMm`/`OverlayYMm`에 저장하여 드래그앤드롭으로 정상 편집 가능. (`HtmlReader.cs`)
+
+- **RTF 파일 저장 시 확장자가 `.doc`으로 기록되던 버그 수정**: `ExternalConverter.GetConverter`에서 `"doc"` 확장자가 `PolyDonky.Convert.Doc`에 매핑되어 있어 `.rtf` 파일을 저장할 때 실제 변환기가 호출되지 않던 문제. `"doc"` → `"rtf"` 매핑으로 수정. 주석·`DocWriter` XML 문서 주석도 RTF 기준으로 정정. (`ExternalConverter.cs`, `DocWriter.cs`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
 
 ### Fixed

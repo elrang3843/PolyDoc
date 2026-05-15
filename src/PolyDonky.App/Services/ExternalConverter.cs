@@ -16,7 +16,7 @@ namespace PolyDonky.App.Services;
 ///   .xml  / .xhtml  — PolyDonky.Convert.Xml
 ///   .docx           — PolyDonky.Convert.Docx
 ///   .hwpx           — PolyDonky.Convert.Hwpx
-///   .doc            — PolyDonky.Convert.Doc  (LibreOffice 필요)
+///   .rtf            — PolyDonky.Convert.Doc
 ///   .hwp            — PolyDonky.Convert.Hwp  (LibreOffice 필요)
 /// </summary>
 public static class ExternalConverter
@@ -34,7 +34,7 @@ public static class ExternalConverter
             "xml"  or "xhtml" => "PolyDonky.Convert.Xml",
             "docx"            => "PolyDonky.Convert.Docx",
             "hwpx"            => "PolyDonky.Convert.Hwpx",
-            "doc"             => "PolyDonky.Convert.Doc",
+            "rtf"             => "PolyDonky.Convert.Doc",
             "hwp"             => "PolyDonky.Convert.Hwp",
             _                 => null,
         };
@@ -86,7 +86,7 @@ public static class ExternalConverter
             StandardErrorEncoding  = Encoding.UTF8,
             CreateNoWindow         = true,
         };
-        // DOC/HWP CLI 가 LibreOffice 를 찾을 수 있도록 설정 경로를 환경변수로 전달.
+        // HWP CLI 가 LibreOffice 를 찾을 수 있도록 설정 경로를 환경변수로 전달.
         // LibreOffice 가 필요 없는 다른 변환기는 이 변수를 무시한다.
         var libreOfficePath = LanguageService.LibreOfficePath;
         if (!string.IsNullOrEmpty(libreOfficePath))
