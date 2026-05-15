@@ -211,6 +211,7 @@ public static class LibreOfficeBridge
 
         // Isolated user profile prevents lock-file conflicts when multiple conversions run.
         var userInstallDir = Path.Combine(workDir, "lo-user-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(userInstallDir);
         var userInstallUri = "file:///" + userInstallDir.Replace('\\', '/');
 
         var psi = new ProcessStartInfo
@@ -232,6 +233,12 @@ public static class LibreOfficeBridge
             if (!existing.Contains(programDir, StringComparison.OrdinalIgnoreCase))
                 psi.Environment["PATH"] = programDir + Path.PathSeparator + existing;
         }
+
+        // Remove any Python env vars inherited from parent (e.g. .NET SDK tooling) that
+        // conflict with LibreOffice's bundled Python interpreter.
+        psi.Environment.Remove("PYTHONHOME");
+        psi.Environment.Remove("PYTHONPATH");
+        psi.Environment.Remove("PYTHONSTARTUP");
 
         psi.ArgumentList.Add("--headless");
         psi.ArgumentList.Add("--norestore");
