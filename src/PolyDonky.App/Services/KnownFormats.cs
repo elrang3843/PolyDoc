@@ -72,9 +72,9 @@ public static class KnownFormats
         "한글 HWPX (*.hwpx) — 외부 변환|*.hwpx|" +
         "HTML (*.html;*.htm) — 외부 변환|*.html;*.htm|" +
         "XML / XHTML (*.xml;*.xhtml) — 외부 변환|*.xml;*.xhtml|" +
-        // LibreOffice 경유 외부 CLI 변환
-        "한글 HWP (*.hwp) — 외부 변환 (LibreOffice 필요)|*.hwp|" +
-        "Word 레거시 (*.doc) — 외부 변환 (LibreOffice 필요)|*.doc|" +
+        // 외부 CLI 변환
+        "한글 HWP (*.hwp) — 외부 변환|*.hwp|" +
+        "Word 레거시 (*.doc) — 외부 변환|*.doc|" +
         "모든 파일 (*.*)|*.*";
 
     public const string SaveFilter =
@@ -87,9 +87,9 @@ public static class KnownFormats
         "한글 HWPX (*.hwpx) — 외부 변환|*.hwpx|" +
         "HTML (*.html) — 외부 변환|*.html|" +
         "XML / XHTML (*.xml) — 외부 변환|*.xml|" +
-        // LibreOffice 경유 외부 CLI 변환
-        "한글 HWP (*.hwp) — 외부 변환 (LibreOffice 필요)|*.hwp|" +
-        "Word 레거시 (*.doc) — 외부 변환 (LibreOffice 필요)|*.doc";
+        // 외부 CLI 변환
+        "한글 HWP (*.hwp) — 외부 변환|*.hwp|" +
+        "Word 레거시 (*.doc) — 외부 변환|*.doc";
 
     private static string GetExtensionId(string path)
         => Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
