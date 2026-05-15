@@ -963,8 +963,11 @@ public static class FlowDocumentBuilder
         {
             if (run.Text is null) continue;
             var wr = new System.Windows.Documents.Run(run.Text);
-            if (run.Style.FontSizePt > 0)
-                wr.FontSize = PtToDip(run.Style.FontSizePt);
+
+            // FontSize는 항상 설정 (0이면 기본값 11pt 사용)
+            double fontSize = run.Style.FontSizePt > 0 ? run.Style.FontSizePt : 11;
+            wr.FontSize = PtToDip(fontSize);
+
             if (!string.IsNullOrEmpty(run.Style.FontFamily))
                 wr.FontFamily = new WpfMedia.FontFamily(run.Style.FontFamily);
             if (run.Style.Bold   == true) wr.FontWeight = System.Windows.FontWeights.Bold;
