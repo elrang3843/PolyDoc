@@ -74,7 +74,7 @@ public class DocWriter
                                 runInfo.FontIndex = fontIdx;
                             }
 
-                            // 색상 테이블에 색 추가
+                            // 색상 테이블에 색 추가 (Foreground)
                             if (runInfo.Style.Foreground.HasValue)
                             {
                                 var color = new RtfColor(
@@ -91,6 +91,26 @@ public class DocWriter
                                 else
                                 {
                                     runInfo.ColorIndex = idx;
+                                }
+                            }
+
+                            // 색상 테이블에 배경색 추가 (Background)
+                            if (runInfo.Style.Background.HasValue)
+                            {
+                                var bgColor = new RtfColor(
+                                    runInfo.Style.Background.Value.R,
+                                    runInfo.Style.Background.Value.G,
+                                    runInfo.Style.Background.Value.B
+                                );
+                                int idx = _colorTable.FindIndex(c => c.R == bgColor.R && c.G == bgColor.G && c.B == bgColor.B);
+                                if (idx < 0)
+                                {
+                                    _colorTable.Add(bgColor);
+                                    runInfo.BackgroundColorIndex = _colorTable.Count - 1;
+                                }
+                                else
+                                {
+                                    runInfo.BackgroundColorIndex = idx;
                                 }
                             }
 
@@ -192,6 +212,10 @@ public class DocWriter
                 else
                     sb.Append(@"\cf0");
 
+                // 배경색
+                if (run.BackgroundColorIndex > 0)
+                    sb.Append($@"\cb{run.BackgroundColorIndex}");
+
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
                 double fontSize = run.Style.FontSizePt;
                 if (fontSize <= 0)
@@ -284,5 +308,6 @@ public class DocWriter
         public RunStyle Style { get; set; } = new();
         public int ColorIndex { get; set; } = 0;
         public int FontIndex { get; set; } = 0;
+        public int BackgroundColorIndex { get; set; } = 0;
     }
 }
