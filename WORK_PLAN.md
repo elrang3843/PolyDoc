@@ -41,7 +41,7 @@
 | DOCX | DocumentFormat.OpenXml 3.5.1 (MIT) |
 | HTML/XML | AngleSharp (MIT) |
 | HWPX | 자체 구현 (KS X 6101) |
-| HWP·DOC | LibreOffice headless 위탁 노선 우선 (Phase F, G4 게이트에서 결정) |
+| HWP·DOC | v1.0.0 이후 자체 CLI 파서 예정 |
 | 직렬화 | System.Text.Json |
 
 라이선스는 모두 Apache 2.0 호스트 프로젝트와 호환.
@@ -137,7 +137,6 @@ PolyDonky/
 - ✅ D3 tools/PolyDonky.Convert.Docx — DOCX ↔ IWPF CLI
 - ✅ D4 tools/PolyDonky.Convert.Hwpx — HWPX ↔ IWPF CLI
 - ✅ D5 Services/ExternalConverter.cs — 메인 앱 ↔ CLI IPC (spawn, 인자/표준입출력/exit code)
-- ☐ G4 HWP/DOC 추가 시 LibreOffice 의존 노선 확정 vs 자체 결정
 
 ### Phase E — 편집 기능 (WPF App)
 - ✅ E1 표 삽입/편집 (TableInsertDialog, TablePropertiesWindow, CellPropertiesWindow)
@@ -160,34 +159,16 @@ PolyDonky/
 - ✅ E19 목차 자동 생성 (전 페이지 스캔 + 페이지 번호 삽입 구현)
 - ✅ E20 필드 코드 자동 갱신 — FieldRenderContext 도입, 페이지네이션 시 Page/NumPages/Author/Title 실제 값 반영
 
-### Phase F — DOC/HWP ingest (LibreOffice 브리지 방식, **G4 결정 완료**)
+### Phase F — RTF/HWP ingest
 
-**결정**: LibreOffice headless 브리지를 단기 구현으로 채택. 장기적으로 자체 CLI 파서 개발을 목표로 하되, 그 전까지 LibreOffice 경유. LibreOffice는 MPL 2.0 + LGPLv3+ 이중 라이선스로 정책 폐쇄 위험 없음.
+**결정**: LibreOffice 미사용. RTF 는 자체 구현(`DocWriter`), HWP·DOC 는 v1.0.0 이후 자체 CLI 파서로 진행.
 
-**변환 파이프라인** (읽기):
-```
-DOC/HWP → LibreOffice headless (→ DOCX 임시 파일) → PolyDonky.Convert.Docx (→ IWPF)
-```
-**저장 파이프라인** (쓰기):
-```
-IWPF → PolyDonky.Convert.Docx (→ DOCX 임시 파일) → LibreOffice headless (→ DOC/HWP)
-```
+**F1 RTF export** ✅
+- `tools/PolyDonky.Convert.Doc` CLI: IWPF → RTF (`DocWriter` 자체 구현)
+- `ExternalConverter.GetConverter("rtf")` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 갱신
 
-**F0 LibreOffice 경로 자동 탐지 및 설정 등록** ✅
-- Windows 레지스트리 + 일반 설치 경로(`Program Files`) 에서 `soffice.exe` 자동 탐색
-- 설정 창(`SettingsWindow`)에 LibreOffice 경로 필드 추가 — 자동 탐지 실패 시 수동 지정
-- `LanguageService.LibreOfficePath` 저장, `ExternalConverter.ConvertAsync` 가 `LIBREOFFICE_PATH` 환경변수로 전달
-- LibreOffice 미설치 시 "LibreOffice 다운로드" 링크 안내 다이얼로그 표시
-
-**F1 DOC import/export** ✅
-- `tools/PolyDonky.Convert.Doc` CLI: DOC → LibreOffice headless → DOCX → IwpfWriter
-- 저장 시 역순: IwpfReader → DocxWriter → LibreOffice → DOC
-- `ExternalConverter.GetConverter("doc")` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 갱신
-
-**F2 HWP import/export** ✅
-- `tools/PolyDonky.Convert.Hwp` CLI: HWP → LibreOffice headless → DOCX → IwpfWriter
-- 저장 시 역순: IwpfReader → DocxWriter → LibreOffice → HWP
-- ⚠️ LibreOffice 의 HWP 지원 수준에 따라 충실도 제한 있음 — 사용자에게 "한컴 오피스에서 확인 권장" 안내
+**F2 HWP import/export** ☐ (v1.0.0 이후)
+- `tools/PolyDonky.Convert.Hwp` CLI: 자체 HWP 파서 구현 예정
 
 **F3 Opaque island 정책 전면 적용** ☐
 - 이해 못 한 개체를 read-only 보존, HWPX export 원형 직렬화
@@ -226,7 +207,7 @@ IWPF → PolyDonky.Convert.Docx (→ DOCX 임시 파일) → LibreOffice headles
 | G1 | Phase A 종료 | PR 리뷰 후 머지 | ✅ 완료 |
 | G2 | Phase B 시작 | Windows build/run 검증 | ✅ 완료 |
 | G3 | Phase C 종료 | HWPX·DOCX·HTML·XML 시각 검증 | ◑ HWPX writer 한컴 검증 대기 |
-| G4 | Phase F 진입 시 | LibreOffice 의존 노선 확정 vs 자체 구현 | ✅ **LibreOffice 브리지 채택** (자체 CLI는 장기 목표) |
+| G4 | Phase F 진입 시 | HWP/DOC 변환 노선 확정 | ✅ **LibreOffice 미사용, 자체 CLI 파서로 결정** |
 | G5 | Phase H 진입 시 | "릴리즈하자" 명시 — `1.0.0` 컷 | ☐ 미진입 |
 
 ---
@@ -246,7 +227,7 @@ IWPF → PolyDonky.Convert.Docx (→ DOCX 임시 파일) → LibreOffice headles
 
 2. ~~**E19 목차 자동 생성**~~ ✅ 완료.
 
-3. **F0/F1/F2 DOC/HWP ingest** — G4 결정 완료(LibreOffice 브리지). F0(경로 탐지·설정 UI) → F1(DOC) → F2(HWP) 순으로 착수 가능.
+3. **F2 HWP ingest** — v1.0.0 이후. 자체 CLI 파서(`tools/PolyDonky.Convert.Hwp`) 구현.
 
 4. **H1 MSIX 인스톨러** — 1.0.0 릴리즈 전 패키징.
 
