@@ -2875,25 +2875,26 @@ public partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] _suppressToolbarUpdate=true, 반환");
             return;
         }
-        var rtb = GetActiveTextEditor();
-        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] rtb={rtb}");
 
-        // SelectedItem을 사용하여 업데이트된 값을 읽음
-        var selectedItem = CboToolbarFontSize.SelectedItem;
-        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] SelectedItem={selectedItem}");
+        // Dispatcher를 사용해 한 단계 뒤로 미룬다 — 그래야 ComboBox.Text가 업데이트됨
+        Dispatcher.BeginInvoke(() =>
+        {
+            var rtb = GetActiveTextEditor();
+            System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] rtb={rtb}");
 
-        var text = selectedItem?.ToString()?.Trim();
-        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] text='{text}'");
-        double.TryParse(text, System.Globalization.NumberStyles.Any,
-            System.Globalization.CultureInfo.InvariantCulture, out var pt);
-        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] pt={pt}");
-        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
-        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] dip={dip}");
+            var text = CboToolbarFontSize.Text?.Trim();
+            System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] text='{text}'");
+            double.TryParse(text, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var pt);
+            System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] pt={pt}");
+            var dip = Services.FlowDocumentBuilder.PtToDip(pt);
+            System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] dip={dip}");
 
-        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
-        System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] ApplyPropertyValue 완료");
-        _viewModel?.MarkDirty();
-        rtb.Focus();
+            rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
+            System.Diagnostics.Debug.WriteLine($"[OnToolbarFontSizeSelectionChanged] ApplyPropertyValue 완료");
+            _viewModel?.MarkDirty();
+            rtb.Focus();
+        });
     }
 
     private void OnToolbarFontSizeKeyDown(object sender, KeyEventArgs e)
