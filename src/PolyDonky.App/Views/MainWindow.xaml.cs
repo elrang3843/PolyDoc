@@ -2875,7 +2875,13 @@ public partial class MainWindow : Window
                 System.Globalization.CultureInfo.InvariantCulture, out var pt)
             || pt < 1 || pt > 999) return;
         var rtb = GetActiveTextEditor();
-        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
+
+        // ApplyPropertyValue 호출 직전에 combo box 값을 다시 읽어서 최신값 사용
+        var currentText = CboToolbarFontSize.Text?.Trim();
+        if (!double.TryParse(currentText, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var currentPt)
+            || currentPt < 1 || currentPt > 999) return;
+        var dip = Services.FlowDocumentBuilder.PtToDip(currentPt);
 
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
         _viewModel?.MarkDirty();
@@ -2890,7 +2896,13 @@ public partial class MainWindow : Window
                 System.Globalization.CultureInfo.InvariantCulture, out var pt)
             || pt < 1 || pt > 999) return;
         var rtb = GetActiveTextEditor();
-        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
+
+        // ApplyPropertyValue 호출 직전에 combo box 값을 다시 읽어서 최신값 사용
+        var currentText = CboToolbarFontSize.Text?.Trim();
+        if (!double.TryParse(currentText, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var currentPt)
+            || currentPt < 1 || currentPt > 999) return;
+        var dip = Services.FlowDocumentBuilder.PtToDip(currentPt);
 
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
         _viewModel?.MarkDirty();
