@@ -193,7 +193,11 @@ public class DocWriter
                     sb.Append(@"\cf0");
 
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
-                double fontSize = run.Style.FontSizePt > 0 ? run.Style.FontSizePt : 11;
+                double fontSize = run.Style.FontSizePt;
+                if (fontSize <= 0)
+                {
+                    fontSize = 11;  // Default
+                }
                 sb.Append($@"\fs{(int)(fontSize * 2)}");
 
                 // 글자 스타일
