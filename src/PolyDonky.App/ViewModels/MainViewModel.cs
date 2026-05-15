@@ -394,6 +394,32 @@ public partial class MainViewModel : ObservableObject
             }
             catch (UnsupportedFormatVersionException ex)
             {
+                // LibreOffice 관련 오류인 경우 특별 처리 (설치 페이지 링크 포함)
+                if (ex.Message.Contains("LibreOffice"))
+                {
+                    var msg = string.Format(SR.DlgLibreOfficeNotFoundPrompt, Path.GetFileName(sourcePath));
+                    var result = MessageBox.Show(
+                        msg,
+                        SR.DlgLibreOfficeNotFoundTitle,
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Information,
+                        MessageBoxResult.Yes);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        try
+                        {
+                            Process.Start(new ProcessStartInfo("https://www.libreoffice.org/download/")
+                            {
+                                UseShellExecute = true
+                            });
+                        }
+                        catch { /* 브라우저 실행 실패 무시 */ }
+                    }
+                    return;
+                }
+
+                // 기타 UnsupportedFormatVersionException (HWPX/DOCX 버전 문제 등)
                 MessageBox.Show(
                     string.Format(SR.DlgUnsupportedVersionPrompt, Path.GetFileName(sourcePath), ex.Message),
                     SR.DlgUnsupportedVersionTitle,
@@ -1045,6 +1071,30 @@ public partial class MainViewModel : ObservableObject
             try
             {
                 await ExternalConverter.ConvertAsync(converter, iwpfPath, targetPath, reporter);
+            }
+            catch (UnsupportedFormatVersionException ex) when (ex.Message.Contains("LibreOffice"))
+            {
+                // LibreOffice 관련 오류 — 설치 페이지 링크
+                var msg = string.Format(SR.DlgLibreOfficeNotFoundPrompt, Path.GetFileName(targetPath));
+                var result = MessageBox.Show(
+                    msg,
+                    SR.DlgLibreOfficeNotFoundTitle,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information,
+                    MessageBoxResult.Yes);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo("https://www.libreoffice.org/download/")
+                        {
+                            UseShellExecute = true
+                        });
+                    }
+                    catch { /* 브라우저 실행 실패 무시 */ }
+                }
+                return;
             }
             catch (Exception ex)
             {
