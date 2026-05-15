@@ -16,6 +16,16 @@ public class DocWriter
     private List<RtfColor> _highlightTable = new();  // 배경색 전용 테이블
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
+    private static readonly string DebugLogPath = Path.Combine(Path.GetTempPath(), "PolyDonky_DocConverter.log");
+
+    private static void LogDebug(string message)
+    {
+        try
+        {
+            File.AppendAllText(DebugLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n");
+        }
+        catch { }  // 로깅 실패는 무시
+    }
 
     // Word RTF 표준 highlight 색상 팔레트 (인덱스 0은 "없음")
     private static readonly RtfColor[] StandardHighlightColors = new[]
@@ -58,6 +68,7 @@ public class DocWriter
 
     public void Write(PolyDonkyument doc, Stream output)
     {
+        LogDebug("=== DOC Writer Started ===");
         _colorTable.Clear();
         _fontTable.Clear();
 
@@ -140,7 +151,7 @@ public class DocWriter
                                 // 가장 가까운 표준 highlight 색상으로 매핑
                                 int highlightIndex = MapToStandardHighlightColor(runInfo.Style.Background.Value);
                                 runInfo.BackgroundColorIndex = highlightIndex;
-                                System.Console.Error.WriteLine($"[DEBUG] Background color detected: RGB({runInfo.Style.Background.Value.R},{runInfo.Style.Background.Value.G},{runInfo.Style.Background.Value.B}) -> highlight index {highlightIndex}");
+                                LogDebug($"Background color detected: RGB({runInfo.Style.Background.Value.R},{runInfo.Style.Background.Value.G},{runInfo.Style.Background.Value.B}) -> highlight index {highlightIndex}");
                             }
 
                             info.Runs.Add(runInfo);
@@ -242,11 +253,11 @@ public class DocWriter
                     sb.Append(@"\cf0");
 
                 // 배경색 (highlight)
-                System.Console.Error.WriteLine($"[DEBUG RTF] Text '{run.Text}' BackgroundColorIndex={run.BackgroundColorIndex}");
+                LogDebug($"Text '{run.Text}' BackgroundColorIndex={run.BackgroundColorIndex}");
                 if (run.BackgroundColorIndex > 0)
                 {
                     sb.Append($@"\highlight{run.BackgroundColorIndex}");
-                    System.Console.Error.WriteLine($"[DEBUG RTF] Applied \\highlight{run.BackgroundColorIndex}");
+                    LogDebug($"Applied \\highlight{run.BackgroundColorIndex} to text: {run.Text}");
                 }
 
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
