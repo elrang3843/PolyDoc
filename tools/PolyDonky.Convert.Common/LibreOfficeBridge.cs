@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -19,26 +18,22 @@ public static class LibreOfficeBridge
     /// </summary>
     public static string? FindSOffice()
     {
-        // 1순위: 환경변수 (메인 앱이 주입)
-        // LIBREOFFICE_PATH 는 설치 폴더를 가리킨다 (예: C:\Program Files\LibreOffice).
-        // Windows 표준 설치에서 soffice.exe 는 program\ 하위에 있다.
         var envPath = Environment.GetEnvironmentVariable("LIBREOFFICE_PATH");
         if (!string.IsNullOrEmpty(envPath))
         {
             string[] envCandidates =
             [
-                Path.Combine(envPath, "program", "soffice.exe"),  // Windows 표준
-                Path.Combine(envPath, "program", "soffice"),      // Linux
-                Path.Combine(envPath, "bin",     "soffice.exe"),  // 구형/대안
-                Path.Combine(envPath, "bin",     "soffice"),      // Linux 대안
-                Path.Combine(envPath,            "soffice.exe"),  // envPath 가 program 폴더인 경우
+                Path.Combine(envPath, "program", "soffice.exe"),
+                Path.Combine(envPath, "program", "soffice"),
+                Path.Combine(envPath, "bin",     "soffice.exe"),
+                Path.Combine(envPath, "bin",     "soffice"),
+                Path.Combine(envPath,            "soffice.exe"),
                 Path.Combine(envPath,            "soffice"),
             ];
             foreach (var c in envCandidates)
                 if (File.Exists(c)) return c;
         }
 
-        // 2순위: 일반 설치 경로
         string[] commonPaths =
         [
             @"C:\Program Files\LibreOffice\program\soffice.exe",
@@ -57,14 +52,8 @@ public static class LibreOfficeBridge
 
     /// <summary>
     /// LibreOffice headless 로 입력 파일을 DOCX 로 변환.
-    /// 출력 DOCX 경로를 반환 (outDir 아래 동일 이름+.docx).
+    /// 출력 DOCX 경로를 반환 (outDir 아래).
     /// </summary>
-    /// <param name="inputPath">변환할 DOC/HWP 파일 경로</param>
-    /// <param name="outDir">DOCX 출력 디렉터리</param>
-    /// <param name="sOfficePath">soffice 실행 파일 경로 (null이면 자동 탐지)</param>
-    /// <param name="progress">진행률 보고 (0-40 범위 사용 권장)</param>
-    /// <param name="timeoutMs">타임아웃 밀리초 (기본 120초)</param>
-    /// <returns>생성된 DOCX 파일의 전체 경로</returns>
     public static async Task<string> ConvertToDocxAsync(
         string inputPath,
         string outDir,
@@ -79,15 +68,19 @@ public static class LibreOfficeBridge
 
         Directory.CreateDirectory(outDir);
 
-        progress?.Report((5, $"LibreOffice 실행 중…"));
+        progress?.Report((5, "LibreOffice 실행 중…"));
 
-        // soffice --headless --norestore --env:UserInstallation=... --convert-to docx --outdir <dir> <input>
-        var psi = BuildProcessStartInfo(sofficeBin, outDir);
+        // Non-ASCII filenames can confuse LibreOffice's arg parsing; copy to a safe name.
+        var safeExt   = Path.GetExtension(inputPath).ToLowerInvariant();
+        var safeInput = Path.Combine(outDir, "lo_input" + safeExt);
+        File.Copy(inputPath, safeInput, overwrite: true);
+
+        var psi = BuildProcessStartInfo(sofficeBin);
         psi.ArgumentList.Add("--convert-to");
         psi.ArgumentList.Add("docx:MS Word 2007 XML");
         psi.ArgumentList.Add("--outdir");
         psi.ArgumentList.Add(outDir);
-        psi.ArgumentList.Add(Path.GetFullPath(inputPath));
+        psi.ArgumentList.Add(safeInput);
 
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException($"soffice 실행 실패: {sofficeBin}");
@@ -115,14 +108,16 @@ public static class LibreOfficeBridge
                 $"LibreOffice 변환 실패 (종료 코드 {proc.ExitCode})\n" +
                 $"stdout: {stdout.Trim()}\nstderr: {stderr.Trim()}");
 
-        // LibreOffice 는 출력 파일을 <outDir>/<원본이름>.docx 로 저장
-        var baseName   = Path.GetFileNameWithoutExtension(inputPath);
-        var docxOutput = Path.Combine(outDir, baseName + ".docx");
+        var docxOutput = Path.Combine(outDir, "lo_input.docx");
 
         if (!File.Exists(docxOutput))
+        {
+            var existing = string.Join(", ", Directory.GetFiles(outDir).Select(Path.GetFileName));
             throw new InvalidOperationException(
                 $"LibreOffice 변환 후 예상 출력 파일 없음: {docxOutput}\n" +
+                $"outDir 내 파일: [{existing}]\n" +
                 $"stdout: {stdout.Trim()}");
+        }
 
         progress?.Report((40, "LibreOffice 변환 완료"));
         return docxOutput;
@@ -131,13 +126,6 @@ public static class LibreOfficeBridge
     /// <summary>
     /// LibreOffice headless 로 DOCX 를 DOC 또는 HWP 형식으로 변환.
     /// </summary>
-    /// <param name="inputDocxPath">변환할 DOCX 파일 경로</param>
-    /// <param name="outDir">출력 디렉터리</param>
-    /// <param name="targetExt">목표 확장자 ("doc" 또는 "hwp")</param>
-    /// <param name="sOfficePath">soffice 실행 파일 경로 (null이면 자동 탐지)</param>
-    /// <param name="progress">진행률 보고</param>
-    /// <param name="timeoutMs">타임아웃 밀리초</param>
-    /// <returns>생성된 출력 파일의 전체 경로</returns>
     public static async Task<string> ConvertFromDocxAsync(
         string inputDocxPath,
         string outDir,
@@ -154,7 +142,6 @@ public static class LibreOfficeBridge
 
         progress?.Report((70, "LibreOffice 로 최종 포맷 변환 중…"));
 
-        // ArgumentList 사용 시 필터 이름에 따옴표를 포함하지 않는다.
         var filterSpec = targetExt.ToLowerInvariant() switch
         {
             "doc" => "doc:MS Word 97",
@@ -162,7 +149,7 @@ public static class LibreOfficeBridge
             _ => throw new ArgumentException($"지원하지 않는 출력 포맷: {targetExt}"),
         };
 
-        var psi = BuildProcessStartInfo(sofficeBin, outDir);
+        var psi = BuildProcessStartInfo(sofficeBin);
         psi.ArgumentList.Add("--convert-to");
         psi.ArgumentList.Add(filterSpec);
         psi.ArgumentList.Add("--outdir");
@@ -195,8 +182,8 @@ public static class LibreOfficeBridge
                 $"LibreOffice 변환 실패 (종료 코드 {proc.ExitCode})\n" +
                 $"stderr: {stderr.Trim()}");
 
-        var baseName  = Path.GetFileNameWithoutExtension(inputDocxPath);
-        var outFile   = Path.Combine(outDir, baseName + "." + targetExt.ToLowerInvariant());
+        var baseName = Path.GetFileNameWithoutExtension(inputDocxPath);
+        var outFile  = Path.Combine(outDir, baseName + "." + targetExt.ToLowerInvariant());
         if (!File.Exists(outFile))
             throw new InvalidOperationException(
                 $"LibreOffice 변환 후 예상 출력 파일 없음: {outFile}");
@@ -205,7 +192,7 @@ public static class LibreOfficeBridge
         return outFile;
     }
 
-    private static ProcessStartInfo BuildProcessStartInfo(string sofficeBin, string workDir)
+    private static ProcessStartInfo BuildProcessStartInfo(string sofficeBin)
     {
         var programDir = Path.GetDirectoryName(sofficeBin) ?? "";
 
@@ -221,7 +208,7 @@ public static class LibreOfficeBridge
             CreateNoWindow         = true,
         };
 
-        // Prepend LibreOffice's program dir so its DLLs and libraries are found.
+        // Prepend LibreOffice's program dir to PATH so its DLLs resolve correctly.
         if (!string.IsNullOrEmpty(programDir))
         {
             var existing = Environment.GetEnvironmentVariable("PATH") ?? "";
@@ -229,10 +216,23 @@ public static class LibreOfficeBridge
                 psi.Environment["PATH"] = programDir + Path.PathSeparator + existing;
         }
 
-        // Remove any Python env vars inherited from parent (e.g. .NET SDK tooling) that
-        // conflict with LibreOffice's bundled Python interpreter.
-        psi.Environment.Remove("PYTHONHOME");
-        psi.Environment.Remove("PYTHONPATH");
+        // LibreOffice bundles its own Python (e.g. program\python-core-3.x.y\).
+        // Set PYTHONHOME to that directory so Python finds its stdlib regardless of
+        // any system Python installation that might set a conflicting PYTHONHOME.
+        if (!string.IsNullOrEmpty(programDir))
+        {
+            var coreDirs = Directory.GetDirectories(programDir, "python-core-*");
+            if (coreDirs.Length > 0)
+            {
+                psi.Environment["PYTHONHOME"] = coreDirs[0];
+                psi.Environment["PYTHONPATH"] = "";
+            }
+            else
+            {
+                psi.Environment.Remove("PYTHONHOME");
+                psi.Environment.Remove("PYTHONPATH");
+            }
+        }
         psi.Environment.Remove("PYTHONSTARTUP");
 
         psi.ArgumentList.Add("--headless");
