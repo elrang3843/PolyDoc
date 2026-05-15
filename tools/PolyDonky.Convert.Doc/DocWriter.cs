@@ -8,7 +8,9 @@ namespace PolyDonky.Convert.Doc;
 
 /// <summary>
 /// IWPF → RTF (Rich Text Format) 변환기.
-/// 지원: 글자 서식·단락 서식·위첨자/아래첨자·들여쓰기·리스트·이미지·표·메타데이터.
+/// 지원: 글자 서식·단락 서식·위첨자/아래첨자·들여쓰기·리스트·이미지·표·메타데이터·
+///       도형(\shp, 위치·크기·종류·색상 아웃라인)·OLE 개체(OpaqueBlock 재출력 또는 플레이스홀더).
+/// v1.0.0 이후 계획: \shp 전체 속성(그림자·3D·꼭짓점 경로 등) + OLE 데이터 완전 직렬화.
 /// </summary>
 public class DocWriter
 {
@@ -66,6 +68,15 @@ public class DocWriter
                 foreach (var row in t.Rows)
                     foreach (var cell in row.Cells)
                         foreach (var b in cell.Blocks) ScanBlock(b);
+                break;
+            case ShapeObject s:
+                if (!string.IsNullOrEmpty(s.FillColor))
+                    try { RegisterColor(Color.FromHex(s.FillColor)); } catch { }
+                if (!string.IsNullOrEmpty(s.StrokeColor))
+                    try { RegisterColor(Color.FromHex(s.StrokeColor)); } catch { }
+                break;
+            case ContainerBlock c:
+                foreach (var b in c.Children) ScanBlock(b);
                 break;
         }
     }
@@ -139,9 +150,14 @@ public class DocWriter
     {
         switch (block)
         {
-            case Paragraph p:   WriteParagraph(p, sb, inTable); break;
-            case Table t:       WriteTable(t, sb); break;
+            case Paragraph p:    WriteParagraph(p, sb, inTable); break;
+            case Table t:        WriteTable(t, sb); break;
             case ImageBlock img: WriteImage(img, sb); break;
+            case ShapeObject s:  WriteShape(s, sb); break;
+            case OpaqueBlock o:  WriteOpaque(o, sb); break;
+            case ContainerBlock c:
+                foreach (var b in c.Children) WriteBlock(b, sb, inTable);
+                break;
         }
     }
 
@@ -408,6 +424,86 @@ public class DocWriter
             sb.AppendLine(hex.Substring(i, Math.Min(128, hex.Length - i)));
         }
         sb.AppendLine("}");
+    }
+
+    // ── 도형 ────────────────────────────────────────────────────────────────────
+
+    private void WriteShape(ShapeObject shape, StringBuilder sb)
+    {
+        int left   = T(shape.OverlayXMm);
+        int top    = T(shape.OverlayYMm);
+        int right  = T(shape.OverlayXMm + Math.Max(1, shape.WidthMm));
+        int bottom = T(shape.OverlayYMm + Math.Max(1, shape.HeightMm));
+
+        int shapeType = shape.Kind switch
+        {
+            ShapeKind.Rectangle   => 1,
+            ShapeKind.RoundedRect => 2,
+            ShapeKind.Ellipse     => 3,
+            ShapeKind.Triangle    => 5,
+            ShapeKind.Star        => 75,
+            ShapeKind.Line        => 20,
+            ShapeKind.Polyline    => 20,
+            _                     => 1,
+        };
+
+        sb.Append(@"{\shp");
+        sb.Append($@"\shpleft{left}\shptop{top}\shpright{right}\shpbottom{bottom}");
+        sb.Append(@"\shpfhdr0\shpbxcolumn\shpbypage");
+        sb.Append(@"{\shpinst");
+
+        // 도형 종류
+        sb.Append($@"{{\sp{{\sn shapeType}}{{\sv {shapeType}}}}}");
+
+        // 채우기 색상 (BGR int)
+        if (!string.IsNullOrEmpty(shape.FillColor))
+        {
+            try
+            {
+                var c = Color.FromHex(shape.FillColor);
+                int abgr = c.R | (c.G << 8) | (c.B << 16);
+                sb.Append($@"{{\sp{{\sn fillColor}}{{\sv {abgr}}}}}");
+            }
+            catch { }
+        }
+
+        // 선 색상
+        if (!string.IsNullOrEmpty(shape.StrokeColor))
+        {
+            try
+            {
+                var c = Color.FromHex(shape.StrokeColor);
+                int abgr = c.R | (c.G << 8) | (c.B << 16);
+                sb.Append($@"{{\sp{{\sn lineColor}}{{\sv {abgr}}}}}");
+            }
+            catch { }
+        }
+
+        // 선 두께 (pt → EMU: 1pt = 12700 EMU)
+        if (shape.StrokeThicknessPt > 0)
+        {
+            int emu = (int)(shape.StrokeThicknessPt * 12700);
+            sb.Append($@"{{\sp{{\sn lineWidth}}{{\sv {emu}}}}}");
+        }
+
+        sb.Append("}}");
+        sb.AppendLine();
+    }
+
+    // ── OpaqueBlock ─────────────────────────────────────────────────────────────
+
+    private static void WriteOpaque(OpaqueBlock opaque, StringBuilder sb)
+    {
+        // RTF 포맷 OpaqueBlock — 원본 그대로 재출력
+        if (opaque.Format == "rtf" && !string.IsNullOrEmpty(opaque.Xml))
+        {
+            sb.AppendLine(opaque.Xml);
+            return;
+        }
+        // 다른 포맷 — 플레이스홀더 단락
+        sb.Append(@"\pard\ql ");
+        sb.Append($@"{{\b {EscapeRtf(opaque.DisplayLabel)}\b0}}");
+        sb.AppendLine(@"\par");
     }
 
     // ── 유틸 ────────────────────────────────────────────────────────────────────

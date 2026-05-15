@@ -163,9 +163,16 @@ PolyDonky/
 
 **결정**: LibreOffice 미사용. RTF 는 자체 구현(`DocWriter`), HWP·DOC 는 v1.0.0 이후 자체 CLI 파서로 진행.
 
-**F1 RTF export** ✅
-- `tools/PolyDonky.Convert.Doc` CLI: IWPF → RTF (`DocWriter` 자체 구현)
+**F1 RTF export/import** ✅
+- `tools/PolyDonky.Convert.Doc` CLI: IWPF ↔ RTF (`DocWriter`/`DocReader` 자체 구현)
 - `ExternalConverter.GetConverter("rtf")` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 갱신
+- 글자/단락 서식·위첨자/아래첨자·표·이미지·메타데이터 완전 지원
+- 도형(`\shp`) 아웃라인 지원: 위치·크기·종류·채우기/선 색상 ✅
+- OLE 개체(`\object`) 아웃라인 지원: OpaqueBlock 보존 ✅
+
+**F1-후속 RTF 도형/OLE 전체 지원** ☐ (v1.0.0 이후)
+- `\shp` 전체 속성: 그림자·3D·곡선 경로(polyline/spline)·텍스트 레이아웃 등
+- `\object` OLE 데이터 완전 복원: 바이너리 역직렬화 + 뷰어 연동
 
 **F2 HWP import/export** ☐ (v1.0.0 이후)
 - `tools/PolyDonky.Convert.Hwp` CLI: 자체 HWP 파서 구현 예정

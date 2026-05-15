@@ -50,6 +50,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **RTF import 구현 (`DocReader`)**: `.rtf → .iwpf` 방향 변환기 추가. 그룹 스택 기반 RTF 파서로 폰트/색상 테이블, 텍스트·서식(굵기·기울임·밑줄·취소선·폰트 크기·색상·정렬·줄간격) 파싱 지원. `\fonttbl`, `\colortbl`, `\*` 헤더 그룹 자동 스킵. `\'XX` ANSI 및 `\uN` 유니코드 디코딩 포함. (`tools/PolyDonky.Convert.Doc/DocReader.cs`, `Program.cs`)
 
+- **RTF 도형(`\shp`)·OLE 개체(`\object`) 아웃라인 지원**: `DocReader`에서 `\shp` 그룹을 감지해 위치(`\shpleft/top/right/bottom`)·종류(`shapeType` sp 속성)·채우기/선 색상(`fillColor`/`lineColor` ABGR)·선 두께(`lineWidth` EMU)를 파싱하여 `ShapeObject`로 변환. `\object` 그룹은 `OpaqueBlock(Format="rtf", Kind="ole-*")`으로 원본 RTF 조각을 보존. `DocWriter`에서도 `ShapeObject` → `{\shp ...}`, RTF 포맷 `OpaqueBlock` → 원본 재출력, 그 외 `OpaqueBlock` → 플레이스홀더 단락으로 직렬화. v1.0.0 이후: 도형 전체 속성(그림자·3D·경로 등) 및 OLE 데이터 완전 복원 예정. (`tools/PolyDonky.Convert.Doc/DocReader.cs`, `DocWriter.cs`)
+
 - **페이지별 서식 설정 지원**: 물리 페이지마다 독립적인 용지 크기·여백·단 수를 설정 가능. `Section` 단위로 `PageSettings`를 분리 관리하며, 강제 페이지 나누기(`Ctrl+Enter`) 또는 콘텐츠 오버플로 시 이전 페이지 설정을 자동 상속. 커서가 있는 페이지에서 서식 → 용지 설정 시 해당 페이지만 변경. (`PaginatedDocument.cs`, `PerPageDocumentSlice.cs`, `FlowDocumentPaginationAdapter.cs`, `PerPageDocumentSplitter.cs`, `PerPageEditorHost.cs`, `MainWindow.xaml.cs`)
 
 - **서식 툴바 두 번째 행 추가**: 글꼴 이름·크기 콤보박스, 굵게/기울임꼴/밑줄/취소선/위첨자/아래첨자 토글 버튼, 좌·가운데·우·양쪽 정렬 버튼, 글머리 기호·번호 매기기 목록, 들여쓰기/내어쓰기 버튼을 포함한 서식 툴바 행을 메인 창에 추가. RTB 선택 변경 시 버튼 상태가 현재 서식에 맞게 즉시 반영된다. (`MainWindow.xaml`, `MainWindow.xaml.cs`, `ToolbarIcons.xaml`, `Resources.resx`, `Resources.en-US.resx`)

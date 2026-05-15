@@ -8,7 +8,9 @@ namespace PolyDonky.Convert.Doc;
 
 /// <summary>
 /// RTF (Rich Text Format) → IWPF 변환기.
-/// 지원: 글자 서식·단락 서식·위첨자/아래첨자·들여쓰기·리스트·이미지·표·메타데이터.
+/// 지원: 글자 서식·단락 서식·위첨자/아래첨자·들여쓰기·리스트·이미지·표·메타데이터·
+///       도형(\shp, 위치·크기·종류·색상 아웃라인)·OLE 개체(\object, OpaqueBlock 보존).
+/// v1.0.0 이후 계획: \shp 전체 속성(그림자·3D·곡선 경로 등) + \object 데이터 복원.
 /// </summary>
 public class DocReader
 {
@@ -287,6 +289,65 @@ public class DocReader
                         pictDepth  = 1;
                         pictData.Clear();
                         continue;
+                    }
+
+                    // 도형 그룹 (\shp) — 위치·크기·종류·색상 아웃라인 수준 파싱
+                    if (word == "shp")
+                    {
+                        int bracePos = rtf.LastIndexOf('{', pos - word.Length - 2);
+                        if (bracePos >= 0)
+                        {
+                            var (_, ge) = FindGroupBounds(rtf, bracePos);
+                            if (ge > 0)
+                            {
+                                var shape = ParseShapeGroup(rtf.Substring(bracePos, ge - bracePos + 1));
+                                if (shape is not null)
+                                {
+                                    FlushText(text, cur, para);
+                                    CommitPara(ref para, cur, ref tableAcc, ref rowAcc, ref cellAcc, section);
+                                    section.Blocks.Add(shape);
+                                    para = NewPara(cur);
+                                }
+                                pos = ge + 1;
+                                if (stateStack.Count > 0) cur = stateStack.Pop();
+                                continue;
+                            }
+                        }
+                        // 그룹 경계를 못 찾으면 일반 skip
+                        skipDepth = 1; continue;
+                    }
+
+                    // OLE 개체 그룹 (\object) — OpaqueBlock으로 보존
+                    if (word == "object")
+                    {
+                        int bracePos = rtf.LastIndexOf('{', pos - word.Length - 2);
+                        if (bracePos >= 0)
+                        {
+                            var (_, ge) = FindGroupBounds(rtf, bracePos);
+                            if (ge > 0)
+                            {
+                                var grpText = rtf.Substring(bracePos, ge - bracePos + 1);
+                                string oleKind = grpText.Contains(@"\objemb") ? "ole-embedded"
+                                              : grpText.Contains(@"\objhtml") ? "ole-html"
+                                              : grpText.Contains(@"\objocx")  ? "ole-ocx"
+                                              : "ole-unknown";
+                                var opaque = new OpaqueBlock
+                                {
+                                    Format       = "rtf",
+                                    Kind         = oleKind,
+                                    Xml          = grpText,
+                                    DisplayLabel = "[OLE 개체]",
+                                };
+                                FlushText(text, cur, para);
+                                CommitPara(ref para, cur, ref tableAcc, ref rowAcc, ref cellAcc, section);
+                                section.Blocks.Add(opaque);
+                                para = NewPara(cur);
+                                pos = ge + 1;
+                                if (stateStack.Count > 0) cur = stateStack.Pop();
+                                continue;
+                            }
+                        }
+                        skipDepth = 1; continue;
                     }
 
                     FlushText(text, cur, para);
@@ -591,6 +652,76 @@ public class DocReader
         IndentRight = s.IndentRight,
         IndentFirst = s.IndentFirst,
     };
+
+    // ── 도형 파싱 (아웃라인) ────────────────────────────────────────────────────
+
+    private static ShapeObject? ParseShapeGroup(string grp)
+    {
+        var shape = new ShapeObject();
+
+        // 위치·크기 (twips → mm)
+        int left = 0, top = 0, right = 0, bottom = 0;
+        if (TryExtractInt(grp, @"\\shpleft(-?\d+)",   out int l)) left   = l;
+        if (TryExtractInt(grp, @"\\shptop(-?\d+)",    out int t)) top    = t;
+        if (TryExtractInt(grp, @"\\shpright(-?\d+)",  out int r)) right  = r;
+        if (TryExtractInt(grp, @"\\shpbottom(-?\d+)", out int b)) bottom = b;
+
+        shape.OverlayXMm = left   * TwipsToMm;
+        shape.OverlayYMm = top    * TwipsToMm;
+        shape.WidthMm    = Math.Max(10, (right  - left) * TwipsToMm);
+        shape.HeightMm   = Math.Max(5,  (bottom - top)  * TwipsToMm);
+
+        // 도형 종류 (\sp{\sn shapeType}{\sv N})
+        var stm = Regex.Match(grp, @"\\sn\s+shapeType.*?\\sv\s+(-?\d+)", RegexOptions.Singleline);
+        if (stm.Success && int.TryParse(stm.Groups[1].Value, out int stVal))
+            shape.Kind = RtfShapeTypeToKind(stVal);
+
+        // 채우기 색상 (ABGR int → #RRGGBB)
+        var fcm = Regex.Match(grp, @"\\sn\s+fillColor.*?\\sv\s+(-?\d+)", RegexOptions.Singleline);
+        if (fcm.Success && int.TryParse(fcm.Groups[1].Value, out int fc))
+            shape.FillColor = AbgrIntToHex(fc);
+
+        // 선 색상
+        var lcm = Regex.Match(grp, @"\\sn\s+lineColor.*?\\sv\s+(-?\d+)", RegexOptions.Singleline);
+        if (lcm.Success && int.TryParse(lcm.Groups[1].Value, out int lc))
+            shape.StrokeColor = AbgrIntToHex(lc);
+
+        // 선 두께 (\sp{\sn lineWidth}{\sv N}), 단위 EMU → pt (914400 EMU = 72pt)
+        var lwm = Regex.Match(grp, @"\\sn\s+lineWidth.*?\\sv\s+(\d+)", RegexOptions.Singleline);
+        if (lwm.Success && int.TryParse(lwm.Groups[1].Value, out int lw) && lw > 0)
+            shape.StrokeThicknessPt = lw / 12700.0;  // 12700 EMU = 1pt
+
+        return shape;
+    }
+
+    private static ShapeKind RtfShapeTypeToKind(int shapeType) => shapeType switch
+    {
+        1  => ShapeKind.Rectangle,
+        2  => ShapeKind.RoundedRect,
+        3  => ShapeKind.Ellipse,
+        4  => ShapeKind.Polygon,       // Diamond
+        5  => ShapeKind.Triangle,
+        6  => ShapeKind.Triangle,      // RightTriangle
+        20 => ShapeKind.Line,
+        22 => ShapeKind.Line,          // BentConnector (화살표 포함)
+        75 => ShapeKind.Star,
+        _  => ShapeKind.Rectangle,
+    };
+
+    private static string AbgrIntToHex(int abgr)
+    {
+        byte r = (byte)( abgr        & 0xFF);
+        byte g = (byte)((abgr >>  8) & 0xFF);
+        byte b = (byte)((abgr >> 16) & 0xFF);
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
+
+    private static bool TryExtractInt(string text, string pattern, out int value)
+    {
+        var m = Regex.Match(text, pattern);
+        if (m.Success && int.TryParse(m.Groups[1].Value, out value)) return true;
+        value = 0; return false;
+    }
 
     // ── 유틸 ────────────────────────────────────────────────────────────────────
 
