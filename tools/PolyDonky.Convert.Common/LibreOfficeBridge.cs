@@ -75,7 +75,7 @@ public static class LibreOfficeBridge
         var safeInput = Path.Combine(outDir, "lo_input" + safeExt);
         File.Copy(inputPath, safeInput, overwrite: true);
 
-        var psi = BuildProcessStartInfo(sofficeBin);
+        var psi = BuildProcessStartInfo(sofficeBin, outDir);
         psi.ArgumentList.Add("--convert-to");
         psi.ArgumentList.Add("docx:MS Word 2007 XML");
         psi.ArgumentList.Add("--outdir");
@@ -149,7 +149,7 @@ public static class LibreOfficeBridge
             _ => throw new ArgumentException($"지원하지 않는 출력 포맷: {targetExt}"),
         };
 
-        var psi = BuildProcessStartInfo(sofficeBin);
+        var psi = BuildProcessStartInfo(sofficeBin, outDir);
         psi.ArgumentList.Add("--convert-to");
         psi.ArgumentList.Add(filterSpec);
         psi.ArgumentList.Add("--outdir");
@@ -192,9 +192,14 @@ public static class LibreOfficeBridge
         return outFile;
     }
 
-    private static ProcessStartInfo BuildProcessStartInfo(string sofficeBin)
+    private static ProcessStartInfo BuildProcessStartInfo(string sofficeBin, string workDir)
     {
         var programDir = Path.GetDirectoryName(sofficeBin) ?? "";
+
+        // Create isolated temp profile so LibreOffice doesn't depend on user's profile directory.
+        var userInstallDir = Path.Combine(workDir, "lo-user-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(userInstallDir);
+        var userInstallUri = "file:///" + userInstallDir.Replace('\\', '/');
 
         var psi = new ProcessStartInfo
         {
@@ -217,8 +222,7 @@ public static class LibreOfficeBridge
         }
 
         // LibreOffice bundles its own Python (e.g. program\python-core-3.x.y\).
-        // Set PYTHONHOME to that directory so Python finds its stdlib regardless of
-        // any system Python installation that might set a conflicting PYTHONHOME.
+        // Set PYTHONHOME to that directory so Python finds its stdlib.
         if (!string.IsNullOrEmpty(programDir))
         {
             var coreDirs = Directory.GetDirectories(programDir, "python-core-*");
@@ -237,6 +241,7 @@ public static class LibreOfficeBridge
 
         psi.ArgumentList.Add("--headless");
         psi.ArgumentList.Add("--norestore");
+        psi.ArgumentList.Add($"-env:UserInstallation={userInstallUri}");
         return psi;
     }
 }
