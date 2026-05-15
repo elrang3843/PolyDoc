@@ -75,7 +75,7 @@
             <Hyperlink NavigateUri="https://www.libreoffice.org/download/"
                        RequestNavigate="OnLibreOfficeDownloadClick"
                        Foreground="{DynamicResource Primary}">
-                <Run Text="{Binding SettingsLibreOfficeDownload, Source={x:Static svc:LocalizedStrings.Instance}}" />
+                <Run Text="{Binding SettingsLibreOfficeDownload, Source={x:Static svc:LocalizedStrings.Instance}, Mode=OneWay}" />
             </Hyperlink>
         </TextBlock>
 
