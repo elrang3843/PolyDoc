@@ -222,6 +222,15 @@ public class DocWriter
         }
         sb.AppendLine("}");
 
+        // Highlight color table (배경색용)
+        sb.Append(@"{\*\colortbl0");  // Index 0: None
+        for (int i = 0; i < StandardHighlightColors.Length; i++)
+        {
+            var color = StandardHighlightColors[i];
+            sb.Append($@";\red{color.R}\green{color.G}\blue{color.B}");
+        }
+        sb.AppendLine("}");
+
         sb.AppendLine(@"\viewkind4\uc1");
 
         // Content
