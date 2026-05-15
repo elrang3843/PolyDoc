@@ -2889,17 +2889,9 @@ public partial class MainWindow : Window
         var rtb = GetActiveTextEditor();
         var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
-        // Selection 보존: combo box 포커스로 인해 손실되었을 수 있으므로,
-        // 먼저 RichTextBox 에 포커스를 주고 selection 을 확인한다.
-        rtb.Focus();
-
-        // Selection 이 있을 때만 적용 (메뉴 글자서식 과 동일한 방식)
-        if (!rtb.Selection.IsEmpty)
-        {
-            rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
-        }
-
+        rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
         _viewModel?.MarkDirty();
+        rtb.Focus();
     }
 
     private void OnFormatChar(object sender, RoutedEventArgs e)
