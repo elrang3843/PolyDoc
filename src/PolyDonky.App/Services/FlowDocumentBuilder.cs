@@ -975,7 +975,22 @@ public static class FlowDocumentBuilder
             if (run.Style.Foreground is { } fg)
                 wr.Foreground = new WpfMedia.SolidColorBrush(
                     WpfMedia.Color.FromArgb(fg.A, fg.R, fg.G, fg.B));
-            tb.Inlines.Add(wr);
+
+            // 배경색이 있으면 Span으로 감싸기 (Run에는 Background 속성이 없음)
+            if (run.Style.Background is { } bg)
+            {
+                var span = new Wpf.Span
+                {
+                    Background = new WpfMedia.SolidColorBrush(
+                        WpfMedia.Color.FromArgb(bg.A, bg.R, bg.G, bg.B))
+                };
+                span.Inlines.Add(wr);
+                tb.Inlines.Add(span);
+            }
+            else
+            {
+                tb.Inlines.Add(wr);
+            }
         }
 
         return tb;
