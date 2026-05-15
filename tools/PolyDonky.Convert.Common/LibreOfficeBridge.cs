@@ -213,12 +213,22 @@ public static class LibreOfficeBridge
             CreateNoWindow         = true,
         };
 
-        // Prepend LibreOffice's program dir to PATH so its DLLs resolve correctly.
+        // Prepend LibreOffice's program dir to PATH, but remove user Python paths that might conflict.
         if (!string.IsNullOrEmpty(programDir))
         {
             var existing = Environment.GetEnvironmentVariable("PATH") ?? "";
-            if (!existing.Contains(programDir, StringComparison.OrdinalIgnoreCase))
-                psi.Environment["PATH"] = programDir + Path.PathSeparator + existing;
+            var pathParts = existing.Split(Path.PathSeparator);
+
+            // Filter out Python-related paths (user installations, virtual envs, etc) that conflict
+            // with LibreOffice's bundled Python.
+            var filtered = pathParts
+                .Where(p => !p.Contains("Python", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // Prepend LibreOffice program dir
+            filtered.Insert(0, programDir);
+
+            psi.Environment["PATH"] = string.Join(Path.PathSeparator.ToString(), filtered);
         }
 
         // LibreOffice bundles its own Python (e.g. program\python-core-3.x.y\).
