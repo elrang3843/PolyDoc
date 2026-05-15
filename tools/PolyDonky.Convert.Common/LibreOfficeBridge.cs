@@ -235,7 +235,7 @@ public static class LibreOfficeBridge
 
         psi.ArgumentList.Add("--headless");
         psi.ArgumentList.Add("--norestore");
-        psi.ArgumentList.Add($"--env:UserInstallation={userInstallUri}");
+        psi.ArgumentList.Add($"-env:UserInstallation={userInstallUri}");
         return psi;
     }
 }
