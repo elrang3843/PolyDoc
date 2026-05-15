@@ -69,6 +69,7 @@ public class DocWriter
     public void Write(PolyDonkyument doc, Stream output)
     {
         LogDebug("=== DOC Writer Started ===");
+        Console.Error.WriteLine($"[DocWriter] Debug log: {DebugLogPath}");
         _colorTable.Clear();
         _fontTable.Clear();
 
