@@ -17,25 +17,26 @@ public class DocWriter
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
 
-    // Word RTF 표준 highlight 색상 팔레트
+    // Word RTF 표준 highlight 색상 팔레트 (인덱스 0은 "없음")
     private static readonly RtfColor[] StandardHighlightColors = new[]
     {
-        new RtfColor(0,   0,   0),      // 0: Black
-        new RtfColor(0,   0, 255),      // 1: Blue
-        new RtfColor(0, 255, 255),      // 2: Cyan
-        new RtfColor(0, 128,   0),      // 3: Dark Green
-        new RtfColor(255,   0, 255),    // 4: Magenta
-        new RtfColor(255,   0,   0),    // 5: Red
-        new RtfColor(255, 255,   0),    // 6: Yellow
-        new RtfColor(255, 255, 255),    // 7: White
-        new RtfColor(128, 128, 128),    // 8: Gray
+        // 0은 "없음" - 색상 정의 없음
+        new RtfColor(0,   0,   0),      // 1: Black
+        new RtfColor(0,   0, 255),      // 2: Blue
+        new RtfColor(0, 255, 255),      // 3: Cyan
+        new RtfColor(0, 128,   0),      // 4: Dark Green
+        new RtfColor(255,   0, 255),    // 5: Magenta
+        new RtfColor(255,   0,   0),    // 6: Red
+        new RtfColor(255, 255,   0),    // 7: Yellow
+        new RtfColor(255, 255, 255),    // 8: White
+        new RtfColor(128, 128, 128),    // 9: Gray
     };
 
-    /// <summary>RGB 색상을 가장 가까운 표준 highlight 색상으로 변환.</summary>
+    /// <summary>RGB 색상을 가장 가까운 표준 highlight 색상으로 변환 (1-9).</summary>
     private static int MapToStandardHighlightColor(Color color)
     {
         double minDistance = double.MaxValue;
-        int bestIndex = 0;
+        int bestIndex = 1;  // 기본값은 1 (Black)
 
         for (int i = 0; i < StandardHighlightColors.Length; i++)
         {
@@ -48,7 +49,7 @@ public class DocWriter
             if (distance < minDistance)
             {
                 minDistance = distance;
-                bestIndex = i;
+                bestIndex = i + 1;  // 1부터 시작
             }
         }
 
