@@ -19,25 +19,34 @@ public static class LibreOfficeBridge
     public static string? FindSOffice()
     {
         // 1순위: 환경변수 (메인 앱이 주입)
+        // LIBREOFFICE_PATH 는 설치 폴더를 가리킨다 (예: C:\Program Files\LibreOffice).
+        // Windows 표준 설치에서 soffice.exe 는 program\ 하위에 있다.
         var envPath = Environment.GetEnvironmentVariable("LIBREOFFICE_PATH");
         if (!string.IsNullOrEmpty(envPath))
         {
-            var envExe = Path.Combine(envPath, "bin", "soffice.exe");
-            if (File.Exists(envExe)) return envExe;
-
-            var envBin = Path.Combine(envPath, "bin", "soffice");
-            if (File.Exists(envBin)) return envBin;
+            string[] envCandidates =
+            [
+                Path.Combine(envPath, "program", "soffice.exe"),  // Windows 표준
+                Path.Combine(envPath, "program", "soffice"),      // Linux
+                Path.Combine(envPath, "bin",     "soffice.exe"),  // 구형/대안
+                Path.Combine(envPath, "bin",     "soffice"),      // Linux 대안
+                Path.Combine(envPath,            "soffice.exe"),  // envPath 가 program 폴더인 경우
+                Path.Combine(envPath,            "soffice"),
+            ];
+            foreach (var c in envCandidates)
+                if (File.Exists(c)) return c;
         }
 
         // 2순위: 일반 설치 경로
         string[] commonPaths =
-        {
-            @"C:\Program Files\LibreOffice\bin\soffice.exe",
-            @"C:\Program Files (x86)\LibreOffice\bin\soffice.exe",
+        [
+            @"C:\Program Files\LibreOffice\program\soffice.exe",
+            @"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
             "/usr/bin/soffice",
             "/usr/local/bin/soffice",
+            "/opt/libreoffice/program/soffice",
             "/opt/libreoffice/bin/soffice",
-        };
+        ];
 
         foreach (var p in commonPaths)
             if (File.Exists(p)) return p;

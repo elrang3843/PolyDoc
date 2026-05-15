@@ -39,16 +39,18 @@ public static class LibreOfficeLocator
 
         try
         {
-            // Windows: soffice.exe (bin 폴더)
-            var exePath = Path.Combine(path, "bin", "soffice.exe");
-            if (File.Exists(exePath))
-                return true;
-
-            // Fallback: soffice (Linux 호환성)
-            var sOfficePath = Path.Combine(path, "bin", "soffice");
-            if (File.Exists(sOfficePath))
-                return true;
-
+            // 탐색 순서: program\ (Windows 표준) → bin\ (일부 배포) → 직접 경로
+            string[] candidates =
+            [
+                Path.Combine(path, "program", "soffice.exe"),  // Windows 표준
+                Path.Combine(path, "program", "soffice"),      // Linux
+                Path.Combine(path, "bin",     "soffice.exe"),  // 구형/대안
+                Path.Combine(path, "bin",     "soffice"),      // Linux 대안
+                Path.Combine(path,            "soffice.exe"),  // path 자체가 program 폴더인 경우
+                Path.Combine(path,            "soffice"),
+            ];
+            foreach (var c in candidates)
+                if (File.Exists(c)) return true;
             return false;
         }
         catch
@@ -65,33 +67,39 @@ public static class LibreOfficeLocator
     {
         try
         {
-            // 64비트 레지스트리
-            var key64 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\LibreOffice\UNO\InstallPath");
-            if (key64?.GetValue("") is string path64 && !string.IsNullOrEmpty(path64))
-                return path64;
-
-            // 32비트 레지스트리 (WOW6432Node)
-            var key32 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\LibreOffice\UNO\InstallPath");
-            if (key32?.GetValue("") is string path32 && !string.IsNullOrEmpty(path32))
-                return path32;
-
-            // 다른 레지스트리 위치 시도
-            var keyAlt = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\LibreOffice");
-            if (keyAlt != null)
+            // InstallPath 는 "C:\Program Files\LibreOffice\program" 처럼 program 폴더를 가리킬 수 있음.
+            // ValidatePath 가 그 경로 자체에서 soffice.exe 를 찾거나, 부모 폴더에서 program\soffice.exe 를 찾음.
+            string?[] candidates =
+            [
+                GetRegValue(@"SOFTWARE\LibreOffice\UNO\InstallPath", ""),
+                GetRegValue(@"SOFTWARE\WOW6432Node\LibreOffice\UNO\InstallPath", ""),
+                GetRegValue(@"SOFTWARE\LibreOffice\UNO\InstallPath", null),
+                GetRegValue(@"SOFTWARE\WOW6432Node\LibreOffice\UNO\InstallPath", null),
+            ];
+            foreach (var p in candidates)
             {
-                foreach (var valueName in keyAlt.GetValueNames())
-                {
-                    if (keyAlt.GetValue(valueName) is string altPath && !string.IsNullOrEmpty(altPath))
-                        return altPath;
-                }
+                if (string.IsNullOrEmpty(p)) continue;
+                // 레지스트리가 program 폴더를 가리키는 경우 부모(설치 루트)도 시도
+                if (ValidatePath(p)) return p;
+                var parent = Path.GetDirectoryName(p);
+                if (!string.IsNullOrEmpty(parent) && ValidatePath(parent)) return parent;
             }
-
             return null;
         }
         catch
         {
             return null;
         }
+    }
+
+    private static string? GetRegValue(string subKey, string? valueName)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(subKey);
+            return key?.GetValue(valueName ?? "") as string;
+        }
+        catch { return null; }
     }
 
     /// <summary>
@@ -103,8 +111,10 @@ public static class LibreOfficeLocator
         {
             @"C:\Program Files\LibreOffice",
             @"C:\Program Files (x86)\LibreOffice",
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "LibreOffice"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),    "LibreOffice"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "LibreOffice"),
+            // LocalAppData 하위 사용자 설치 경로 (일부 버전)
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "LibreOffice"),
         };
 
         foreach (var path in commonPaths)
