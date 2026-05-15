@@ -147,12 +147,24 @@ public class DocWriter
                             }
 
                             // 하이라이트 테이블에 배경색 추가 (Background)
-                            if (runInfo.Style.Background.HasValue)
+                            // Run 레벨 배경색 우선, 없으면 Paragraph 레벨 배경색 사용
+                            var bgColor = runInfo.Style.Background;
+                            if (!bgColor.HasValue && info.Style?.BackgroundColor != null)
+                            {
+                                // Paragraph 레벨 배경색을 Run에 적용
+                                try
+                                {
+                                    bgColor = Core.Color.FromHex(info.Style.BackgroundColor);
+                                }
+                                catch { }
+                            }
+
+                            if (bgColor.HasValue)
                             {
                                 // 가장 가까운 표준 highlight 색상으로 매핑
-                                int highlightIndex = MapToStandardHighlightColor(runInfo.Style.Background.Value);
+                                int highlightIndex = MapToStandardHighlightColor(bgColor.Value);
                                 runInfo.BackgroundColorIndex = highlightIndex;
-                                LogDebug($"Background color detected: RGB({runInfo.Style.Background.Value.R},{runInfo.Style.Background.Value.G},{runInfo.Style.Background.Value.B}) -> highlight index {highlightIndex}");
+                                LogDebug($"Background color detected: RGB({bgColor.Value.R},{bgColor.Value.G},{bgColor.Value.B}) -> highlight index {highlightIndex}");
                             }
 
                             info.Runs.Add(runInfo);
