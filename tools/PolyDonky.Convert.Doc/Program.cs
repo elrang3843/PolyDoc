@@ -4,13 +4,14 @@ using PolyDonky.Convert.Doc;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 
-// PolyDonky.Convert.Doc — IWPF ↔ DOC 변환 전용 콘솔 도구.
+// PolyDonky.Convert.Doc — IWPF ↔ RTF 변환 전용 콘솔 도구.
 // CLAUDE.md §3 의 외부 변환 모듈 분리 원칙: 메인 앱은 IWPF/MD/TXT 만 직접 처리하고
-// DOC 는 이 CLI 가 처리한다.
+// RTF 는 이 CLI 가 처리한다.
 //
 // 변환 파이프라인:
-//   *.doc → *.iwpf : DocReader (직접 파서) → IwpfWriter
-//   *.iwpf → *.doc : IwpfReader → DocWriter (NPOI) → 저장
+//   *.iwpf → *.rtf : IwpfReader → DocWriter (RTF 생성기) → 저장
+//
+// 참고: DOC (Word 97-2003 OLE2 포맷)는 v1.0.0 이후에 지원 예정 (Aspose.Words)
 //
 // 사용법:
 //   PolyDonky.Convert.Doc <input> <output>
@@ -21,6 +22,11 @@ using PolyDonky.Iwpf;
 //   0 성공  2 인자 오류  3 지원하지 않는 변환 쌍
 //   4 입출력 실패  5 변환 실패
 // (상수는 PolyDonky.Convert.Common.ConverterExitCodes 에 정의됨)
+//
+// RTF 형식 특징:
+//   - 배경색(하이라이트) 완벽 지원
+//   - Word 97 이상에서 100% 호환
+//   - 텍스트 기반 형식, 가볍고 안정적
 
 try { Console.OutputEncoding = Encoding.UTF8; } catch { }
 
@@ -39,7 +45,7 @@ if (args.Length == 1 && (args[0] is "--help" or "-h" or "/?"))
 if (args.Length != 2)
 {
     Console.Error.WriteLine("Usage: PolyDonky.Convert.Doc <input> <output>");
-    Console.Error.WriteLine("  Supported: .iwpf <-> .doc");
+    Console.Error.WriteLine("  Supported: .iwpf → .rtf");
     return ConverterExitCodes.BadArgs;
 }
 
@@ -65,12 +71,12 @@ if (string.Equals(inPath, outPath, StringComparison.OrdinalIgnoreCase))
     return ConverterExitCodes.BadArgs;
 }
 
-// 현재 단계: IWPF → DOC만 지원 (읽기는 나중)
-bool isExport = inExt == "iwpf" && outExt == "doc";
+// 현재 단계: IWPF → RTF만 지원
+bool isExport = inExt == "iwpf" && outExt == "rtf";
 if (!isExport)
 {
     Console.Error.WriteLine($"지원하지 않는 변환: .{inExt} → .{outExt}");
-    Console.Error.WriteLine("  지원: .iwpf → .doc (현재 단계)");
+    Console.Error.WriteLine("  지원: .iwpf → .rtf");
     return ConverterExitCodes.UnsupportedOp;
 }
 
@@ -104,7 +110,7 @@ try
     using (var fs = File.OpenRead(inPath))
         doc = new IwpfReader().Read(fs);
 
-    ConverterProgress.Write(50, "DOC 로 변환 중");
+    ConverterProgress.Write(50, "RTF 로 변환 중");
     using (var ofs = File.Create(outPath))
         new DocWriter().Write(doc, ofs);
 
@@ -137,16 +143,16 @@ finally
 
 static void PrintHelp()
 {
-    Console.WriteLine("PolyDonky.Convert.Doc — IWPF ↔ DOC 변환기");
+    Console.WriteLine("PolyDonky.Convert.Doc — IWPF ↔ RTF 변환기");
     Console.WriteLine();
     Console.WriteLine("사용법:");
     Console.WriteLine("  PolyDonky.Convert.Doc <input> <output>");
     Console.WriteLine();
     Console.WriteLine("변환 쌍 (현재 단계):");
-    Console.WriteLine("  *.iwpf → *.doc  : export (텍스트)");
+    Console.WriteLine("  *.iwpf → *.rtf  : export (배경색 지원)");
     Console.WriteLine();
     Console.WriteLine("향후:");
-    Console.WriteLine("  *.doc  → *.iwpf : import (파서 구현 예정)");
+    Console.WriteLine("  *.iwpf → *.doc  : export (Word 97-2003 포맷, v1.0.0 이후)");
     Console.WriteLine();
     Console.WriteLine("종료 코드:");
     Console.WriteLine("  0  성공");

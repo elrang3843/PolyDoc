@@ -15,22 +15,10 @@ public class DocWriter
     private List<RtfColor> _colorTable = new();
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
-    private static readonly string DebugLogPath = @"D:\Temp\PolyDonky_DocConverter.log";
-
-    private static void LogDebug(string message)
-    {
-        try
-        {
-            Directory.CreateDirectory(@"D:\Temp");  // 디렉터리가 없으면 생성
-            File.AppendAllText(DebugLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n");
-        }
-        catch { }  // 로깅 실패는 무시
-    }
 
 
     public void Write(PolyDonkyument doc, Stream output)
     {
-        LogDebug("=== DOC Writer Started ===");
         _colorTable.Clear();
         _fontTable.Clear();
 
@@ -134,7 +122,6 @@ public class DocWriter
                                 {
                                     runInfo.BackgroundColorIndex = idx;
                                 }
-                                LogDebug($"Background color detected: RGB({bgColor.Value.R},{bgColor.Value.G},{bgColor.Value.B}) -> color table index {runInfo.BackgroundColorIndex}");
                             }
 
                             info.Runs.Add(runInfo);
@@ -237,11 +224,9 @@ public class DocWriter
 
                 // 배경색은 Run 시작 부분에 먼저 지정
                 bool hasBackground = run.BackgroundColorIndex > 0;
-                LogDebug($"Text '{run.Text}' BackgroundColorIndex={run.BackgroundColorIndex}");
                 if (hasBackground)
                 {
                     sb.Append($@"\cb{run.BackgroundColorIndex}");
-                    LogDebug($"Applied \\cb{run.BackgroundColorIndex} to text: {run.Text}");
                 }
 
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
