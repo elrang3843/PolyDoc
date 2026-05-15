@@ -2870,18 +2870,14 @@ public partial class MainWindow : Window
     private void OnToolbarFontSizeSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (_suppressToolbarUpdate) return;
+        var rtb = GetActiveTextEditor();
+
+        // ApplyPropertyValue 호출 직전 최신값 읽기
         var text = CboToolbarFontSize.Text?.Trim();
         if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var pt)
             || pt < 1 || pt > 999) return;
-        var rtb = GetActiveTextEditor();
-
-        // ApplyPropertyValue 호출 직전에 combo box 값을 다시 읽어서 최신값 사용
-        var currentText = CboToolbarFontSize.Text?.Trim();
-        if (!double.TryParse(currentText, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var currentPt)
-            || currentPt < 1 || currentPt > 999) return;
-        var dip = Services.FlowDocumentBuilder.PtToDip(currentPt);
+        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
         _viewModel?.MarkDirty();
@@ -2891,18 +2887,14 @@ public partial class MainWindow : Window
     private void OnToolbarFontSizeKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Return && e.Key != Key.Enter) return;
+        var rtb = GetActiveTextEditor();
+
+        // ApplyPropertyValue 호출 직전 최신값 읽기
         var text = CboToolbarFontSize.Text?.Trim();
         if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var pt)
             || pt < 1 || pt > 999) return;
-        var rtb = GetActiveTextEditor();
-
-        // ApplyPropertyValue 호출 직전에 combo box 값을 다시 읽어서 최신값 사용
-        var currentText = CboToolbarFontSize.Text?.Trim();
-        if (!double.TryParse(currentText, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var currentPt)
-            || currentPt < 1 || currentPt > 999) return;
-        var dip = Services.FlowDocumentBuilder.PtToDip(currentPt);
+        var dip = Services.FlowDocumentBuilder.PtToDip(pt);
 
         rtb.Selection.ApplyPropertyValue(System.Windows.Documents.TextElement.FontSizeProperty, dip);
         _viewModel?.MarkDirty();
