@@ -235,9 +235,10 @@ public class DocWriter
                 else
                     sb.Append(@"\cf0");
 
-                // 배경색 (color table 사용)
+                // 배경색은 Run 시작 부분에 먼저 지정
+                bool hasBackground = run.BackgroundColorIndex > 0;
                 LogDebug($"Text '{run.Text}' BackgroundColorIndex={run.BackgroundColorIndex}");
-                if (run.BackgroundColorIndex > 0)
+                if (hasBackground)
                 {
                     sb.Append($@"\cb{run.BackgroundColorIndex}");
                     LogDebug($"Applied \\cb{run.BackgroundColorIndex} to text: {run.Text}");
@@ -274,6 +275,10 @@ public class DocWriter
                     sb.Append(@"\ul0");
                 if (run.Style.Strikethrough)
                     sb.Append(@"\strike0");
+
+                // 배경색 리셋 (중요: 다음 Run에 배경색이 상속되지 않도록)
+                if (hasBackground)
+                    sb.Append(@"\cb0");
 
                 sb.Append(" ");
             }
