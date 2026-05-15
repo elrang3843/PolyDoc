@@ -16,12 +16,13 @@ public class DocWriter
     private List<RtfColor> _highlightTable = new();  // 배경색 전용 테이블
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
-    private static readonly string DebugLogPath = Path.Combine(Path.GetTempPath(), "PolyDonky_DocConverter.log");
+    private static readonly string DebugLogPath = @"D:\Temp\PolyDonky_DocConverter.log";
 
     private static void LogDebug(string message)
     {
         try
         {
+            Directory.CreateDirectory(@"D:\Temp");  // 디렉터리가 없으면 생성
             File.AppendAllText(DebugLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n");
         }
         catch { }  // 로깅 실패는 무시
@@ -69,7 +70,6 @@ public class DocWriter
     public void Write(PolyDonkyument doc, Stream output)
     {
         LogDebug("=== DOC Writer Started ===");
-        Console.Error.WriteLine($"[DocWriter] Debug log: {DebugLogPath}");
         _colorTable.Clear();
         _fontTable.Clear();
 
