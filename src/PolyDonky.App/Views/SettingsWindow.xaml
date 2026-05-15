@@ -71,11 +71,13 @@
                    Text="{Binding SettingsLibreOfficeHelp, Source={x:Static svc:LocalizedStrings.Instance}}"
                    TextWrapping="Wrap"
                    FontSize="11" />
-        <Hyperlink NavigateUri="https://www.libreoffice.org/download/"
-                   RequestNavigate="OnLibreOfficeDownloadClick"
-                   Foreground="{DynamicResource Primary}">
-            <TextBlock Text="{Binding SettingsLibreOfficeDownload, Source={x:Static svc:LocalizedStrings.Instance}}" />
-        </Hyperlink>
+        <TextBlock Margin="0,4,0,0">
+            <Hyperlink NavigateUri="https://www.libreoffice.org/download/"
+                       RequestNavigate="OnLibreOfficeDownloadClick"
+                       Foreground="{DynamicResource Primary}">
+                <Run Text="{Binding SettingsLibreOfficeDownload, Source={x:Static svc:LocalizedStrings.Instance}}" />
+            </Hyperlink>
+        </TextBlock>
 
         <Separator Margin="0,14,0,12" />
 
