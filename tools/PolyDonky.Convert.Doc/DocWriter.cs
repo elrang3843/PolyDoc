@@ -1,22 +1,28 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using PolyDonky.Core;
 
 namespace PolyDonky.Convert.Doc;
 
 /// <summary>
-/// IWPF → DOC (97-2003) 변환기. 텍스트 + 기본 포매팅 지원.
+/// IWPF → DOC (97-2003) 변환기. 텍스트 + 포매팅 지원.
 /// RTF (Rich Text Format) 형식으로 생성하며, Word에서 .doc으로 열 수 있다.
 /// </summary>
 public class DocWriter
 {
     private List<RtfColor> _colorTable = new();
+    private List<string> _fontTable = new();
+    private const string DefaultFont = "Arial";
 
     public void Write(PolyDonkyument doc, Stream output)
     {
         _colorTable.Clear();
+        _fontTable.Clear();
+
         _colorTable.Add(new RtfColor(0, 0, 0));  // Color 0: default black
+        _fontTable.Add(DefaultFont);             // Font 0: default Arial
 
         var paragraphs = ExtractParagraphs(doc);
         var rtf = GenerateRtf(paragraphs);
@@ -52,6 +58,21 @@ public class DocWriter
                                 Text = run.Text,
                                 Style = run.Style ?? new RunStyle()
                             };
+
+                            // 글꼴 테이블에 글꼴 추가
+                            string fontName = !string.IsNullOrEmpty(runInfo.Style.FontFamily)
+                                ? runInfo.Style.FontFamily
+                                : DefaultFont;
+                            int fontIdx = _fontTable.IndexOf(fontName);
+                            if (fontIdx < 0)
+                            {
+                                _fontTable.Add(fontName);
+                                runInfo.FontIndex = _fontTable.Count - 1;
+                            }
+                            else
+                            {
+                                runInfo.FontIndex = fontIdx;
+                            }
 
                             // 색상 테이블에 색 추가
                             if (runInfo.Style.Foreground.HasValue)
@@ -107,8 +128,14 @@ public class DocWriter
         // RTF Header
         sb.AppendLine(@"{\rtf1\ansi\ansicpg1252\deff0");
 
-        // Font table
-        sb.AppendLine(@"{\fonttbl{\f0\fnil\fcharset0 Arial;{\*\fname Arial;}{\falt Helvetica;}}}");
+        // Font table - 동적 생성
+        sb.Append(@"{\fonttbl");
+        for (int i = 0; i < _fontTable.Count; i++)
+        {
+            var font = _fontTable[i];
+            sb.Append($@"{{\f{i}\fnil\fcharset0 {font};}}");
+        }
+        sb.AppendLine("}");
 
         // Color table
         sb.Append(@"{\colortbl");
@@ -153,12 +180,12 @@ public class DocWriter
             if (para.Style.LineHeightFactor > 0)
                 sb.Append($@"\sl{(int)(para.Style.LineHeightFactor * 240)}\slmult1");
 
-            // 기본 글자 속성
-            sb.Append(@"\f0 ");
-
             // Run들 처리
             foreach (var run in para.Runs)
             {
+                // 글꼴 선택
+                sb.Append($@"\f{run.FontIndex}");
+
                 // 글자 색
                 if (run.ColorIndex > 0)
                     sb.Append($@"\cf{run.ColorIndex}");
@@ -252,5 +279,6 @@ public class DocWriter
         public string Text { get; set; } = string.Empty;
         public RunStyle Style { get; set; } = new();
         public int ColorIndex { get; set; } = 0;
+        public int FontIndex { get; set; } = 0;
     }
 }
