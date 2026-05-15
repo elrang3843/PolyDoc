@@ -46,7 +46,9 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
-- **Phase F — RTF export 및 HWP CLI 스텁**: `tools/PolyDonky.Convert.Doc`(RTF 자체 구현) 및 `tools/PolyDonky.Convert.Hwp` 프로젝트 추가. `ExternalConverter.GetConverter`에 `"rtf"`/`"hwp"` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 에 RTF/HWP 항목 추가. (`tools/PolyDonky.Convert.Doc/`, `tools/PolyDonky.Convert.Hwp/`, `ExternalConverter.cs`, `KnownFormats.cs`)
+- **Phase F — RTF import/export 및 HWP CLI 스텁**: `tools/PolyDonky.Convert.Doc`(RTF 자체 구현) 및 `tools/PolyDonky.Convert.Hwp` 프로젝트 추가. `ExternalConverter.GetConverter`에 `"rtf"`/`"hwp"` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 에 RTF/HWP 항목 추가. (`tools/PolyDonky.Convert.Doc/`, `tools/PolyDonky.Convert.Hwp/`, `ExternalConverter.cs`, `KnownFormats.cs`)
+
+- **RTF import 구현 (`DocReader`)**: `.rtf → .iwpf` 방향 변환기 추가. 그룹 스택 기반 RTF 파서로 폰트/색상 테이블, 텍스트·서식(굵기·기울임·밑줄·취소선·폰트 크기·색상·정렬·줄간격) 파싱 지원. `\fonttbl`, `\colortbl`, `\*` 헤더 그룹 자동 스킵. `\'XX` ANSI 및 `\uN` 유니코드 디코딩 포함. (`tools/PolyDonky.Convert.Doc/DocReader.cs`, `Program.cs`)
 
 - **페이지별 서식 설정 지원**: 물리 페이지마다 독립적인 용지 크기·여백·단 수를 설정 가능. `Section` 단위로 `PageSettings`를 분리 관리하며, 강제 페이지 나누기(`Ctrl+Enter`) 또는 콘텐츠 오버플로 시 이전 페이지 설정을 자동 상속. 커서가 있는 페이지에서 서식 → 용지 설정 시 해당 페이지만 변경. (`PaginatedDocument.cs`, `PerPageDocumentSlice.cs`, `FlowDocumentPaginationAdapter.cs`, `PerPageDocumentSplitter.cs`, `PerPageEditorHost.cs`, `MainWindow.xaml.cs`)
 

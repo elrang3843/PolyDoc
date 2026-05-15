@@ -45,7 +45,8 @@ if (args.Length == 1 && (args[0] is "--help" or "-h" or "/?"))
 if (args.Length != 2)
 {
     Console.Error.WriteLine("Usage: PolyDonky.Convert.Doc <input> <output>");
-    Console.Error.WriteLine("  Supported: .iwpf → .rtf");
+    Console.Error.WriteLine("  Supported: .rtf → .iwpf  (import)");
+    Console.Error.WriteLine("             .iwpf → .rtf  (export)");
     return ConverterExitCodes.BadArgs;
 }
 
@@ -71,12 +72,13 @@ if (string.Equals(inPath, outPath, StringComparison.OrdinalIgnoreCase))
     return ConverterExitCodes.BadArgs;
 }
 
-// 현재 단계: IWPF → RTF만 지원
+bool isImport = inExt == "rtf"  && outExt == "iwpf";
 bool isExport = inExt == "iwpf" && outExt == "rtf";
-if (!isExport)
+if (!isImport && !isExport)
 {
     Console.Error.WriteLine($"지원하지 않는 변환: .{inExt} → .{outExt}");
-    Console.Error.WriteLine("  지원: .iwpf → .rtf");
+    Console.Error.WriteLine("  지원: .rtf → .iwpf  (import)");
+    Console.Error.WriteLine("        .iwpf → .rtf  (export)");
     return ConverterExitCodes.UnsupportedOp;
 }
 
@@ -105,14 +107,27 @@ if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
 
 try
 {
-    ConverterProgress.Write(0, "IWPF 읽는 중");
     PolyDonkyument doc;
-    using (var fs = File.OpenRead(inPath))
-        doc = new IwpfReader().Read(fs);
+    if (isImport)
+    {
+        ConverterProgress.Write(0, "RTF 읽는 중");
+        using (var fs = File.OpenRead(inPath))
+            doc = new DocReader().Read(fs);
 
-    ConverterProgress.Write(50, "RTF 로 변환 중");
-    using (var ofs = File.Create(outPath))
-        new DocWriter().Write(doc, ofs);
+        ConverterProgress.Write(80, "IWPF 로 변환 중");
+        using (var ofs = File.Create(outPath))
+            new IwpfWriter().Write(doc, ofs);
+    }
+    else
+    {
+        ConverterProgress.Write(0, "IWPF 읽는 중");
+        using (var fs = File.OpenRead(inPath))
+            doc = new IwpfReader().Read(fs);
+
+        ConverterProgress.Write(50, "RTF 로 변환 중");
+        using (var ofs = File.Create(outPath))
+            new DocWriter().Write(doc, ofs);
+    }
 
     ConverterProgress.Write(100, "완료");
     Console.WriteLine($"OK: {Path.GetFileName(inPath)} → {Path.GetFileName(outPath)}");
@@ -148,8 +163,9 @@ static void PrintHelp()
     Console.WriteLine("사용법:");
     Console.WriteLine("  PolyDonky.Convert.Doc <input> <output>");
     Console.WriteLine();
-    Console.WriteLine("변환 쌍 (현재 단계):");
-    Console.WriteLine("  *.iwpf → *.rtf  : export (배경색 지원)");
+    Console.WriteLine("변환 쌍:");
+    Console.WriteLine("  *.rtf  → *.iwpf : import (텍스트·서식 지원)");
+    Console.WriteLine("  *.iwpf → *.rtf  : export (텍스트·서식·배경색 지원)");
     Console.WriteLine();
     Console.WriteLine("향후 (v1.0.0 이후 언젠가):");
     Console.WriteLine("  *.iwpf → *.doc  : export (Word 97-2003 OLE2 바이너리 포맷)");
