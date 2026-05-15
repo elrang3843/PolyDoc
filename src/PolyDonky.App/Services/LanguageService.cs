@@ -23,9 +23,6 @@ public static class LanguageService
     /// <summary>덮어쓰기 방지: 활성화 시 변환 파일 이름에 자동으로 -번호를 붙인다.</summary>
     public static bool OverwriteProtection { get; private set; }
 
-    /// <summary>LibreOffice 설치 경로 (DOC/HWP 변환용).</summary>
-    public static string? LibreOfficePath { get; private set; }
-
     public static event EventHandler? LanguageChanged;
 
     /// <summary>앱 시작 시 저장된 언어 설정을 불러와 적용한다.</summary>
@@ -41,24 +38,12 @@ public static class LanguageService
                 if (data?.Language == "en-US") lang = Language.English;
                 ShowTypesettingMarks = data?.ShowTypesettingMarks ?? false;
                 OverwriteProtection  = data?.OverwriteProtection  ?? false;
-                LibreOfficePath      = data?.LibreOfficePath;
 
                 // 저장된 테마 복원 (없으면 Light 유지)
                 if (data?.Theme is { } savedTheme &&
                     Enum.TryParse<ThemeService.Theme>(savedTheme, out var t))
                 {
                     ThemeService.Apply(t);
-                }
-            }
-
-            // LibreOffice 경로 자동 탐지 (저장되지 않았거나 유효하지 않으면)
-            if (string.IsNullOrEmpty(LibreOfficePath) || !LibreOfficeLocator.ValidatePath(LibreOfficePath))
-            {
-                var detectedPath = LibreOfficeLocator.DetectLibreOfficePath();
-                if (detectedPath != null)
-                {
-                    LibreOfficePath = detectedPath;
-                    Save(lang);  // 자동 탐지된 경로 저장
                 }
             }
         }
@@ -113,15 +98,6 @@ public static class LanguageService
         Save(_current);
     }
 
-    /// <summary>LibreOffice 경로 설정 변경 시 저장한다.</summary>
-    public static void SetLibreOfficePath(string? path)
-    {
-        if (path != null && !LibreOfficeLocator.ValidatePath(path))
-            throw new ArgumentException("유효하지 않은 LibreOffice 경로");
-        LibreOfficePath = path;
-        Save(_current);
-    }
-
     private static void Save(Language lang)
     {
         try
@@ -133,7 +109,6 @@ public static class LanguageService
                 ShowTypesettingMarks = ShowTypesettingMarks,
                 Theme                = ThemeService.Current.ToString(),
                 OverwriteProtection  = OverwriteProtection,
-                LibreOfficePath      = LibreOfficePath,
             });
             File.WriteAllText(SettingsPath, json);
         }
@@ -146,6 +121,5 @@ public static class LanguageService
         public bool?   ShowTypesettingMarks { get; init; }
         public string? Theme                { get; init; }
         public bool?   OverwriteProtection  { get; init; }
-        public string? LibreOfficePath      { get; init; }
     }
 }

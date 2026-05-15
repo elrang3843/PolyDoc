@@ -151,8 +151,8 @@ static void PrintHelp()
     Console.WriteLine("변환 쌍 (현재 단계):");
     Console.WriteLine("  *.iwpf → *.rtf  : export (배경색 지원)");
     Console.WriteLine();
-    Console.WriteLine("향후:");
-    Console.WriteLine("  *.iwpf → *.doc  : export (Word 97-2003 포맷, v1.0.0 이후)");
+    Console.WriteLine("향후 (v1.0.0 이후 언젠가):");
+    Console.WriteLine("  *.iwpf → *.doc  : export (Word 97-2003 OLE2 바이너리 포맷)");
     Console.WriteLine();
     Console.WriteLine("종료 코드:");
     Console.WriteLine("  0  성공");

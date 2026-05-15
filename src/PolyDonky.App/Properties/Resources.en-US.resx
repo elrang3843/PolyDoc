@@ -205,10 +205,6 @@ Supported range:
   • DOC / DOCX — 2012 or later (Word 2013 / AppVersion 15.0+)
 
 Re-save the file in a recent Hancom Office or Microsoft Word and try again.</value></data>
-  <data name="DlgLibreOfficeNotFoundTitle" xml:space="preserve"><value>LibreOffice Required</value></data>
-  <data name="DlgLibreOfficeNotFoundPrompt" xml:space="preserve"><value>Opening file "{0}" requires LibreOffice.
-
-LibreOffice is not installed. Do you want to open the installation page?</value></data>
   <data name="StatusInsert" xml:space="preserve"><value>INS</value></data>
   <data name="StatusOverwrite" xml:space="preserve"><value>OVR</value></data>
   <data name="StatusDocClosed" xml:space="preserve"><value>Document closed.</value></data>
@@ -504,13 +500,4 @@ Please save as IWPF, DOCX, Markdown, or TXT.</value></data>
   <data name="DictWindowSearchHint"        xml:space="preserve"><value>Enter a word</value></data>
   <data name="DictWindowSearch"            xml:space="preserve"><value>Search</value></data>
   <data name="DictWindowErrNoRuntime"      xml:space="preserve"><value>Could not load WebView2 runtime. Make sure Microsoft Edge is installed.</value></data>
-  <!-- LibreOffice Settings -->
-  <data name="SettingsLibreOffice"         xml:space="preserve"><value>LibreOffice</value></data>
-  <data name="SettingsLibreOfficeDetect"   xml:space="preserve"><value>Detect</value></data>
-  <data name="SettingsLibreOfficeHelp"     xml:space="preserve"><value>LibreOffice is required to convert DOC/HWP files. Click "Detect" to automatically find the installed location, or manually specify the installation path.</value></data>
-  <data name="SettingsLibreOfficeDownload" xml:space="preserve"><value>Download LibreOffice</value></data>
-  <data name="SettingsLibreOfficeNotDetected" xml:space="preserve"><value>(Not installed or could not be detected)</value></data>
-  <data name="SettingsLibreOfficeDetected" xml:space="preserve"><value>LibreOffice detected successfully.</value></data>
-  <data name="SettingsLibreOfficeNotFoundMsg" xml:space="preserve"><value>LibreOffice could not be found. Please install it and try again, or manually specify the installation path.</value></data>
-  <data name="SettingsLibreOfficeError"    xml:space="preserve"><value>LibreOffice path error:</value></data>
 </root>
