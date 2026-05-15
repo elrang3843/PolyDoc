@@ -13,7 +13,6 @@ namespace PolyDonky.Convert.Doc;
 public class DocWriter
 {
     private List<RtfColor> _colorTable = new();
-    private List<RtfColor> _highlightTable = new();  // 배경색 전용 테이블
     private List<string> _fontTable = new();
     private const string DefaultFont = "Arial";
     private static readonly string DebugLogPath = @"D:\Temp\PolyDonky_DocConverter.log";
@@ -28,48 +27,6 @@ public class DocWriter
         catch { }  // 로깅 실패는 무시
     }
 
-    // Word RTF 표준 highlight 색상 팔레트 (인덱스 0은 "없음")
-    private static readonly RtfColor[] StandardHighlightColors = new[]
-    {
-        // 0은 "없음" - 색상 정의 없음
-        new RtfColor(0,   0,   0),      // 1: Black
-        new RtfColor(0,   0, 255),      // 2: Blue
-        new RtfColor(0, 255, 255),      // 3: Cyan
-        new RtfColor(0, 128,   0),      // 4: Dark Green
-        new RtfColor(255,   0, 255),    // 5: Magenta
-        new RtfColor(255,   0,   0),    // 6: Red
-        new RtfColor(255, 255,   0),    // 7: Yellow
-        new RtfColor(128, 255, 255),    // 8: Light Cyan (원본 옥색)
-        new RtfColor(128, 128, 128),    // 9: Gray
-    };
-
-    /// <summary>RGB 색상을 가장 가까운 표준 highlight 색상으로 변환 (1-9).</summary>
-    private static int MapToStandardHighlightColor(Color color)
-    {
-        double minDistance = double.MaxValue;
-        int bestIndex = 1;  // 기본값은 1 (Black)
-
-        LogDebug($"  MapToStandardHighlightColor: Input RGB({color.R},{color.G},{color.B})");
-        for (int i = 0; i < StandardHighlightColors.Length; i++)
-        {
-            var stdColor = StandardHighlightColors[i];
-            double distance = Math.Sqrt(
-                Math.Pow(color.R - stdColor.R, 2) +
-                Math.Pow(color.G - stdColor.G, 2) +
-                Math.Pow(color.B - stdColor.B, 2)
-            );
-            LogDebug($"    Index {i+1}: RGB({stdColor.R},{stdColor.G},{stdColor.B}) distance={distance:F2}");
-            if (distance < minDistance)
-            {
-                minDistance = distance;
-                bestIndex = i + 1;  // 1부터 시작
-                LogDebug($"      -> New best: index {bestIndex}");
-            }
-        }
-        LogDebug($"  Final result: index {bestIndex}");
-
-        return bestIndex;
-    }
 
     public void Write(PolyDonkyument doc, Stream output)
     {
@@ -150,7 +107,7 @@ public class DocWriter
                                 }
                             }
 
-                            // 하이라이트 테이블에 배경색 추가 (Background)
+                            // 색상 테이블에 배경색 추가 (Background)
                             // Run 레벨 배경색 우선, 없으면 Paragraph 레벨 배경색 사용
                             var bgColor = runInfo.Style.Background;
                             if (!bgColor.HasValue && info.Style?.BackgroundColor != null)
@@ -165,10 +122,19 @@ public class DocWriter
 
                             if (bgColor.HasValue)
                             {
-                                // 가장 가까운 표준 highlight 색상으로 매핑
-                                int highlightIndex = MapToStandardHighlightColor(bgColor.Value);
-                                runInfo.BackgroundColorIndex = highlightIndex;
-                                LogDebug($"Background color detected: RGB({bgColor.Value.R},{bgColor.Value.G},{bgColor.Value.B}) -> highlight index {highlightIndex}");
+                                // 색상 테이블에 배경색 추가
+                                var bgRtfColor = new RtfColor(bgColor.Value.R, bgColor.Value.G, bgColor.Value.B);
+                                int idx = _colorTable.FindIndex(c => c.R == bgRtfColor.R && c.G == bgRtfColor.G && c.B == bgRtfColor.B);
+                                if (idx < 0)
+                                {
+                                    _colorTable.Add(bgRtfColor);
+                                    runInfo.BackgroundColorIndex = _colorTable.Count - 1;
+                                }
+                                else
+                                {
+                                    runInfo.BackgroundColorIndex = idx;
+                                }
+                                LogDebug($"Background color detected: RGB({bgColor.Value.R},{bgColor.Value.G},{bgColor.Value.B}) -> color table index {runInfo.BackgroundColorIndex}");
                             }
 
                             info.Runs.Add(runInfo);
@@ -214,20 +180,11 @@ public class DocWriter
         }
         sb.AppendLine("}");
 
-        // Color table
+        // Color table (전경색 + 배경색)
         sb.Append(@"{\colortbl");
         foreach (var color in _colorTable)
         {
             sb.Append($@"\red{color.R}\green{color.G}\blue{color.B};");
-        }
-        sb.AppendLine("}");
-
-        // Highlight color table (배경색용)
-        sb.Append(@"{\*\colortbl0");  // Index 0: None
-        for (int i = 0; i < StandardHighlightColors.Length; i++)
-        {
-            var color = StandardHighlightColors[i];
-            sb.Append($@";\red{color.R}\green{color.G}\blue{color.B}");
         }
         sb.AppendLine("}");
 
@@ -278,12 +235,12 @@ public class DocWriter
                 else
                     sb.Append(@"\cf0");
 
-                // 배경색 (highlight)
+                // 배경색 (color table 사용)
                 LogDebug($"Text '{run.Text}' BackgroundColorIndex={run.BackgroundColorIndex}");
                 if (run.BackgroundColorIndex > 0)
                 {
-                    sb.Append($@"\highlight{run.BackgroundColorIndex}");
-                    LogDebug($"Applied \\highlight{run.BackgroundColorIndex} to text: {run.Text}");
+                    sb.Append($@"\cb{run.BackgroundColorIndex}");
+                    LogDebug($"Applied \\cb{run.BackgroundColorIndex} to text: {run.Text}");
                 }
 
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
