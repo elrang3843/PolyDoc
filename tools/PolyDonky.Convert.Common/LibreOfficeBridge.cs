@@ -82,9 +82,12 @@ public static class LibreOfficeBridge
 
         // soffice --headless --convert-to docx --outdir <dir> <input>
         // 필터: Writer MS Word 2007 XML (DOC/HWP → DOCX 범용)
+        // WorkingDirectory 를 soffice 폴더로 설정해야 LibreOffice 가 자신의 라이브러리를 찾을 수 있다.
+        // ArgumentList 사용 시 필터 이름에 따옴표를 넣으면 안 된다 — ArgumentList 가 자동 처리.
         var psi = new ProcessStartInfo
         {
             FileName               = sofficeBin,
+            WorkingDirectory       = Path.GetDirectoryName(sofficeBin) ?? "",
             UseShellExecute        = false,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
@@ -94,7 +97,7 @@ public static class LibreOfficeBridge
         };
         psi.ArgumentList.Add("--headless");
         psi.ArgumentList.Add("--convert-to");
-        psi.ArgumentList.Add("docx:\"MS Word 2007 XML\"");
+        psi.ArgumentList.Add("docx:MS Word 2007 XML");
         psi.ArgumentList.Add("--outdir");
         psi.ArgumentList.Add(outDir);
         psi.ArgumentList.Add(inputPath);
@@ -164,9 +167,10 @@ public static class LibreOfficeBridge
 
         progress?.Report((70, "LibreOffice 로 최종 포맷 변환 중…"));
 
+        // ArgumentList 사용 시 필터 이름에 따옴표를 포함하지 않는다.
         var filterSpec = targetExt.ToLowerInvariant() switch
         {
-            "doc" => "doc:\"MS Word 97\"",
+            "doc" => "doc:MS Word 97",
             "hwp" => "hwp",
             _ => throw new ArgumentException($"지원하지 않는 출력 포맷: {targetExt}"),
         };
@@ -174,6 +178,7 @@ public static class LibreOfficeBridge
         var psi = new ProcessStartInfo
         {
             FileName               = sofficeBin,
+            WorkingDirectory       = Path.GetDirectoryName(sofficeBin) ?? "",
             UseShellExecute        = false,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
