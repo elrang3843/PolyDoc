@@ -1,7 +1,7 @@
 using System.Text;
 using PolyDonky.Codecs.Docx;
+using PolyDonky.Codecs.Hwpx;
 using PolyDonky.Convert.Common;
-using PolyDonky.Convert.Hwp;
 using PolyDonky.Core;
 using PolyDonky.Iwpf;
 
@@ -10,8 +10,8 @@ using PolyDonky.Iwpf;
 // HWP 는 이 CLI 가 처리한다.
 //
 // 변환 파이프라인:
-//   *.hwp → *.iwpf : (아직 미구현, LibreOffice 필요)
-//   *.iwpf → *.hwp : IwpfReader → HwpWriter (커스텀 구현)
+//   *.hwp → *.iwpf : (아직 미구현)
+//   *.iwpf → *.hwp : IwpfReader → HwpxWriter (HWPX 기반, HWP 호환)
 //
 // 사용법:
 //   PolyDonky.Convert.Hwp <input> <output>
@@ -116,7 +116,7 @@ try
     }
     else // isExport
     {
-        // IWPF → HwpWriter → HWP
+        // IWPF → HwpxWriter (HWPX is compatible with HWP readers) → HWP
         ConverterProgress.Write(0, "IWPF 읽는 중");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
@@ -124,7 +124,7 @@ try
 
         ConverterProgress.Write(50, "HWP 로 변환 중");
         using (var ofs = File.Create(tempOut))
-            new HwpWriter().Write(doc, ofs);
+            new HwpxWriter().Write(doc, ofs);
     }
 
     if (File.Exists(outPath)) File.Delete(outPath);
