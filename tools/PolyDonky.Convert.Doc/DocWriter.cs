@@ -140,6 +140,7 @@ public class DocWriter
                                 // 가장 가까운 표준 highlight 색상으로 매핑
                                 int highlightIndex = MapToStandardHighlightColor(runInfo.Style.Background.Value);
                                 runInfo.BackgroundColorIndex = highlightIndex;
+                                System.Console.Error.WriteLine($"[DEBUG] Background color detected: RGB({runInfo.Style.Background.Value.R},{runInfo.Style.Background.Value.G},{runInfo.Style.Background.Value.B}) -> highlight index {highlightIndex}");
                             }
 
                             info.Runs.Add(runInfo);
@@ -241,8 +242,12 @@ public class DocWriter
                     sb.Append(@"\cf0");
 
                 // 배경색 (highlight)
+                System.Console.Error.WriteLine($"[DEBUG RTF] Text '{run.Text}' BackgroundColorIndex={run.BackgroundColorIndex}");
                 if (run.BackgroundColorIndex > 0)
+                {
                     sb.Append($@"\highlight{run.BackgroundColorIndex}");
+                    System.Console.Error.WriteLine($"[DEBUG RTF] Applied \\highlight{run.BackgroundColorIndex}");
+                }
 
                 // 글자 크기 (RTF는 반포인트 단위, 즉 포인트 * 2)
                 double fontSize = run.Style.FontSizePt;
