@@ -120,6 +120,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **HWPX import 글상자 내용이 본문에 중복 등장하고 사각형 도형으로 표시되던 버그 수정**: `HwpxReader`에서 `<hp:drawText>`의 `subList` 자손이 `insideTextBox` 제외 집합에 추가되지 않아 본문 단락으로 파싱되었고, `ReadTextBox`가 `drawText` 가 아닌 부모 `shapeElem`의 직속 `subList`를 내용으로 읽어 빈 글상자를 만들던 문제. 이제 `ReadTextBox(shapeElem, drawText, ctx)` 3-인수 시그니처로 변경해 `drawText.subList`에서 내용을 올바르게 읽고, `ReadParagraph`·`ReadRun`의 제외 집합도 `"textBox"` 대신 `"drawText"` 태그로 수정. (`src/PolyDonky.Codecs.Hwpx/HwpxReader.cs`)
 
+- **HWP PARA_TEXT 페이로드 텍스트 추출 실패 (메타데이터와 혼재된 구조 처리)**: 태그 상수 교정 이후에도 `ExtractHwpText`가 PARA_TEXT 페이로드에 포함된 메타데이터(제어 구조, 임베디드 카운트)와 실제 UTF-16 LE 텍스트를 구분하지 못해, 중국어 오독 문자(`捤獥汤捯...`)로 표시되던 문제. HWP PARA_TEXT 레이아웃이 복잡(다중 섹션·카운트·메타데이터 혼합)해 정확한 구조 파싱 대신, **슬라이딩 윈도우 스캔** 알고리즘 도입: 2바이트 오프셋마다 UTF-16 LE 디코딩을 시도하고, 한글(U+AC00–U+D7AF) 또는 일반 ASCII(0x0020+) 문자의 연속 스팬을 찾아 **가장 긴 유효 텍스트**를 추출. 이로써 Welcome_to_Hwp.hwp, 한글_테스트1.hwp 등 여러 HWP 파일에서 본문 텍스트가 올바르게 인식됨. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
+
 - **LibreOfficeBridge 및 LibreOfficeLocator 제거**: LibreOffice 미사용 결정에 따라 `LibreOfficeBridge.cs`, `LibreOfficeLocator.cs` 파일 삭제. `LanguageService`의 `LibreOfficePath` 프로퍼티·자동탐지·저장 로직 제거. `ExternalConverter`의 `LIBREOFFICE_PATH` 환경변수 전달 제거. `MainViewModel`의 LibreOffice 특수 오류처리 블록을 일반 `UnsupportedFormatVersionException` 처리로 통합. `SettingsWindow` LibreOffice 섹션(UI·핸들러) 제거. 관련 리소스 키 14개 삭제. (`LibreOfficeBridge.cs`, `LibreOfficeLocator.cs`, `LanguageService.cs`, `ExternalConverter.cs`, `MainViewModel.cs`, `SettingsWindow.xaml`, `SettingsWindow.xaml.cs`, `Resources.resx`, `Resources.en-US.resx`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
 
