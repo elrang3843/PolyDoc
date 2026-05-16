@@ -152,12 +152,23 @@ public sealed class HwpReader : IDocumentReader
         var info = new HwpDocInfo();
         int binSeq = 0; // BIN_DATA records are 1-based sequential in DocInfo
 
+        // DocInfo 태그 요약
+        var docInfoTags = new Dictionary<uint, int>();
+        ForEachRecord(data, (tagId, level, payload) =>
+        {
+            if (!docInfoTags.ContainsKey(tagId))
+                docInfoTags[tagId] = 0;
+            docInfoTags[tagId]++;
+        });
+        HwpLog.Write($"[HwpReader.ParseDocInfo] DocInfo tags: {string.Join(", ", docInfoTags.OrderBy(x => x.Key).Select(x => $"0x{x.Key:X3}(×{x.Value})"))}");
+
         ForEachRecord(data, (tagId, level, payload) =>
         {
             switch (tagId)
             {
                 case TAG_DOCUMENT_PROPERTIES when payload.Length >= 2:
                     info.SectionCount = BitConverter.ToUInt16(payload, 0);
+                    HwpLog.Write($"[HwpReader] TAG_DOCUMENT_PROPERTIES: SectionCount={info.SectionCount}");
                     break;
 
                 case TAG_FACE_NAME:
@@ -250,21 +261,39 @@ public sealed class HwpReader : IDocumentReader
         HwpLog.Write(
             $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}, looking for TAG_PAGE_DEF=0x{TAG_PAGE_DEF:X3}");
 
+        // 모든 레코드 태그 요약
+        var tagCounts = new Dictionary<uint, int>();
+        foreach (var r in recs)
+        {
+            if (!tagCounts.ContainsKey(r.TagId))
+                tagCounts[r.TagId] = 0;
+            tagCounts[r.TagId]++;
+        }
+        foreach (var (tagId, count) in tagCounts.OrderBy(x => x.Key))
+            HwpLog.Write($"  Tag 0x{tagId:X3}: {count} occurrences");
+
         while (i < recs.Count)
         {
             var rec = recs[i];
 
             switch (rec.TagId)
             {
-                case TAG_PAGE_DEF when rec.Payload.Length >= 32 && body.PageDef == null:
-                    HwpLog.Write(
-                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) found at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length}");
-                    body.PageDef = ParsePageDef(rec.Payload);
-                    break;
-
                 case TAG_PAGE_DEF:
                     HwpLog.Write(
-                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length} (skipped: len<32 or already set)");
+                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length}");
+                    if (body.PageDef == null && rec.Payload.Length >= 32)
+                    {
+                        body.PageDef = ParsePageDef(rec.Payload);
+                        HwpLog.Write($"  → ParsePageDef success");
+                    }
+                    else if (rec.Payload.Length < 32)
+                    {
+                        HwpLog.Write($"  → Skipped: payload too short ({rec.Payload.Length}<32)");
+                    }
+                    else
+                    {
+                        HwpLog.Write($"  → Skipped: already set");
+                    }
                     break;
 
                 case TAG_PARA_HEADER:
@@ -303,6 +332,10 @@ public sealed class HwpReader : IDocumentReader
         }
 
         if (current != null) body.Paragraphs.Add(current);
+
+        HwpLog.Write($"[HwpReader] ParseSectionRecords complete: {body.Paragraphs.Count} paragraphs, " +
+            $"{body.Images.Count} images, {body.TextBoxes.Count} textboxes, {body.Shapes.Count} shapes, " +
+            $"PageDef={body.PageDef != null}");
     }
 
     // ── GSO (General Shape Object) control handler ─────────────────────────
