@@ -75,6 +75,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **HWP OLE 객체 위치 정보 보존**: OLE 객체들이 `OpaqueBlock`으로 변환되면서 위치·크기 정보가 손실되던 문제 수정. 이제 OLE 객체도 다른 도형과 같이 `ShapeObject`로 변환되며, `ShapeKind.Ole` 열거형 값으로 구분하고 `OleData` 프로퍼티에 바이너리 데이터를 보존한다. 결과: OLE 객체가 overlay 모드(`InFrontOfText`)로 올바른 X/Y 위치 및 너비·높이로 배치되고, HWP 원본의 절대 좌표가 유지된다. (`src/PolyDonky.Core/ShapeObject.cs`, `src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
 
+- **HWP 중첩 표(nested table) 지원**: HWP 파일의 표 셀 안에 중첩된 표를 올바르게 파싱·변환하도록 수정. `HwpTableCell`에 `Blocks` 프로퍼티 추가하여 단락과 중첩 표을 모두 보관. `ParseTable`에서 셀 내 `TAG_CTRL_HEADER` 컨트롤을 감지해 nested 테이블로 재귀 파싱. 변환 단계에서 `HwpTableBlock` 객체를 `Core.Table`로 변환해 `TableCell.Blocks`에 추가. 결과: 셀 안의 표들이 이제 `TableCell.Blocks` 컬렉션에 보관되어 편집·렌더링 가능. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
+
 - **HWP GSO 도형·글상자 위치 보정**: 모든 GSO 객체(도형·글상자·이미지)가 (0,0) 위치에 겹쳐 그려지던 문제 수정. SHAPE_COMPONENT 의 xPos/yPos 는 그룹 내 상대 좌표이므로 절대 위치로 사용할 수 없었음. CTRL_HEADER 의 페이로드(offset 8=xOffset, 12=yOffset, 16=height, 20=width)에서 절대 위치/크기를 읽어 적용. Test1.hwp 의 5 개 도형이 각각 다른 위치에 배치되고, Welcome to Hwp.hwp 의 표지 글상자도 올바른 위치(136.6, 25.1)에 표시됨. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
 
 - **HWP GSO TextBox 텍스트 추출 버그 + SHAPE_COMPONENT 오프셋 수정**: `HwpReader.ParseGsoControl` 에서 LIST_HEADER 의 자식 PARA_HEADER 가 LIST_HEADER 와 같은 레벨에 있다는 사실을 잘못 처리(레벨+1로 가정)하여 글상자 내부 텍스트가 모두 누락되던 문제 수정. 또한 RECT_COMPONENT 등 후속 shape component 가 kind=TextBox 를 kind=Rectangle 로 덮어쓰는 버그도 수정. 추가로 SHAPE_COMPONENT 페이로드의 위치/크기 오프셋이 KS X 5700 스펙과 달라 비현실적인 값(예: width=2,157,154mm)이 나오던 문제를 정정 — 올바른 오프셋: xPos@8, yPos@12, objW@24, objH@28. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
