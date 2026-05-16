@@ -980,8 +980,38 @@ public sealed class HwpReader : IDocumentReader
                     }
                     break;
 
+                case TAG_CTRL_HEADER when rec.Level == minLevel && curCell != null && rec.Payload.Length >= 4:
+                    {
+                        // 셀 내 중첩 표 처리
+                        uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
+                        if (ctrlId == CTRL_ID_TABLE)
+                        {
+                            // 현재 단락을 저장
+                            if (curPara != null)
+                            {
+                                curCell.Paragraphs.Add(curPara);
+                                curCell.Blocks.Add(curPara);
+                                curPara = null;
+                            }
+
+                            // 중첩 표 파싱
+                            var nestedTbl = ParseTable(recs, ref i, minLevel + 1);
+                            if (nestedTbl != null)
+                            {
+                                curCell.Blocks.Add(nestedTbl);
+                                HwpLog.Write($"[ParseTable] Nested table found in cell ({curCell.Row},{curCell.Col})");
+                            }
+                            continue;  // i 가 이미 증가했으므로 루프 끝 i++ 스킵
+                        }
+                    }
+                    break;
+
                 case TAG_PARA_HEADER when rec.Level == minLevel && curCell != null:
-                    if (curPara != null) curCell.Paragraphs.Add(curPara);
+                    if (curPara != null)
+                    {
+                        curCell.Paragraphs.Add(curPara);
+                        curCell.Blocks.Add(curPara);
+                    }
                     curPara = new HwpParagraph();
                     if (rec.Payload.Length >= 8)
                         curPara.ParaShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
@@ -1001,7 +1031,11 @@ public sealed class HwpReader : IDocumentReader
             i++;
         }
 
-        if (curCell != null && curPara != null) curCell.Paragraphs.Add(curPara);
+        if (curCell != null && curPara != null)
+        {
+            curCell.Paragraphs.Add(curPara);
+            curCell.Blocks.Add(curPara);
+        }
         if (curCell != null) tbl.Cells.Add(curCell);
 
         HwpLog.Write($"[ParseTable] Complete: {tbl.RowCount}×{tbl.ColCount} table, {tbl.Cells.Count} cells, " +
@@ -1382,10 +1416,21 @@ public sealed class HwpReader : IDocumentReader
                 {
                     tableCell.ColumnSpan = hc.ColSpan;
                     tableCell.RowSpan = hc.RowSpan;
-                    foreach (var hp in hc.Paragraphs)
+
+                    // 셀의 블록들(단락 또는 중첩 표) 변환
+                    foreach (var block in hc.Blocks)
                     {
-                        var para = ConvertHwpParagraph(hp, docInfo);
-                        if (para != null) tableCell.Blocks.Add(para);
+                        if (block is HwpParagraph hp)
+                        {
+                            var para = ConvertHwpParagraph(hp, docInfo);
+                            if (para != null) tableCell.Blocks.Add(para);
+                        }
+                        else if (block is HwpTableBlock htb)
+                        {
+                            // 중첩 표 변환
+                            var nestedTable = ConvertHwpTable(htb, docInfo);
+                            if (nestedTable != null) tableCell.Blocks.Add(nestedTable);
+                        }
                     }
                 }
                 // 빈 셀은 빈 단락 1개로 채움 (편집 가능 상태)
@@ -1657,6 +1702,8 @@ public sealed class HwpReader : IDocumentReader
         public int RowSpan { get; set; } = 1;
         public int ColSpan { get; set; } = 1;
         public List<HwpParagraph> Paragraphs { get; set; } = new();
+        // 중첩 표 지원: 셀이 단락 대신 표를 포함할 수 있음.
+        public List<object> Blocks { get; set; } = new();  // HwpParagraph 또는 HwpTableBlock
     }
 
     private sealed class HwpHeaderFooter
