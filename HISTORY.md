@@ -104,6 +104,12 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **RTF 파일 저장 시 확장자가 `.doc`으로 기록되던 버그 수정**: `ExternalConverter.GetConverter`에서 `"doc"` 확장자가 `PolyDonky.Convert.Doc`에 매핑되어 있어 `.rtf` 파일을 저장할 때 실제 변환기가 호출되지 않던 문제. `"doc"` → `"rtf"` 매핑으로 수정. 주석·`DocWriter` XML 문서 주석도 RTF 기준으로 정정. (`ExternalConverter.cs`, `DocWriter.cs`)
 
+- **HWPX export 글상자(TextBoxObject) 누락 수정**: `HwpxWriter.AppendBlock`에서 `TextBoxObject`에 대한 케이스가 없어 빈 단락으로 폴백되던 문제. `BuildTextBoxHostingParagraph` / `BuildTextBox`를 추가하여 HWPX `hp:rect` + `hp:drawText` / `hp:subList` 구조로 올바르게 직렬화. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
+- **HWPX export 플로팅 이미지 위치 오류 수정**: `BuildPicture`가 항상 `offset x="0" y="0"` + `treatAsChar="1"` 인라인 배치를 사용하여 플로팅 이미지가 원래 위치에 표시되지 않던 문제. `ImageWrapMode`가 `Inline`/`AsText`가 아닌 경우 `OverlayXMm`/`OverlayYMm`를 `hp:offset`에 반영하고, `hp:pos`를 `treatAsChar="0"` + `vertRelTo/horzRelTo="PAPER"` 앵커 배치로 변경. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
+- **HWPX export 머리말/꼬리말 누락 수정**: `WriteSectionXml`이 `section.Page.Header`/`Footer`를 출력하지 않던 문제. `section.Page.Header` 또는 `Footer`가 비어 있지 않으면 `masterPageCnt=1`로 `hp:secPr`를 설정하고, `hm:masterPage kind="BOTH"` 요소에 `hm:header`/`hm:footer`를 `hp:subList`로 추가. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
 - **LibreOfficeBridge 및 LibreOfficeLocator 제거**: LibreOffice 미사용 결정에 따라 `LibreOfficeBridge.cs`, `LibreOfficeLocator.cs` 파일 삭제. `LanguageService`의 `LibreOfficePath` 프로퍼티·자동탐지·저장 로직 제거. `ExternalConverter`의 `LIBREOFFICE_PATH` 환경변수 전달 제거. `MainViewModel`의 LibreOffice 특수 오류처리 블록을 일반 `UnsupportedFormatVersionException` 처리로 통합. `SettingsWindow` LibreOffice 섹션(UI·핸들러) 제거. 관련 리소스 키 14개 삭제. (`LibreOfficeBridge.cs`, `LibreOfficeLocator.cs`, `LanguageService.cs`, `ExternalConverter.cs`, `MainViewModel.cs`, `SettingsWindow.xaml`, `SettingsWindow.xaml.cs`, `Resources.resx`, `Resources.en-US.resx`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
 
