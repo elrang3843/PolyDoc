@@ -309,6 +309,10 @@ public sealed class HwpReader : IDocumentReader
     {
         HwpParagraph? current = null;
         int i = 0;
+        // 페이지 인덱스 추적: 페이지 나누기 플래그(columnType bit 2)가 등장할 때마다 증가.
+        // 단, 첫 단락의 페이지 나누기 플래그는 무시(문서 시작이므로 page 0 에 머무름).
+        int currentPageIndex = 0;
+        bool sawFirstParagraph = false;
 
         HwpLog.Write(
             $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}");
@@ -376,9 +380,34 @@ public sealed class HwpReader : IDocumentReader
                     if (current != null)
                         body.Blocks.Add(new HwpParagraphBlock { Paragraph = current });
                     current = new HwpParagraph();
-                    // PARA_HEADER payload offset 4-7: paraShapeId (uint32)
-                    if (rec.Payload.Length >= 8)
+                    // PARA_HEADER payload layout (KS X 5700):
+                    //   offset 0-3:  nChars (uint32)
+                    //   offset 4-7:  nCtrlMask (uint32)
+                    //   offset 8-9:  paraShapeId (uint16) — 단락 모양 참조
+                    //   offset 10:   styleId (uint8)
+                    //   offset 11:   columnType (uint8) — 단/페이지 나누기 종류
+                    //                  bit 2 (0x04): page break before (페이지 나누기)
+                    //   offset 12-13: nCharShapes (uint16)
+                    //   offset 14-15: nRangeTags (uint16)
+                    if (rec.Payload.Length >= 12)
+                    {
+                        // paraShapeId 는 uint16 으로 정확히 읽음 (기존 코드는 uint32 였으나
+                        // 상위 16비트는 styleId/columnType 이므로 결과적으로 잘못된 값).
+                        current.ParaShapeId = BitConverter.ToUInt16(rec.Payload, 8);
+                        byte columnType = rec.Payload[11];
+                        // bit 2 = page break before. 단, 첫 단락은 문서 시작이므로 무시.
+                        current.PageBreakBefore = (columnType & 0x04) != 0;
+                        if (current.PageBreakBefore && sawFirstParagraph)
+                        {
+                            currentPageIndex++;
+                            HwpLog.Write($"[ParseSectionRecords] Page break before PARA_HEADER@{i} → page {currentPageIndex}");
+                        }
+                    }
+                    else if (rec.Payload.Length >= 8)
+                    {
                         current.ParaShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
+                    }
+                    sawFirstParagraph = true;
                     break;
 
                 case TAG_PARA_TEXT when rec.Level == 1:
@@ -418,18 +447,20 @@ public sealed class HwpReader : IDocumentReader
                         {
                             // GSO CTRL_HEADER 페이로드에 실제 위치/크기 정보가 있음 (SHAPE_COMPONENT 가 아님).
                             // 레이아웃:  0-3 ctrlId, 4-7 flags, 8-11 xOffset, 12-15 yOffset,
-                            //           16-19 height, 20-23 width (HWPUNIT)
+                            //           16-19 width, 20-23 height (HWPUNIT)
+                            // (이전 코드는 W/H 를 바꿔 읽어 가로/세로가 반대로 나왔음 — 표지 배경 사각형이
+                            //  297×210mm(landscape) 로 잘못 인식되어 portrait A4 와 안 맞았던 문제 수정.)
                             double gsoXMm = 0, gsoYMm = 0, gsoWMm = 0, gsoHMm = 0;
                             var p = rec.Payload;
                             if (p.Length >= 24)
                             {
                                 gsoXMm = BitConverter.ToInt32(p, 8)  * HwpUnitToMm;
                                 gsoYMm = BitConverter.ToInt32(p, 12) * HwpUnitToMm;
-                                gsoHMm = BitConverter.ToUInt32(p, 16) * HwpUnitToMm;
-                                gsoWMm = BitConverter.ToUInt32(p, 20) * HwpUnitToMm;
+                                gsoWMm = BitConverter.ToUInt32(p, 16) * HwpUnitToMm;
+                                gsoHMm = BitConverter.ToUInt32(p, 20) * HwpUnitToMm;
                             }
                             // 그리기 개체(GSO): 도형/글상자/이미지
-                            i = ParseGsoControl(recs, i + 1, rec.Level + 1, body, gsoXMm, gsoYMm, gsoWMm, gsoHMm);
+                            i = ParseGsoControl(recs, i + 1, rec.Level + 1, body, gsoXMm, gsoYMm, gsoWMm, gsoHMm, currentPageIndex);
                             continue;
                         }
                         if (ctrlId == CTRL_ID_HEADER)
@@ -501,7 +532,8 @@ public sealed class HwpReader : IDocumentReader
     // ── GSO (General Shape Object) control handler ─────────────────────────
 
     private static int ParseGsoControl(List<HwpRecord> recs, int startIdx, uint minLevel, HwpBodyText body,
-        double ctrlXMm = 0, double ctrlYMm = 0, double ctrlWMm = 0, double ctrlHMm = 0)
+        double ctrlXMm = 0, double ctrlYMm = 0, double ctrlWMm = 0, double ctrlHMm = 0,
+        int anchorPageIndex = 0)
     {
         // 기본값: CTRL_HEADER 에서 가져온 위치/크기 (SHAPE_COMPONENT 가 덮어쓸 수 있음).
         double xMm = ctrlXMm, yMm = ctrlYMm, wMm = ctrlWMm, hMm = ctrlHMm;
@@ -670,6 +702,7 @@ public sealed class HwpReader : IDocumentReader
                 {
                     XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm,
                     BinDataId = binDataId,
+                    AnchorPageIndex = anchorPageIndex,
                 });
                 break;
 
@@ -678,6 +711,7 @@ public sealed class HwpReader : IDocumentReader
                 {
                     XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm,
                     Paragraphs = tbContent ?? new List<HwpParagraph>(),
+                    AnchorPageIndex = anchorPageIndex,
                 });
                 break;
 
@@ -686,6 +720,7 @@ public sealed class HwpReader : IDocumentReader
                 {
                     XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm, Kind = kind,
                     BinDataId = binDataId,
+                    AnchorPageIndex = anchorPageIndex,
                 });
                 break;
         }
@@ -1165,7 +1200,7 @@ public sealed class HwpReader : IDocumentReader
                 OverlayYMm   = tb.YMm,
                 WidthMm      = tb.WidthMm  > 1 ? tb.WidthMm  : 60,
                 HeightMm     = tb.HeightMm > 1 ? tb.HeightMm : 30,
-                AnchorPageIndex = 0,
+                AnchorPageIndex = tb.AnchorPageIndex,
             };
             foreach (var tp in tb.Paragraphs)
             {
@@ -1220,7 +1255,7 @@ public sealed class HwpReader : IDocumentReader
                 HeightMm  = img.HeightMm > 1 ? img.HeightMm : 60,
                 OverlayXMm      = img.XMm,
                 OverlayYMm      = img.YMm,
-                AnchorPageIndex = 0,
+                AnchorPageIndex = img.AnchorPageIndex,
             };
             section.Blocks.Add(ib);
         }
@@ -1253,7 +1288,7 @@ public sealed class HwpReader : IDocumentReader
                 OverlayYMm   = sh.YMm,
                 WidthMm      = sh.WidthMm  > 1 ? sh.WidthMm  : 40,
                 HeightMm     = sh.HeightMm > 1 ? sh.HeightMm : 20,
-                AnchorPageIndex = 0,
+                AnchorPageIndex = sh.AnchorPageIndex,
                 StrokeColor  = "#000000",
                 StrokeThicknessPt = 1.0,
             };
@@ -1278,6 +1313,9 @@ public sealed class HwpReader : IDocumentReader
         // HWP 단락 끝 \r 은 PARA 내부에서만 의미가 있고 우리 모델은 단락 단위로 분리되어 있으므로 제거.
         var text = hp.Text.Replace("\r", "").Replace("\n", "");
         if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // 페이지 나누기 (HWP PARA_HEADER columnType bit 2)
+        paragraph.Style.ForcePageBreakBefore = hp.PageBreakBefore;
 
         var run = new Run { Text = text };
 
@@ -1652,6 +1690,7 @@ public sealed class HwpReader : IDocumentReader
         public string Text { get; set; } = "";
         public int    ParaShapeId { get; set; } = -1;
         public int    CharShapeId { get; set; } = -1;
+        public bool   PageBreakBefore { get; set; } = false;
     }
 
     private sealed class HwpTextBox
@@ -1661,6 +1700,7 @@ public sealed class HwpReader : IDocumentReader
         public double WidthMm  { get; set; }
         public double HeightMm { get; set; }
         public List<HwpParagraph> Paragraphs { get; set; } = new();
+        public int    AnchorPageIndex { get; set; }
     }
 
     private sealed class HwpImage
@@ -1670,6 +1710,7 @@ public sealed class HwpReader : IDocumentReader
         public double WidthMm   { get; set; }
         public double HeightMm  { get; set; }
         public int    BinDataId { get; set; }
+        public int    AnchorPageIndex { get; set; }
     }
 
     private sealed class HwpShape
@@ -1680,6 +1721,7 @@ public sealed class HwpReader : IDocumentReader
         public double       HeightMm  { get; set; }
         public HwpShapeKind Kind      { get; set; }
         public int          BinDataId { get; set; }  // OLE 도형용
+        public int          AnchorPageIndex { get; set; }
     }
 
     private record struct HwpRecord(uint TagId, uint Level, byte[] Payload);
