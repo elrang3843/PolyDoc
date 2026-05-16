@@ -314,7 +314,7 @@ public sealed class HwpReader : IDocumentReader
             $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}");
 
         // 진단: CTRL_HEADER 레코드 구조 미리 스캔
-        var ctrlHeaders = new Dictionary<string, int>();
+        var ctrlHeaders = new Dictionary<string, (int count, uint level)>();
         for (int j = 0; j < recs.Count; j++)
         {
             if (recs[j].TagId == TAG_CTRL_HEADER && recs[j].Payload.Length >= 4)
@@ -330,12 +330,14 @@ public sealed class HwpReader : IDocumentReader
                     CTRL_ID_COLD => "cold",
                     _ => $"0x{ctrlId:X8}"
                 };
-                if (!ctrlHeaders.ContainsKey(ctrlName)) ctrlHeaders[ctrlName] = 0;
-                ctrlHeaders[ctrlName]++;
+                if (!ctrlHeaders.ContainsKey(ctrlName))
+                    ctrlHeaders[ctrlName] = (0, recs[j].Level);
+                var (cnt, _) = ctrlHeaders[ctrlName];
+                ctrlHeaders[ctrlName] = (cnt + 1, recs[j].Level);
             }
         }
         if (ctrlHeaders.Count > 0)
-            HwpLog.Write($"[ParseSectionRecords] CTRL_HEADER summary: {string.Join(", ", ctrlHeaders.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value}"))}");
+            HwpLog.Write($"[ParseSectionRecords] CTRL_HEADER summary: {string.Join(", ", ctrlHeaders.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value.count}@L{x.Value.level}"))}");
         else
             HwpLog.Write($"[ParseSectionRecords] ⚠ No CTRL_HEADER records found at any level!");
 
@@ -443,6 +445,27 @@ public sealed class HwpReader : IDocumentReader
                         // 그 외(secd/cold/fn/en 등): 자식 PARA_HEADER 들이 본문에 섞이지 않도록
                         // 자식 레코드 스킵 (단, PAGE_DEF 는 위 case 에서 별도 수집됨).
                         // 본문에 섞이는 걸 막기 위해 같은 레벨로 돌아갈 때까지 nested 레코드 패스만 PAGE_DEF만 수집.
+
+                        // 진단: secd 컨트롤의 자식 레코드 구조 분석
+                        if (ctrlId == CTRL_ID_SECD)
+                        {
+                            HwpLog.Write($"[ParseSectionRecords] → Analyzing SECD control at index {i}");
+                            int secdEndIdx = i + 1;
+                            while (secdEndIdx < recs.Count && recs[secdEndIdx].Level > rec.Level + 1)
+                                secdEndIdx++;
+
+                            var secdTags = new Dictionary<uint, int>();
+                            for (int j = i + 1; j < secdEndIdx && j < recs.Count; j++)
+                            {
+                                var child = recs[j];
+                                if (!secdTags.ContainsKey(child.TagId))
+                                    secdTags[child.TagId] = 0;
+                                secdTags[child.TagId]++;
+                            }
+                            if (secdTags.Count > 0)
+                                HwpLog.Write($"[ParseSectionRecords]    SECD children: {string.Join(", ", secdTags.OrderBy(x => x.Key).Select(x => $"0x{x.Key:X3}(×{x.Value})"))}");
+                        }
+
                         HwpLog.Write($"[ParseSectionRecords] → Skipping non-GSO/head/foot/tbl control: {ctrlName}");
                         i = SkipControlChildrenButKeepPageDef(recs, i + 1, rec.Level + 1, body);
                         continue;
