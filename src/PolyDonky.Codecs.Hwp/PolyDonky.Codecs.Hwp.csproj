@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PolyDonky.Codecs.Hwp</RootNamespace>
+    <AssemblyName>PolyDonky.Codecs.Hwp</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyDonky.Core\PolyDonky.Core.csproj" />
+    <ProjectReference Include="..\PolyDonky.Iwpf\PolyDonky.Iwpf.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenMcdf" />
+  </ItemGroup>
+
+</Project>
