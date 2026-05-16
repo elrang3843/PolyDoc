@@ -6,6 +6,33 @@ using PolyDonky.Core;
 
 namespace PolyDonky.Codecs.Hwpx;
 
+// CLI 서브프로세스 디버깅용 파일 로거.
+// Windows: d:\Temp\PolyDonky-HwpxWriter.log  / Linux: /tmp/PolyDonky-HwpxWriter.log
+internal static class HwpxLog
+{
+    private static readonly string LogPath = Path.Combine(
+        Environment.OSVersion.Platform == PlatformID.Win32NT ? @"d:\Temp" : "/tmp",
+        "PolyDonky-HwpxWriter.log");
+
+    static HwpxLog()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            File.AppendAllText(LogPath,
+                $"\n=== HwpxWriter session {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+        }
+        catch { }
+    }
+
+    public static void Write(string message)
+    {
+        var line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
+        System.Diagnostics.Debug.WriteLine(line);
+        try { File.AppendAllText(LogPath, line + "\n"); } catch { }
+    }
+}
+
 public sealed class HwpxWriter : IDocumentWriter
 {
     public string FormatId => "hwpx";
@@ -358,6 +385,16 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(output);
+        HwpxLog.Write($"[Write] 시작. sections={document.Sections.Count}");
+        for (int si = 0; si < document.Sections.Count; si++)
+        {
+            var sec = document.Sections[si];
+            HwpxLog.Write($"  section[{si}]: blocks={sec.Blocks.Count}, hasHeader={!sec.Page.Header.IsEmpty}, hasFooter={!sec.Page.Footer.IsEmpty}");
+            if (!sec.Page.Header.IsEmpty)
+                HwpxLog.Write($"    header.Center paras={sec.Page.Header.Center.Paragraphs.Count}, text='{sec.Page.Header.Center.GetPlainText()}'");
+            if (!sec.Page.Footer.IsEmpty)
+                HwpxLog.Write($"    footer.Center paras={sec.Page.Footer.Center.Paragraphs.Count}, text='{sec.Page.Footer.Center.GetPlainText()}'");
+        }
 
         _pendingFootnotes = document.Footnotes;
         _pendingEndnotes  = document.Endnotes;
@@ -980,30 +1017,26 @@ public sealed class HwpxWriter : IDocumentWriter
         // Without it Hangul Office rejects the file with "파일을 읽거나 저장하는데 오류가 있습니다".
         bool injectSecPr = true;
 
-        // 도형(ShapeObject) 은 anchored overlay 로 출력되지만 hosting paragraph 의
-        // 위치가 anchor 의 페이지를 결정한다. IWPF 문서 순서상 마지막에 두면 host
-        // paragraph 가 마지막 페이지로 밀려 도형이 그 페이지에 그려진다.
-        // 사용자 보고: 도형이 다음 페이지로 넘어감 — 모든 도형의 anchor 가 끝쪽
-        // 페이지에 놓이기 때문.
-        // 해결: AnchorPageIndex==0 인 도형을 첫 비-도형 단락 직후로 재배치.
-        // 첫 단락은 secPr 을 보유해야 해서 도형으로 대체 안 함 — 두번째 위치부터
-        // 도형 삽입. 결과적으로 도형 anchor 는 page 1 첫 단락 다음에 위치.
+        // 도형(ShapeObject)/글상자(TextBoxObject) 은 anchored overlay 로 출력되지만
+        // hosting paragraph 의 위치가 anchor 의 페이지를 결정한다. IWPF 문서 순서상
+        // 마지막에 두면 host paragraph 가 마지막 페이지로 밀려 도형이 그 페이지에 그려진다.
+        // 해결: AnchorPageIndex==0 인 overlay 객체를 첫 비-overlay 단락 직후로 재배치.
         var blocks = section.Blocks.ToList();
-        var page0Shapes = blocks
-            .OfType<ShapeObject>()
-            .Where(s => s.AnchorPageIndex == 0)
+        var page0Overlays = blocks
+            .Where(b => b is ShapeObject sh && sh.AnchorPageIndex == 0
+                     || b is TextBoxObject tb && tb.AnchorPageIndex == 0
+                     || b is ImageBlock img && img.AnchorPageIndex == 0 && img.WrapMode != ImageWrapMode.Inline)
             .ToList();
-        if (page0Shapes.Count > 0 && blocks.Count > page0Shapes.Count)
+        if (page0Overlays.Count > 0 && blocks.Count > page0Overlays.Count)
         {
-            foreach (var s in page0Shapes) blocks.Remove(s);
-            // 첫 비-도형 블록 직후 (인덱스 1) 에 도형들을 삽입.
-            blocks.InsertRange(1, page0Shapes);
+            foreach (var o in page0Overlays) blocks.Remove(o);
+            blocks.InsertRange(1, page0Overlays);
         }
 
         if (blocks.Count == 0)
         {
             var para = BuildEmptyParagraph(ctx);
-            if (injectSecPr) PrependSecPrRun(para, section);
+            if (injectSecPr) PrependSecPrRun(para, section, ctx);
             sec.Add(para);
         }
         else
@@ -1014,6 +1047,207 @@ public sealed class HwpxWriter : IDocumentWriter
 
         WriteXml(archive, HwpxPaths.SectionXml(sectionIndex),
             new XDocument(new XDeclaration("1.0", "utf-8", null), sec));
+    }
+
+    // hp:header / hp:footer ctrl 를 hp:run 안에 삽입한다.
+    // 한글 참조 구조: <hp:ctrl><hp:header id="" applyPageType="BOTH"><hp:subList textWidth="0" textHeight="0" ...>
+    // Left/Center/Right 슬롯이 2개 이상 있으면 1행 3열 테두리 없는 표로 가로 배치.
+    private XElement BuildHeaderFooterCtrl(string localName, HeaderFooterContent content,
+        WriteContext ctx, string vertAlign, long textWidthHwpUnit = ContentWidth)
+    {
+        var subList = new XElement(Hp + "subList",
+            new XAttribute("id",               ""),
+            new XAttribute("textDirection",    "HORIZONTAL"),
+            new XAttribute("lineWrap",         "BREAK"),
+            new XAttribute("vertAlign",        vertAlign),
+            new XAttribute("linkListIDRef",    "0"),
+            new XAttribute("linkListNextIDRef","0"),
+            new XAttribute("textWidth",        "0"),
+            new XAttribute("textHeight",       "0"),
+            new XAttribute("hasTextRef",       "0"),
+            new XAttribute("hasNumRef",        "0"));
+
+        bool hasLeft   = SlotHasContent(content.Left);
+        bool hasCenter = SlotHasContent(content.Center);
+        bool hasRight  = SlotHasContent(content.Right);
+        int activeSlots = (hasLeft ? 1 : 0) + (hasCenter ? 1 : 0) + (hasRight ? 1 : 0);
+
+        if (activeSlots >= 2)
+        {
+            // 1행 3열 테두리 없는 표로 L/C/R 가로 배치
+            var tablePara = BuildHeaderFooterTablePara(content, ctx, textWidthHwpUnit);
+            tablePara.SetAttributeValue("id", "0");
+            subList.Add(tablePara);
+        }
+        else if (activeSlots == 1)
+        {
+            // 단일 슬롯: 정렬만 맞춰 단락으로 출력
+            var slot = hasLeft ? content.Left : hasCenter ? content.Center : content.Right;
+            int pid = 0;
+            foreach (var para in slot.Paragraphs)
+            {
+                var xpara = BuildParagraph(para, ctx);
+                xpara.SetAttributeValue("id", pid.ToString());
+                pid++;
+                subList.Add(xpara);
+            }
+        }
+        else
+        {
+            // 모두 비어 있음: 빈 단락 하나
+            var emp = BuildEmptyParagraph(ctx);
+            emp.SetAttributeValue("id", "0");
+            subList.Add(emp);
+        }
+
+        return new XElement(Hp + "ctrl",
+            new XElement(Hp + localName,
+                new XAttribute("id", ""),
+                new XAttribute("applyPageType", "BOTH"),
+                subList));
+    }
+
+    private static bool SlotHasContent(HeaderFooterSlot slot) =>
+        slot.Paragraphs.Any(p => p.Runs.Any(r => !string.IsNullOrEmpty(r.Text)));
+
+    // 머리말/꼬리말 Left/Center/Right 를 1행 3열 테두리 없는 표로 담는 단락.
+    private XElement BuildHeaderFooterTablePara(HeaderFooterContent content,
+        WriteContext ctx, long textWidthHwpUnit)
+    {
+        long colW = Math.Max(textWidthHwpUnit / 3, 1000);
+        long tableW = colW * 3;
+        const long CellH = 1000;
+
+        // "테두리 없음" borderFill: 4면 NONE
+        int noBf = ctx.RegisterCustomBorderFill(new WriteContext.BorderFillSpec(
+            "NONE", "#000000", "0.12 mm",
+            "NONE", "#000000", "0.12 mm",
+            "NONE", "#000000", "0.12 mm",
+            "NONE", "#000000", "0.12 mm",
+            null));
+
+        var wtbl = new XElement(Hp + "tbl",
+            new XAttribute("id",             ctx.NextObjId().ToString()),
+            new XAttribute("zOrder",         ctx.NextZOrder().ToString()),
+            new XAttribute("numberingType",  "TABLE"),
+            new XAttribute("textWrap",       "TOP_AND_BOTTOM"),
+            new XAttribute("textFlow",       "BOTH_SIDES"),
+            new XAttribute("lock",           "0"),
+            new XAttribute("dropcapstyle",   "None"),
+            new XAttribute("pageBreak",      "TABLE"),
+            new XAttribute("repeatHeader",   "1"),
+            new XAttribute("rowCnt",         "1"),
+            new XAttribute("colCnt",         "3"),
+            new XAttribute("cellSpacing",    "0"),
+            new XAttribute("borderFillIDRef", noBf.ToString()),
+            new XAttribute("noAdjust",       "0"));
+
+        wtbl.Add(new XElement(Hp + "sz",
+            new XAttribute("width",       tableW.ToString()),
+            new XAttribute("widthRelTo",  "ABSOLUTE"),
+            new XAttribute("height",      "0"),
+            new XAttribute("heightRelTo", "ABSOLUTE"),
+            new XAttribute("protect",     "0")));
+        wtbl.Add(new XElement(Hp + "pos",
+            new XAttribute("treatAsChar",     "1"),
+            new XAttribute("affectLSpacing",  "0"),
+            new XAttribute("flowWithText",    "1"),
+            new XAttribute("allowOverlap",    "0"),
+            new XAttribute("holdAnchorAndSO", "0"),
+            new XAttribute("vertRelTo",       "PARA"),
+            new XAttribute("horzRelTo",       "COLUMN"),
+            new XAttribute("vertAlign",       "TOP"),
+            new XAttribute("horzAlign",       "LEFT"),
+            new XAttribute("vertOffset",      "0"),
+            new XAttribute("horzOffset",      "0")));
+        wtbl.Add(new XElement(Hp + "outMargin",
+            new XAttribute("left", "0"), new XAttribute("right", "0"),
+            new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+        wtbl.Add(new XElement(Hp + "inMargin",
+            new XAttribute("left", "0"), new XAttribute("right", "0"),
+            new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+
+        var wrow = new XElement(Hp + "tr");
+
+        var slotDefs = new[]
+        {
+            (content.Left,   Alignment.Left,   0),
+            (content.Center, Alignment.Center, 1),
+            (content.Right,  Alignment.Right,  2),
+        };
+        foreach (var (slot, alignment, colIdx) in slotDefs)
+        {
+            var wcell = new XElement(Hp + "tc",
+                new XAttribute("name",            ""),
+                new XAttribute("header",          "0"),
+                new XAttribute("hasMargin",       "0"),
+                new XAttribute("protect",         "0"),
+                new XAttribute("editable",        "0"),
+                new XAttribute("dirty",           "0"),
+                new XAttribute("borderFillIDRef", noBf.ToString()));
+
+            var cellSub = new XElement(Hp + "subList",
+                new XAttribute("id",                ""),
+                new XAttribute("textDirection",     "HORIZONTAL"),
+                new XAttribute("lineWrap",          "BREAK"),
+                new XAttribute("vertAlign",         "CENTER"),
+                new XAttribute("linkListIDRef",     "0"),
+                new XAttribute("linkListNextIDRef", "0"),
+                new XAttribute("textWidth",         "0"),
+                new XAttribute("textHeight",        "0"),
+                new XAttribute("hasTextRef",        "0"),
+                new XAttribute("hasNumRef",         "0"));
+
+            if (!SlotHasContent(slot))
+            {
+                var emptyP = new Paragraph();
+                emptyP.Style.Alignment = alignment;
+                var xe = BuildParagraph(emptyP, ctx);
+                xe.SetAttributeValue("id", "0");
+                cellSub.Add(xe);
+            }
+            else
+            {
+                int pid = 0;
+                foreach (var p in slot.Paragraphs)
+                {
+                    var xp = BuildParagraph(p, ctx);
+                    xp.SetAttributeValue("id", pid.ToString());
+                    pid++;
+                    cellSub.Add(xp);
+                }
+            }
+
+            wcell.Add(cellSub);
+            wcell.Add(new XElement(Hp + "cellAddr",
+                new XAttribute("colAddr", colIdx.ToString()),
+                new XAttribute("rowAddr", "0")));
+            wcell.Add(new XElement(Hp + "cellSpan",
+                new XAttribute("colSpan", "1"),
+                new XAttribute("rowSpan", "1")));
+            wcell.Add(new XElement(Hp + "cellSz",
+                new XAttribute("width",  colW.ToString()),
+                new XAttribute("height", CellH.ToString())));
+            wcell.Add(new XElement(Hp + "cellMargin",
+                new XAttribute("left", "0"), new XAttribute("right", "0"),
+                new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+
+            wrow.Add(wcell);
+        }
+        wtbl.Add(wrow);
+
+        var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
+        run.Add(wtbl);
+        var para = new XElement(Hp + "p",
+            new XAttribute("id",          "0"),
+            new XAttribute("paraPrIDRef", ctx.ParaStyleId(new ParagraphStyle()).ToString()),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
+            run);
+        para.Add(BuildLineseg(10.0, 1.2));
+        return para;
     }
 
     private void AppendBlock(XElement target, Block block, WriteContext ctx, Section section, ref bool injectSecPr)
@@ -1034,14 +1268,15 @@ public sealed class HwpxWriter : IDocumentWriter
 
         XElement para = block switch
         {
-            Paragraph p     => BuildParagraph(p, ctx),
-            Table t         => BuildTableHostingParagraph(t, ctx),
-            ImageBlock img  => BuildImageHostingParagraph(img, ctx),
-            ShapeObject sh  => BuildShapeHostingParagraph(sh, ctx),
-            OpaqueBlock op  => BuildOpaqueHostingParagraph(op, ctx),
-            _               => BuildEmptyParagraph(ctx),
+            Paragraph p       => BuildParagraph(p, ctx),
+            Table t           => BuildTableHostingParagraph(t, ctx),
+            ImageBlock img    => BuildImageHostingParagraph(img, ctx),
+            ShapeObject sh    => BuildShapeHostingParagraph(sh, ctx),
+            TextBoxObject tb  => BuildTextBoxHostingParagraph(tb, ctx),
+            OpaqueBlock op    => BuildOpaqueHostingParagraph(op, ctx),
+            _                 => BuildEmptyParagraph(ctx),
         };
-        if (injectSecPr) { PrependSecPrRun(para, section); injectSecPr = false; }
+        if (injectSecPr) { PrependSecPrRun(para, section, ctx); injectSecPr = false; }
         target.Add(para);
     }
 
@@ -1053,9 +1288,9 @@ public sealed class HwpxWriter : IDocumentWriter
     }
 
     // Injects the full hp:secPr control run as the very first child of the paragraph.
-    // Structure per real Hancom format: secPr + ctrl in same run.
-    // 페이지 크기·여백은 section.Page 에서 동적으로 계산 (이전엔 A4 상수 하드코딩).
-    private void PrependSecPrRun(XElement para, Section section)
+    // 한글 참조 구조: run 안에 secPr + colPr ctrl + [header ctrl] + [footer ctrl].
+    // 페이지 크기·여백은 section.Page 에서 동적으로 계산.
+    private void PrependSecPrRun(XElement para, Section section, WriteContext ctx)
     {
         long pageW = ResolvePageDim(section.Page.EffectiveWidthMm,  defaultMm: 210);
         long pageH = ResolvePageDim(section.Page.EffectiveHeightMm, defaultMm: 297);
@@ -1065,8 +1300,13 @@ public sealed class HwpxWriter : IDocumentWriter
         long mBottom = ResolvePageDim(section.Page.MarginBottomMm, defaultMm: 17.5, minMm: 0);
         long mHead = ResolvePageDim(section.Page.MarginHeaderMm, defaultMm: 15, minMm: 0);
         long mFoot = ResolvePageDim(section.Page.MarginFooterMm, defaultMm: 15, minMm: 0);
-        bool landscape = section.Page.Orientation == PageOrientation.Landscape
-                         || section.Page.EffectiveWidthMm > section.Page.EffectiveHeightMm;
+        // KS X 6101: landscape 속성은 글자 쓰기 방향(text direction)을 의미.
+        // WIDELY = 가로쓰기(기본값, Portrait/Landscape 용지 모두 해당)
+        // NARROWLY = 세로쓰기(Japanese vertical text 등)
+        // 용지 방향(Portrait vs Landscape)은 width vs height 값의 대소로 결정됨.
+        string landscapeVal = section.Page.TextOrientation == TextOrientation.Vertical
+            ? "NARROWLY"
+            : "WIDELY";
 
         var secPr = new XElement(Hp + "secPr",
             new XAttribute("id", ""),
@@ -1106,7 +1346,7 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("distance", "0"),
                 new XAttribute("startNumber", "0")),
             new XElement(Hp + "pagePr",
-                new XAttribute("landscape", landscape ? "WIDELY" : "NARROWLY"),
+                new XAttribute("landscape", landscapeVal),
                 new XAttribute("width",  pageW.ToString()),
                 new XAttribute("height", pageH.ToString()),
                 new XAttribute("gutterType", "LEFT_ONLY"),
@@ -1207,7 +1447,28 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("charPrIDRef", "0"),
             secPr,
             ctrl);
+
+        // 머리말/꼬리말 — 한글 참조 구조:
+        //   머리말(header)은 secPr·colPr 와 같은 run 안에 추가.
+        //   꼬리말(footer)은 별도의 run 에 담아 첫 번째 문단에 삽입 (참조 파일과 동일).
+        // Left/Center/Right 3-slot 가로 배치: 1행 3열 테두리 없는 표.
+        long hdrTextWidth = pageW - mLeft - mRight;
+        bool hasHeader = !section.Page.Header.IsEmpty;
+        bool hasFooter = !section.Page.Footer.IsEmpty;
+        if (hasHeader)
+            secPrRun.Add(BuildHeaderFooterCtrl("header", section.Page.Header, ctx, "TOP", hdrTextWidth));
+        HwpxLog.Write($"  PrependSecPrRun: hasHeader={hasHeader} hasFooter={hasFooter}");
+
         para.AddFirst(secPrRun);
+
+        if (hasFooter)
+        {
+            var footerRun = new XElement(Hp + "run",
+                new XAttribute("charPrIDRef", "0"),
+                BuildHeaderFooterCtrl("footer", section.Page.Footer, ctx, "BOTTOM", hdrTextWidth));
+            // 꼬리말 run 은 secPrRun 바로 다음에 위치.
+            secPrRun.AddAfterSelf(footerRun);
+        }
     }
 
     private void AppendTocBlock(XElement target, TocBlock toc, WriteContext ctx, Section section, ref bool injectSecPr)
@@ -1216,7 +1477,7 @@ public sealed class HwpxWriter : IDocumentWriter
         var headingP = new Paragraph { Style = new ParagraphStyle { Outline = OutlineLevel.H1 } };
         headingP.AddText("목차");
         var headingPara = BuildParagraph(headingP, ctx);
-        if (injectSecPr) { PrependSecPrRun(headingPara, section); injectSecPr = false; }
+        if (injectSecPr) { PrependSecPrRun(headingPara, section, ctx); injectSecPr = false; }
         target.Add(headingPara);
 
         foreach (var entry in toc.Entries)
@@ -1530,7 +1791,6 @@ public sealed class HwpxWriter : IDocumentWriter
         "linkListIDRef", "linkListNextIDRef",
         "numberingIDRef", "bulletIDRef",
         "outlineShapeIDRef", "memoShapeIDRef",
-        "masterPageIDRef",
     ];
 
     private static void ValidateAndSanitizeIdRefs(XElement root, WriteContext ctx)
@@ -1814,13 +2074,17 @@ public sealed class HwpxWriter : IDocumentWriter
         long w = UnitConverter.MmToHwpUnit((image.WidthMm  > 0 ? image.WidthMm  : 80));
         long h = UnitConverter.MmToHwpUnit((image.HeightMm > 0 ? image.HeightMm : 60));
 
-        // 외곽 속성과 sz/pos/outMargin 이 없으면 한컴 오피스가 거부.
-        // treatAsChar="1" 로 인라인 배치 — 위치 계산 불필요.
+        bool isInline = image.WrapMode == ImageWrapMode.Inline || image.WrapMode == ImageWrapMode.AsText;
+        long xOff = isInline ? 0 : UnitConverter.MmToHwpUnit(image.OverlayXMm);
+        long yOff = isInline ? 0 : UnitConverter.MmToHwpUnit(image.OverlayYMm);
+        string textWrap = image.WrapMode == ImageWrapMode.BehindText ? "BEHIND_TEXT" :
+                          isInline ? "TOP_AND_BOTTOM" : "IN_FRONT_OF_TEXT";
+
         return new XElement(Hp + "pic",
             new XAttribute("id",            ctx.NextObjId().ToString()),
             new XAttribute("zOrder",        ctx.NextZOrder().ToString()),
             new XAttribute("numberingType", "PICTURE"),
-            new XAttribute("textWrap",      "TOP_AND_BOTTOM"),
+            new XAttribute("textWrap",      textWrap),
             new XAttribute("textFlow",      "BOTH_SIDES"),
             new XAttribute("lock",          "0"),
             new XAttribute("dropcapstyle",  "None"),
@@ -1829,7 +2093,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("instid",        ctx.NextInstId().ToString()),
             new XAttribute("reverse",       "0"),
 
-            new XElement(Hp + "offset", new XAttribute("x", "0"), new XAttribute("y", "0")),
+            new XElement(Hp + "offset", new XAttribute("x", xOff.ToString()), new XAttribute("y", yOff.ToString())),
             new XElement(Hp + "orgSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())),
             new XElement(Hp + "curSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())),
             new XElement(Hp + "flip",   new XAttribute("horizontal", "0"), new XAttribute("vertical", "0")),
@@ -1878,18 +2142,31 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("height",      h.ToString()),
                 new XAttribute("heightRelTo", "ABSOLUTE"),
                 new XAttribute("protect",     "0")),
-            new XElement(Hp + "pos",
-                new XAttribute("treatAsChar",     "1"),
-                new XAttribute("affectLSpacing",  "0"),
-                new XAttribute("flowWithText",    "1"),
-                new XAttribute("allowOverlap",    "0"),
-                new XAttribute("holdAnchorAndSO", "0"),
-                new XAttribute("vertRelTo",       "PARA"),
-                new XAttribute("horzRelTo",       "PARA"),
-                new XAttribute("vertAlign",       "TOP"),
-                new XAttribute("horzAlign",       "LEFT"),
-                new XAttribute("vertOffset",      "0"),
-                new XAttribute("horzOffset",      "0")),
+            isInline
+                ? new XElement(Hp + "pos",
+                    new XAttribute("treatAsChar",     "1"),
+                    new XAttribute("affectLSpacing",  "0"),
+                    new XAttribute("flowWithText",    "1"),
+                    new XAttribute("allowOverlap",    "0"),
+                    new XAttribute("holdAnchorAndSO", "0"),
+                    new XAttribute("vertRelTo",       "PARA"),
+                    new XAttribute("horzRelTo",       "PARA"),
+                    new XAttribute("vertAlign",       "TOP"),
+                    new XAttribute("horzAlign",       "LEFT"),
+                    new XAttribute("vertOffset",      "0"),
+                    new XAttribute("horzOffset",      "0"))
+                : new XElement(Hp + "pos",
+                    new XAttribute("treatAsChar",     "0"),
+                    new XAttribute("affectLSpacing",  "0"),
+                    new XAttribute("flowWithText",    "0"),
+                    new XAttribute("allowOverlap",    "1"),
+                    new XAttribute("holdAnchorAndSO", "0"),
+                    new XAttribute("vertRelTo",       "PAPER"),
+                    new XAttribute("horzRelTo",       "PAPER"),
+                    new XAttribute("vertAlign",       "TOP"),
+                    new XAttribute("horzAlign",       "LEFT"),
+                    new XAttribute("vertOffset",      yOff.ToString()),
+                    new XAttribute("horzOffset",      xOff.ToString())),
             new XElement(Hp + "outMargin",
                 new XAttribute("left", "0"), new XAttribute("right",  "0"),
                 new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
@@ -1913,6 +2190,146 @@ public sealed class HwpxWriter : IDocumentWriter
             run);
         para.Add(BuildLineseg(10.0, 1.6));
         return para;
+    }
+
+    // ── textbox (TextBoxObject → HWPX hp:rect + hp:drawText/hp:subList) ──────
+
+    private XElement BuildTextBoxHostingParagraph(TextBoxObject tb, WriteContext ctx)
+    {
+        var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
+        run.Add(BuildTextBox(tb, ctx));
+        run.Add(new XElement(Hp + "t"));
+
+        var para = new XElement(Hp + "p",
+            new XAttribute("id",          ctx.NextParaId().ToString()),
+            new XAttribute("paraPrIDRef", "0"),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
+            run);
+        para.Add(BuildLineseg(10.0, 1.6));
+        return para;
+    }
+
+    private XElement BuildTextBox(TextBoxObject tb, WriteContext ctx)
+    {
+        double wMm = tb.WidthMm  > 0 ? tb.WidthMm  : 50;
+        double hMm = tb.HeightMm > 0 ? tb.HeightMm : 20;
+        long w = UnitConverter.MmToHwpUnit(wMm);
+        long h = UnitConverter.MmToHwpUnit(hMm);
+        long xOff = UnitConverter.MmToHwpUnit(tb.OverlayXMm);
+        long yOff = UnitConverter.MmToHwpUnit(tb.OverlayYMm);
+
+        string textWrap = tb.WrapMode == ImageWrapMode.BehindText ? "BEHIND_TEXT" : "IN_FRONT_OF_TEXT";
+
+        // hp:rect with hp:drawText inside — OWPML textbox structure (KS X 6101).
+        var elem = new XElement(Hp + "rect",
+            new XAttribute("id",            ctx.NextObjId().ToString()),
+            new XAttribute("zOrder",        ctx.NextZOrder().ToString()),
+            new XAttribute("numberingType", "PICTURE"),
+            new XAttribute("textWrap",      textWrap),
+            new XAttribute("textFlow",      "BOTH_SIDES"),
+            new XAttribute("lock",          "0"),
+            new XAttribute("dropcapstyle",  "None"),
+            new XAttribute("href",          ""),
+            new XAttribute("groupLevel",    "0"),
+            new XAttribute("instid",        ctx.NextInstId().ToString()),
+            new XAttribute("ratio",         "0"),
+
+            new XElement(Hp + "offset", new XAttribute("x", xOff.ToString()), new XAttribute("y", yOff.ToString())),
+            new XElement(Hp + "orgSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())),
+            new XElement(Hp + "curSz",  new XAttribute("width", w.ToString()), new XAttribute("height", h.ToString())),
+            new XElement(Hp + "flip",   new XAttribute("horizontal", "0"), new XAttribute("vertical", "0")),
+            new XElement(Hp + "rotationInfo",
+                new XAttribute("angle",       "0"),
+                new XAttribute("centerX",     (w / 2).ToString()),
+                new XAttribute("centerY",     (h / 2).ToString()),
+                new XAttribute("rotateimage", "1")),
+            new XElement(Hp + "renderingInfo",
+                new XElement(Hc + "transMatrix",
+                    new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
+                    new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0")),
+                new XElement(Hc + "scaMatrix",
+                    new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
+                    new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0")),
+                new XElement(Hc + "rotMatrix",
+                    new XAttribute("e1", "1"), new XAttribute("e2", "0"), new XAttribute("e3", "0"),
+                    new XAttribute("e4", "0"), new XAttribute("e5", "1"), new XAttribute("e6", "0"))),
+            new XElement(Hp + "lineShape",
+                new XAttribute("color",        "#000000"),
+                new XAttribute("width",        "0"),
+                new XAttribute("style",        "SOLID"),
+                new XAttribute("endCap",       "FLAT"),
+                new XAttribute("headStyle",    "NORMAL"),
+                new XAttribute("tailStyle",    "NORMAL"),
+                new XAttribute("headfill",     "1"),
+                new XAttribute("tailfill",     "1"),
+                new XAttribute("headSz",       "SMALL_SMALL"),
+                new XAttribute("tailSz",       "SMALL_SMALL"),
+                new XAttribute("outlineStyle", "NORMAL"),
+                new XAttribute("alpha",        "0")),
+            new XElement(Hp + "shadow",
+                new XAttribute("type",    "NONE"),
+                new XAttribute("color",   "#B2B2B2"),
+                new XAttribute("offsetX", "0"),
+                new XAttribute("offsetY", "0"),
+                new XAttribute("alpha",   "0")));
+
+        // 4 corner coordinates for rect.
+        elem.Add(new XElement(Hc + "pt0", new XAttribute("x", "0"),          new XAttribute("y", "0")));
+        elem.Add(new XElement(Hc + "pt1", new XAttribute("x", w.ToString()),  new XAttribute("y", "0")));
+        elem.Add(new XElement(Hc + "pt2", new XAttribute("x", w.ToString()),  new XAttribute("y", h.ToString())));
+        elem.Add(new XElement(Hc + "pt3", new XAttribute("x", "0"),           new XAttribute("y", h.ToString())));
+
+        elem.Add(new XElement(Hp + "sz",
+            new XAttribute("width",       w.ToString()),
+            new XAttribute("widthRelTo",  "ABSOLUTE"),
+            new XAttribute("height",      h.ToString()),
+            new XAttribute("heightRelTo", "ABSOLUTE"),
+            new XAttribute("protect",     "0")));
+
+        elem.Add(new XElement(Hp + "pos",
+            new XAttribute("treatAsChar",     "0"),
+            new XAttribute("affectLSpacing",  "0"),
+            new XAttribute("flowWithText",    "0"),
+            new XAttribute("allowOverlap",    "1"),
+            new XAttribute("holdAnchorAndSO", "0"),
+            new XAttribute("vertRelTo",       "PAPER"),
+            new XAttribute("horzRelTo",       "PAPER"),
+            new XAttribute("vertAlign",       "TOP"),
+            new XAttribute("horzAlign",       "LEFT"),
+            new XAttribute("vertOffset",      yOff.ToString()),
+            new XAttribute("horzOffset",      xOff.ToString())));
+        elem.Add(new XElement(Hp + "outMargin",
+            new XAttribute("left", "0"), new XAttribute("right",  "0"),
+            new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+
+        // hp:drawText — contains the textbox content as a subList.
+        var subList = new XElement(Hp + "subList",
+            new XAttribute("id",               ""),
+            new XAttribute("textDirection",    "HORIZONTAL"),
+            new XAttribute("lineWrap",         "BREAK"),
+            new XAttribute("vertAlign",        "CENTER"),
+            new XAttribute("linkListIDRef",    "0"),
+            new XAttribute("linkListNextIDRef","0"),
+            new XAttribute("textWidth",        w.ToString()),
+            new XAttribute("textHeight",       h.ToString()),
+            new XAttribute("hasTextRef",       "0"),
+            new XAttribute("hasNumRef",        "0"));
+
+        foreach (var block in tb.Content)
+            AppendBlock(subList, block, ctx);
+        if (!subList.HasElements)
+            subList.Add(BuildEmptyParagraph(ctx));
+
+        elem.Add(new XElement(Hp + "drawText",
+            new XAttribute("lastWidth", w.ToString()),
+            new XAttribute("name",      ""),
+            new XAttribute("editable",  "0"),
+            subList));
+
+        return elem;
     }
 
     private XElement BuildShape(ShapeObject shape, WriteContext ctx)

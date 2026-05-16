@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **HWP 용지 설정·글상자·도형·이미지 ingest**: `HwpReader`에서 `TAG_PAGE_DEF(0x03C)` 파싱으로 용지 크기·방향·여백을 `PageSettings`에 반영, `TAG_CTRL_HEADER(0x03A)` + `TAG_LIST_HEADER(0x03B)` 레벨 기반 파싱으로 글상자(`TextBoxObject`) 추출, `TAG_SHAPE_COMPONENT(0x03F)` + 서브태그(`0x041–0x049`)로 도형 종류·위치·크기 파싱, `TAG_PICTURE_COMPONENT(0x048)` + `BinData/BIN####` 스트림 읽기로 이미지(`ImageBlock`) 추출. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
+
 - **Phase F — RTF import/export 및 HWP CLI 스텁**: `tools/PolyDonky.Convert.Doc`(RTF 자체 구현) 및 `tools/PolyDonky.Convert.Hwp` 프로젝트 추가. `ExternalConverter.GetConverter`에 `"rtf"`/`"hwp"` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 에 RTF/HWP 항목 추가. (`tools/PolyDonky.Convert.Doc/`, `tools/PolyDonky.Convert.Hwp/`, `ExternalConverter.cs`, `KnownFormats.cs`)
 
 - **RTF import 구현 (`DocReader`)**: `.rtf → .iwpf` 방향 변환기 추가. 그룹 스택 기반 RTF 파서로 폰트/색상 테이블, 텍스트·서식(굵기·기울임·밑줄·취소선·폰트 크기·색상·정렬·줄간격) 파싱 지원. `\fonttbl`, `\colortbl`, `\*` 헤더 그룹 자동 스킵. `\'XX` ANSI 및 `\uN` 유니코드 디코딩 포함. (`tools/PolyDonky.Convert.Doc/DocReader.cs`, `Program.cs`)
@@ -101,6 +103,14 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 - **HTML 변환 시 절대 위치 표 드래그앤드롭 지원 안 됨**: HTML의 `position:absolute` CSS를 가진 표를 import할 때, 절대 좌표(`left`, `top`)를 파싱하지 않아 오버레이 모드에서도 올바른 위치에 배치되지 않음. 이제 `position:absolute`를 감지하면 `WrapMode=InFrontOfText`로 설정하고 `left`/`top` CSS 값을 `OverlayXMm`/`OverlayYMm`에 저장하여 드래그앤드롭으로 정상 편집 가능. (`HtmlReader.cs`)
 
 - **RTF 파일 저장 시 확장자가 `.doc`으로 기록되던 버그 수정**: `ExternalConverter.GetConverter`에서 `"doc"` 확장자가 `PolyDonky.Convert.Doc`에 매핑되어 있어 `.rtf` 파일을 저장할 때 실제 변환기가 호출되지 않던 문제. `"doc"` → `"rtf"` 매핑으로 수정. 주석·`DocWriter` XML 문서 주석도 RTF 기준으로 정정. (`ExternalConverter.cs`, `DocWriter.cs`)
+
+- **HWPX export 글상자(TextBoxObject) 누락 수정**: `HwpxWriter.AppendBlock`에서 `TextBoxObject`에 대한 케이스가 없어 빈 단락으로 폴백되던 문제. `BuildTextBoxHostingParagraph` / `BuildTextBox`를 추가하여 HWPX `hp:rect` + `hp:drawText` / `hp:subList` 구조로 올바르게 직렬화. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
+- **HWPX export 플로팅 이미지 위치 오류 수정**: `BuildPicture`가 항상 `offset x="0" y="0"` + `treatAsChar="1"` 인라인 배치를 사용하여 플로팅 이미지가 원래 위치에 표시되지 않던 문제. `ImageWrapMode`가 `Inline`/`AsText`가 아닌 경우 `OverlayXMm`/`OverlayYMm`를 `hp:offset`에 반영하고, `hp:pos`를 `treatAsChar="0"` + `vertRelTo/horzRelTo="PAPER"` 앵커 배치로 변경. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
+- **HWPX export 머리말/꼬리말 구조 수정 (한글에서 표시 안 되던 문제)**: `hm:masterPage` 방식 대신 실제 한글이 사용하는 `hp:ctrl`→`hp:header`/`hp:footer` 구조로 전면 교체. 머리말은 `secPr`·`colPr`와 같은 `hp:run`에 추가하고, 꼬리말은 별도 `hp:run`에 담아 첫 번째 문단에 삽입 (참조 파일 `한글_테스트1.hwpx` 구조와 일치). `masterPageCnt="0"`, `applyPageType="BOTH"`, `textWidth/Height="0"` 적용. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
+- **HWPX export 머리말/꼬리말 Left/Center/Right 가로 배치**: IWPF의 Left/Center/Right 3-슬롯 구조를 별도 문단으로 쌓던 문제 수정. 2개 이상 슬롯에 내용이 있으면 `1행 3열 테두리 없는 표`(borderFill NONE)로 묶어 가로 배치 — 단일 슬롯이면 기존대로 단락 출력. 표 너비는 실제 페이지 텍스트 너비(pageW - marginLeft - marginRight)를 기반으로 계산. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
 
 - **LibreOfficeBridge 및 LibreOfficeLocator 제거**: LibreOffice 미사용 결정에 따라 `LibreOfficeBridge.cs`, `LibreOfficeLocator.cs` 파일 삭제. `LanguageService`의 `LibreOfficePath` 프로퍼티·자동탐지·저장 로직 제거. `ExternalConverter`의 `LIBREOFFICE_PATH` 환경변수 전달 제거. `MainViewModel`의 LibreOffice 특수 오류처리 블록을 일반 `UnsupportedFormatVersionException` 처리로 통합. `SettingsWindow` LibreOffice 섹션(UI·핸들러) 제거. 관련 리소스 키 14개 삭제. (`LibreOfficeBridge.cs`, `LibreOfficeLocator.cs`, `LanguageService.cs`, `ExternalConverter.cs`, `MainViewModel.cs`, `SettingsWindow.xaml`, `SettingsWindow.xaml.cs`, `Resources.resx`, `Resources.en-US.resx`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)

@@ -28,6 +28,9 @@
     <!-- 임베드 웹 브라우저 (사전 뷰어) -->
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
 
+    <!-- OLE2 Compound File Binary parser (for HWP) -->
+    <PackageVersion Include="OpenMcdf" Version="3.1.4" />
+
     <!-- Test stack (xUnit only; FluentAssertions v8 is non-OSS, avoided) -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

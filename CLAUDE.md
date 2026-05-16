@@ -133,6 +133,7 @@ src/
   PolyDonky.Codecs.Markdown/  MD codec (Markdig)
   PolyDonky.Codecs.Docx/      DOCX codec (DocumentFormat.OpenXml) — 1급 시민, 메인 앱 직접 처리
   PolyDonky.Codecs.Hwpx/      HWPX codec (자체 구현, KS X 6101) — 1급 시민
+  PolyDonky.Codecs.Hwp/       HWP codec stub — v1.0.0 이후 자체 파서 구현 예정
   PolyDonky.Codecs.Html/      HTML5 codec (AngleSharp) — 메인 앱 직접 처리
   PolyDonky.Codecs.Xml/       XML / XHTML5 codec (Codecs.Html 위에 polyglot serializer)
   PolyDonky.App/              WPF 데스크톱 앱 (AssemblyName=PolyDonky)
@@ -152,13 +153,15 @@ CLI 변환 모듈 분리 원칙(아키텍처 §3) — **메인 앱은 IWPF/MD/TX
 - `tools/PolyDonky.Convert.Xml`  — XML/XHTML ↔ IWPF
 - `tools/PolyDonky.Convert.Docx` — DOCX ↔ IWPF
 - `tools/PolyDonky.Convert.Hwpx` — HWPX ↔ IWPF
+- `tools/PolyDonky.Convert.Doc`  — RTF ↔ IWPF (`DocReader`/`DocWriter` 자체 구현, Phase F1 완료)
+- `tools/PolyDonky.Convert.Hwp`  — HWP → IWPF (stub, v1.0.0 이후 자체 파서 구현 예정)
+- `tools/PolyDonky.Convert.Common` — 공유 유틸리티 (`ConverterExitCodes`, `ConverterProgress`) — 모든 CLI 컨버터가 참조
 
 메인 앱은 `Codecs.Html`/`Codecs.Xml`/`Codecs.Docx`/`Codecs.Hwpx` 를
 ProjectReference 하지 **않으며**, 빌드 시 CLI 출력(.dll + 부속 파일) 이 메인 앱
 출력 디렉터리로 복사되고, 런타임에 `Services/ExternalConverter.cs` 가 spawn 한다.
 열기: 입력 → 같은 이름의 정식 `.iwpf` 변환 후 메인 앱이 IWPF 를 읽음 (CurrentFilePath = .iwpf).
 저장: 같은 이름의 IWPF 정본 저장 → CLI 가 외부 포맷으로 변환 (두 파일 모두 디스크에 남음).
-2단계 추가 대상인 HWP/DOC 도 동일한 패턴으로 `tools/PolyDonky.Convert.Hwp` / `Doc` 로 분리할 예정.
 
 ## 빌드·테스트 명령
 
@@ -323,13 +326,19 @@ TypesettingMarksCanvas (IsHitTestVisible=false) — 조판 기호
 
 ### CLI 변환기 프로토콜
 
-`ExternalConverter.ConvertAsync` 가 spawn 하는 CLI 도구가 따르는 규약:
-- **stdout**: `PROGRESS:<0-100>:<메시지>` 형식으로 진행상황 보고 (다른 줄은 무시됨)
-- **종료 코드 0**: 성공
-- **종료 코드 6** (`ExitCodeUnsupportedVersion`): 지원 범위 밖 포맷 버전 → `UnsupportedFormatVersionException`
+`ExternalConverter.ConvertAsync` 가 spawn 하는 CLI 도구가 따르는 규약.
+공통 상수는 `tools/PolyDonky.Convert.Common/ConverterExitCodes.cs` 와 `ConverterProgress.cs` 에 정의된다.
+
+- **stdout**: `PROGRESS:<0-100>:<메시지>` 형식으로 진행상황 보고 — `ConverterProgress.Write()` 사용 (다른 줄은 무시됨)
+- **종료 코드 0** (`Ok`): 성공
+- **종료 코드 2** (`BadArgs`): 인자 오류
+- **종료 코드 3** (`UnsupportedOp`): 지원하지 않는 변환 쌍
+- **종료 코드 4** (`IoError`): 파일 없음·권한·디스크 잠금 등 I/O 실패
+- **종료 코드 5** (`ConvertError`): 구조 손상·내부 예외로 인한 변환 실패
+- **종료 코드 6** (`OldVersion`): 지원 범위 밖 포맷 버전 → `UnsupportedFormatVersionException`
 - **그 외 비-0**: 오류 (stderr 내용을 `InvalidOperationException` 메시지에 포함)
 
-새 CLI 컨버터 추가 시 이 규약을 그대로 지켜야 메인 앱의 진행 대화상자와 오류 처리가 작동한다.
+새 CLI 컨버터 추가 시 `Convert.Common` 을 참조하고 이 규약을 그대로 지켜야 메인 앱의 진행 대화상자와 오류 처리가 작동한다.
 
 ### 코드 블록 스타일 규칙
 

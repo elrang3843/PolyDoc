@@ -1,5 +1,5 @@
 using System.Text;
-using PolyDonky.Codecs.Docx;
+using PolyDonky.Codecs.Hwp;
 using PolyDonky.Codecs.Hwpx;
 using PolyDonky.Convert.Common;
 using PolyDonky.Core;
@@ -87,12 +87,6 @@ if (new FileInfo(inPath).Length == 0)
     return ConverterExitCodes.IoError;
 }
 
-// 현재 단계: IWPF → HWP만 지원 (읽기는 나중)
-if (inExt == "hwp" && outExt == "iwpf")
-{
-    Console.Error.WriteLine("HWP → IWPF 변환은 아직 미구현되었습니다.");
-    return ConverterExitCodes.UnsupportedOp;
-}
 
 var outDir = Path.GetDirectoryName(outPath);
 if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
@@ -111,8 +105,15 @@ try
 {
     if (isImport)
     {
-        Console.Error.WriteLine("HWP → IWPF 변환은 아직 미구현되었습니다.");
-        return ConverterExitCodes.UnsupportedOp;
+        // HWP → IWPF
+        ConverterProgress.Write(0, "HWP 읽는 중");
+        PolyDonkyument doc;
+        using (var fs = File.OpenRead(inPath))
+            doc = new HwpReader().Read(fs);
+
+        ConverterProgress.Write(70, "IWPF 저장 중");
+        using (var ofs = File.Create(tempOut))
+            new IwpfWriter().Write(doc, ofs);
     }
     else // isExport
     {
@@ -164,11 +165,9 @@ static void PrintHelp()
     Console.WriteLine("사용법:");
     Console.WriteLine("  PolyDonky.Convert.Hwp <input> <output>");
     Console.WriteLine();
-    Console.WriteLine("변환 쌍 (현재 단계):");
-    Console.WriteLine("  *.iwpf → *.hwp  : export (텍스트)");
-    Console.WriteLine();
-    Console.WriteLine("향후:");
-    Console.WriteLine("  *.hwp  → *.iwpf : import (파서 구현 예정)");
+    Console.WriteLine("변환 쌍:");
+    Console.WriteLine("  *.hwp  → *.iwpf : import (HWP 5.x 읽기)");
+    Console.WriteLine("  *.iwpf → *.hwp  : export (HWPX 호환 출력)");
     Console.WriteLine();
     Console.WriteLine("종료 코드:");
     Console.WriteLine("  0  성공");
