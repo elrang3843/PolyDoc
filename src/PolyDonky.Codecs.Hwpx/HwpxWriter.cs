@@ -6,6 +6,33 @@ using PolyDonky.Core;
 
 namespace PolyDonky.Codecs.Hwpx;
 
+// CLI 서브프로세스 디버깅용 파일 로거.
+// Windows: d:\Temp\PolyDonky-HwpxWriter.log  / Linux: /tmp/PolyDonky-HwpxWriter.log
+internal static class HwpxLog
+{
+    private static readonly string LogPath = Path.Combine(
+        Environment.OSVersion.Platform == PlatformID.Win32NT ? @"d:\Temp" : "/tmp",
+        "PolyDonky-HwpxWriter.log");
+
+    static HwpxLog()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            File.AppendAllText(LogPath,
+                $"\n=== HwpxWriter session {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+        }
+        catch { }
+    }
+
+    public static void Write(string message)
+    {
+        var line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
+        System.Diagnostics.Debug.WriteLine(line);
+        try { File.AppendAllText(LogPath, line + "\n"); } catch { }
+    }
+}
+
 public sealed class HwpxWriter : IDocumentWriter
 {
     public string FormatId => "hwpx";
@@ -358,6 +385,16 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(output);
+        HwpxLog.Write($"[Write] 시작. sections={document.Sections.Count}");
+        for (int si = 0; si < document.Sections.Count; si++)
+        {
+            var sec = document.Sections[si];
+            HwpxLog.Write($"  section[{si}]: blocks={sec.Blocks.Count}, hasHeader={!sec.Page.Header.IsEmpty}, hasFooter={!sec.Page.Footer.IsEmpty}");
+            if (!sec.Page.Header.IsEmpty)
+                HwpxLog.Write($"    header.Center paras={sec.Page.Header.Center.Paragraphs.Count}, text='{sec.Page.Header.Center.GetPlainText()}'");
+            if (!sec.Page.Footer.IsEmpty)
+                HwpxLog.Write($"    footer.Center paras={sec.Page.Footer.Center.Paragraphs.Count}, text='{sec.Page.Footer.Center.GetPlainText()}'");
+        }
 
         _pendingFootnotes = document.Footnotes;
         _pendingEndnotes  = document.Endnotes;
@@ -1025,9 +1062,10 @@ public sealed class HwpxWriter : IDocumentWriter
             long hdrH  = UnitConverter.MmToHwpUnit(section.Page.MarginHeaderMm);
             long ftrH  = UnitConverter.MmToHwpUnit(section.Page.MarginFooterMm);
 
+            // KS X 6101: number 는 0-based. kind="BOTH" = 홀수+짝수 공통 머리말/꼬리말.
             var masterPage = new XElement(Hm + "masterPage",
                 new XAttribute("kind",   "BOTH"),
-                new XAttribute("number", "1"));
+                new XAttribute("number", "0"));
 
             if (hasHeader)
                 masterPage.Add(BuildHeaderFooterElement("header", section.Page.Header, ctx, textW, hdrH));
@@ -1035,6 +1073,11 @@ public sealed class HwpxWriter : IDocumentWriter
                 masterPage.Add(BuildHeaderFooterElement("footer", section.Page.Footer, ctx, textW, ftrH));
 
             sec.Add(masterPage);
+            HwpxLog.Write($"[WriteSectionXml] masterPage 출력: hasHeader={hasHeader}, hasFooter={hasFooter}, textW={textW}, hdrH={hdrH}, ftrH={ftrH}");
+        }
+        else
+        {
+            HwpxLog.Write($"[WriteSectionXml] masterPage 없음 (hasHeader={!section.Page.Header.IsEmpty}, hasFooter={!section.Page.Footer.IsEmpty})");
         }
 
         WriteXml(archive, HwpxPaths.SectionXml(sectionIndex),
@@ -1049,6 +1092,7 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         // HWPX 머리말/꼬리말: hp:subList 안에 단락 목록.
         // 세 슬롯(Left/Center/Right) 을 단락 순서로 출력한다.
+        // textWidth/textHeight 는 본문 폭 × 머리/꼬리말 높이.
         var subList = new XElement(Hp + "subList",
             new XAttribute("id",               ""),
             new XAttribute("textDirection",    "HORIZONTAL"),
@@ -1073,7 +1117,10 @@ public sealed class HwpxWriter : IDocumentWriter
         if (!addedAny)
             subList.Add(BuildEmptyParagraph(ctx));
 
-        return new XElement(Hm + localName, subList);
+        // type="BOTH" = 홀수/짝수 페이지 모두 적용 (KS X 6101 hm:header/hm:footer 속성).
+        return new XElement(Hm + localName,
+            new XAttribute("type", "BOTH"),
+            subList);
     }
 
     private void AppendBlock(XElement target, Block block, WriteContext ctx, Section section, ref bool injectSecPr)
