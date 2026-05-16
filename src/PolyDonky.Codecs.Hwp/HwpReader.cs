@@ -307,14 +307,16 @@ public sealed class HwpReader : IDocumentReader
                     }
                     break;
 
-                // 레벨 0 단락만 본문으로 수집 (레벨 1+는 머리말/꼬리말/표 셀 안이므로 제외).
+                // HWP 레벨 구조: PARA_HEADER(N) → 자식 PARA_TEXT/CHAR_SHAPE/LINE_SEG/CTRL_HEADER(N+1).
+                // 본문 단락은 PARA_HEADER 가 레벨 0 에 있고, 그 PARA_TEXT 는 레벨 1.
+                // 머리말/꼬리말/표 셀 등 nested 단락은 PARA_HEADER 가 레벨 2+, PARA_TEXT 가 레벨 3+.
                 case TAG_PARA_HEADER when rec.Level == 0:
                     if (current != null) body.Paragraphs.Add(current);
                     current = new HwpParagraph();
                     HwpLog.Write($"[HwpReader] TAG_PARA_HEADER at level {rec.Level}");
                     break;
 
-                case TAG_PARA_TEXT when rec.Level == 0:
+                case TAG_PARA_TEXT when rec.Level == 1:
                     if (current == null) current = new HwpParagraph();
                     try
                     {
@@ -328,28 +330,21 @@ public sealed class HwpReader : IDocumentReader
                     }
                     break;
 
-                case TAG_CTRL_HEADER when rec.Payload.Length >= 4:
+                // CTRL_HEADER 는 본문 단락(레벨 0)의 자식 인라인 컨트롤이므로 레벨 1 에서 처리.
+                case TAG_CTRL_HEADER when rec.Level == 1 && rec.Payload.Length >= 4:
                     {
                         uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
                         if ((ctrlId & CTRL_ID_GSO_MASK) == CTRL_ID_GSO_VAL)
                         {
                             // 그리기 개체(GSO): 도형/글상자/이미지 → 별도 파서 호출
-                            if (current != null) { body.Paragraphs.Add(current); current = null; }
                             i = ParseGsoControl(recs, i + 1, rec.Level + 1, body);
                             continue;
                         }
-                        else
-                        {
-                            // 비-GSO 컨트롤(머리말·꼬리말·표·섹션 등): 하위 레코드 모두 건너뜀
-                            i = SkipToLevel(recs, i + 1, rec.Level);
-                            continue;
-                        }
+                        // 비-GSO 컨트롤(secd/cold/head/foot/tbl 등): SkipToLevel 하지 않음.
+                        // 이렇게 해야 secd 컨트롤 안의 PAGE_DEF(레벨 2)도 수집된다.
+                        // 안쪽 PARA_HEADER/PARA_TEXT 는 레벨 2+/3+ 라 위의 필터가 자동으로 걸러낸다.
+                        break;
                     }
-
-                case TAG_LIST_HEADER:
-                    // 컨트롤 내부 단락 목록 시작. 현재 단락이 있으면 저장하고 초기화.
-                    if (current != null) { body.Paragraphs.Add(current); current = null; }
-                    break;
             }
 
             i++;
