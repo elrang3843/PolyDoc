@@ -71,6 +71,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Fixed
 
+- **HWP GSO TextBox 텍스트 추출 버그 + SHAPE_COMPONENT 오프셋 수정**: `HwpReader.ParseGsoControl` 에서 LIST_HEADER 의 자식 PARA_HEADER 가 LIST_HEADER 와 같은 레벨에 있다는 사실을 잘못 처리(레벨+1로 가정)하여 글상자 내부 텍스트가 모두 누락되던 문제 수정. 또한 RECT_COMPONENT 등 후속 shape component 가 kind=TextBox 를 kind=Rectangle 로 덮어쓰는 버그도 수정. 추가로 SHAPE_COMPONENT 페이로드의 위치/크기 오프셋이 KS X 5700 스펙과 달라 비현실적인 값(예: width=2,157,154mm)이 나오던 문제를 정정 — 올바른 오프셋: xPos@8, yPos@12, objW@24, objH@28. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
+
 - **HWP GSO (General Shape Object) 컨트롤 ID 상수 오류 수정**: `HwpReader`에서 도형·글상자·이미지 인식을 위한 GSO 컨트롤 ID 상수가 완전히 잘못되었던 문제. 상수가 `0x006F7367` (검증 실패)으로 정의되어 있었지만, 실제 파일의 GSO 컨트롤 ID는 `0x67736F20` ('gso ' big-endian). 이제 다른 제어 ID와 일치하게 `CTRL_ID_GSO = ('g' << 24) | ('s' << 16) | ('o' << 8) | ' '`로 정의. 결과: Linux 기본명령어.hwp 에서 0 → 6 개 이미지 추출, Test1.hwp 에서 0 → 5 개 도형 추출 등 대폭 개선. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
 
 - **HWPX import 머리말/꼬리말이 본문으로 파싱되던 버그 수정**: `HwpxReader`가 `doc.Root.Descendants()`를 평탄 순회할 때 `<hp:header>`/`<hp:footer>` 안의 `<hp:p>` 요소들을 본문 단락으로 파싱하던 문제. 이제 `insideHeaderFooter` 집합을 미리 구축해 머리말/꼬리말 자손을 본문 순회에서 제외하고, 머리말/꼬리말 내용을 `section.Page.Header`/`Footer` Left/Center/Right 슬롯으로 올바르게 파싱. `ReadParagraph`와 `ReadRun` 단계에서도 `header`/`footer`/`secPr`/`colPr` 메타 ctrl 안의 텍스트를 제외. (`src/PolyDonky.Codecs.Hwpx/HwpxReader.cs`)
