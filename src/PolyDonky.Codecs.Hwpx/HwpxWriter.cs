@@ -1206,6 +1206,7 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("memoShapeIDRef", "0"),
             new XAttribute("textVerticalWidthHead", "0"),
             new XAttribute("masterPageCnt", _pendingMasterPageCnt.ToString()),
+            new XAttribute("masterPageIDRef", _pendingMasterPageCnt > 0 ? "0" : "-1"),
             // Ordered children per real Hancom: grid, startNum, visibility, lineNumberShape,
             // pagePr, footNotePr, endNotePr, pageBorderFill×3
             new XElement(Hp + "grid",
