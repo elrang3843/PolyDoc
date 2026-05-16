@@ -376,7 +376,16 @@ public sealed class HwpReader : IDocumentReader
                     if (current != null)
                         body.Blocks.Add(new HwpParagraphBlock { Paragraph = current });
                     current = new HwpParagraph();
-                    // PARA_HEADER payload offset 4-7: paraShapeId (uint32)
+                    // PARA_HEADER payload layout (KS X 5700):
+                    //   offset 0-3: flags (uint32). bit 0 = nBrk (page break before)
+                    //   offset 4-7: paraShapeId (uint32)
+                    if (rec.Payload.Length >= 4)
+                    {
+                        uint flags = BitConverter.ToUInt32(rec.Payload, 0);
+                        current.PageBreakBefore = (flags & 1u) != 0;
+                        if (current.PageBreakBefore)
+                            HwpLog.Write($"[ParseSectionRecords] Found PARA_HEADER with page break flag at index {i}");
+                    }
                     if (rec.Payload.Length >= 8)
                         current.ParaShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
@@ -1296,6 +1305,9 @@ public sealed class HwpReader : IDocumentReader
                 paragraph.Style.SpaceAfterPt     = ps.SpaceAfterPt;
             }
 
+            // 페이지 나누기 적용 (HWP PARA_HEADER flags bit 0)
+            paragraph.Style.ForcePageBreakBefore = hp.PageBreakBefore;
+
             // 글자 속성 적용
             if (hp.CharShapeId >= 0 && hp.CharShapeId < docInfo.CharShapes.Count)
             {
@@ -1652,6 +1664,7 @@ public sealed class HwpReader : IDocumentReader
         public string Text { get; set; } = "";
         public int    ParaShapeId { get; set; } = -1;
         public int    CharShapeId { get; set; } = -1;
+        public bool   PageBreakBefore { get; set; } = false;
     }
 
     private sealed class HwpTextBox
