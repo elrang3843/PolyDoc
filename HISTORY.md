@@ -77,8 +77,6 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **HWP GSO (General Shape Object) 컨트롤 ID 상수 오류 수정**: `HwpReader`에서 도형·글상자·이미지 인식을 위한 GSO 컨트롤 ID 상수가 완전히 잘못되었던 문제. 상수가 `0x006F7367` (검증 실패)으로 정의되어 있었지만, 실제 파일의 GSO 컨트롤 ID는 `0x67736F20` ('gso ' big-endian). 이제 다른 제어 ID와 일치하게 `CTRL_ID_GSO = ('g' << 24) | ('s' << 16) | ('o' << 8) | ' '`로 정의. 결과: Linux 기본명령어.hwp 에서 0 → 6 개 이미지 추출, Test1.hwp 에서 0 → 5 개 도형 추출 등 대폭 개선. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
 
-- **HWP 페이지 나누기(페이지 이전 단락) 지원 추가**: `HwpReader`가 PARA_HEADER 레코드의 flags 필드(offset 0-3, bit 0)를 파싱하여 "이 단락 앞에 페이지 나누기" 플래그를 인식. `HwpParagraph.PageBreakBefore` 프로퍼티 추가 및 `Core.Paragraph.Style.ForcePageBreakBefore`로 변환 시 매핑. Welcome to Hwp.hwp 및 한글 테스트 문서.hwp 에서 각각 다중 페이지 나누기 마커가 올바르게 추출되어 표지 페이지와 본문이 분리됨. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
-
 - **HWPX import 머리말/꼬리말이 본문으로 파싱되던 버그 수정**: `HwpxReader`가 `doc.Root.Descendants()`를 평탄 순회할 때 `<hp:header>`/`<hp:footer>` 안의 `<hp:p>` 요소들을 본문 단락으로 파싱하던 문제. 이제 `insideHeaderFooter` 집합을 미리 구축해 머리말/꼬리말 자손을 본문 순회에서 제외하고, 머리말/꼬리말 내용을 `section.Page.Header`/`Footer` Left/Center/Right 슬롯으로 올바르게 파싱. `ReadParagraph`와 `ReadRun` 단계에서도 `header`/`footer`/`secPr`/`colPr` 메타 ctrl 안의 텍스트를 제외. (`src/PolyDonky.Codecs.Hwpx/HwpxReader.cs`)
 
 - **각주 표시 위치 수정 — 꼬리말 영역 침범 방지 + 본문 RTB 높이 축소**: 이전 구현은 각주 패널을 RTB 아래에 임의로 추가해 꼬리말 영역을 침범했다. 수정: `PerPageDocumentSplitter` 에서 페이지별 각주를 수집한 뒤, 오프스크린 RichTextBox 로 각주 FlowDocument 를 Measure() 해 정확한 높이(`FootnoteAreaHeightDip`)를 산출. 본문 RTB 의 `BodyHeightDip` 을 각주 크기만큼 줄여 각주가 본문 영역(상·하 여백 내부) 아래쪽에만 위치하고 꼬리말 위에 표시된다. (`PerPageDocumentSplitter.cs`, `PerPageDocumentSlice.cs`, `PerPageEditorHost.cs`)
