@@ -1040,21 +1040,20 @@ public sealed class HwpxWriter : IDocumentWriter
 
         _pendingMasterPageCnt = masterPageCnt;
 
-        // HWP 바이너리 섹션 순서: secPr → hm:masterPage → 본문.
+        // OWPML/HWPX 스키마 순서: 모든 hp:p 가 먼저, hm:masterPage 는 마지막.
+        // (DOCX 에서 w:sectPr 가 w:body 마지막에 오는 것과 동일한 패턴)
         if (blocks.Count == 0)
         {
             var para = BuildEmptyParagraph(ctx);
             if (injectSecPr) PrependSecPrRun(para, section);
             sec.Add(para);
-            AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
         }
         else
         {
-            AppendBlock(sec, blocks[0], ctx, section, ref injectSecPr);
-            AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
-            for (int bi = 1; bi < blocks.Count; bi++)
-                AppendBlock(sec, blocks[bi], ctx, section, ref injectSecPr);
+            foreach (var block in blocks)
+                AppendBlock(sec, block, ctx, section, ref injectSecPr);
         }
+        AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
 
         _pendingMasterPageCnt = 0;
 
@@ -1071,14 +1070,17 @@ public sealed class HwpxWriter : IDocumentWriter
     {
         if (masterPageCnt <= 0) return;
 
-        long pageW  = ResolvePageDim(section.Page.EffectiveWidthMm,  defaultMm: 210);
-        long mLeft  = ResolvePageDim(section.Page.MarginLeftMm,   defaultMm: 30, minMm: 0);
-        long mRight = ResolvePageDim(section.Page.MarginRightMm,  defaultMm: 30, minMm: 0);
-        long mHead  = ResolvePageDim(section.Page.MarginHeaderMm, defaultMm: 15, minMm: 0);
-        long mFoot  = ResolvePageDim(section.Page.MarginFooterMm, defaultMm: 15, minMm: 0);
-        long textW  = pageW - mLeft - mRight;
-        long hdrH   = mHead;
-        long ftrH   = mFoot;
+        long pageW   = ResolvePageDim(section.Page.EffectiveWidthMm,   defaultMm: 210);
+        long mLeft   = ResolvePageDim(section.Page.MarginLeftMm,    defaultMm: 30, minMm: 0);
+        long mRight  = ResolvePageDim(section.Page.MarginRightMm,   defaultMm: 30, minMm: 0);
+        long mTop    = ResolvePageDim(section.Page.MarginTopMm,     defaultMm: 20, minMm: 0);
+        long mBottom = ResolvePageDim(section.Page.MarginBottomMm,  defaultMm: 20, minMm: 0);
+        long mHead   = ResolvePageDim(section.Page.MarginHeaderMm,  defaultMm: 15, minMm: 0);
+        long mFoot   = ResolvePageDim(section.Page.MarginFooterMm,  defaultMm: 15, minMm: 0);
+        long textW   = pageW - mLeft - mRight;
+        // 머리말/꼬리말 영역 높이 = 상단/하단 여백 - 머리말/꼬리말 여백 (용지 상단→머리말→본문 순서)
+        long hdrH    = Math.Max(283, mTop - mHead);   // 최소 1mm
+        long ftrH    = Math.Max(283, mBottom - mFoot);
 
         var masterPage = new XElement(Hm + "masterPage",
             new XAttribute("kind",   "BOTH"),
