@@ -1291,16 +1291,25 @@ public sealed class HwpxWriter : IDocumentWriter
             secPr,
             ctrl);
 
-        // 머리말/꼬리말 — 한글 참조 구조에 따라 동일 run 내 hp:ctrl 로 추가.
+        // 머리말/꼬리말 — 한글 참조 구조:
+        //   머리말(header)은 secPr·colPr 와 같은 run 안에 추가.
+        //   꼬리말(footer)은 별도의 run 에 담아 첫 번째 문단에 삽입 (참조 파일과 동일).
         bool hasHeader = !section.Page.Header.IsEmpty;
         bool hasFooter = !section.Page.Footer.IsEmpty;
         if (hasHeader)
             secPrRun.Add(BuildHeaderFooterCtrl("header", section.Page.Header, ctx, "TOP"));
-        if (hasFooter)
-            secPrRun.Add(BuildHeaderFooterCtrl("footer", section.Page.Footer, ctx, "BOTTOM"));
         HwpxLog.Write($"  PrependSecPrRun: hasHeader={hasHeader} hasFooter={hasFooter}");
 
         para.AddFirst(secPrRun);
+
+        if (hasFooter)
+        {
+            var footerRun = new XElement(Hp + "run",
+                new XAttribute("charPrIDRef", "0"),
+                BuildHeaderFooterCtrl("footer", section.Page.Footer, ctx, "BOTTOM"));
+            // 꼬리말 run 은 secPrRun 바로 다음에 위치.
+            secPrRun.AddAfterSelf(footerRun);
+        }
     }
 
     private void AppendTocBlock(XElement target, TocBlock toc, WriteContext ctx, Section section, ref bool injectSecPr)
