@@ -1017,10 +1017,10 @@ public sealed class HwpxWriter : IDocumentWriter
         // Without it Hangul Office rejects the file with "파일을 읽거나 저장하는데 오류가 있습니다".
         bool injectSecPr = true;
 
-        // 머리말/꼬리말 컨트롤 개수 계산 (각각 1개씩).
+        // 머리말/꼬리말이 있으면 masterPage 1개.
         bool hasHeader = !section.Page.Header.IsEmpty;
         bool hasFooter = !section.Page.Footer.IsEmpty;
-        int masterPageCnt = (hasHeader ? 1 : 0) + (hasFooter ? 1 : 0);
+        int masterPageCnt = (hasHeader || hasFooter) ? 1 : 0;
 
         // 도형(ShapeObject)/글상자(TextBoxObject) 은 anchored overlay 로 출력되지만
         // hosting paragraph 의 위치가 anchor 의 페이지를 결정한다. IWPF 문서 순서상
@@ -1040,24 +1040,18 @@ public sealed class HwpxWriter : IDocumentWriter
 
         _pendingMasterPageCnt = masterPageCnt;
 
-        // HWP 바이너리 섹션 순서 (KS X 5700): 머리말 컨트롤 → 꼬리말 컨트롤 → 섹션 설정 → 본문.
-        // HWPX 에서도 같은 순서를 따른다: header/footer ctrl 단락 → secPr 단락 → 본문.
-        // 구현: 머리말/꼬리말 컨트롤 단락 추가 → 첫 블록(secPr) → 나머지 본문.
-
-        // 머리말/꼬리말 컨트롤 단락 추가 (masterPageCnt만큼).
-        AppendHeaderFooterParagraphs(sec, section, masterPageCnt, ctx);
-
+        // HWP 바이너리 섹션 순서: secPr → hm:masterPage → 본문.
         if (blocks.Count == 0)
         {
             var para = BuildEmptyParagraph(ctx);
             if (injectSecPr) PrependSecPrRun(para, section);
             sec.Add(para);
+            AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
         }
         else
         {
-            // 첫 블록 → secPr 주입
             AppendBlock(sec, blocks[0], ctx, section, ref injectSecPr);
-            // 나머지 블록
+            AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
             for (int bi = 1; bi < blocks.Count; bi++)
                 AppendBlock(sec, blocks[bi], ctx, section, ref injectSecPr);
         }
@@ -1071,63 +1065,32 @@ public sealed class HwpxWriter : IDocumentWriter
     // masterPageCnt 를 첫 번째 secPr 주입에 전달하기 위한 인스턴스 필드.
     private int _pendingMasterPageCnt = 0;
 
-    // 머리말/꼬리말을 hp:ctrl 단락으로 추가 (HWP 바이너리 섹션 순서와 일치).
-    // 위치: secPr 단락 전.
-    private void AppendHeaderFooterParagraphs(XElement sec, Section section, int masterPageCnt, WriteContext ctx)
+    // masterPage 가 0이면 아무것도 추가하지 않는다.
+    private void AppendMasterPage(XElement sec, Section section, int masterPageCnt,
+        bool hasHeader, bool hasFooter, WriteContext ctx)
     {
         if (masterPageCnt <= 0) return;
 
         long pageW  = ResolvePageDim(section.Page.EffectiveWidthMm,  defaultMm: 210);
-        long pageH  = ResolvePageDim(section.Page.EffectiveHeightMm, defaultMm: 297);
         long mLeft  = ResolvePageDim(section.Page.MarginLeftMm,   defaultMm: 30, minMm: 0);
         long mRight = ResolvePageDim(section.Page.MarginRightMm,  defaultMm: 30, minMm: 0);
         long mHead  = ResolvePageDim(section.Page.MarginHeaderMm, defaultMm: 15, minMm: 0);
         long mFoot  = ResolvePageDim(section.Page.MarginFooterMm, defaultMm: 15, minMm: 0);
-        long textW  = pageW - mLeft - mRight;   // 본문 폭 (HWP 유닛)
-        long hdrH   = mHead;                    // 머리말 높이 ≈ 상단 여백
-        long ftrH   = mFoot;                    // 꼬리말 높이 ≈ 하단 여백
+        long textW  = pageW - mLeft - mRight;
+        long hdrH   = mHead;
+        long ftrH   = mFoot;
 
-        // HEADER ctrl paragraph.
-        if (!section.Page.Header.IsEmpty)
-        {
-            var headerCtrl = new XElement(Hp + "ctrl",
-                new XAttribute("ctrlID", "HEADER"),
-                new XAttribute("type", "BOTH"),
-                BuildHeaderFooterElement("subList", section.Page.Header, ctx, textW, hdrH));
-            var headerPara = new XElement(Hp + "p",
-                new XAttribute("id", ctx.NextParaId().ToString()),
-                new XAttribute("paraPrIDRef", "0"),
-                new XAttribute("styleIDRef", "0"),
-                new XAttribute("pageBreak", "0"),
-                new XAttribute("columnBreak", "0"),
-                new XAttribute("merged", "0"),
-                new XElement(Hp + "run",
-                    new XAttribute("charPrIDRef", "0"),
-                    headerCtrl));
-            sec.Add(headerPara);
-        }
+        var masterPage = new XElement(Hm + "masterPage",
+            new XAttribute("kind",   "BOTH"),
+            new XAttribute("number", "0"));
 
-        // FOOTER ctrl paragraph.
-        if (!section.Page.Footer.IsEmpty)
-        {
-            var footerCtrl = new XElement(Hp + "ctrl",
-                new XAttribute("ctrlID", "FOOTER"),
-                new XAttribute("type", "BOTH"),
-                BuildHeaderFooterElement("subList", section.Page.Footer, ctx, textW, ftrH));
-            var footerPara = new XElement(Hp + "p",
-                new XAttribute("id", ctx.NextParaId().ToString()),
-                new XAttribute("paraPrIDRef", "0"),
-                new XAttribute("styleIDRef", "0"),
-                new XAttribute("pageBreak", "0"),
-                new XAttribute("columnBreak", "0"),
-                new XAttribute("merged", "0"),
-                new XElement(Hp + "run",
-                    new XAttribute("charPrIDRef", "0"),
-                    footerCtrl));
-            sec.Add(footerPara);
-        }
+        if (hasHeader)
+            masterPage.Add(BuildHeaderFooterElement("header", section.Page.Header, ctx, textW, hdrH));
+        if (hasFooter)
+            masterPage.Add(BuildHeaderFooterElement("footer", section.Page.Footer, ctx, textW, ftrH));
 
-        HwpxLog.Write($"  AppendHeaderFooterParagraphs: textW={textW} hdrH={hdrH} ftrH={ftrH} cnt={masterPageCnt}");
+        sec.Add(masterPage);
+        HwpxLog.Write($"  AppendMasterPage: textW={textW} hdrH={hdrH} ftrH={ftrH}");
     }
 
     private XElement BuildHeaderFooterElement(string localName, HeaderFooterContent content,
@@ -1136,7 +1099,7 @@ public sealed class HwpxWriter : IDocumentWriter
         // HWPX 머리말/꼬리말: hp:subList 안에 단락 목록.
         // 세 슬롯(Left/Center/Right) 을 단락 순서로 출력한다.
         // textWidth/textHeight 는 본문 폭 × 머리/꼬리말 높이.
-        var subList = new XElement(Hp + localName,
+        var subList = new XElement(Hp + "subList",
             new XAttribute("id",               ""),
             new XAttribute("textDirection",    "HORIZONTAL"),
             new XAttribute("lineWrap",         "BREAK"),
@@ -1160,7 +1123,9 @@ public sealed class HwpxWriter : IDocumentWriter
         if (!addedAny)
             subList.Add(BuildEmptyParagraph(ctx));
 
-        return subList;
+        return new XElement(Hm + localName,
+            new XAttribute("type", "BOTH"),
+            subList);
     }
 
     private void AppendBlock(XElement target, Block block, WriteContext ctx, Section section, ref bool injectSecPr)
