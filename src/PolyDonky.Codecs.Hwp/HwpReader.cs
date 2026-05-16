@@ -70,6 +70,10 @@ public sealed class HwpReader : IDocumentReader
     private const uint TAG_DOCUMENT_PROPERTIES = 0x010;
     private const uint TAG_BIN_DATA            = 0x012;
     private const uint TAG_FACE_NAME           = 0x013;
+    private const uint TAG_BORDER_FILL         = 0x014;
+    private const uint TAG_CHAR_SHAPE          = 0x015;
+    private const uint TAG_PARA_SHAPE          = 0x019;
+    private const uint TAG_STYLE               = 0x01A;
 
     // ── BodyText Tag ID (KS X 5700, 실제 값은 0x042 부터 시작) ────────────────
     private const uint TAG_PARA_HEADER         = 0x042;  // HWPTAG_PARA_HEADER
@@ -188,8 +192,33 @@ public sealed class HwpReader : IDocumentReader
                     break;
 
                 case TAG_FACE_NAME:
-                    try { info.FontNames.Add(Encoding.Unicode.GetString(payload).TrimEnd('\0')); }
-                    catch { }
+                    // HWPTAG_FACE_NAME 레이아웃:
+                    //   byte 0     : properties (hasAlt/hasSubst/hasTypeInfo 비트)
+                    //   bytes 1-2  : faceNameLen (uint16, in chars)
+                    //   bytes 3..  : faceName (UTF-16 LE, len*2 bytes)
+                    //   …(타입정보·대체폰트·기본폰트 추가 필드)
+                    try
+                    {
+                        if (payload.Length >= 3)
+                        {
+                            int nameLen = BitConverter.ToUInt16(payload, 1);
+                            int nameBytes = nameLen * 2;
+                            if (3 + nameBytes <= payload.Length)
+                            {
+                                var name = Encoding.Unicode.GetString(payload, 3, nameBytes);
+                                info.FontNames.Add(name);
+                            }
+                            else
+                            {
+                                info.FontNames.Add("");
+                            }
+                        }
+                        else
+                        {
+                            info.FontNames.Add("");
+                        }
+                    }
+                    catch { info.FontNames.Add(""); }
                     break;
 
                 case TAG_BIN_DATA when payload.Length >= 4:
@@ -234,6 +263,14 @@ public sealed class HwpReader : IDocumentReader
 
                         info.BinInfos.Add(binfo);
                     }
+                    break;
+
+                case TAG_CHAR_SHAPE:
+                    info.CharShapes.Add(ParseCharShape(payload, info.FontNames));
+                    break;
+
+                case TAG_PARA_SHAPE:
+                    info.ParaShapes.Add(ParseParaShape(payload));
                     break;
             }
         });
@@ -294,6 +331,9 @@ public sealed class HwpReader : IDocumentReader
                     if (current != null)
                         body.Blocks.Add(new HwpParagraphBlock { Paragraph = current });
                     current = new HwpParagraph();
+                    // PARA_HEADER payload offset 4-7: paraShapeId (uint32)
+                    if (rec.Payload.Length >= 8)
+                        current.ParaShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
 
                 case TAG_PARA_TEXT when rec.Level == 1:
@@ -304,6 +344,13 @@ public sealed class HwpReader : IDocumentReader
                         current.Text += text;
                     }
                     catch { }
+                    break;
+
+                case TAG_PARA_CHAR_SHAPE when rec.Level == 1 && current != null && current.CharShapeId < 0:
+                    // PARA_CHAR_SHAPE payload: 반복 (position uint32, charShapeId uint32).
+                    // 단순화: 첫 번째 pair 의 charShapeId 사용 (단락 전체 동일 가정).
+                    if (rec.Payload.Length >= 8)
+                        current.CharShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
 
                 // CTRL_HEADER 는 본문 단락(레벨 0)의 자식 인라인 컨트롤이므로 레벨 1 에서 처리.
@@ -451,11 +498,17 @@ public sealed class HwpReader : IDocumentReader
                             case TAG_PARA_HEADER:
                                 if (tbCur != null) tbParas.Add(tbCur);
                                 tbCur = new HwpParagraph();
+                                if (ir.Payload.Length >= 8)
+                                    tbCur.ParaShapeId = (int)BitConverter.ToUInt32(ir.Payload, 4);
                                 break;
                             case TAG_PARA_TEXT:
                                 if (tbCur == null) tbCur = new HwpParagraph();
                                 try { tbCur.Text += ExtractHwpText(ir.Payload); }
                                 catch { }
+                                break;
+                            case TAG_PARA_CHAR_SHAPE when tbCur != null && tbCur.CharShapeId < 0:
+                                if (ir.Payload.Length >= 8)
+                                    tbCur.CharShapeId = (int)BitConverter.ToUInt32(ir.Payload, 4);
                                 break;
                         }
                         i++;
@@ -503,6 +556,139 @@ public sealed class HwpReader : IDocumentReader
         return i;
     }
 
+    // ── CHAR_SHAPE / PARA_SHAPE 파싱 (DocInfo) ─────────────────────────────
+
+    /// <summary>
+    /// HWPTAG_CHAR_SHAPE 페이로드 → HwpCharShape.
+    /// 레이아웃 (KS X 5700 §5.4.4):
+    ///   0-13 : faceNameId (uint16 × 7) — Hangul/Latin/Hanja/Japanese/Other/Symbol/User
+    ///   14-20: ratio       (uint8 × 7, 50-200%)
+    ///   21-27: charSpacing (int8  × 7, -50~50)
+    ///   28-34: relSize     (uint8 × 7, 10-250%)
+    ///   35-41: charOffset  (int8  × 7, -50~50)
+    ///   42-45: baseSize    (int32, 1/100 pt)
+    ///   46-49: properties  (uint32 비트플래그)
+    ///   50   : shadowOffsetX (int8)
+    ///   51   : shadowOffsetY (int8)
+    ///   52-55: color           (uint32 RGB)
+    ///   56-59: underlineColor  (uint32 RGB)
+    ///   60-63: shadeColor      (uint32 RGB)
+    ///   64-67: shadowColor     (uint32 RGB)
+    /// </summary>
+    private static HwpCharShape ParseCharShape(byte[] p, List<string> fontNames)
+    {
+        var cs = new HwpCharShape();
+
+        if (p.Length >= 2)
+        {
+            ushort hangulFaceId = BitConverter.ToUInt16(p, 0);
+            if (hangulFaceId < fontNames.Count)
+                cs.FontFamily = fontNames[hangulFaceId];
+        }
+
+        if (p.Length >= 16) cs.WidthPercent  = p[14];                  // ratio (장평)
+        if (p.Length >= 22) cs.LetterSpacingPx = (sbyte)p[21] * 0.5;   // charSpacing (자간) - 대략
+
+        if (p.Length >= 46)
+        {
+            int baseSize100 = BitConverter.ToInt32(p, 42);
+            if (baseSize100 > 0 && baseSize100 < 100000)  // sanity
+                cs.FontSizePt = baseSize100 / 100.0;
+        }
+
+        if (p.Length >= 50)
+        {
+            uint props = BitConverter.ToUInt32(p, 46);
+            cs.Italic        = (props & 0x00000001u) != 0;
+            cs.Bold          = (props & 0x00000002u) != 0;
+            // bits 2-4: underline kind (0=none, 1=under, 2=over, 3=through)
+            uint ulKind      = (props >> 2) & 0x07u;
+            cs.Underline     = ulKind == 1;
+            cs.Strikethrough = ulKind == 3;
+            // bit 18: strike
+            if ((props & (1u << 18)) != 0) cs.Strikethrough = true;
+            // bits 15-16: super/subscript
+            cs.Superscript   = (props & (1u << 15)) != 0;
+            cs.Subscript     = (props & (1u << 16)) != 0;
+        }
+
+        if (p.Length >= 56)
+        {
+            uint rgb = BitConverter.ToUInt32(p, 52);
+            cs.Color = FormatRgb(rgb);
+        }
+
+        return cs;
+    }
+
+    /// <summary>
+    /// HWPTAG_PARA_SHAPE 페이로드 → HwpParaShape.
+    /// 레이아웃 (요약):
+    ///   0-3  : properties (정렬·줄나눔·들여쓰기 종류 비트플래그)
+    ///   4-7  : marginLeft  (int32, HWPUNIT)
+    ///   8-11 : marginRight
+    ///   12-15: indent (int32, HWPUNIT, 첫줄 들여쓰기)
+    ///   16-19: marginPrev (단락 위 여백)
+    ///   20-23: marginNext (단락 아래 여백)
+    ///   24-27: lineSpacing (uint32)
+    ///   28-31: tabDefId
+    ///   32-35: numberingId
+    ///   ...
+    /// properties 비트필드 (HWP 5.x):
+    ///   bits 2-4: alignment (0=both, 1=left, 2=right, 3=center, 4=distribute, 5=division)
+    /// </summary>
+    private static HwpParaShape ParseParaShape(byte[] p)
+    {
+        var ps = new HwpParaShape();
+
+        if (p.Length >= 4)
+        {
+            uint props = BitConverter.ToUInt32(p, 0);
+            uint align = (props >> 2) & 0x7u;
+            ps.Alignment = align switch
+            {
+                1 => Alignment.Left,
+                2 => Alignment.Right,
+                3 => Alignment.Center,
+                4 => Alignment.Justify, // distribute (균등 분배) ≈ justify
+                5 => Alignment.Justify, // division
+                _ => Alignment.Justify,  // 0 = both (양쪽 혼합)
+            };
+        }
+
+        if (p.Length >= 8)  ps.IndentLeftMm    = BitConverter.ToInt32(p, 4) * HwpUnitToMm;
+        if (p.Length >= 12) ps.IndentRightMm   = BitConverter.ToInt32(p, 8) * HwpUnitToMm;
+        if (p.Length >= 16) ps.IndentFirstLineMm = BitConverter.ToInt32(p, 12) * HwpUnitToMm;
+        if (p.Length >= 20) ps.SpaceBeforePt   = BitConverter.ToInt32(p, 16) * HwpUnitToMm * (72.0 / 25.4);
+        if (p.Length >= 24) ps.SpaceAfterPt    = BitConverter.ToInt32(p, 20) * HwpUnitToMm * (72.0 / 25.4);
+
+        // 줄간격: HWP 의 lineSpacing 은 100 = 100% 인 비율 → factor.
+        if (p.Length >= 28)
+        {
+            uint ls = BitConverter.ToUInt32(p, 24);
+            if (ls > 0 && ls < 1000)
+                ps.LineHeightFactor = ls / 100.0;
+        }
+
+        // 음수·과대 마진은 0 으로 클램프 (스펙 외 값 방지)
+        if (ps.IndentLeftMm  < 0) ps.IndentLeftMm  = 0;
+        if (ps.IndentRightMm < 0) ps.IndentRightMm = 0;
+        if (ps.IndentFirstLineMm < -50) ps.IndentFirstLineMm = -50;
+        if (ps.IndentFirstLineMm >  50) ps.IndentFirstLineMm =  50;
+
+        return ps;
+    }
+
+    private static string FormatRgb(uint rgb)
+    {
+        // HWP stores color as 0x00BBGGRR (B in highest byte after alpha 0).
+        // Common interpretation: low 3 bytes are R, G, B in that order.
+        byte r = (byte)(rgb & 0xFF);
+        byte g = (byte)((rgb >> 8) & 0xFF);
+        byte b = (byte)((rgb >> 16) & 0xFF);
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
+
     // ── 머리말/꼬리말 파싱 ───────────────────────────────────────────────────
 
     /// <summary>
@@ -527,23 +713,25 @@ public sealed class HwpReader : IDocumentReader
                 case TAG_PARA_HEADER when rec.Level == minLevel:
                     if (cur != null) hf.Paragraphs.Add(cur);
                     cur = new HwpParagraph();
+                    if (rec.Payload.Length >= 8)
+                        cur.ParaShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
 
                 case TAG_PARA_TEXT when rec.Level == minLevel + 1:
                     if (cur == null) cur = new HwpParagraph();
-                    try
-                    {
-                        cur.Text += ExtractHwpText(rec.Payload);
-                    }
+                    try { cur.Text += ExtractHwpText(rec.Payload); }
                     catch { }
+                    break;
+
+                case TAG_PARA_CHAR_SHAPE when rec.Level == minLevel + 1 && cur != null && cur.CharShapeId < 0:
+                    if (rec.Payload.Length >= 8)
+                        cur.CharShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
             }
             i++;
         }
 
         if (cur != null) hf.Paragraphs.Add(cur);
-        HwpLog.Write($"[ParseHeaderFooter] minLevel={minLevel}, captured {hf.Paragraphs.Count} paragraphs: " +
-            string.Join(" | ", hf.Paragraphs.Select(p => $"'{p.Text}'")));
         return hf;
     }
 
@@ -562,19 +750,13 @@ public sealed class HwpReader : IDocumentReader
         var tbl = new HwpTableBlock();
         HwpTableCell? curCell = null;
         HwpParagraph? curPara = null;
-        int textCount = 0;
 
         i++; // CTRL_HEADER 다음부터 처리
-
-        var levelHistogram = new Dictionary<(uint tag, uint level), int>();
 
         while (i < recs.Count)
         {
             var rec = recs[i];
             if (rec.Level < minLevel) break;
-
-            var key = (rec.TagId, rec.Level);
-            levelHistogram[key] = levelHistogram.GetValueOrDefault(key) + 1;
 
             switch (rec.TagId)
             {
@@ -624,17 +806,19 @@ public sealed class HwpReader : IDocumentReader
                 case TAG_PARA_HEADER when rec.Level == minLevel && curCell != null:
                     if (curPara != null) curCell.Paragraphs.Add(curPara);
                     curPara = new HwpParagraph();
+                    if (rec.Payload.Length >= 8)
+                        curPara.ParaShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
 
                 case TAG_PARA_TEXT when rec.Level == minLevel + 1 && curPara != null:
-                    try
-                    {
-                        var t = ExtractHwpText(rec.Payload);
-                        curPara.Text += t;
-                        if (textCount < 5) HwpLog.Write($"[ParseTable] cell text: '{t}'");
-                        textCount++;
-                    }
+                    try { curPara.Text += ExtractHwpText(rec.Payload); }
                     catch { }
+                    break;
+
+                case TAG_PARA_CHAR_SHAPE when rec.Level == minLevel + 1
+                                          && curPara != null && curPara.CharShapeId < 0:
+                    if (rec.Payload.Length >= 8)
+                        curPara.CharShapeId = (int)BitConverter.ToUInt32(rec.Payload, 4);
                     break;
             }
             i++;
@@ -643,15 +827,9 @@ public sealed class HwpReader : IDocumentReader
         if (curCell != null && curPara != null) curCell.Paragraphs.Add(curPara);
         if (curCell != null) tbl.Cells.Add(curCell);
 
-        HwpLog.Write($"[ParseTable] complete: rows={tbl.RowCount}, cols={tbl.ColCount}, cells={tbl.Cells.Count}");
-        var hist = string.Join(", ", levelHistogram.OrderBy(kv => kv.Key.tag).ThenBy(kv => kv.Key.level)
-            .Select(kv => $"0x{kv.Key.tag:X3}@L{kv.Key.level}×{kv.Value}"));
-        HwpLog.Write($"[ParseTable] tag/level histogram (minLevel={minLevel}): {hist}");
-
         if (tbl.RowCount == 0 || tbl.ColCount == 0) return null;
         return tbl;
     }
-
     /// <summary>
     /// 비-GSO·비-head/foot/tbl 컨트롤(secd/cold/fn/en 등)의 자식 레코드를 건너뛰되,
     /// PAGE_DEF 만은 body.PageDef 에 수집한다.
@@ -802,7 +980,7 @@ public sealed class HwpReader : IDocumentReader
             var slot = section.Page.Header.Center;
             foreach (var hp in body.Headers[0].Paragraphs)
             {
-                var para = ConvertHwpParagraph(hp);
+                var para = ConvertHwpParagraph(hp, docInfo);
                 if (para != null) slot.Paragraphs.Add(para);
             }
         }
@@ -811,7 +989,7 @@ public sealed class HwpReader : IDocumentReader
             var slot = section.Page.Footer.Center;
             foreach (var fp in body.Footers[0].Paragraphs)
             {
-                var para = ConvertHwpParagraph(fp);
+                var para = ConvertHwpParagraph(fp, docInfo);
                 if (para != null) slot.Paragraphs.Add(para);
             }
         }
@@ -822,11 +1000,11 @@ public sealed class HwpReader : IDocumentReader
             switch (block)
             {
                 case HwpParagraphBlock pb:
-                    var para = ConvertHwpParagraph(pb.Paragraph);
+                    var para = ConvertHwpParagraph(pb.Paragraph, docInfo);
                     if (para != null) section.Blocks.Add(para);
                     break;
                 case HwpTableBlock tb:
-                    var table = ConvertHwpTable(tb);
+                    var table = ConvertHwpTable(tb, docInfo);
                     if (table != null) section.Blocks.Add(table);
                     break;
             }
@@ -846,10 +1024,8 @@ public sealed class HwpReader : IDocumentReader
             };
             foreach (var tp in tb.Paragraphs)
             {
-                if (string.IsNullOrWhiteSpace(tp.Text)) continue;
-                var para = new Core.Paragraph();
-                para.Runs.Add(new Run { Text = tp.Text.Trim() });
-                tbo.Content.Add(para);
+                var para = ConvertHwpParagraph(tp, docInfo);
+                if (para != null) tbo.Content.Add(para);
             }
             section.Blocks.Add(tbo);
         }
@@ -912,8 +1088,9 @@ public sealed class HwpReader : IDocumentReader
     /// <summary>
     /// HwpParagraph → Core.Paragraph 변환. 비어 있으면 null.
     /// HWP 줄바꿈 문자(\r)는 별도 Run 으로 처리하지 않고 하나의 단락으로 합침.
+    /// docInfo 가 제공되면 ParaShapeId/CharShapeId 로 정렬/들여쓰기/폰트 등 속성을 적용.
     /// </summary>
-    private static Core.Paragraph? ConvertHwpParagraph(HwpParagraph hp)
+    private static Core.Paragraph? ConvertHwpParagraph(HwpParagraph hp, HwpDocInfo? docInfo = null)
     {
         if (string.IsNullOrWhiteSpace(hp.Text)) return null;
 
@@ -922,7 +1099,45 @@ public sealed class HwpReader : IDocumentReader
         var text = hp.Text.Replace("\r", "").Replace("\n", "");
         if (string.IsNullOrWhiteSpace(text)) return null;
 
-        paragraph.Runs.Add(new Run { Text = text });
+        var run = new Run { Text = text };
+
+        if (docInfo != null)
+        {
+            // 단락 속성 적용
+            if (hp.ParaShapeId >= 0 && hp.ParaShapeId < docInfo.ParaShapes.Count)
+            {
+                var ps = docInfo.ParaShapes[hp.ParaShapeId];
+                paragraph.Style.Alignment        = ps.Alignment;
+                paragraph.Style.IndentFirstLineMm = ps.IndentFirstLineMm;
+                paragraph.Style.IndentLeftMm     = ps.IndentLeftMm;
+                paragraph.Style.IndentRightMm    = ps.IndentRightMm;
+                paragraph.Style.LineHeightFactor = ps.LineHeightFactor;
+                paragraph.Style.SpaceBeforePt    = ps.SpaceBeforePt;
+                paragraph.Style.SpaceAfterPt     = ps.SpaceAfterPt;
+            }
+
+            // 글자 속성 적용
+            if (hp.CharShapeId >= 0 && hp.CharShapeId < docInfo.CharShapes.Count)
+            {
+                var cs = docInfo.CharShapes[hp.CharShapeId];
+                if (!string.IsNullOrEmpty(cs.FontFamily)) run.Style.FontFamily = cs.FontFamily;
+                if (cs.FontSizePt > 0) run.Style.FontSizePt = cs.FontSizePt;
+                run.Style.Bold          = cs.Bold;
+                run.Style.Italic        = cs.Italic;
+                run.Style.Underline     = cs.Underline;
+                run.Style.Strikethrough = cs.Strikethrough;
+                run.Style.Superscript   = cs.Superscript;
+                run.Style.Subscript     = cs.Subscript;
+                if (!string.IsNullOrEmpty(cs.Color))
+                {
+                    try { run.Style.Foreground = Color.FromHex(cs.Color); } catch { }
+                }
+                if (cs.WidthPercent > 0) run.Style.WidthPercent = cs.WidthPercent;
+                if (cs.LetterSpacingPx != 0) run.Style.LetterSpacingPx = cs.LetterSpacingPx;
+            }
+        }
+
+        paragraph.Runs.Add(run);
         return paragraph;
     }
 
@@ -930,7 +1145,7 @@ public sealed class HwpReader : IDocumentReader
     /// HwpTableBlock → Core.Table 변환.
     /// 셀의 (row, col) 정보로 매트릭스 구성. 누락된 셀은 빈 셀로 채움.
     /// </summary>
-    private static Table? ConvertHwpTable(HwpTableBlock ht)
+    private static Table? ConvertHwpTable(HwpTableBlock ht, HwpDocInfo? docInfo = null)
     {
         if (ht.RowCount <= 0 || ht.ColCount <= 0) return null;
         if (ht.Cells.Count == 0) return null;
@@ -961,7 +1176,7 @@ public sealed class HwpReader : IDocumentReader
                     tableCell.RowSpan = hc.RowSpan;
                     foreach (var hp in hc.Paragraphs)
                     {
-                        var para = ConvertHwpParagraph(hp);
+                        var para = ConvertHwpParagraph(hp, docInfo);
                         if (para != null) tableCell.Blocks.Add(para);
                     }
                 }
@@ -1153,8 +1368,37 @@ public sealed class HwpReader : IDocumentReader
     private sealed class HwpDocInfo
     {
         public int SectionCount { get; set; }
-        public List<string>     FontNames { get; } = new();
-        public List<HwpBinInfo> BinInfos  { get; } = new();
+        public List<string>        FontNames    { get; } = new();
+        public List<HwpBinInfo>    BinInfos     { get; } = new();
+        public List<HwpCharShape>  CharShapes   { get; } = new();
+        public List<HwpParaShape>  ParaShapes   { get; } = new();
+    }
+
+    private sealed class HwpCharShape
+    {
+        public string? FontFamily      { get; set; }
+        public double  FontSizePt      { get; set; } = 11;
+        public bool    Bold            { get; set; }
+        public bool    Italic          { get; set; }
+        public bool    Underline       { get; set; }
+        public bool    Strikethrough   { get; set; }
+        public bool    Superscript     { get; set; }
+        public bool    Subscript       { get; set; }
+        public string? Color           { get; set; }       // #RRGGBB
+        public string? Background      { get; set; }       // #RRGGBB
+        public double  WidthPercent    { get; set; } = 100;  // 장평
+        public double  LetterSpacingPx { get; set; }          // 자간
+    }
+
+    private sealed class HwpParaShape
+    {
+        public Alignment Alignment        { get; set; } = Alignment.Left;
+        public double    IndentFirstLineMm { get; set; }
+        public double    IndentLeftMm     { get; set; }
+        public double    IndentRightMm    { get; set; }
+        public double    LineHeightFactor { get; set; } = 1.2;
+        public double    SpaceBeforePt    { get; set; }
+        public double    SpaceAfterPt     { get; set; }
     }
 
     private sealed class HwpBinInfo
@@ -1226,6 +1470,8 @@ public sealed class HwpReader : IDocumentReader
     private sealed class HwpParagraph
     {
         public string Text { get; set; } = "";
+        public int    ParaShapeId { get; set; } = -1;
+        public int    CharShapeId { get; set; } = -1;
     }
 
     private sealed class HwpTextBox
