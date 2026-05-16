@@ -97,6 +97,18 @@ public sealed class HwpReader : IDocumentReader
     private const uint CTRL_ID_GSO_MASK = 0x00FFFFFFu;
     private const uint CTRL_ID_GSO_VAL  = 0x006F7367u; // 'g','s','o'
 
+    // 비-GSO 컨트롤 ID (LE uint32). 메모리상 바이트 순서가 역순이므로,
+    // 'a','b','c','d' 4글자 컨트롤 이름은 LE uint32 = ('d'<<24)|('c'<<16)|('b'<<8)|'a'.
+    // 다만 HWP는 빅엔디언 표기 컨벤션 ("head", "foot")으로 문서에 정의되므로
+    // 그에 맞춰 ('h'<<24)|('e'<<16)|('a'<<8)|'d' 식으로 정의.
+    private const uint CTRL_ID_HEADER = ('h' << 24) | ('e' << 16) | ('a' << 8) | 'd'; // 0x68656164
+    private const uint CTRL_ID_FOOTER = ('f' << 24) | ('o' << 16) | ('o' << 8) | 't'; // 0x666F6F74
+    private const uint CTRL_ID_TABLE  = ('t' << 24) | ('b' << 16) | ('l' << 8) | ' '; // 0x74626C20
+    private const uint CTRL_ID_SECD   = ('s' << 24) | ('e' << 16) | ('c' << 8) | 'd'; // 0x73656364
+    private const uint CTRL_ID_COLD   = ('c' << 24) | ('o' << 16) | ('l' << 8) | 'd'; // 0x636F6C64
+    private const uint CTRL_ID_FN     = ('f' << 24) | ('n' << 16) | (' ' << 8) | ' '; // footnote
+    private const uint CTRL_ID_EN     = ('e' << 24) | ('n' << 16) | (' ' << 8) | ' '; // endnote
+
     // ──────────────────────────────────────────────────────────────────────
     public PolyDonkyument Read(Stream input)
     {
@@ -263,59 +275,25 @@ public sealed class HwpReader : IDocumentReader
         int i = 0;
 
         HwpLog.Write(
-            $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}, looking for TAG_PAGE_DEF=0x{TAG_PAGE_DEF:X3}");
-
-        // 모든 레코드 태그 요약
-        var tagCounts = new Dictionary<uint, int>();
-        foreach (var r in recs)
-        {
-            if (!tagCounts.ContainsKey(r.TagId))
-                tagCounts[r.TagId] = 0;
-            tagCounts[r.TagId]++;
-        }
-        foreach (var (tagId, count) in tagCounts.OrderBy(x => x.Key))
-            HwpLog.Write($"  Tag 0x{tagId:X3}: {count} occurrences");
+            $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}");
 
         while (i < recs.Count)
         {
             var rec = recs[i];
 
-            // 모든 주요 태그 탐지 로깅 (레벨 필터 전)
-            if (rec.TagId is TAG_PARA_HEADER or TAG_PARA_TEXT or TAG_PAGE_DEF or TAG_CTRL_HEADER or TAG_LIST_HEADER)
-            {
-                HwpLog.Write($"[HwpReader] Found tag 0x{rec.TagId:X3} at level {rec.Level}");
-            }
-
             switch (rec.TagId)
             {
                 case TAG_PAGE_DEF:
-                    HwpLog.Write(
-                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at level {rec.Level}, payloadLen={rec.Payload.Length}");
-                    if (body.PageDef == null)
-                    {
-                        if (rec.Payload.Length >= 32)
-                        {
-                            body.PageDef = ParsePageDef(rec.Payload);
-                            HwpLog.Write($"  → ParsePageDef success");
-                        }
-                        else
-                        {
-                            HwpLog.Write($"  → Skipped: payload too short ({rec.Payload.Length}<32)");
-                        }
-                    }
-                    else
-                    {
-                        HwpLog.Write($"  → Skipped: already set");
-                    }
+                    if (body.PageDef == null && rec.Payload.Length >= 32)
+                        body.PageDef = ParsePageDef(rec.Payload);
                     break;
 
                 // HWP 레벨 구조: PARA_HEADER(N) → 자식 PARA_TEXT/CHAR_SHAPE/LINE_SEG/CTRL_HEADER(N+1).
                 // 본문 단락은 PARA_HEADER 가 레벨 0 에 있고, 그 PARA_TEXT 는 레벨 1.
-                // 머리말/꼬리말/표 셀 등 nested 단락은 PARA_HEADER 가 레벨 2+, PARA_TEXT 가 레벨 3+.
                 case TAG_PARA_HEADER when rec.Level == 0:
-                    if (current != null) body.Paragraphs.Add(current);
+                    if (current != null)
+                        body.Blocks.Add(new HwpParagraphBlock { Paragraph = current });
                     current = new HwpParagraph();
-                    HwpLog.Write($"[HwpReader] TAG_PARA_HEADER at level {rec.Level}");
                     break;
 
                 case TAG_PARA_TEXT when rec.Level == 1:
@@ -324,39 +302,59 @@ public sealed class HwpReader : IDocumentReader
                     {
                         var text = ExtractHwpText(rec.Payload);
                         current.Text += text;
-                        HwpLog.Write($"[HwpReader] TAG_PARA_TEXT at level {rec.Level}: '{text}' (len={text.Length})");
                     }
-                    catch (Exception ex)
-                    {
-                        HwpLog.Write($"[HwpReader] TAG_PARA_TEXT error: {ex.Message}");
-                    }
+                    catch { }
                     break;
 
                 // CTRL_HEADER 는 본문 단락(레벨 0)의 자식 인라인 컨트롤이므로 레벨 1 에서 처리.
                 case TAG_CTRL_HEADER when rec.Level == 1 && rec.Payload.Length >= 4:
                     {
                         uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
+
                         if ((ctrlId & CTRL_ID_GSO_MASK) == CTRL_ID_GSO_VAL)
                         {
-                            // 그리기 개체(GSO): 도형/글상자/이미지 → 별도 파서 호출
+                            // 그리기 개체(GSO): 도형/글상자/이미지
                             i = ParseGsoControl(recs, i + 1, rec.Level + 1, body);
                             continue;
                         }
-                        // 비-GSO 컨트롤(secd/cold/head/foot/tbl 등): SkipToLevel 하지 않음.
-                        // 이렇게 해야 secd 컨트롤 안의 PAGE_DEF(레벨 2)도 수집된다.
-                        // 안쪽 PARA_HEADER/PARA_TEXT 는 레벨 2+/3+ 라 위의 필터가 자동으로 걸러낸다.
-                        break;
+                        if (ctrlId == CTRL_ID_HEADER)
+                        {
+                            var hf = ParseHeaderFooter(recs, ref i, rec.Level + 1);
+                            body.Headers.Add(hf);
+                            continue;
+                        }
+                        if (ctrlId == CTRL_ID_FOOTER)
+                        {
+                            var hf = ParseHeaderFooter(recs, ref i, rec.Level + 1);
+                            body.Footers.Add(hf);
+                            continue;
+                        }
+                        if (ctrlId == CTRL_ID_TABLE)
+                        {
+                            var tbl = ParseTable(recs, ref i, rec.Level + 1);
+                            if (tbl != null) body.Blocks.Add(tbl);
+                            continue;
+                        }
+                        // 그 외(secd/cold/fn/en 등): 자식 PARA_HEADER 들이 본문에 섞이지 않도록
+                        // 자식 레코드 스킵 (단, PAGE_DEF 는 위 case 에서 별도 수집됨).
+                        // 본문에 섞이는 걸 막기 위해 같은 레벨로 돌아갈 때까지 nested 레코드 패스만 PAGE_DEF만 수집.
+                        i = SkipControlChildrenButKeepPageDef(recs, i + 1, rec.Level + 1, body);
+                        continue;
                     }
             }
 
             i++;
         }
 
-        if (current != null) body.Paragraphs.Add(current);
+        if (current != null)
+            body.Blocks.Add(new HwpParagraphBlock { Paragraph = current });
 
-        HwpLog.Write($"[HwpReader] ParseSectionRecords complete: {body.Paragraphs.Count} paragraphs, " +
-            $"{body.Images.Count} images, {body.TextBoxes.Count} textboxes, {body.Shapes.Count} shapes, " +
-            $"PageDef={body.PageDef != null}");
+        HwpLog.Write($"[HwpReader] ParseSectionRecords complete: " +
+            $"{body.Blocks.Count} blocks ({body.Paragraphs.Count()} paragraphs, " +
+            $"{body.Blocks.OfType<HwpTableBlock>().Count()} tables), " +
+            $"{body.Headers.Count} headers, {body.Footers.Count} footers, " +
+            $"{body.Images.Count} images, {body.TextBoxes.Count} textboxes, " +
+            $"{body.Shapes.Count} shapes, PageDef={body.PageDef != null}");
     }
 
     // ── GSO (General Shape Object) control handler ─────────────────────────
@@ -505,6 +503,175 @@ public sealed class HwpReader : IDocumentReader
         return i;
     }
 
+    // ── 머리말/꼬리말 파싱 ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// CTRL_HEADER "head"/"foot" 뒤의 nested 레코드를 파싱해 단락 목록을 추출.
+    /// 레코드 구조: LIST_HEADER(level=ctrlLevel+1) → PARA_HEADER(같은 레벨) → PARA_TEXT(level+1) ...
+    /// </summary>
+    private static HwpHeaderFooter ParseHeaderFooter(List<HwpRecord> recs, ref int i, uint minLevel)
+    {
+        var hf = new HwpHeaderFooter();
+        HwpParagraph? cur = null;
+
+        // 첫 번째 CTRL_HEADER 자체는 이미 처리되었으므로 다음 인덱스부터 시작
+        i++;
+
+        while (i < recs.Count)
+        {
+            var rec = recs[i];
+            if (rec.Level < minLevel) break;
+
+            switch (rec.TagId)
+            {
+                case TAG_PARA_HEADER when rec.Level == minLevel:
+                    if (cur != null) hf.Paragraphs.Add(cur);
+                    cur = new HwpParagraph();
+                    break;
+
+                case TAG_PARA_TEXT when rec.Level == minLevel + 1:
+                    if (cur == null) cur = new HwpParagraph();
+                    try
+                    {
+                        cur.Text += ExtractHwpText(rec.Payload);
+                    }
+                    catch { }
+                    break;
+            }
+            i++;
+        }
+
+        if (cur != null) hf.Paragraphs.Add(cur);
+        HwpLog.Write($"[ParseHeaderFooter] minLevel={minLevel}, captured {hf.Paragraphs.Count} paragraphs: " +
+            string.Join(" | ", hf.Paragraphs.Select(p => $"'{p.Text}'")));
+        return hf;
+    }
+
+    // ── 표 파싱 ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// CTRL_HEADER "tbl " 뒤의 nested 레코드를 파싱해 표 정보 + 셀별 단락 추출.
+    /// 레코드 구조:
+    ///   TAG_TABLE(level=ctrlLevel+1)  ← 행/열 정보
+    ///   LIST_HEADER(level=ctrlLevel+1) ← 각 셀 헤더 (rowCnt × colCnt 개)
+    ///     PARA_HEADER(level=ctrlLevel+2)
+    ///       PARA_TEXT(level=ctrlLevel+3)
+    /// </summary>
+    private static HwpTableBlock? ParseTable(List<HwpRecord> recs, ref int i, uint minLevel)
+    {
+        var tbl = new HwpTableBlock();
+        HwpTableCell? curCell = null;
+        HwpParagraph? curPara = null;
+        int textCount = 0;
+
+        i++; // CTRL_HEADER 다음부터 처리
+
+        var levelHistogram = new Dictionary<(uint tag, uint level), int>();
+
+        while (i < recs.Count)
+        {
+            var rec = recs[i];
+            if (rec.Level < minLevel) break;
+
+            var key = (rec.TagId, rec.Level);
+            levelHistogram[key] = levelHistogram.GetValueOrDefault(key) + 1;
+
+            switch (rec.TagId)
+            {
+                case TAG_TABLE when rec.Level == minLevel && rec.Payload.Length >= 16:
+                    {
+                        // TAG_TABLE layout:
+                        //   0-3: properties (flags)
+                        //   4-5: rowCnt
+                        //   6-7: colCnt
+                        //   8-9: cellSpacing
+                        //   10-13: margin left/right (각 2바이트)
+                        //   14-17: margin top/bottom
+                        //   ...
+                        var p = rec.Payload;
+                        tbl.RowCount = BitConverter.ToUInt16(p, 4);
+                        tbl.ColCount = BitConverter.ToUInt16(p, 6);
+                    }
+                    break;
+
+                case TAG_LIST_HEADER when rec.Level == minLevel && rec.Payload.Length >= 28:
+                    {
+                        // 셀의 LIST_HEADER (표 셀 정보 포함)
+                        // payload 첫 4바이트: paraCount
+                        // 그 뒤로 셀 좌표/크기 정보 (col, row, colSpan, rowSpan)
+                        if (curCell != null && curPara != null)
+                        {
+                            curCell.Paragraphs.Add(curPara);
+                            curPara = null;
+                        }
+                        if (curCell != null)
+                            tbl.Cells.Add(curCell);
+
+                        var p = rec.Payload;
+                        curCell = new HwpTableCell();
+                        // Offset 8: col, 10: row, 12: colSpan, 14: rowSpan (uint16 each)
+                        // 정확한 오프셋은 KS X 5700 스펙 참조 — 안전 fallback 사용.
+                        if (p.Length >= 16)
+                        {
+                            curCell.Col     = BitConverter.ToUInt16(p, 8);
+                            curCell.Row     = BitConverter.ToUInt16(p, 10);
+                            curCell.ColSpan = Math.Max(1, (int)BitConverter.ToUInt16(p, 12));
+                            curCell.RowSpan = Math.Max(1, (int)BitConverter.ToUInt16(p, 14));
+                        }
+                    }
+                    break;
+
+                case TAG_PARA_HEADER when rec.Level == minLevel && curCell != null:
+                    if (curPara != null) curCell.Paragraphs.Add(curPara);
+                    curPara = new HwpParagraph();
+                    break;
+
+                case TAG_PARA_TEXT when rec.Level == minLevel + 1 && curPara != null:
+                    try
+                    {
+                        var t = ExtractHwpText(rec.Payload);
+                        curPara.Text += t;
+                        if (textCount < 5) HwpLog.Write($"[ParseTable] cell text: '{t}'");
+                        textCount++;
+                    }
+                    catch { }
+                    break;
+            }
+            i++;
+        }
+
+        if (curCell != null && curPara != null) curCell.Paragraphs.Add(curPara);
+        if (curCell != null) tbl.Cells.Add(curCell);
+
+        HwpLog.Write($"[ParseTable] complete: rows={tbl.RowCount}, cols={tbl.ColCount}, cells={tbl.Cells.Count}");
+        var hist = string.Join(", ", levelHistogram.OrderBy(kv => kv.Key.tag).ThenBy(kv => kv.Key.level)
+            .Select(kv => $"0x{kv.Key.tag:X3}@L{kv.Key.level}×{kv.Value}"));
+        HwpLog.Write($"[ParseTable] tag/level histogram (minLevel={minLevel}): {hist}");
+
+        if (tbl.RowCount == 0 || tbl.ColCount == 0) return null;
+        return tbl;
+    }
+
+    /// <summary>
+    /// 비-GSO·비-head/foot/tbl 컨트롤(secd/cold/fn/en 등)의 자식 레코드를 건너뛰되,
+    /// PAGE_DEF 만은 body.PageDef 에 수집한다.
+    /// </summary>
+    private static int SkipControlChildrenButKeepPageDef(
+        List<HwpRecord> recs, int startIdx, uint minLevel, HwpBodyText body)
+    {
+        int i = startIdx;
+        while (i < recs.Count && recs[i].Level >= minLevel)
+        {
+            var rec = recs[i];
+            if (rec.TagId == TAG_PAGE_DEF && body.PageDef == null && rec.Payload.Length >= 32)
+            {
+                body.PageDef = ParsePageDef(rec.Payload);
+            }
+            i++;
+        }
+        return i;
+    }
+
     // ── PAGE_DEF parsing ───────────────────────────────────────────────────
 
     private static HwpPageDef ParsePageDef(byte[] p)
@@ -628,21 +795,41 @@ public sealed class HwpReader : IDocumentReader
             if (pd.MarginFooterMm > 0) ps.MarginFooterMm = pd.MarginFooterMm;
         }
 
-        // ── Paragraphs ─────────────────────────────────────────────────────
-        foreach (var hwpPara in body.Paragraphs)
+        // ── Headers / Footers ──────────────────────────────────────────────
+        // 처음 발견된 머리말/꼬리말을 Center 슬롯에 배치 (HWP는 Left/Center/Right 슬롯 구조가 없음).
+        if (body.Headers.Count > 0)
         {
-            if (string.IsNullOrWhiteSpace(hwpPara.Text)) continue;
-
-            var paragraph = new Core.Paragraph();
-            var lines = hwpPara.Text.Split('\r', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
+            var slot = section.Page.Header.Center;
+            foreach (var hp in body.Headers[0].Paragraphs)
             {
-                var trimmed = line.Trim('\n');
-                if (!string.IsNullOrWhiteSpace(trimmed))
-                    paragraph.Runs.Add(new Run { Text = trimmed });
+                var para = ConvertHwpParagraph(hp);
+                if (para != null) slot.Paragraphs.Add(para);
             }
-            if (paragraph.Runs.Count > 0)
-                section.Blocks.Add(paragraph);
+        }
+        if (body.Footers.Count > 0)
+        {
+            var slot = section.Page.Footer.Center;
+            foreach (var fp in body.Footers[0].Paragraphs)
+            {
+                var para = ConvertHwpParagraph(fp);
+                if (para != null) slot.Paragraphs.Add(para);
+            }
+        }
+
+        // ── Body blocks (paragraphs + tables in order) ─────────────────────
+        foreach (var block in body.Blocks)
+        {
+            switch (block)
+            {
+                case HwpParagraphBlock pb:
+                    var para = ConvertHwpParagraph(pb.Paragraph);
+                    if (para != null) section.Blocks.Add(para);
+                    break;
+                case HwpTableBlock tb:
+                    var table = ConvertHwpTable(tb);
+                    if (table != null) section.Blocks.Add(table);
+                    break;
+            }
         }
 
         // ── Text boxes ─────────────────────────────────────────────────────
@@ -721,6 +908,74 @@ public sealed class HwpReader : IDocumentReader
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// HwpParagraph → Core.Paragraph 변환. 비어 있으면 null.
+    /// HWP 줄바꿈 문자(\r)는 별도 Run 으로 처리하지 않고 하나의 단락으로 합침.
+    /// </summary>
+    private static Core.Paragraph? ConvertHwpParagraph(HwpParagraph hp)
+    {
+        if (string.IsNullOrWhiteSpace(hp.Text)) return null;
+
+        var paragraph = new Core.Paragraph();
+        // HWP 단락 끝 \r 은 PARA 내부에서만 의미가 있고 우리 모델은 단락 단위로 분리되어 있으므로 제거.
+        var text = hp.Text.Replace("\r", "").Replace("\n", "");
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        paragraph.Runs.Add(new Run { Text = text });
+        return paragraph;
+    }
+
+    /// <summary>
+    /// HwpTableBlock → Core.Table 변환.
+    /// 셀의 (row, col) 정보로 매트릭스 구성. 누락된 셀은 빈 셀로 채움.
+    /// </summary>
+    private static Table? ConvertHwpTable(HwpTableBlock ht)
+    {
+        if (ht.RowCount <= 0 || ht.ColCount <= 0) return null;
+        if (ht.Cells.Count == 0) return null;
+
+        var table = new Table();
+
+        // Column definitions (균등 분할 — HWP 셀 너비 정보는 추후 확장)
+        for (int c = 0; c < ht.ColCount; c++)
+            table.Columns.Add(new TableColumn { WidthMm = 0 });
+
+        // 셀을 (row, col) 키로 인덱싱
+        var cellMap = new Dictionary<(int r, int c), HwpTableCell>();
+        foreach (var hc in ht.Cells)
+        {
+            if (hc.Row >= 0 && hc.Row < ht.RowCount && hc.Col >= 0 && hc.Col < ht.ColCount)
+                cellMap[(hc.Row, hc.Col)] = hc;
+        }
+
+        for (int r = 0; r < ht.RowCount; r++)
+        {
+            var row = new TableRow();
+            for (int c = 0; c < ht.ColCount; c++)
+            {
+                var tableCell = new TableCell();
+                if (cellMap.TryGetValue((r, c), out var hc))
+                {
+                    tableCell.ColumnSpan = hc.ColSpan;
+                    tableCell.RowSpan = hc.RowSpan;
+                    foreach (var hp in hc.Paragraphs)
+                    {
+                        var para = ConvertHwpParagraph(hp);
+                        if (para != null) tableCell.Blocks.Add(para);
+                    }
+                }
+                // 빈 셀은 빈 단락 1개로 채움 (편집 가능 상태)
+                if (tableCell.Blocks.Count == 0)
+                    tableCell.Blocks.Add(new Core.Paragraph());
+
+                row.Cells.Add(tableCell);
+            }
+            table.Rows.Add(row);
+        }
+
+        return table;
+    }
 
     private static PaperSizeKind MatchPaperSize(double wMm, double hMm)
     {
@@ -912,11 +1167,48 @@ public sealed class HwpReader : IDocumentReader
 
     private sealed class HwpBodyText
     {
-        public HwpPageDef?        PageDef   { get; set; }
-        public List<HwpParagraph> Paragraphs{ get; } = new();
-        public List<HwpTextBox>   TextBoxes { get; } = new();
-        public List<HwpImage>     Images    { get; } = new();
-        public List<HwpShape>     Shapes    { get; } = new();
+        public HwpPageDef?            PageDef    { get; set; }
+        public List<HwpBlock>         Blocks     { get; } = new();
+        public List<HwpHeaderFooter>  Headers    { get; } = new();
+        public List<HwpHeaderFooter>  Footers    { get; } = new();
+        public List<HwpTextBox>       TextBoxes  { get; } = new();
+        public List<HwpImage>         Images     { get; } = new();
+        public List<HwpShape>         Shapes     { get; } = new();
+
+        // 호환용: 이전 Paragraphs API.
+        public IEnumerable<HwpParagraph> Paragraphs =>
+            Blocks.OfType<HwpParagraphBlock>().Select(b => b.Paragraph);
+    }
+
+    // 본문 블록 — 단락 또는 표
+    private abstract class HwpBlock { }
+
+    private sealed class HwpParagraphBlock : HwpBlock
+    {
+        public HwpParagraph Paragraph { get; set; } = new();
+    }
+
+    private sealed class HwpTableBlock : HwpBlock
+    {
+        public int RowCount { get; set; }
+        public int ColCount { get; set; }
+        public List<HwpTableCell> Cells { get; } = new();
+        public double WidthMm  { get; set; }
+        public double HeightMm { get; set; }
+    }
+
+    private sealed class HwpTableCell
+    {
+        public int Row { get; set; }
+        public int Col { get; set; }
+        public int RowSpan { get; set; } = 1;
+        public int ColSpan { get; set; } = 1;
+        public List<HwpParagraph> Paragraphs { get; set; } = new();
+    }
+
+    private sealed class HwpHeaderFooter
+    {
+        public List<HwpParagraph> Paragraphs { get; set; } = new();
     }
 
     private sealed class HwpPageDef
