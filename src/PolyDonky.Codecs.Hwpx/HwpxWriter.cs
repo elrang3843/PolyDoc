@@ -1051,8 +1051,9 @@ public sealed class HwpxWriter : IDocumentWriter
 
     // hp:header / hp:footer ctrl 를 hp:run 안에 삽입한다.
     // 한글 참조 구조: <hp:ctrl><hp:header id="" applyPageType="BOTH"><hp:subList textWidth="0" textHeight="0" ...>
+    // Left/Center/Right 슬롯이 2개 이상 있으면 1행 3열 테두리 없는 표로 가로 배치.
     private XElement BuildHeaderFooterCtrl(string localName, HeaderFooterContent content,
-        WriteContext ctx, string vertAlign)
+        WriteContext ctx, string vertAlign, long textWidthHwpUnit = ContentWidth)
     {
         var subList = new XElement(Hp + "subList",
             new XAttribute("id",               ""),
@@ -1066,21 +1067,34 @@ public sealed class HwpxWriter : IDocumentWriter
             new XAttribute("hasTextRef",       "0"),
             new XAttribute("hasNumRef",        "0"));
 
-        bool addedAny = false;
-        int innerParaId = 0;
-        foreach (var slot in new[] { content.Left, content.Center, content.Right })
+        bool hasLeft   = SlotHasContent(content.Left);
+        bool hasCenter = SlotHasContent(content.Center);
+        bool hasRight  = SlotHasContent(content.Right);
+        int activeSlots = (hasLeft ? 1 : 0) + (hasCenter ? 1 : 0) + (hasRight ? 1 : 0);
+
+        if (activeSlots >= 2)
         {
+            // 1행 3열 테두리 없는 표로 L/C/R 가로 배치
+            var tablePara = BuildHeaderFooterTablePara(content, ctx, textWidthHwpUnit);
+            tablePara.SetAttributeValue("id", "0");
+            subList.Add(tablePara);
+        }
+        else if (activeSlots == 1)
+        {
+            // 단일 슬롯: 정렬만 맞춰 단락으로 출력
+            var slot = hasLeft ? content.Left : hasCenter ? content.Center : content.Right;
+            int pid = 0;
             foreach (var para in slot.Paragraphs)
             {
                 var xpara = BuildParagraph(para, ctx);
-                xpara.SetAttributeValue("id", innerParaId.ToString());
-                innerParaId++;
+                xpara.SetAttributeValue("id", pid.ToString());
+                pid++;
                 subList.Add(xpara);
-                addedAny = true;
             }
         }
-        if (!addedAny)
+        else
         {
+            // 모두 비어 있음: 빈 단락 하나
             var emp = BuildEmptyParagraph(ctx);
             emp.SetAttributeValue("id", "0");
             subList.Add(emp);
@@ -1091,6 +1105,149 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("id", ""),
                 new XAttribute("applyPageType", "BOTH"),
                 subList));
+    }
+
+    private static bool SlotHasContent(HeaderFooterSlot slot) =>
+        slot.Paragraphs.Any(p => p.Runs.Any(r => !string.IsNullOrEmpty(r.Text)));
+
+    // 머리말/꼬리말 Left/Center/Right 를 1행 3열 테두리 없는 표로 담는 단락.
+    private XElement BuildHeaderFooterTablePara(HeaderFooterContent content,
+        WriteContext ctx, long textWidthHwpUnit)
+    {
+        long colW = Math.Max(textWidthHwpUnit / 3, 1000);
+        long tableW = colW * 3;
+        const long CellH = 1000;
+
+        // "테두리 없음" borderFill: 4면 NONE
+        int noBf = ctx.RegisterCustomBorderFill(new WriteContext.BorderFillSpec(
+            "NONE", "#000000", "0.12 mm",
+            "NONE", "#000000", "0.12 mm",
+            "NONE", "#000000", "0.12 mm",
+            "NONE", "#000000", "0.12 mm",
+            null));
+
+        var wtbl = new XElement(Hp + "tbl",
+            new XAttribute("id",             ctx.NextObjId().ToString()),
+            new XAttribute("zOrder",         ctx.NextZOrder().ToString()),
+            new XAttribute("numberingType",  "TABLE"),
+            new XAttribute("textWrap",       "TOP_AND_BOTTOM"),
+            new XAttribute("textFlow",       "BOTH_SIDES"),
+            new XAttribute("lock",           "0"),
+            new XAttribute("dropcapstyle",   "None"),
+            new XAttribute("pageBreak",      "TABLE"),
+            new XAttribute("repeatHeader",   "1"),
+            new XAttribute("rowCnt",         "1"),
+            new XAttribute("colCnt",         "3"),
+            new XAttribute("cellSpacing",    "0"),
+            new XAttribute("borderFillIDRef", noBf.ToString()),
+            new XAttribute("noAdjust",       "0"));
+
+        wtbl.Add(new XElement(Hp + "sz",
+            new XAttribute("width",       tableW.ToString()),
+            new XAttribute("widthRelTo",  "ABSOLUTE"),
+            new XAttribute("height",      "0"),
+            new XAttribute("heightRelTo", "ABSOLUTE"),
+            new XAttribute("protect",     "0")));
+        wtbl.Add(new XElement(Hp + "pos",
+            new XAttribute("treatAsChar",     "1"),
+            new XAttribute("affectLSpacing",  "0"),
+            new XAttribute("flowWithText",    "1"),
+            new XAttribute("allowOverlap",    "0"),
+            new XAttribute("holdAnchorAndSO", "0"),
+            new XAttribute("vertRelTo",       "PARA"),
+            new XAttribute("horzRelTo",       "COLUMN"),
+            new XAttribute("vertAlign",       "TOP"),
+            new XAttribute("horzAlign",       "LEFT"),
+            new XAttribute("vertOffset",      "0"),
+            new XAttribute("horzOffset",      "0")));
+        wtbl.Add(new XElement(Hp + "outMargin",
+            new XAttribute("left", "0"), new XAttribute("right", "0"),
+            new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+        wtbl.Add(new XElement(Hp + "inMargin",
+            new XAttribute("left", "0"), new XAttribute("right", "0"),
+            new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+
+        var wrow = new XElement(Hp + "tr");
+
+        var slotDefs = new[]
+        {
+            (content.Left,   Alignment.Left,   0),
+            (content.Center, Alignment.Center, 1),
+            (content.Right,  Alignment.Right,  2),
+        };
+        foreach (var (slot, alignment, colIdx) in slotDefs)
+        {
+            var wcell = new XElement(Hp + "tc",
+                new XAttribute("name",            ""),
+                new XAttribute("header",          "0"),
+                new XAttribute("hasMargin",       "0"),
+                new XAttribute("protect",         "0"),
+                new XAttribute("editable",        "0"),
+                new XAttribute("dirty",           "0"),
+                new XAttribute("borderFillIDRef", noBf.ToString()));
+
+            var cellSub = new XElement(Hp + "subList",
+                new XAttribute("id",                ""),
+                new XAttribute("textDirection",     "HORIZONTAL"),
+                new XAttribute("lineWrap",          "BREAK"),
+                new XAttribute("vertAlign",         "CENTER"),
+                new XAttribute("linkListIDRef",     "0"),
+                new XAttribute("linkListNextIDRef", "0"),
+                new XAttribute("textWidth",         "0"),
+                new XAttribute("textHeight",        "0"),
+                new XAttribute("hasTextRef",        "0"),
+                new XAttribute("hasNumRef",         "0"));
+
+            if (!SlotHasContent(slot))
+            {
+                var emptyP = new Paragraph();
+                emptyP.Style.Alignment = alignment;
+                var xe = BuildParagraph(emptyP, ctx);
+                xe.SetAttributeValue("id", "0");
+                cellSub.Add(xe);
+            }
+            else
+            {
+                int pid = 0;
+                foreach (var p in slot.Paragraphs)
+                {
+                    var xp = BuildParagraph(p, ctx);
+                    xp.SetAttributeValue("id", pid.ToString());
+                    pid++;
+                    cellSub.Add(xp);
+                }
+            }
+
+            wcell.Add(cellSub);
+            wcell.Add(new XElement(Hp + "cellAddr",
+                new XAttribute("colAddr", colIdx.ToString()),
+                new XAttribute("rowAddr", "0")));
+            wcell.Add(new XElement(Hp + "cellSpan",
+                new XAttribute("colSpan", "1"),
+                new XAttribute("rowSpan", "1")));
+            wcell.Add(new XElement(Hp + "cellSz",
+                new XAttribute("width",  colW.ToString()),
+                new XAttribute("height", CellH.ToString())));
+            wcell.Add(new XElement(Hp + "cellMargin",
+                new XAttribute("left", "0"), new XAttribute("right", "0"),
+                new XAttribute("top",  "0"), new XAttribute("bottom", "0")));
+
+            wrow.Add(wcell);
+        }
+        wtbl.Add(wrow);
+
+        var run = new XElement(Hp + "run", new XAttribute("charPrIDRef", "0"));
+        run.Add(wtbl);
+        var para = new XElement(Hp + "p",
+            new XAttribute("id",          "0"),
+            new XAttribute("paraPrIDRef", ctx.ParaStyleId(new ParagraphStyle()).ToString()),
+            new XAttribute("styleIDRef",  "0"),
+            new XAttribute("pageBreak",   "0"),
+            new XAttribute("columnBreak", "0"),
+            new XAttribute("merged",      "0"),
+            run);
+        para.Add(BuildLineseg(10.0, 1.2));
+        return para;
     }
 
     private void AppendBlock(XElement target, Block block, WriteContext ctx, Section section, ref bool injectSecPr)
@@ -1294,10 +1451,12 @@ public sealed class HwpxWriter : IDocumentWriter
         // 머리말/꼬리말 — 한글 참조 구조:
         //   머리말(header)은 secPr·colPr 와 같은 run 안에 추가.
         //   꼬리말(footer)은 별도의 run 에 담아 첫 번째 문단에 삽입 (참조 파일과 동일).
+        // Left/Center/Right 3-slot 가로 배치: 1행 3열 테두리 없는 표.
+        long hdrTextWidth = pageW - mLeft - mRight;
         bool hasHeader = !section.Page.Header.IsEmpty;
         bool hasFooter = !section.Page.Footer.IsEmpty;
         if (hasHeader)
-            secPrRun.Add(BuildHeaderFooterCtrl("header", section.Page.Header, ctx, "TOP"));
+            secPrRun.Add(BuildHeaderFooterCtrl("header", section.Page.Header, ctx, "TOP", hdrTextWidth));
         HwpxLog.Write($"  PrependSecPrRun: hasHeader={hasHeader} hasFooter={hasFooter}");
 
         para.AddFirst(secPrRun);
@@ -1306,7 +1465,7 @@ public sealed class HwpxWriter : IDocumentWriter
         {
             var footerRun = new XElement(Hp + "run",
                 new XAttribute("charPrIDRef", "0"),
-                BuildHeaderFooterCtrl("footer", section.Page.Footer, ctx, "BOTTOM"));
+                BuildHeaderFooterCtrl("footer", section.Page.Footer, ctx, "BOTTOM", hdrTextWidth));
             // 꼬리말 run 은 secPrRun 바로 다음에 위치.
             secPrRun.AddAfterSelf(footerRun);
         }

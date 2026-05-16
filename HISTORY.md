@@ -110,6 +110,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 - **HWPX export 머리말/꼬리말 구조 수정 (한글에서 표시 안 되던 문제)**: `hm:masterPage` 방식 대신 실제 한글이 사용하는 `hp:ctrl`→`hp:header`/`hp:footer` 구조로 전면 교체. 머리말은 `secPr`·`colPr`와 같은 `hp:run`에 추가하고, 꼬리말은 별도 `hp:run`에 담아 첫 번째 문단에 삽입 (참조 파일 `한글_테스트1.hwpx` 구조와 일치). `masterPageCnt="0"`, `applyPageType="BOTH"`, `textWidth/Height="0"` 적용. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
 
+- **HWPX export 머리말/꼬리말 Left/Center/Right 가로 배치**: IWPF의 Left/Center/Right 3-슬롯 구조를 별도 문단으로 쌓던 문제 수정. 2개 이상 슬롯에 내용이 있으면 `1행 3열 테두리 없는 표`(borderFill NONE)로 묶어 가로 배치 — 단일 슬롯이면 기존대로 단락 출력. 표 너비는 실제 페이지 텍스트 너비(pageW - marginLeft - marginRight)를 기반으로 계산. (`src/PolyDonky.Codecs.Hwpx/HwpxWriter.cs`)
+
 - **LibreOfficeBridge 및 LibreOfficeLocator 제거**: LibreOffice 미사용 결정에 따라 `LibreOfficeBridge.cs`, `LibreOfficeLocator.cs` 파일 삭제. `LanguageService`의 `LibreOfficePath` 프로퍼티·자동탐지·저장 로직 제거. `ExternalConverter`의 `LIBREOFFICE_PATH` 환경변수 전달 제거. `MainViewModel`의 LibreOffice 특수 오류처리 블록을 일반 `UnsupportedFormatVersionException` 처리로 통합. `SettingsWindow` LibreOffice 섹션(UI·핸들러) 제거. 관련 리소스 키 14개 삭제. (`LibreOfficeBridge.cs`, `LibreOfficeLocator.cs`, `LanguageService.cs`, `ExternalConverter.cs`, `MainViewModel.cs`, `SettingsWindow.xaml`, `SettingsWindow.xaml.cs`, `Resources.resx`, `Resources.en-US.resx`)
 - **ContainerRole.Group 열거값 추가**: SVG 분해 그룹 및 수동 블록 묶기에 사용하는 `Group` 역할 힌트. 렌더 시 얇은 파란 테두리(1px)로 시각 구분. (`ContainerBlock.cs`, `FlowDocumentBuilder.cs`)
 
