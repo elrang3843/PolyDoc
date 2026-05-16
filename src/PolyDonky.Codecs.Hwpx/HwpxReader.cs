@@ -367,6 +367,19 @@ public sealed class HwpxReader : IDocumentReader
             ReadHeaderOrFooter(ftrElem, section.Page.Footer, ctx);
         }
 
+        // ── 글상자 (drawText) ─────────────────────────────────────────────────
+        // 한컴 HWPX 에서 글상자는 <hp:rect>/<hp:textBox> 안의 <hp:drawText> 자식으로 구현.
+        // drawText 의 subList 자손을 마킹해 본문 평탄 순회에서 제외.
+        var insideTextBox = new HashSet<XElement>();
+        var seenTextBoxes = new HashSet<XElement>();
+        foreach (var dtElem in doc.Root.Descendants()
+            .Where(e => e.Name.LocalName == "drawText" && !insideHeaderFooter.Contains(e)))
+        {
+            var dtSubList = dtElem.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+            if (dtSubList is not null)
+                foreach (var d in dtSubList.DescendantsAndSelf()) insideTextBox.Add(d);
+        }
+
         // 한컴 hwpx 는 root 안에 wrapper 를 둘 수도 있고 표 안에 셀 paragraph 가 중첩되므로
         // 1) 모든 hp:tbl 안의 paragraph/pic 을 마킹해 평탄 순회에서 제외하고
         // 2) descendants 평탄 순회로 hp:p / hp:tbl / hp:pic 을 본문 block 으로 추출.
@@ -385,10 +398,9 @@ public sealed class HwpxReader : IDocumentReader
         foreach (var elem in doc.Root.Descendants())
         {
             if (insideHeaderFooter.Contains(elem)) continue;
-            if (insideTable.Contains(elem))
-            {
-                continue;
-            }
+            if (insideTextBox.Contains(elem)) continue;
+            if (insideTable.Contains(elem)) continue;
+
             switch (elem.Name.LocalName)
             {
                 case "p":
@@ -398,17 +410,23 @@ public sealed class HwpxReader : IDocumentReader
                     // 도형·그림만 들어 있으면 HwpxWriter 의 BuildShapeHostingParagraph /
                     // BuildImageHostingParagraph 가 만든 빈 단락이거나 한컴이 생성한
                     // 앵커 단락이다. 이런 빈 단락을 그대로 추가하면 실제 본문이 아래로 밀린다.
+                    var shapeLocal = s_shapeLocalNames;
                     var embeddedShapes = elem.Descendants()
-                        .Where(d => s_shapeLocalNames.Contains(d.Name.LocalName) && !insideHeaderFooter.Contains(d))
+                        .Where(d => shapeLocal.Contains(d.Name.LocalName)
+                                 && !insideHeaderFooter.Contains(d)
+                                 && !insideTextBox.Contains(d))
                         .ToList();
                     var embeddedPics = elem.Descendants()
-                        .Where(d => d.Name.LocalName == "pic" && !insideHeaderFooter.Contains(d))
+                        .Where(d => d.Name.LocalName == "pic"
+                                 && !insideHeaderFooter.Contains(d)
+                                 && !insideTextBox.Contains(d))
                         .ToList();
                     bool hasRealText = elem.Descendants().Any(d =>
-                        !insideHeaderFooter.Contains(d) && (
-                        (d.Name.LocalName == "t"        && !string.IsNullOrWhiteSpace(d.Value))
-                     || d.Name.LocalName == "tab"
-                     || d.Name.LocalName == "lineBreak"));
+                        !insideHeaderFooter.Contains(d)
+                     && !insideTextBox.Contains(d)
+                     && ((d.Name.LocalName == "t"   && !string.IsNullOrWhiteSpace(d.Value))
+                      || d.Name.LocalName == "tab"
+                      || d.Name.LocalName == "lineBreak"));
                     bool isHostingParagraph = (embeddedShapes.Count > 0 || embeddedPics.Count > 0)
                                              && !hasRealText;
                     if (!isHostingParagraph)
@@ -424,7 +442,16 @@ public sealed class HwpxReader : IDocumentReader
                     }
                     foreach (var shape in embeddedShapes)
                     {
-                        if (seenShapes.Add(shape))
+                        if (!seenShapes.Add(shape)) continue;
+                        // drawText 자식이 있으면 글상자(TextBoxObject), 없으면 일반 도형
+                        var drawText = shape.Elements()
+                            .FirstOrDefault(e => e.Name.LocalName == "drawText");
+                        if (drawText is not null)
+                        {
+                            if (seenTextBoxes.Add(shape))
+                                section.Blocks.Add(ReadTextBox(shape, drawText, ctx));
+                        }
+                        else
                         {
                             section.Blocks.Add(ReadShape(shape));
                         }
@@ -443,6 +470,58 @@ public sealed class HwpxReader : IDocumentReader
             }
         }
         return section;
+    }
+
+    /// <summary>
+    /// hp:rect+hp:drawText → TextBoxObject 변환.
+    /// shapeElem 에서 크기·위치를, drawText 의 subList 에서 내용을 읽는다.
+    /// </summary>
+    private static TextBoxObject ReadTextBox(XElement shapeElem, XElement drawText, ReadContext ctx)
+    {
+        var textBox = new TextBoxObject
+        {
+            WrapMode = shapeElem.Attribute("textWrap")?.Value?.ToUpperInvariant() switch
+            {
+                "BEHIND_TEXT"    => ImageWrapMode.BehindText,
+                "TOP_AND_BOTTOM" => ImageWrapMode.Inline,
+                "FLOAT_LEFT"     => ImageWrapMode.WrapLeft,
+                "FLOAT_RIGHT"    => ImageWrapMode.WrapRight,
+                _                => ImageWrapMode.InFrontOfText,
+            },
+        };
+
+        // 크기: curSz → orgSz
+        foreach (var szName in new[] { "curSz", "orgSz" })
+        {
+            var sz = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == szName);
+            if (sz is null) continue;
+            if (TryParseDouble(sz.Attribute("width")?.Value, out var w) && w > 0)
+                textBox.WidthMm = UnitConverter.HwpUnitToMm(w);
+            if (TryParseDouble(sz.Attribute("height")?.Value, out var h) && h > 0)
+                textBox.HeightMm = UnitConverter.HwpUnitToMm(h);
+            if (textBox.WidthMm > 0 && textBox.HeightMm > 0) break;
+        }
+
+        // 위치
+        var pos = shapeElem.Descendants().FirstOrDefault(e => e.Name.LocalName == "pos");
+        if (pos is not null)
+        {
+            if (TryParseDouble(pos.Attribute("horzOffset")?.Value, out var ox)) textBox.OverlayXMm = UnitConverter.HwpUnitToMm(ox);
+            if (TryParseDouble(pos.Attribute("vertOffset")?.Value, out var oy)) textBox.OverlayYMm = UnitConverter.HwpUnitToMm(oy);
+        }
+
+        // 내용: drawText 의 subList 안의 hp:p 들
+        var subList = drawText.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+        if (subList is not null)
+        {
+            foreach (var p in subList.Elements().Where(e => e.Name.LocalName == "p"))
+                textBox.Content.Add(ReadParagraph(p, ctx));
+        }
+
+        if (textBox.Content.Count == 0)
+            textBox.Content.Add(new Paragraph());
+
+        return textBox;
     }
 
     /// <summary>
@@ -860,6 +939,13 @@ public sealed class HwpxReader : IDocumentReader
         var hfDescInPara = new HashSet<XElement>();
         foreach (var hf in wp.Descendants().Where(e => e.Name.LocalName is "header" or "footer"))
             foreach (var d in hf.DescendantsAndSelf()) hfDescInPara.Add(d);
+        // 글상자(drawText) subList 도 제외 (ReadTextBox 가 별도 처리)
+        foreach (var tb in wp.Descendants().Where(e => e.Name.LocalName == "drawText"))
+        {
+            var sl = tb.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+            if (sl is not null)
+                foreach (var d in sl.DescendantsAndSelf()) hfDescInPara.Add(d);
+        }
 
         foreach (var elem in wp.Descendants())
         {
@@ -990,6 +1076,13 @@ public sealed class HwpxReader : IDocumentReader
             .Where(e => e.Name.LocalName is "header" or "footer" or "secPr" or "colPr"))
         {
             foreach (var d in skip.DescendantsAndSelf()) skipDescendants.Add(d);
+        }
+        // 글상자(drawText) subList 안의 텍스트도 건너뜀 (ReadTextBox 가 별도 처리)
+        foreach (var tb in run.Descendants().Where(e => e.Name.LocalName == "drawText"))
+        {
+            var sl = tb.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+            if (sl is not null)
+                foreach (var d in sl.DescendantsAndSelf()) skipDescendants.Add(d);
         }
 
         var sb = new StringBuilder();
