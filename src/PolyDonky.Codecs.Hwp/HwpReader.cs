@@ -6,6 +6,35 @@ using PolyDonky.Core;
 namespace PolyDonky.Codecs.Hwp;
 
 /// <summary>
+/// HwpReader 전용 파일 로거. d:\Temp\PolyDonky-HwpReader.log 에 기록한다.
+/// Debug.WriteLine 은 외부 CLI 프로세스에서 VS 출력 창에 표시되지 않으므로
+/// 파일 로그로 대체해 진단한다.
+/// </summary>
+internal static class HwpLog
+{
+    private static readonly string LogPath = Path.Combine(
+        Environment.OSVersion.Platform == PlatformID.Win32NT ? @"d:\Temp" : "/tmp",
+        "PolyDonky-HwpReader.log");
+
+    static HwpLog()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            File.AppendAllText(LogPath, $"\n=== HwpReader session {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+        }
+        catch { }
+    }
+
+    public static void Write(string message)
+    {
+        var line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
+        System.Diagnostics.Debug.WriteLine(line);
+        try { File.AppendAllText(LogPath, line + "\n"); } catch { }
+    }
+}
+
+/// <summary>
 /// HWP 5.x (KS X 5700) → PolyDonkyument 리더.
 ///
 /// OLE2 Compound File Binary 컨테이너 구조:
@@ -71,6 +100,7 @@ public sealed class HwpReader : IDocumentReader
     {
         ArgumentNullException.ThrowIfNull(input);
 
+        HwpLog.Write("[HwpReader.Read] 시작");
         var tmpPath = Path.GetTempFileName();
         try
         {
@@ -217,7 +247,7 @@ public sealed class HwpReader : IDocumentReader
         HwpParagraph? current = null;
         int i = 0;
 
-        System.Diagnostics.Debug.WriteLine(
+        HwpLog.Write(
             $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}, looking for TAG_PAGE_DEF=0x{TAG_PAGE_DEF:X3}");
 
         while (i < recs.Count)
@@ -227,13 +257,13 @@ public sealed class HwpReader : IDocumentReader
             switch (rec.TagId)
             {
                 case TAG_PAGE_DEF when rec.Payload.Length >= 32 && body.PageDef == null:
-                    System.Diagnostics.Debug.WriteLine(
+                    HwpLog.Write(
                         $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) found at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length}");
                     body.PageDef = ParsePageDef(rec.Payload);
                     break;
 
                 case TAG_PAGE_DEF:
-                    System.Diagnostics.Debug.WriteLine(
+                    HwpLog.Write(
                         $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length} (skipped: len<32 or already set)");
                     break;
 
@@ -515,7 +545,7 @@ public sealed class HwpReader : IDocumentReader
             double pw = pd.PaperWidthMm;
             double ph = pd.PaperHeightMm;
 
-            System.Diagnostics.Debug.WriteLine(
+            HwpLog.Write(
                 $"[HwpReader] PAGE_DEF found: width={pw:F1}mm, height={ph:F1}mm");
 
             // HWP stores actual paper dimensions: landscape → width > height
@@ -525,7 +555,7 @@ public sealed class HwpReader : IDocumentReader
                 ps.WidthMm      = ph;
                 ps.HeightMm     = pw;
                 ps.Orientation  = PageOrientation.Landscape;
-                System.Diagnostics.Debug.WriteLine(
+                HwpLog.Write(
                     $"[HwpReader] → Landscape detected: {ps.WidthMm:F0}x{ps.HeightMm:F0}mm, Orientation={ps.Orientation}");
             }
             else if (pw > 10 && ph > 10)
@@ -533,7 +563,7 @@ public sealed class HwpReader : IDocumentReader
                 ps.WidthMm      = pw;
                 ps.HeightMm     = ph;
                 ps.Orientation  = PageOrientation.Portrait;
-                System.Diagnostics.Debug.WriteLine(
+                HwpLog.Write(
                     $"[HwpReader] → Portrait detected: {ps.WidthMm:F0}x{ps.HeightMm:F0}mm, Orientation={ps.Orientation}");
             }
 
