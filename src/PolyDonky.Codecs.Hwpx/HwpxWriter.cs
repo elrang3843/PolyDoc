@@ -1083,6 +1083,7 @@ public sealed class HwpxWriter : IDocumentWriter
         long ftrH    = Math.Max(283, mBottom - mFoot);
 
         var masterPage = new XElement(Hm + "masterPage",
+            new XAttribute("id", "0"),
             new XAttribute("kind",   "BOTH"),
             new XAttribute("number", "0"));
 
