@@ -1040,45 +1040,28 @@ public sealed class HwpxWriter : IDocumentWriter
 
         _pendingMasterPageCnt = masterPageCnt;
 
+        // HWP 바이너리 섹션 순서 (KS X 5700): 섹션 설정 → 머리말 → 꼬리말 → 본문.
+        // HWPX 에서도 같은 순서를 따른다: 첫 단락(secPr) → hm:masterPage → 나머지 본문.
+        // 구현: 첫 블록만 먼저 써 secPr 를 주입하고, 그 직후 masterPage 를 삽입.
         if (blocks.Count == 0)
         {
             var para = BuildEmptyParagraph(ctx);
             if (injectSecPr) PrependSecPrRun(para, section);
             sec.Add(para);
+            AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
         }
         else
         {
-            foreach (var block in blocks)
-                AppendBlock(sec, block, ctx, section, ref injectSecPr);
+            // 첫 블록 → secPr 주입
+            AppendBlock(sec, blocks[0], ctx, section, ref injectSecPr);
+            // masterPage: 첫 단락 직후, 나머지 본문 앞
+            AppendMasterPage(sec, section, masterPageCnt, hasHeader, hasFooter, ctx);
+            // 나머지 블록
+            for (int bi = 1; bi < blocks.Count; bi++)
+                AppendBlock(sec, blocks[bi], ctx, section, ref injectSecPr);
         }
 
         _pendingMasterPageCnt = 0;
-
-        // hm:masterPage — 머리말/꼬리말을 별도 서브리스트로 출력 (KS X 6101).
-        if (masterPageCnt > 0)
-        {
-            long textW = UnitConverter.MmToHwpUnit(
-                section.Page.EffectiveWidthMm - section.Page.MarginLeftMm - section.Page.MarginRightMm);
-            long hdrH  = UnitConverter.MmToHwpUnit(section.Page.MarginHeaderMm);
-            long ftrH  = UnitConverter.MmToHwpUnit(section.Page.MarginFooterMm);
-
-            // KS X 6101: number 는 0-based. kind="BOTH" = 홀수+짝수 공통 머리말/꼬리말.
-            var masterPage = new XElement(Hm + "masterPage",
-                new XAttribute("kind",   "BOTH"),
-                new XAttribute("number", "0"));
-
-            if (hasHeader)
-                masterPage.Add(BuildHeaderFooterElement("header", section.Page.Header, ctx, textW, hdrH));
-            if (hasFooter)
-                masterPage.Add(BuildHeaderFooterElement("footer", section.Page.Footer, ctx, textW, ftrH));
-
-            sec.Add(masterPage);
-            HwpxLog.Write($"[WriteSectionXml] masterPage 출력: hasHeader={hasHeader}, hasFooter={hasFooter}, textW={textW}, hdrH={hdrH}, ftrH={ftrH}");
-        }
-        else
-        {
-            HwpxLog.Write($"[WriteSectionXml] masterPage 없음 (hasHeader={!section.Page.Header.IsEmpty}, hasFooter={!section.Page.Footer.IsEmpty})");
-        }
 
         WriteXml(archive, HwpxPaths.SectionXml(sectionIndex),
             new XDocument(new XDeclaration("1.0", "utf-8", null), sec));
@@ -1086,6 +1069,37 @@ public sealed class HwpxWriter : IDocumentWriter
 
     // masterPageCnt 를 첫 번째 secPr 주입에 전달하기 위한 인스턴스 필드.
     private int _pendingMasterPageCnt = 0;
+
+    // masterPage 가 0이면 아무것도 추가하지 않는다.
+    // 위치: 첫 단락(secPr) 직후, 나머지 본문 앞 (HWP 바이너리 섹션 순서와 일치).
+    private void AppendMasterPage(XElement sec, Section section, int masterPageCnt,
+        bool hasHeader, bool hasFooter, WriteContext ctx)
+    {
+        if (masterPageCnt <= 0) return;
+
+        long pageW  = ResolvePageDim(section.Page.EffectiveWidthMm,  defaultMm: 210);
+        long pageH  = ResolvePageDim(section.Page.EffectiveHeightMm, defaultMm: 297);
+        long mLeft  = ResolvePageDim(section.Page.MarginLeftMm,   defaultMm: 30, minMm: 0);
+        long mRight = ResolvePageDim(section.Page.MarginRightMm,  defaultMm: 30, minMm: 0);
+        long mHead  = ResolvePageDim(section.Page.MarginHeaderMm, defaultMm: 15, minMm: 0);
+        long mFoot  = ResolvePageDim(section.Page.MarginFooterMm, defaultMm: 15, minMm: 0);
+        long textW  = pageW - mLeft - mRight;   // 본문 폭 (HWP 유닛)
+        long hdrH   = mHead;                    // 머리말 높이 ≈ 상단 여백
+        long ftrH   = mFoot;                    // 꼬리말 높이 ≈ 하단 여백
+
+        var masterPage = new XElement(Hm + "masterPage",
+            new XAttribute("kind",   "BOTH"),
+            new XAttribute("number", "0"));
+
+        if (hasHeader)
+            masterPage.Add(BuildHeaderFooterElement("header", section.Page.Header, ctx, textW, hdrH));
+        if (hasFooter)
+            masterPage.Add(BuildHeaderFooterElement("footer", section.Page.Footer, ctx, textW, ftrH));
+
+        sec.Add(masterPage);
+
+        HwpxLog.Write($"  AppendMasterPage: textW={textW} hdrH={hdrH} ftrH={ftrH} hasHeader={hasHeader} hasFooter={hasFooter}");
+    }
 
     private XElement BuildHeaderFooterElement(string localName, HeaderFooterContent content,
         WriteContext ctx, long textW, long areaH)
