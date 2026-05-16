@@ -217,6 +217,9 @@ public sealed class HwpReader : IDocumentReader
         HwpParagraph? current = null;
         int i = 0;
 
+        System.Diagnostics.Debug.WriteLine(
+            $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}, looking for TAG_PAGE_DEF=0x{TAG_PAGE_DEF:X3}");
+
         while (i < recs.Count)
         {
             var rec = recs[i];
@@ -224,7 +227,14 @@ public sealed class HwpReader : IDocumentReader
             switch (rec.TagId)
             {
                 case TAG_PAGE_DEF when rec.Payload.Length >= 32 && body.PageDef == null:
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) found at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length}");
                     body.PageDef = ParsePageDef(rec.Payload);
+                    break;
+
+                case TAG_PAGE_DEF:
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length} (skipped: len<32 or already set)");
                     break;
 
                 case TAG_PARA_HEADER:
@@ -505,6 +515,9 @@ public sealed class HwpReader : IDocumentReader
             double pw = pd.PaperWidthMm;
             double ph = pd.PaperHeightMm;
 
+            System.Diagnostics.Debug.WriteLine(
+                $"[HwpReader] PAGE_DEF found: width={pw:F1}mm, height={ph:F1}mm");
+
             // HWP stores actual paper dimensions: landscape → width > height
             if (pw > ph && pw > 10 && ph > 10)
             {
@@ -512,12 +525,16 @@ public sealed class HwpReader : IDocumentReader
                 ps.WidthMm      = ph;
                 ps.HeightMm     = pw;
                 ps.Orientation  = PageOrientation.Landscape;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[HwpReader] → Landscape detected: {ps.WidthMm:F0}x{ps.HeightMm:F0}mm, Orientation={ps.Orientation}");
             }
             else if (pw > 10 && ph > 10)
             {
                 ps.WidthMm      = pw;
                 ps.HeightMm     = ph;
                 ps.Orientation  = PageOrientation.Portrait;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[HwpReader] → Portrait detected: {ps.WidthMm:F0}x{ps.HeightMm:F0}mm, Orientation={ps.Orientation}");
             }
 
             ps.SizeKind = MatchPaperSize(ps.WidthMm, ps.HeightMm);
