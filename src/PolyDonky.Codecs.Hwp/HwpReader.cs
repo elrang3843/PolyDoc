@@ -466,6 +466,9 @@ public sealed class HwpReader : IDocumentReader
                     break;
                 case TAG_OLE_COMPONENT:
                     kind = HwpShapeKind.Ole;
+                    // OLE 도 binDataId 가 포함되는 경우가 많아 동일한 휴리스틱 사용.
+                    if (rec.Payload.Length >= 4 && binDataId == 0)
+                        binDataId = TryReadBinDataId(rec.Payload);
                     break;
 
                 case TAG_PICTURE_COMPONENT when rec.Payload.Length >= 4:
@@ -549,6 +552,7 @@ public sealed class HwpReader : IDocumentReader
                 body.Shapes.Add(new HwpShape
                 {
                     XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm, Kind = kind,
+                    BinDataId = binDataId,
                 });
                 break;
         }
@@ -1031,22 +1035,40 @@ public sealed class HwpReader : IDocumentReader
         }
 
         // ── Images ─────────────────────────────────────────────────────────
+        // 사용한 BinDataId 추적 — 동일 ID 가 여러 이미지에 매핑되는 폴백 버그 방지.
+        var usedBinIds = new HashSet<int>();
+        int nextSeqBinId = 1;
         foreach (var img in body.Images)
         {
             byte[]? imgData = null;
+            int effectiveId = 0;
 
-            // Try the declared BinDataId first, then scan BIN0001 onwards
+            // Try the declared BinDataId first
             if (img.BinDataId > 0)
+            {
                 imgData = ReadBinData(root, img.BinDataId);
+                if (imgData != null) effectiveId = img.BinDataId;
+            }
 
+            // Fallback: 다음 사용되지 않은 시퀀셜 BIN#### 사용
             if (imgData == null)
             {
-                // Fallback: try adjacent IDs (±2 from declared)
-                for (int bid = 1; bid <= 16 && imgData == null; bid++)
-                    imgData = ReadBinData(root, bid);
+                while (nextSeqBinId <= 256)
+                {
+                    int candidate = nextSeqBinId++;
+                    if (usedBinIds.Contains(candidate)) continue;
+                    var tryData = ReadBinData(root, candidate);
+                    if (tryData != null && tryData.Length > 0)
+                    {
+                        imgData = tryData;
+                        effectiveId = candidate;
+                        break;
+                    }
+                }
             }
 
             if (imgData == null || imgData.Length == 0) continue;
+            usedBinIds.Add(effectiveId);
 
             var ib = new ImageBlock
             {
@@ -1065,6 +1087,23 @@ public sealed class HwpReader : IDocumentReader
         // ── Shapes ─────────────────────────────────────────────────────────
         foreach (var sh in body.Shapes)
         {
+            // OLE 객체는 원본 OLE 데이터를 OpaqueBlock 으로 보존하여 무손실 유지.
+            if (sh.Kind == HwpShapeKind.Ole && sh.BinDataId > 0)
+            {
+                var oleData = ReadBinData(root, sh.BinDataId);
+                if (oleData != null && oleData.Length > 0)
+                {
+                    var opaque = new OpaqueBlock
+                    {
+                        Format = "hwp",
+                        Kind   = "ole-component",
+                        Bytes  = oleData,
+                    };
+                    section.Blocks.Add(opaque);
+                    continue;
+                }
+            }
+
             var so = new ShapeObject
             {
                 Kind         = MapShapeKind(sh.Kind),
@@ -1499,6 +1538,7 @@ public sealed class HwpReader : IDocumentReader
         public double       WidthMm   { get; set; }
         public double       HeightMm  { get; set; }
         public HwpShapeKind Kind      { get; set; }
+        public int          BinDataId { get; set; }  // OLE 도형용
     }
 
     private record struct HwpRecord(uint TagId, uint Level, byte[] Payload);
