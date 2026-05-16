@@ -496,34 +496,37 @@ public sealed class HwpReader : IDocumentReader
         int binDataId = 0;
         List<HwpParagraph>? tbContent = null;
 
+        // 진단: GSO 컨트롤 자식 레코드 추적
+        int gsoStartIdx = startIdx;
+        var gsoChildTags = new List<string>();
+
         int i = startIdx;
         while (i < recs.Count)
         {
             var rec = recs[i];
             if (rec.Level < minLevel) break;
 
+            // 진단: 모든 GSO 자식 레코드 기록
+            gsoChildTags.Add($"0x{rec.TagId:X3}@L{rec.Level}");
+
             switch (rec.TagId)
             {
-                case TAG_SHAPE_COMPONENT when rec.Payload.Length >= 36:
+                case TAG_SHAPE_COMPONENT when rec.Payload.Length >= 32:
                     {
-                        // SHAPE_COMPONENT layout (HWPUNIT):
-                        //   0-1: groupLevel (uint16)
-                        //   2-3: localFileVersion (uint16)
-                        //   4-7: initialWidth (uint32)
-                        //   8-11: initialHeight (uint32)
-                        //  12-15: zOrder (int32)
-                        //  16-17: wrapType (int16)
-                        //  18-19: horzRelRef (int16)
-                        //  20-21: vertRelRef (int16)
-                        //  22-23: horzRelPos (int16)
-                        //  24-25: vertRelPos (int16)
-                        //  26-29: xOffset (int32, HWPUNIT)
-                        //  30-33: yOffset (int32, HWPUNIT)
+                        // SHAPE_COMPONENT (HWPTAG_SHAPE_COMPONENT) 레이아웃 (KS X 5700):
+                        //   0-3   : childCtrlId (4 ASCII chars: "rect","elli","spol","pic ","ole ","txt ","cont")
+                        //   4-7   : groupLevel (uint16) + localFileVersion (uint16)
+                        //   8-11  : xPosShape (int32, HWPUNIT) — base 위치 (그룹 내부면 부모 기준)
+                        //   12-15 : yPosShape (int32, HWPUNIT)
+                        //   16-19 : groupingLevel / ngrp (uint32)
+                        //   20-23 : nlevel (uint32)
+                        //   24-27 : objW (uint32, HWPUNIT) — 초기 너비
+                        //   28-31 : objH (uint32, HWPUNIT) — 초기 높이
                         var p = rec.Payload;
-                        wMm = BitConverter.ToUInt32(p, 4) * HwpUnitToMm;
-                        hMm = BitConverter.ToUInt32(p, 8) * HwpUnitToMm;
-                        xMm = BitConverter.ToInt32(p, 26) * HwpUnitToMm;
-                        yMm = BitConverter.ToInt32(p, 30) * HwpUnitToMm;
+                        xMm = BitConverter.ToInt32(p, 8)  * HwpUnitToMm;
+                        yMm = BitConverter.ToInt32(p, 12) * HwpUnitToMm;
+                        wMm = BitConverter.ToUInt32(p, 24) * HwpUnitToMm;
+                        hMm = BitConverter.ToUInt32(p, 28) * HwpUnitToMm;
                         hasShape = true;
                     }
                     break;
@@ -568,30 +571,36 @@ public sealed class HwpReader : IDocumentReader
                     break;
 
                 case TAG_LIST_HEADER when hasShape && kind != HwpShapeKind.Picture:
-                    // Textbox: nested paragraphs follow at level+1
+                    // Textbox: nested paragraphs follow.
+                    // HWP 구조: LIST_HEADER@L_n → PARA_HEADER@L_n → PARA_TEXT@L_(n+1).
+                    // 즉, PARA_HEADER 는 LIST_HEADER 와 같은 레벨, PARA_TEXT 는 한 레벨 더 깊다.
                     kind = HwpShapeKind.TextBox;
-                    var innerLevel = rec.Level + 1;
+                    var paraLevel = rec.Level;       // PARA_HEADER 레벨 (LIST_HEADER 와 동일)
+                    var textLevel = rec.Level + 1;   // PARA_TEXT/CHAR_SHAPE 레벨
                     i++;
                     var tbParas = new List<HwpParagraph>();
                     HwpParagraph? tbCur = null;
                     while (i < recs.Count)
                     {
                         var ir = recs[i];
-                        if (ir.Level < innerLevel) break;
+                        if (ir.Level < paraLevel) break;
+                        // 같은 레벨에 paragraph 가 아닌 다른 컨트롤(예: RECT_COMPONENT) 이 나오면 종료
+                        if (ir.Level == paraLevel && ir.TagId != TAG_PARA_HEADER)
+                            break;
                         switch (ir.TagId)
                         {
-                            case TAG_PARA_HEADER:
+                            case TAG_PARA_HEADER when ir.Level == paraLevel:
                                 if (tbCur != null) tbParas.Add(tbCur);
                                 tbCur = new HwpParagraph();
                                 if (ir.Payload.Length >= 8)
                                     tbCur.ParaShapeId = (int)BitConverter.ToUInt32(ir.Payload, 4);
                                 break;
-                            case TAG_PARA_TEXT:
+                            case TAG_PARA_TEXT when ir.Level == textLevel:
                                 if (tbCur == null) tbCur = new HwpParagraph();
                                 try { tbCur.Text += ExtractHwpText(ir.Payload); }
                                 catch { }
                                 break;
-                            case TAG_PARA_CHAR_SHAPE when tbCur != null && tbCur.CharShapeId < 0:
+                            case TAG_PARA_CHAR_SHAPE when ir.Level == textLevel && tbCur != null && tbCur.CharShapeId < 0:
                                 if (ir.Payload.Length >= 8)
                                     tbCur.CharShapeId = (int)BitConverter.ToUInt32(ir.Payload, 4);
                                 break;
@@ -606,9 +615,36 @@ public sealed class HwpReader : IDocumentReader
             i++;
         }
 
+        // LIST_HEADER 가 존재하고 텍스트 단락이 수집되었으면 무조건 TextBox 로 판정.
+        // (RECT_COMPONENT 등 후속 shape component 가 kind 를 덮어쓰는 것을 방지)
+        if (tbContent != null && tbContent.Count > 0)
+            kind = HwpShapeKind.TextBox;
+
+        HwpLog.Write($"[ParseGsoControl] GSO at idx={gsoStartIdx}: kind={kind}, hasShape={hasShape}, " +
+            $"size={wMm:F1}x{hMm:F1}mm, pos=({xMm:F1},{yMm:F1}), " +
+            $"tbContent={(tbContent != null ? tbContent.Count.ToString() : "null")}, " +
+            $"children=[{string.Join(",", gsoChildTags.Take(20))}{(gsoChildTags.Count > 20 ? "..." : "")}]");
+
         if (!hasShape) return i;
 
-        // Clamp to sensible range (0..1000 mm). Negative coords → 0.
+        // 좌표·크기 sanity 검증. SHAPE_COMPONENT 오프셋이 부정확한 경우 비현실적인 값(수천 mm)이 나옴.
+        // A4(210x297mm)·A3(420x297mm) 범위를 벗어나면 기본값(0, 페이지 중앙)으로 대체.
+        const double MaxReasonableMm = 1000.0;  // 가장 큰 용지(A0) 도 1000mm 미만
+        if (Math.Abs(xMm) > MaxReasonableMm || Math.Abs(yMm) > MaxReasonableMm)
+        {
+            HwpLog.Write($"[ParseGsoControl] ⚠ Position out of range, clamping: ({xMm:F1},{yMm:F1}) → (0,0)");
+            xMm = 0; yMm = 0;
+        }
+        if (wMm > MaxReasonableMm || wMm < 0)
+        {
+            HwpLog.Write($"[ParseGsoControl] ⚠ Width out of range, clamping: {wMm:F1} → 100");
+            wMm = 100;
+        }
+        if (hMm > MaxReasonableMm || hMm < 0)
+        {
+            HwpLog.Write($"[ParseGsoControl] ⚠ Height out of range, clamping: {hMm:F1} → 30");
+            hMm = 30;
+        }
         xMm = Math.Max(0, xMm);
         yMm = Math.Max(0, yMm);
 
