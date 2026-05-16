@@ -1263,22 +1263,11 @@ public sealed class HwpReader : IDocumentReader
         // ── Shapes ─────────────────────────────────────────────────────────
         foreach (var sh in body.Shapes)
         {
-            // OLE 객체는 원본 OLE 데이터를 OpaqueBlock 으로 보존하여 무손실 유지.
+            byte[]? oleData = null;
+
+            // OLE 객체 바이너리 데이터 추출 (위치 정보는 유지함).
             if (sh.Kind == HwpShapeKind.Ole && sh.BinDataId > 0)
-            {
-                var oleData = ReadBinData(root, sh.BinDataId);
-                if (oleData != null && oleData.Length > 0)
-                {
-                    var opaque = new OpaqueBlock
-                    {
-                        Format = "hwp",
-                        Kind   = "ole-component",
-                        Bytes  = oleData,
-                    };
-                    section.Blocks.Add(opaque);
-                    continue;
-                }
-            }
+                oleData = ReadBinData(root, sh.BinDataId);
 
             var so = new ShapeObject
             {
@@ -1291,6 +1280,7 @@ public sealed class HwpReader : IDocumentReader
                 AnchorPageIndex = sh.AnchorPageIndex,
                 StrokeColor  = "#000000",
                 StrokeThicknessPt = 1.0,
+                OleData      = oleData,  // OLE 바이너리 데이터 (Ole kind 일 때만 사용)
             };
             section.Blocks.Add(so);
         }
@@ -1430,6 +1420,7 @@ public sealed class HwpReader : IDocumentReader
         HwpShapeKind.Polygon   => ShapeKind.Polygon,
         HwpShapeKind.Curve     => ShapeKind.Spline,
         HwpShapeKind.Arc       => ShapeKind.HalfCircle,
+        HwpShapeKind.Ole       => ShapeKind.Ole,
         _                      => ShapeKind.Rectangle,
     };
 

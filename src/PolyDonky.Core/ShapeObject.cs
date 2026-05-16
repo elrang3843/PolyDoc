@@ -17,6 +17,7 @@ public enum ShapeKind
     Star,
     Polygon,
     ClosedSpline,
+    Ole,  // OLE object (binary data embedded)
 }
 
 /// <summary>선 종류 (실선·파선·점선·일점쇄선).</summary>
@@ -213,4 +214,7 @@ public sealed class ShapeObject : Block, IOverlayAnchored
 
     /// <summary>아래 여백 (mm).</summary>
     public double MarginBottomMm { get; set; }
+
+    /// <summary>OLE 객체 바이너리 데이터 (Kind = Ole 인 경우만 사용). 무손실 보존용.</summary>
+    public byte[]? OleData { get; set; }
 }
