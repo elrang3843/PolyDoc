@@ -1065,8 +1065,13 @@ public sealed class HwpxWriter : IDocumentWriter
         long mBottom = ResolvePageDim(section.Page.MarginBottomMm, defaultMm: 17.5, minMm: 0);
         long mHead = ResolvePageDim(section.Page.MarginHeaderMm, defaultMm: 15, minMm: 0);
         long mFoot = ResolvePageDim(section.Page.MarginFooterMm, defaultMm: 15, minMm: 0);
-        bool landscape = section.Page.Orientation == PageOrientation.Landscape
-                         || section.Page.EffectiveWidthMm > section.Page.EffectiveHeightMm;
+        // KS X 6101: landscape 속성은 글자 쓰기 방향(text direction)을 의미.
+        // WIDELY = 가로쓰기(기본값, Portrait/Landscape 용지 모두 해당)
+        // NARROWLY = 세로쓰기(Japanese vertical text 등)
+        // 용지 방향(Portrait vs Landscape)은 width vs height 값의 대소로 결정됨.
+        string landscapeVal = section.Page.TextOrientation == TextOrientation.Vertical
+            ? "NARROWLY"
+            : "WIDELY";
 
         var secPr = new XElement(Hp + "secPr",
             new XAttribute("id", ""),
@@ -1106,7 +1111,7 @@ public sealed class HwpxWriter : IDocumentWriter
                 new XAttribute("distance", "0"),
                 new XAttribute("startNumber", "0")),
             new XElement(Hp + "pagePr",
-                new XAttribute("landscape", landscape ? "WIDELY" : "NARROWLY"),
+                new XAttribute("landscape", landscapeVal),
                 new XAttribute("width",  pageW.ToString()),
                 new XAttribute("height", pageH.ToString()),
                 new XAttribute("gutterType", "LEFT_ONLY"),
