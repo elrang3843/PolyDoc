@@ -416,8 +416,20 @@ public sealed class HwpReader : IDocumentReader
 
                         if (ctrlId == CTRL_ID_GSO)
                         {
+                            // GSO CTRL_HEADER 페이로드에 실제 위치/크기 정보가 있음 (SHAPE_COMPONENT 가 아님).
+                            // 레이아웃:  0-3 ctrlId, 4-7 flags, 8-11 xOffset, 12-15 yOffset,
+                            //           16-19 height, 20-23 width (HWPUNIT)
+                            double gsoXMm = 0, gsoYMm = 0, gsoWMm = 0, gsoHMm = 0;
+                            var p = rec.Payload;
+                            if (p.Length >= 24)
+                            {
+                                gsoXMm = BitConverter.ToInt32(p, 8)  * HwpUnitToMm;
+                                gsoYMm = BitConverter.ToInt32(p, 12) * HwpUnitToMm;
+                                gsoHMm = BitConverter.ToUInt32(p, 16) * HwpUnitToMm;
+                                gsoWMm = BitConverter.ToUInt32(p, 20) * HwpUnitToMm;
+                            }
                             // 그리기 개체(GSO): 도형/글상자/이미지
-                            i = ParseGsoControl(recs, i + 1, rec.Level + 1, body);
+                            i = ParseGsoControl(recs, i + 1, rec.Level + 1, body, gsoXMm, gsoYMm, gsoWMm, gsoHMm);
                             continue;
                         }
                         if (ctrlId == CTRL_ID_HEADER)
@@ -488,10 +500,12 @@ public sealed class HwpReader : IDocumentReader
 
     // ── GSO (General Shape Object) control handler ─────────────────────────
 
-    private static int ParseGsoControl(List<HwpRecord> recs, int startIdx, uint minLevel, HwpBodyText body)
+    private static int ParseGsoControl(List<HwpRecord> recs, int startIdx, uint minLevel, HwpBodyText body,
+        double ctrlXMm = 0, double ctrlYMm = 0, double ctrlWMm = 0, double ctrlHMm = 0)
     {
-        double xMm = 0, yMm = 0, wMm = 0, hMm = 0;
-        bool hasShape = false;
+        // 기본값: CTRL_HEADER 에서 가져온 위치/크기 (SHAPE_COMPONENT 가 덮어쓸 수 있음).
+        double xMm = ctrlXMm, yMm = ctrlYMm, wMm = ctrlWMm, hMm = ctrlHMm;
+        bool hasShape = ctrlWMm > 0 || ctrlHMm > 0;
         HwpShapeKind kind = HwpShapeKind.Rectangle;
         int binDataId = 0;
         List<HwpParagraph>? tbContent = null;
@@ -516,17 +530,18 @@ public sealed class HwpReader : IDocumentReader
                         // SHAPE_COMPONENT (HWPTAG_SHAPE_COMPONENT) 레이아웃 (KS X 5700):
                         //   0-3   : childCtrlId (4 ASCII chars: "rect","elli","spol","pic ","ole ","txt ","cont")
                         //   4-7   : groupLevel (uint16) + localFileVersion (uint16)
-                        //   8-11  : xPosShape (int32, HWPUNIT) — base 위치 (그룹 내부면 부모 기준)
+                        //   8-11  : xPosShape (int32, HWPUNIT) — 그룹 내부면 부모 기준 상대 위치
                         //   12-15 : yPosShape (int32, HWPUNIT)
                         //   16-19 : groupingLevel / ngrp (uint32)
                         //   20-23 : nlevel (uint32)
                         //   24-27 : objW (uint32, HWPUNIT) — 초기 너비
                         //   28-31 : objH (uint32, HWPUNIT) — 초기 높이
+                        // CTRL_HEADER 의 위치를 우선 사용 (절대 좌표). SHAPE_COMPONENT 의 xPos/yPos 는 그룹 내 상대.
                         var p = rec.Payload;
-                        xMm = BitConverter.ToInt32(p, 8)  * HwpUnitToMm;
-                        yMm = BitConverter.ToInt32(p, 12) * HwpUnitToMm;
-                        wMm = BitConverter.ToUInt32(p, 24) * HwpUnitToMm;
-                        hMm = BitConverter.ToUInt32(p, 28) * HwpUnitToMm;
+                        if (wMm <= 0)
+                            wMm = BitConverter.ToUInt32(p, 24) * HwpUnitToMm;
+                        if (hMm <= 0)
+                            hMm = BitConverter.ToUInt32(p, 28) * HwpUnitToMm;
                         hasShape = true;
                     }
                     break;
@@ -873,12 +888,16 @@ public sealed class HwpReader : IDocumentReader
         HwpTableCell? curCell = null;
         HwpParagraph? curPara = null;
 
+        int tblStartIdx = i;
+        var tblChildTags = new List<string>();
         i++; // CTRL_HEADER 다음부터 처리
 
         while (i < recs.Count)
         {
             var rec = recs[i];
             if (rec.Level < minLevel) break;
+
+            tblChildTags.Add($"0x{rec.TagId:X3}@L{rec.Level}");
 
             switch (rec.TagId)
             {
@@ -895,6 +914,7 @@ public sealed class HwpReader : IDocumentReader
                         var p = rec.Payload;
                         tbl.RowCount = BitConverter.ToUInt16(p, 4);
                         tbl.ColCount = BitConverter.ToUInt16(p, 6);
+                        HwpLog.Write($"[ParseTable] TAG_TABLE: {tbl.RowCount} rows × {tbl.ColCount} cols (payload len={rec.Payload.Length})");
                     }
                     break;
 
@@ -948,6 +968,9 @@ public sealed class HwpReader : IDocumentReader
 
         if (curCell != null && curPara != null) curCell.Paragraphs.Add(curPara);
         if (curCell != null) tbl.Cells.Add(curCell);
+
+        HwpLog.Write($"[ParseTable] Complete: {tbl.RowCount}×{tbl.ColCount} table, {tbl.Cells.Count} cells, " +
+            $"children=[{string.Join(",", tblChildTags.Take(30))}{(tblChildTags.Count > 30 ? "..." : "")}]");
 
         if (tbl.RowCount == 0 || tbl.ColCount == 0) return null;
         return tbl;
