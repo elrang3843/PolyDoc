@@ -96,10 +96,9 @@ public sealed class HwpReader : IDocumentReader
     private const uint TAG_CONTAINER_COMPONENT = 0x056;  // HWPTAG_SHAPE_COMPONENT_CONTAINER
     private const uint TAG_TEXTBOX_COMPONENT   = 0x059;  // HWPTAG_SHAPE_COMPONENT_TEXTBOX
 
-    // CTRL_ID_GSO: 그리기 개체 (도형/글상자/이미지 공통). last byte space or null.
-    // LE uint32: 'g'=0x67, 's'=0x73, 'o'=0x6F → check only first 3 bytes.
-    private const uint CTRL_ID_GSO_MASK = 0x00FFFFFFu;
-    private const uint CTRL_ID_GSO_VAL  = 0x006F7367u; // 'g','s','o'
+    // CTRL_ID_GSO: 그리기 개체 (도형/글상자/이미지 공통). 정확히 "gso " (space at end).
+    // 다른 컨트롤과 마찬가지로 빅엔디언 표기법: ('g'<<24)|('s'<<16)|('o'<<8)|' '
+    private const uint CTRL_ID_GSO = ('g' << 24) | ('s' << 16) | ('o' << 8) | ' '; // 0x67736F20
 
     // 비-GSO 컨트롤 ID (LE uint32). 메모리상 바이트 순서가 역순이므로,
     // 'a','b','c','d' 4글자 컨트롤 이름은 LE uint32 = ('d'<<24)|('c'<<16)|('b'<<8)|'a'.
@@ -314,6 +313,32 @@ public sealed class HwpReader : IDocumentReader
         HwpLog.Write(
             $"[HwpReader.ParseSectionRecords] Total records: {recs.Count}");
 
+        // 진단: CTRL_HEADER 레코드 구조 미리 스캔
+        var ctrlHeaders = new Dictionary<string, int>();
+        for (int j = 0; j < recs.Count; j++)
+        {
+            if (recs[j].TagId == TAG_CTRL_HEADER && recs[j].Payload.Length >= 4)
+            {
+                uint ctrlId = BitConverter.ToUInt32(recs[j].Payload, 0);
+                string ctrlName = ctrlId switch
+                {
+                    CTRL_ID_GSO => "gso",
+                    CTRL_ID_HEADER => "head",
+                    CTRL_ID_FOOTER => "foot",
+                    CTRL_ID_TABLE => "tbl ",
+                    CTRL_ID_SECD => "secd",
+                    CTRL_ID_COLD => "cold",
+                    _ => $"0x{ctrlId:X8}"
+                };
+                if (!ctrlHeaders.ContainsKey(ctrlName)) ctrlHeaders[ctrlName] = 0;
+                ctrlHeaders[ctrlName]++;
+            }
+        }
+        if (ctrlHeaders.Count > 0)
+            HwpLog.Write($"[ParseSectionRecords] CTRL_HEADER summary: {string.Join(", ", ctrlHeaders.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value}"))}");
+        else
+            HwpLog.Write($"[ParseSectionRecords] ⚠ No CTRL_HEADER records found at any level!");
+
         while (i < recs.Count)
         {
             var rec = recs[i];
@@ -323,6 +348,24 @@ public sealed class HwpReader : IDocumentReader
                 case TAG_PAGE_DEF:
                     if (body.PageDef == null && rec.Payload.Length >= 32)
                         body.PageDef = ParsePageDef(rec.Payload);
+                    break;
+
+                // 진단: 모든 CTRL_HEADER 레코드 로깅 (레벨 무관)
+                case TAG_CTRL_HEADER when rec.Level != 1 && rec.Payload.Length >= 4:
+                    {
+                        uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
+                        string ctrlName = ctrlId switch
+                        {
+                            CTRL_ID_GSO => "gso",
+                            CTRL_ID_HEADER => "head",
+                            CTRL_ID_FOOTER => "foot",
+                            CTRL_ID_TABLE => "tbl ",
+                            CTRL_ID_SECD => "secd",
+                            CTRL_ID_COLD => "cold",
+                            _ => $"0x{ctrlId:X8}"
+                        };
+                        HwpLog.Write($"[ParseSectionRecords] ⚠ Found CTRL_HEADER at unexpected level {rec.Level} (index {i}): ctrlId={ctrlName}");
+                    }
                     break;
 
                 // HWP 레벨 구조: PARA_HEADER(N) → 자식 PARA_TEXT/CHAR_SHAPE/LINE_SEG/CTRL_HEADER(N+1).
@@ -358,7 +401,18 @@ public sealed class HwpReader : IDocumentReader
                     {
                         uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
 
-                        if ((ctrlId & CTRL_ID_GSO_MASK) == CTRL_ID_GSO_VAL)
+                        // 진단: 모든 CTRL_HEADER 의 ctrlId 로깅
+                        string ctrlName = "unknown";
+                        if (ctrlId == CTRL_ID_GSO) ctrlName = "gso";
+                        else if (ctrlId == CTRL_ID_HEADER) ctrlName = "head";
+                        else if (ctrlId == CTRL_ID_FOOTER) ctrlName = "foot";
+                        else if (ctrlId == CTRL_ID_TABLE) ctrlName = "tbl ";
+                        else if (ctrlId == CTRL_ID_SECD) ctrlName = "secd";
+                        else if (ctrlId == CTRL_ID_COLD) ctrlName = "cold";
+                        else ctrlName = $"0x{ctrlId:X8}";
+                        HwpLog.Write($"[ParseSectionRecords] Found CTRL_HEADER at index {i}: ctrlId={ctrlName}");
+
+                        if (ctrlId == CTRL_ID_GSO)
                         {
                             // 그리기 개체(GSO): 도형/글상자/이미지
                             i = ParseGsoControl(recs, i + 1, rec.Level + 1, body);
@@ -366,14 +420,18 @@ public sealed class HwpReader : IDocumentReader
                         }
                         if (ctrlId == CTRL_ID_HEADER)
                         {
+                            HwpLog.Write($"[ParseSectionRecords] → Parsing header at index {i}");
                             var hf = ParseHeaderFooter(recs, ref i, rec.Level + 1);
                             body.Headers.Add(hf);
+                            HwpLog.Write($"[ParseSectionRecords] → Header complete, {hf.Paragraphs.Count} paragraphs");
                             continue;
                         }
                         if (ctrlId == CTRL_ID_FOOTER)
                         {
+                            HwpLog.Write($"[ParseSectionRecords] → Parsing footer at index {i}");
                             var hf = ParseHeaderFooter(recs, ref i, rec.Level + 1);
                             body.Footers.Add(hf);
+                            HwpLog.Write($"[ParseSectionRecords] → Footer complete, {hf.Paragraphs.Count} paragraphs");
                             continue;
                         }
                         if (ctrlId == CTRL_ID_TABLE)
@@ -385,6 +443,7 @@ public sealed class HwpReader : IDocumentReader
                         // 그 외(secd/cold/fn/en 등): 자식 PARA_HEADER 들이 본문에 섞이지 않도록
                         // 자식 레코드 스킵 (단, PAGE_DEF 는 위 case 에서 별도 수집됨).
                         // 본문에 섞이는 걸 막기 위해 같은 레벨로 돌아갈 때까지 nested 레코드 패스만 PAGE_DEF만 수집.
+                        HwpLog.Write($"[ParseSectionRecords] → Skipping non-GSO/head/foot/tbl control: {ctrlName}");
                         i = SkipControlChildrenButKeepPageDef(recs, i + 1, rec.Level + 1, body);
                         continue;
                     }
