@@ -278,15 +278,32 @@ public sealed class HwpReader : IDocumentReader
         {
             var rec = recs[i];
 
+            // 모든 주요 태그 탐지 로깅 (레벨 필터 전)
+            if (rec.TagId is TAG_PARA_HEADER or TAG_PARA_TEXT or TAG_PAGE_DEF or TAG_CTRL_HEADER or TAG_LIST_HEADER)
+            {
+                HwpLog.Write($"[HwpReader] Found tag 0x{rec.TagId:X3} at level {rec.Level}");
+            }
+
             switch (rec.TagId)
             {
                 case TAG_PAGE_DEF:
                     HwpLog.Write(
-                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at index {i}, level={rec.Level}, payloadLen={rec.Payload.Length}");
-                    if (body.PageDef == null && rec.Payload.Length >= 32)
+                        $"[HwpReader] TAG_PAGE_DEF(0x{rec.TagId:X3}) at level {rec.Level}, payloadLen={rec.Payload.Length}");
+                    if (body.PageDef == null)
                     {
-                        body.PageDef = ParsePageDef(rec.Payload);
-                        HwpLog.Write($"  → ParsePageDef success");
+                        if (rec.Payload.Length >= 32)
+                        {
+                            body.PageDef = ParsePageDef(rec.Payload);
+                            HwpLog.Write($"  → ParsePageDef success");
+                        }
+                        else
+                        {
+                            HwpLog.Write($"  → Skipped: payload too short ({rec.Payload.Length}<32)");
+                        }
+                    }
+                    else
+                    {
+                        HwpLog.Write($"  → Skipped: already set");
                     }
                     break;
 
@@ -294,12 +311,21 @@ public sealed class HwpReader : IDocumentReader
                 case TAG_PARA_HEADER when rec.Level == 0:
                     if (current != null) body.Paragraphs.Add(current);
                     current = new HwpParagraph();
+                    HwpLog.Write($"[HwpReader] TAG_PARA_HEADER at level {rec.Level}");
                     break;
 
                 case TAG_PARA_TEXT when rec.Level == 0:
                     if (current == null) current = new HwpParagraph();
-                    try { current.Text += ExtractHwpText(rec.Payload); }
-                    catch { }
+                    try
+                    {
+                        var text = ExtractHwpText(rec.Payload);
+                        current.Text += text;
+                        HwpLog.Write($"[HwpReader] TAG_PARA_TEXT at level {rec.Level}: '{text}' (len={text.Length})");
+                    }
+                    catch (Exception ex)
+                    {
+                        HwpLog.Write($"[HwpReader] TAG_PARA_TEXT error: {ex.Message}");
+                    }
                     break;
 
                 case TAG_CTRL_HEADER when rec.Payload.Length >= 4:
