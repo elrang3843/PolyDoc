@@ -49,10 +49,10 @@ internal static class HwpLog
 ///   bit 31~20: Size    (12비트)
 ///   Size == 0xFFF → 다음 4바이트 uint32 가 실제 크기(확장).
 ///
-/// Tag ID 베이스:
+/// Tag ID 베이스 (KS X 5700 기준):
 ///   HWPTAG_BEGIN (=0x010) → DocInfo 태그 시작
-///   BodyText 태그: PARA_HEADER=0x034, PARA_TEXT=0x035, CTRL_HEADER=0x03A,
-///                  LIST_HEADER=0x03B, PAGE_DEF=0x03C, SHAPE_COMPONENT=0x03F, …
+///   BodyText 태그: PARA_HEADER=0x042, PARA_TEXT=0x043, CTRL_HEADER=0x047,
+///                  LIST_HEADER=0x048, PAGE_DEF=0x049, SHAPE_COMPONENT=0x04C, …
 ///
 /// 지원 범위:
 ///   텍스트/단락, 용지 설정(PAGE_DEF), 글상자(CTRL_HEADER + LIST_HEADER),
@@ -140,7 +140,9 @@ public sealed class HwpReader : IDocumentReader
         if ((flags & 0x02) != 0)
             throw new InvalidOperationException("Encrypted HWP files are not supported");
 
-        return new HwpFileHeader { IsCompressed = (flags & 0x01) != 0 };
+        bool compressed = (flags & 0x01) != 0;
+        HwpLog.Write($"[ParseFileHeader] flags=0x{flags:X8}, IsCompressed={compressed}");
+        return new HwpFileHeader { IsCompressed = compressed };
     }
 
     // ── DocInfo ────────────────────────────────────────────────────────────
@@ -746,19 +748,72 @@ public sealed class HwpReader : IDocumentReader
     // ── HWP 텍스트 추출 ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// PARA_TEXT 페이로드(UTF-16 LE)에서 일반 유니코드 문자(0x0020 이상)만 추출.
-    /// HWP 특수 제어 코드(0x0001–0x001F: 개체 삽입 마커, 필드 구분자 등)는 제거.
+    /// PARA_TEXT 페이로드(UTF-16 LE)에서 한글/영문 텍스트 추출.
+    ///
+    /// HWP PARA_TEXT 구조는 복잡 (메타데이터와 텍스트 혼재).
+    /// 전략: 페이로드를 2바이트 오프셋으로 슬라이딩하며 각 오프셋에서 시작하는
+    /// 텍스트 스팬의 길이 측정. 가장 긴 유효 텍스트 스팬 반환.
     /// </summary>
     private static string ExtractHwpText(byte[] payload)
     {
-        var sb = new StringBuilder(payload.Length / 2);
-        for (int i = 0; i + 1 < payload.Length; i += 2)
+        if (payload.Length < 2)
+            return "";
+
+        string longestText = "";
+
+        // Try different starting offsets (2-byte aligned)
+        for (int startOffset = 0; startOffset + 1 < payload.Length; startOffset += 2)
         {
-            char c = (char)BitConverter.ToUInt16(payload, i);
-            if (c >= 0x0020)
-                sb.Append(c);
+            var sb = new StringBuilder();
+            int consecutiveInvalid = 0;
+
+            for (int i = startOffset; i + 1 < payload.Length; i += 2)
+            {
+                char c = (char)BitConverter.ToUInt16(payload, i);
+
+                bool isValid = false;
+                if (c >= 0xAC00 && c <= 0xD7AF) isValid = true;  // Korean
+                else if (c >= 0x0020 && c < 0x0080) isValid = true;  // ASCII printable (but not extended ASCII or Unicode)
+
+                if (isValid)
+                {
+                    if (consecutiveInvalid < 2)  // Allow up to 1 invalid char in between
+                    {
+                        sb.Append(c);
+                        consecutiveInvalid = 0;
+                    }
+                    else
+                    {
+                        break;  // Too many invalid chars, stop
+                    }
+                }
+                else if (sb.Length > 0)
+                {
+                    consecutiveInvalid++;
+                    if (consecutiveInvalid >= 4)
+                    {
+                        break;  // 4 consecutive invalid chars = end of text
+                    }
+                }
+            }
+
+            // Prefer text with Korean characters (more likely to be body text than ASCII metadata)
+            string currentText = sb.ToString().Trim('\0');
+            bool hasKorean = currentText.Any(c => c >= 0xAC00 && c <= 0xD7AF);
+            bool longerHasKorean = longestText.Any(c => c >= 0xAC00 && c <= 0xD7AF);
+
+            if ((hasKorean && !longerHasKorean) || (hasKorean == longerHasKorean && currentText.Length > longestText.Length))
+            {
+                longestText = currentText;
+            }
         }
-        return sb.ToString();
+
+        if (longestText.Length > 0)
+        {
+            HwpLog.Write($"[ExtractHwpText] Found longest text: {longestText.Length} chars, starts with '{longestText.Substring(0, Math.Min(20, longestText.Length))}'");
+        }
+
+        return longestText;
     }
 
     /// <summary>
