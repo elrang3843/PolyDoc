@@ -71,24 +71,26 @@ public sealed class HwpReader : IDocumentReader
     private const uint TAG_BIN_DATA            = 0x012;
     private const uint TAG_FACE_NAME           = 0x013;
 
-    // ── BodyText Tag ID ────────────────────────────────────────────────────
-    private const uint TAG_PARA_HEADER         = 0x034;
-    private const uint TAG_PARA_TEXT           = 0x035;
-    private const uint TAG_PARA_CHAR_SHAPE     = 0x036;
-    private const uint TAG_CTRL_HEADER         = 0x03A;
-    private const uint TAG_LIST_HEADER         = 0x03B;
-    private const uint TAG_PAGE_DEF            = 0x03C;
-    private const uint TAG_SHAPE_COMPONENT     = 0x03F;
-    private const uint TAG_TABLE               = 0x040;
-    private const uint TAG_LINE_COMPONENT      = 0x041;
-    private const uint TAG_RECT_COMPONENT      = 0x042;
-    private const uint TAG_ELLIPSE_COMPONENT   = 0x043;
-    private const uint TAG_ARC_COMPONENT       = 0x044;
-    private const uint TAG_POLYGON_COMPONENT   = 0x045;
-    private const uint TAG_CURVE_COMPONENT     = 0x046;
-    private const uint TAG_OLE_COMPONENT       = 0x047;
-    private const uint TAG_PICTURE_COMPONENT   = 0x048;
-    private const uint TAG_CONTAINER_COMPONENT = 0x049;
+    // ── BodyText Tag ID (KS X 5700, 실제 값은 0x042 부터 시작) ────────────────
+    private const uint TAG_PARA_HEADER         = 0x042;  // HWPTAG_PARA_HEADER
+    private const uint TAG_PARA_TEXT           = 0x043;  // HWPTAG_PARA_TEXT
+    private const uint TAG_PARA_CHAR_SHAPE     = 0x044;  // HWPTAG_PARA_CHAR_SHAPE
+    private const uint TAG_PARA_LINE_SEG       = 0x045;  // HWPTAG_PARA_LINE_SEG
+    private const uint TAG_CTRL_HEADER         = 0x047;  // HWPTAG_CTRL_HEADER
+    private const uint TAG_LIST_HEADER         = 0x048;  // HWPTAG_LIST_HEADER
+    private const uint TAG_PAGE_DEF            = 0x049;  // HWPTAG_PAGE_DEF
+    private const uint TAG_SHAPE_COMPONENT     = 0x04C;  // HWPTAG_SHAPE_COMPONENT
+    private const uint TAG_TABLE               = 0x04D;  // HWPTAG_TABLE
+    private const uint TAG_LINE_COMPONENT      = 0x04E;  // HWPTAG_SHAPE_COMPONENT_LINE
+    private const uint TAG_RECT_COMPONENT      = 0x04F;  // HWPTAG_SHAPE_COMPONENT_RECTANGLE
+    private const uint TAG_ELLIPSE_COMPONENT   = 0x050;  // HWPTAG_SHAPE_COMPONENT_ELLIPSE
+    private const uint TAG_ARC_COMPONENT       = 0x051;  // HWPTAG_SHAPE_COMPONENT_ARC
+    private const uint TAG_POLYGON_COMPONENT   = 0x052;  // HWPTAG_SHAPE_COMPONENT_POLYGON
+    private const uint TAG_CURVE_COMPONENT     = 0x053;  // HWPTAG_SHAPE_COMPONENT_CURVE
+    private const uint TAG_OLE_COMPONENT       = 0x054;  // HWPTAG_SHAPE_COMPONENT_OLE
+    private const uint TAG_PICTURE_COMPONENT   = 0x055;  // HWPTAG_SHAPE_COMPONENT_PICTURE
+    private const uint TAG_CONTAINER_COMPONENT = 0x056;  // HWPTAG_SHAPE_COMPONENT_CONTAINER
+    private const uint TAG_TEXTBOX_COMPONENT   = 0x059;  // HWPTAG_SHAPE_COMPONENT_TEXTBOX
 
     // CTRL_ID_GSO: 그리기 개체 (도형/글상자/이미지 공통). last byte space or null.
     // LE uint32: 'g'=0x67, 's'=0x73, 'o'=0x6F → check only first 3 bytes.
@@ -286,28 +288,17 @@ public sealed class HwpReader : IDocumentReader
                         body.PageDef = ParsePageDef(rec.Payload);
                         HwpLog.Write($"  → ParsePageDef success");
                     }
-                    else if (rec.Payload.Length < 32)
-                    {
-                        HwpLog.Write($"  → Skipped: payload too short ({rec.Payload.Length}<32)");
-                    }
-                    else
-                    {
-                        HwpLog.Write($"  → Skipped: already set");
-                    }
                     break;
 
-                case TAG_PARA_HEADER:
+                // 레벨 0 단락만 본문으로 수집 (레벨 1+는 머리말/꼬리말/표 셀 안이므로 제외).
+                case TAG_PARA_HEADER when rec.Level == 0:
                     if (current != null) body.Paragraphs.Add(current);
                     current = new HwpParagraph();
                     break;
 
-                case TAG_PARA_TEXT:
+                case TAG_PARA_TEXT when rec.Level == 0:
                     if (current == null) current = new HwpParagraph();
-                    try
-                    {
-                        var text = Encoding.Unicode.GetString(rec.Payload).Replace("\0", "");
-                        current.Text += text;
-                    }
+                    try { current.Text += ExtractHwpText(rec.Payload); }
                     catch { }
                     break;
 
@@ -316,14 +307,21 @@ public sealed class HwpReader : IDocumentReader
                         uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
                         if ((ctrlId & CTRL_ID_GSO_MASK) == CTRL_ID_GSO_VAL)
                         {
+                            // 그리기 개체(GSO): 도형/글상자/이미지 → 별도 파서 호출
                             if (current != null) { body.Paragraphs.Add(current); current = null; }
                             i = ParseGsoControl(recs, i + 1, rec.Level + 1, body);
                             continue;
                         }
+                        else
+                        {
+                            // 비-GSO 컨트롤(머리말·꼬리말·표·섹션 등): 하위 레코드 모두 건너뜀
+                            i = SkipToLevel(recs, i + 1, rec.Level);
+                            continue;
+                        }
                     }
-                    break;
 
                 case TAG_LIST_HEADER:
+                    // 컨트롤 내부 단락 목록 시작. 현재 단락이 있으면 저장하고 초기화.
                     if (current != null) { body.Paragraphs.Add(current); current = null; }
                     break;
             }
@@ -435,10 +433,7 @@ public sealed class HwpReader : IDocumentReader
                                 break;
                             case TAG_PARA_TEXT:
                                 if (tbCur == null) tbCur = new HwpParagraph();
-                                try
-                                {
-                                    tbCur.Text += Encoding.Unicode.GetString(ir.Payload).Replace("\0", "");
-                                }
+                                try { tbCur.Text += ExtractHwpText(ir.Payload); }
                                 catch { }
                                 break;
                         }
@@ -726,6 +721,34 @@ public sealed class HwpReader : IDocumentReader
         HwpShapeKind.Arc       => ShapeKind.HalfCircle,
         _                      => ShapeKind.Rectangle,
     };
+
+    // ── HWP 텍스트 추출 ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// PARA_TEXT 페이로드(UTF-16 LE)에서 일반 유니코드 문자(0x0020 이상)만 추출.
+    /// HWP 특수 제어 코드(0x0001–0x001F: 개체 삽입 마커, 필드 구분자 등)는 제거.
+    /// </summary>
+    private static string ExtractHwpText(byte[] payload)
+    {
+        var sb = new StringBuilder(payload.Length / 2);
+        for (int i = 0; i + 1 < payload.Length; i += 2)
+        {
+            char c = (char)BitConverter.ToUInt16(payload, i);
+            if (c >= 0x0020)
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 지정 레벨보다 높은 레코드들을 건너뛰어 컨트롤 그룹 밖의 첫 인덱스를 반환.
+    /// </summary>
+    private static int SkipToLevel(List<HwpRecord> recs, int startIdx, uint maxLevel)
+    {
+        int i = startIdx;
+        while (i < recs.Count && recs[i].Level > maxLevel) i++;
+        return i;
+    }
 
     // ── 레코드 수집 ─────────────────────────────────────────────────────────
 
