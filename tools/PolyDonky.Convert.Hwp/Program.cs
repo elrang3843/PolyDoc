@@ -106,10 +106,23 @@ try
     if (isImport)
     {
         // HWP → IWPF
+        // 파일 시그니처로 실제 포맷 구분:
+        //   OLE2: D0 CF 11 E0 A1 B1 1A E1  (HWP 5.x)
+        //   ZIP:  50 4B 03 04               (HWPX 기반, .hwp 확장자이지만 내부는 ZIP)
+        bool isZipBased;
+        using (var probe = File.OpenRead(inPath))
+        {
+            Span<byte> magic = stackalloc byte[4];
+            probe.ReadExactly(magic);
+            isZipBased = magic[0] == 0x50 && magic[1] == 0x4B; // PK
+        }
+
         ConverterProgress.Write(0, "HWP 읽는 중");
         PolyDonkyument doc;
         using (var fs = File.OpenRead(inPath))
-            doc = new HwpReader().Read(fs);
+            doc = isZipBased
+                ? new HwpxReader().Read(fs)
+                : new HwpReader().Read(fs);
 
         ConverterProgress.Write(70, "IWPF 저장 중");
         using (var ofs = File.Create(tempOut))
