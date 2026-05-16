@@ -46,6 +46,8 @@ PolyDonky의 모든 의미 있는 변경 사항을 이 파일에 기록합니다
 
 ### Added
 
+- **HWP 용지 설정·글상자·도형·이미지 ingest**: `HwpReader`에서 `TAG_PAGE_DEF(0x03C)` 파싱으로 용지 크기·방향·여백을 `PageSettings`에 반영, `TAG_CTRL_HEADER(0x03A)` + `TAG_LIST_HEADER(0x03B)` 레벨 기반 파싱으로 글상자(`TextBoxObject`) 추출, `TAG_SHAPE_COMPONENT(0x03F)` + 서브태그(`0x041–0x049`)로 도형 종류·위치·크기 파싱, `TAG_PICTURE_COMPONENT(0x048)` + `BinData/BIN####` 스트림 읽기로 이미지(`ImageBlock`) 추출. (`src/PolyDonky.Codecs.Hwp/HwpReader.cs`)
+
 - **Phase F — RTF import/export 및 HWP CLI 스텁**: `tools/PolyDonky.Convert.Doc`(RTF 자체 구현) 및 `tools/PolyDonky.Convert.Hwp` 프로젝트 추가. `ExternalConverter.GetConverter`에 `"rtf"`/`"hwp"` 연결, `KnownFormats.OpenFilter`/`SaveFilter` 에 RTF/HWP 항목 추가. (`tools/PolyDonky.Convert.Doc/`, `tools/PolyDonky.Convert.Hwp/`, `ExternalConverter.cs`, `KnownFormats.cs`)
 
 - **RTF import 구현 (`DocReader`)**: `.rtf → .iwpf` 방향 변환기 추가. 그룹 스택 기반 RTF 파서로 폰트/색상 테이블, 텍스트·서식(굵기·기울임·밑줄·취소선·폰트 크기·색상·정렬·줄간격) 파싱 지원. `\fonttbl`, `\colortbl`, `\*` 헤더 그룹 자동 스킵. `\'XX` ANSI 및 `\uN` 유니코드 디코딩 포함. (`tools/PolyDonky.Convert.Doc/DocReader.cs`, `Program.cs`)

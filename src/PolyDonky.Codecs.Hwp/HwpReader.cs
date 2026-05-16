@@ -22,41 +22,55 @@ namespace PolyDonky.Codecs.Hwp;
 ///
 /// Tag ID 베이스:
 ///   HWPTAG_BEGIN (=0x010) → DocInfo 태그 시작
-///   BodyText 태그: PARA_HEADER=0x034, PARA_TEXT=0x035, CTRL_HEADER=0x03A, LIST_HEADER=0x03B, …
+///   BodyText 태그: PARA_HEADER=0x034, PARA_TEXT=0x035, CTRL_HEADER=0x03A,
+///                  LIST_HEADER=0x03B, PAGE_DEF=0x03C, SHAPE_COMPONENT=0x03F, …
 ///
-/// 지원 범위(1단계 ingest):
-///   텍스트(PARA_TEXT), 단락 구분(PARA_HEADER), 글상자·표 내부 텍스트(LIST_HEADER 재귀).
-/// 미지원: 암호화, 도형 좌표, 이미지, 변경추적.
+/// 지원 범위:
+///   텍스트/단락, 용지 설정(PAGE_DEF), 글상자(CTRL_HEADER + LIST_HEADER),
+///   도형(SHAPE_COMPONENT + 서브태그), 이미지(PICTURE_COMPONENT + BinData).
+/// 미지원: 암호화, 변경추적, 수식.
 /// </summary>
 public sealed class HwpReader : IDocumentReader
 {
     public string FormatId => "hwp";
 
+    // HWPUNIT: 1/7200 inch = 25.4/7200 mm ≈ 0.003528 mm/unit
+    private const double HwpUnitToMm = 25.4 / 7200.0;
+
     // ── DocInfo Tag ID (HWPTAG_BEGIN = 0x010) ──────────────────────────────
-    private const uint TAG_DOCUMENT_PROPERTIES = 0x010; // HWPTAG_BEGIN
-    private const uint TAG_ID_MAPPINGS         = 0x011; // HWPTAG_BEGIN + 1
-    private const uint TAG_BIN_DATA            = 0x012; // HWPTAG_BEGIN + 2
-    private const uint TAG_FACE_NAME           = 0x013; // HWPTAG_BEGIN + 3
-    private const uint TAG_BORDER_FILL         = 0x014;
-    private const uint TAG_CHAR_SHAPE          = 0x015;
-    private const uint TAG_PARA_SHAPE          = 0x019;
-    private const uint TAG_STYLE               = 0x01A;
+    private const uint TAG_DOCUMENT_PROPERTIES = 0x010;
+    private const uint TAG_BIN_DATA            = 0x012;
+    private const uint TAG_FACE_NAME           = 0x013;
 
     // ── BodyText Tag ID ────────────────────────────────────────────────────
-    private const uint TAG_PARA_HEADER     = 0x034;
-    private const uint TAG_PARA_TEXT       = 0x035;
-    private const uint TAG_PARA_CHAR_SHAPE = 0x036;
-    private const uint TAG_CTRL_HEADER     = 0x03A;
-    private const uint TAG_LIST_HEADER     = 0x03B;
-    private const uint TAG_PAGE_DEF        = 0x03C;
-    private const uint TAG_TABLE           = 0x040;
+    private const uint TAG_PARA_HEADER         = 0x034;
+    private const uint TAG_PARA_TEXT           = 0x035;
+    private const uint TAG_PARA_CHAR_SHAPE     = 0x036;
+    private const uint TAG_CTRL_HEADER         = 0x03A;
+    private const uint TAG_LIST_HEADER         = 0x03B;
+    private const uint TAG_PAGE_DEF            = 0x03C;
+    private const uint TAG_SHAPE_COMPONENT     = 0x03F;
+    private const uint TAG_TABLE               = 0x040;
+    private const uint TAG_LINE_COMPONENT      = 0x041;
+    private const uint TAG_RECT_COMPONENT      = 0x042;
+    private const uint TAG_ELLIPSE_COMPONENT   = 0x043;
+    private const uint TAG_ARC_COMPONENT       = 0x044;
+    private const uint TAG_POLYGON_COMPONENT   = 0x045;
+    private const uint TAG_CURVE_COMPONENT     = 0x046;
+    private const uint TAG_OLE_COMPONENT       = 0x047;
+    private const uint TAG_PICTURE_COMPONENT   = 0x048;
+    private const uint TAG_CONTAINER_COMPONENT = 0x049;
+
+    // CTRL_ID_GSO: 그리기 개체 (도형/글상자/이미지 공통). last byte space or null.
+    // LE uint32: 'g'=0x67, 's'=0x73, 'o'=0x6F → check only first 3 bytes.
+    private const uint CTRL_ID_GSO_MASK = 0x00FFFFFFu;
+    private const uint CTRL_ID_GSO_VAL  = 0x006F7367u; // 'g','s','o'
 
     // ──────────────────────────────────────────────────────────────────────
     public PolyDonkyument Read(Stream input)
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        // OpenMcdf v3 RootStorage.OpenRead 는 파일 경로 전용 → 임시 파일 경유
         var tmpPath = Path.GetTempFileName();
         try
         {
@@ -68,7 +82,7 @@ public sealed class HwpReader : IDocumentReader
             var header  = ParseFileHeader(root);
             var docInfo = ParseDocInfo(root, header.IsCompressed);
             var body    = ParseBodyText(root, header.IsCompressed);
-            return BuildDocument(docInfo, body);
+            return BuildDocument(docInfo, body, root);
         }
         finally
         {
@@ -90,7 +104,6 @@ public sealed class HwpReader : IDocumentReader
         if (sig != "HWP Document File")
             throw new InvalidOperationException($"Invalid HWP signature: {sig}");
 
-        // 버전 DWORD: byte[32..35], LE → Major=byte[35], Minor=byte[34], Micro=byte[33], Build=byte[32]
         uint flags = BitConverter.ToUInt32(buf[36..]);
         if ((flags & 0x02) != 0)
             throw new InvalidOperationException("Encrypted HWP files are not supported");
@@ -107,6 +120,8 @@ public sealed class HwpReader : IDocumentReader
         if (isCompressed) data = Decompress(data);
 
         var info = new HwpDocInfo();
+        int binSeq = 0; // BIN_DATA records are 1-based sequential in DocInfo
+
         ForEachRecord(data, (tagId, level, payload) =>
         {
             switch (tagId)
@@ -114,12 +129,58 @@ public sealed class HwpReader : IDocumentReader
                 case TAG_DOCUMENT_PROPERTIES when payload.Length >= 2:
                     info.SectionCount = BitConverter.ToUInt16(payload, 0);
                     break;
+
                 case TAG_FACE_NAME:
                     try { info.FontNames.Add(Encoding.Unicode.GetString(payload).TrimEnd('\0')); }
                     catch { }
                     break;
+
+                case TAG_BIN_DATA when payload.Length >= 4:
+                    {
+                        binSeq++;
+                        ushort binId   = BitConverter.ToUInt16(payload, 0);
+                        ushort binType = BitConverter.ToUInt16(payload, 2);
+                        // binType: 0=link, 1=embedded, 2=stored
+                        var binfo = new HwpBinInfo
+                        {
+                            Id         = binId > 0 ? binId : binSeq,
+                            IsEmbedded = binType == 1 || binType == 2,
+                        };
+
+                        // For link type (binType=0), payload[4..] may contain a filename
+                        if (binType == 0 && payload.Length > 4)
+                        {
+                            try
+                            {
+                                ushort nameLen = BitConverter.ToUInt16(payload, 4);
+                                if (payload.Length >= 6 + nameLen * 2)
+                                    binfo.LinkPath = Encoding.Unicode.GetString(payload, 6, nameLen * 2);
+                            }
+                            catch { }
+                        }
+
+                        // For embedded/stored, try to detect extension from payload[6..7] (format code)
+                        if (payload.Length >= 8)
+                        {
+                            ushort fmt = BitConverter.ToUInt16(payload, 6);
+                            binfo.Format = fmt switch
+                            {
+                                1  => "bmp",
+                                2  => "gif",
+                                3  => "jpg",
+                                4  => "png",
+                                5  => "wmf",
+                                6  => "ole",
+                                _  => ""
+                            };
+                        }
+
+                        info.BinInfos.Add(binfo);
+                    }
+                    break;
             }
         });
+
         return info;
     }
 
@@ -129,7 +190,6 @@ public sealed class HwpReader : IDocumentReader
     {
         var body = new HwpBodyText();
 
-        // TryOpenStorage: Storage 는 IDisposable 이 아니므로 using 불가
         if (!root.TryOpenStorage("BodyText", out var bodyDir))
             return body;
 
@@ -142,21 +202,31 @@ public sealed class HwpReader : IDocumentReader
             {
                 var data = ReadAllBytes(sectionStream);
                 if (isCompressed) data = Decompress(data);
-                ParseSectionRecords(data, body);
+                var recs = CollectRecords(data);
+                ParseSectionRecords(recs, body);
             }
         }
 
         return body;
     }
 
-    private static void ParseSectionRecords(byte[] data, HwpBodyText body)
+    // ── Section record parsing (level-aware state machine) ─────────────────
+
+    private static void ParseSectionRecords(List<HwpRecord> recs, HwpBodyText body)
     {
         HwpParagraph? current = null;
+        int i = 0;
 
-        ForEachRecord(data, (tagId, level, payload) =>
+        while (i < recs.Count)
         {
-            switch (tagId)
+            var rec = recs[i];
+
+            switch (rec.TagId)
             {
+                case TAG_PAGE_DEF when rec.Payload.Length >= 32 && body.PageDef == null:
+                    body.PageDef = ParsePageDef(rec.Payload);
+                    break;
+
                 case TAG_PARA_HEADER:
                     if (current != null) body.Paragraphs.Add(current);
                     current = new HwpParagraph();
@@ -166,28 +236,426 @@ public sealed class HwpReader : IDocumentReader
                     if (current == null) current = new HwpParagraph();
                     try
                     {
-                        // UTF-16 LE, 제어코드(0x00~0x1F 일부)가 섞임 — null만 제거
-                        var text = Encoding.Unicode.GetString(payload).Replace("\0", "");
+                        var text = Encoding.Unicode.GetString(rec.Payload).Replace("\0", "");
                         current.Text += text;
                     }
                     catch { }
                     break;
 
-                case TAG_LIST_HEADER:
-                    // 글상자·표 셀 등 내부 목록 시작 — 현재 단락 확정 후 새 컨텍스트
-                    if (current != null)
+                case TAG_CTRL_HEADER when rec.Payload.Length >= 4:
                     {
-                        body.Paragraphs.Add(current);
-                        current = null;
+                        uint ctrlId = BitConverter.ToUInt32(rec.Payload, 0);
+                        if ((ctrlId & CTRL_ID_GSO_MASK) == CTRL_ID_GSO_VAL)
+                        {
+                            if (current != null) { body.Paragraphs.Add(current); current = null; }
+                            i = ParseGsoControl(recs, i + 1, rec.Level + 1, body);
+                            continue;
+                        }
                     }
                     break;
+
+                case TAG_LIST_HEADER:
+                    if (current != null) { body.Paragraphs.Add(current); current = null; }
+                    break;
             }
-        });
+
+            i++;
+        }
 
         if (current != null) body.Paragraphs.Add(current);
     }
 
-    // ── 레코드 순회 ─────────────────────────────────────────────────────────
+    // ── GSO (General Shape Object) control handler ─────────────────────────
+
+    private static int ParseGsoControl(List<HwpRecord> recs, int startIdx, uint minLevel, HwpBodyText body)
+    {
+        double xMm = 0, yMm = 0, wMm = 0, hMm = 0;
+        bool hasShape = false;
+        HwpShapeKind kind = HwpShapeKind.Rectangle;
+        int binDataId = 0;
+        List<HwpParagraph>? tbContent = null;
+
+        int i = startIdx;
+        while (i < recs.Count)
+        {
+            var rec = recs[i];
+            if (rec.Level < minLevel) break;
+
+            switch (rec.TagId)
+            {
+                case TAG_SHAPE_COMPONENT when rec.Payload.Length >= 36:
+                    {
+                        // SHAPE_COMPONENT layout (HWPUNIT):
+                        //   0-1: groupLevel (uint16)
+                        //   2-3: localFileVersion (uint16)
+                        //   4-7: initialWidth (uint32)
+                        //   8-11: initialHeight (uint32)
+                        //  12-15: zOrder (int32)
+                        //  16-17: wrapType (int16)
+                        //  18-19: horzRelRef (int16)
+                        //  20-21: vertRelRef (int16)
+                        //  22-23: horzRelPos (int16)
+                        //  24-25: vertRelPos (int16)
+                        //  26-29: xOffset (int32, HWPUNIT)
+                        //  30-33: yOffset (int32, HWPUNIT)
+                        var p = rec.Payload;
+                        wMm = BitConverter.ToUInt32(p, 4) * HwpUnitToMm;
+                        hMm = BitConverter.ToUInt32(p, 8) * HwpUnitToMm;
+                        xMm = BitConverter.ToInt32(p, 26) * HwpUnitToMm;
+                        yMm = BitConverter.ToInt32(p, 30) * HwpUnitToMm;
+                        hasShape = true;
+                    }
+                    break;
+
+                case TAG_LINE_COMPONENT:
+                    kind = HwpShapeKind.Line;
+                    break;
+                case TAG_RECT_COMPONENT:
+                    kind = HwpShapeKind.Rectangle;
+                    break;
+                case TAG_ELLIPSE_COMPONENT:
+                    kind = HwpShapeKind.Ellipse;
+                    break;
+                case TAG_ARC_COMPONENT:
+                    kind = HwpShapeKind.Arc;
+                    break;
+                case TAG_POLYGON_COMPONENT:
+                    kind = HwpShapeKind.Polygon;
+                    break;
+                case TAG_CURVE_COMPONENT:
+                    kind = HwpShapeKind.Curve;
+                    break;
+                case TAG_OLE_COMPONENT:
+                    kind = HwpShapeKind.Ole;
+                    break;
+
+                case TAG_PICTURE_COMPONENT when rec.Payload.Length >= 4:
+                    kind = HwpShapeKind.Picture;
+                    // Try to read binDataId:
+                    //   offset 0-1: border fill flags
+                    //   offset 2-3: picture type / attrs
+                    //   Further offsets hold the actual binDataId; try offset 50 (after border data),
+                    //   falling back to a sequential counter managed by body.
+                    binDataId = TryReadBinDataId(rec.Payload);
+                    break;
+
+                case TAG_CONTAINER_COMPONENT:
+                    kind = HwpShapeKind.Container;
+                    break;
+
+                case TAG_LIST_HEADER when hasShape && kind != HwpShapeKind.Picture:
+                    // Textbox: nested paragraphs follow at level+1
+                    kind = HwpShapeKind.TextBox;
+                    var innerLevel = rec.Level + 1;
+                    i++;
+                    var tbParas = new List<HwpParagraph>();
+                    HwpParagraph? tbCur = null;
+                    while (i < recs.Count)
+                    {
+                        var ir = recs[i];
+                        if (ir.Level < innerLevel) break;
+                        switch (ir.TagId)
+                        {
+                            case TAG_PARA_HEADER:
+                                if (tbCur != null) tbParas.Add(tbCur);
+                                tbCur = new HwpParagraph();
+                                break;
+                            case TAG_PARA_TEXT:
+                                if (tbCur == null) tbCur = new HwpParagraph();
+                                try
+                                {
+                                    tbCur.Text += Encoding.Unicode.GetString(ir.Payload).Replace("\0", "");
+                                }
+                                catch { }
+                                break;
+                        }
+                        i++;
+                    }
+                    if (tbCur != null) tbParas.Add(tbCur);
+                    tbContent = tbParas;
+                    continue;
+            }
+
+            i++;
+        }
+
+        if (!hasShape) return i;
+
+        // Clamp to sensible range (0..1000 mm). Negative coords → 0.
+        xMm = Math.Max(0, xMm);
+        yMm = Math.Max(0, yMm);
+
+        switch (kind)
+        {
+            case HwpShapeKind.Picture:
+                body.Images.Add(new HwpImage
+                {
+                    XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm,
+                    BinDataId = binDataId,
+                });
+                break;
+
+            case HwpShapeKind.TextBox:
+                body.TextBoxes.Add(new HwpTextBox
+                {
+                    XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm,
+                    Paragraphs = tbContent ?? new List<HwpParagraph>(),
+                });
+                break;
+
+            default:
+                body.Shapes.Add(new HwpShape
+                {
+                    XMm = xMm, YMm = yMm, WidthMm = wMm, HeightMm = hMm, Kind = kind,
+                });
+                break;
+        }
+
+        return i;
+    }
+
+    // ── PAGE_DEF parsing ───────────────────────────────────────────────────
+
+    private static HwpPageDef ParsePageDef(byte[] p)
+    {
+        // PAGE_DEF layout (all fields uint32, HWPUNIT):
+        //   0: paperWidth
+        //   4: paperHeight
+        //   8: marginLeft
+        //  12: marginRight
+        //  16: marginTop
+        //  20: marginBottom
+        //  24: headerMargin (distance from paper top to header baseline)
+        //  28: footerMargin
+        //  32: gutterMargin (제본 여백)
+        //  36: flags / textDirection (bit0: landscape flag in some versions)
+        double pw = BitConverter.ToUInt32(p, 0)  * HwpUnitToMm;
+        double ph = BitConverter.ToUInt32(p, 4)  * HwpUnitToMm;
+        double ml = BitConverter.ToUInt32(p, 8)  * HwpUnitToMm;
+        double mr = BitConverter.ToUInt32(p, 12) * HwpUnitToMm;
+        double mt = BitConverter.ToUInt32(p, 16) * HwpUnitToMm;
+        double mb = BitConverter.ToUInt32(p, 20) * HwpUnitToMm;
+        double mh = p.Length >= 28 ? BitConverter.ToUInt32(p, 24) * HwpUnitToMm : 10;
+        double mf = p.Length >= 32 ? BitConverter.ToUInt32(p, 28) * HwpUnitToMm : 10;
+
+        return new HwpPageDef
+        {
+            PaperWidthMm   = pw,
+            PaperHeightMm  = ph,
+            MarginLeftMm   = ml,
+            MarginRightMm  = mr,
+            MarginTopMm    = mt,
+            MarginBottomMm = mb,
+            MarginHeaderMm = mh,
+            MarginFooterMm = mf,
+        };
+    }
+
+    // ── BinData ID extraction ──────────────────────────────────────────────
+
+    // Try to extract the BinData reference ID from a PICTURE_COMPONENT payload.
+    // The exact offset is version-dependent; scan for a small plausible uint16.
+    private static int TryReadBinDataId(byte[] p)
+    {
+        // The BinData ID is a 1-based uint16 in the payload.
+        // Common positions: 50 (after border/fill/frame data), then 4, then 2.
+        // Plausible range: 1 to 256.
+        foreach (int off in new[] { 50, 4, 2, 52, 6 })
+        {
+            if (off + 2 > p.Length) continue;
+            int candidate = BitConverter.ToUInt16(p, off);
+            if (candidate is >= 1 and <= 256)
+                return candidate;
+        }
+        return 0;
+    }
+
+    private static byte[]? ReadBinData(RootStorage root, int binId)
+    {
+        if (binId <= 0) return null;
+        if (!root.TryOpenStorage("BinData", out var binDir)) return null;
+        var streamName = $"BIN{binId:X4}";
+        if (!binDir.TryOpenStream(streamName, out var binStream)) return null;
+        using (binStream)
+            return ReadAllBytes(binStream);
+    }
+
+    private static string DetectMediaType(byte[] data)
+    {
+        if (data.Length < 4) return "image/png";
+        if (data[0] == 0x89 && data[1] == 0x50) return "image/png";
+        if (data[0] == 0xFF && data[1] == 0xD8) return "image/jpeg";
+        if (data[0] == 0x47 && data[1] == 0x49) return "image/gif";
+        if (data[0] == 0x42 && data[1] == 0x4D) return "image/bmp";
+        return "image/png";
+    }
+
+    // ── Document model construction ────────────────────────────────────────
+
+    private static PolyDonkyument BuildDocument(HwpDocInfo docInfo, HwpBodyText body, RootStorage root)
+    {
+        var doc     = new PolyDonkyument();
+        var section = new Section();
+        doc.Sections.Add(section);
+
+        // ── Page settings ──────────────────────────────────────────────────
+        if (body.PageDef is { } pd)
+        {
+            var ps = section.Page;
+            double pw = pd.PaperWidthMm;
+            double ph = pd.PaperHeightMm;
+
+            // HWP stores actual paper dimensions: landscape → width > height
+            if (pw > ph && pw > 10 && ph > 10)
+            {
+                // Landscape: normalize to portrait (short=width, long=height)
+                ps.WidthMm      = ph;
+                ps.HeightMm     = pw;
+                ps.Orientation  = PageOrientation.Landscape;
+            }
+            else if (pw > 10 && ph > 10)
+            {
+                ps.WidthMm      = pw;
+                ps.HeightMm     = ph;
+                ps.Orientation  = PageOrientation.Portrait;
+            }
+
+            ps.SizeKind = MatchPaperSize(ps.WidthMm, ps.HeightMm);
+
+            if (pd.MarginLeftMm   > 0) ps.MarginLeftMm   = pd.MarginLeftMm;
+            if (pd.MarginRightMm  > 0) ps.MarginRightMm  = pd.MarginRightMm;
+            if (pd.MarginTopMm    > 0) ps.MarginTopMm    = pd.MarginTopMm;
+            if (pd.MarginBottomMm > 0) ps.MarginBottomMm = pd.MarginBottomMm;
+            if (pd.MarginHeaderMm > 0) ps.MarginHeaderMm = pd.MarginHeaderMm;
+            if (pd.MarginFooterMm > 0) ps.MarginFooterMm = pd.MarginFooterMm;
+        }
+
+        // ── Paragraphs ─────────────────────────────────────────────────────
+        foreach (var hwpPara in body.Paragraphs)
+        {
+            if (string.IsNullOrWhiteSpace(hwpPara.Text)) continue;
+
+            var paragraph = new Core.Paragraph();
+            var lines = hwpPara.Text.Split('\r', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim('\n');
+                if (!string.IsNullOrWhiteSpace(trimmed))
+                    paragraph.Runs.Add(new Run { Text = trimmed });
+            }
+            if (paragraph.Runs.Count > 0)
+                section.Blocks.Add(paragraph);
+        }
+
+        // ── Text boxes ─────────────────────────────────────────────────────
+        foreach (var tb in body.TextBoxes)
+        {
+            var tbo = new TextBoxObject
+            {
+                WrapMode     = ImageWrapMode.InFrontOfText,
+                OverlayXMm   = tb.XMm,
+                OverlayYMm   = tb.YMm,
+                WidthMm      = tb.WidthMm  > 1 ? tb.WidthMm  : 60,
+                HeightMm     = tb.HeightMm > 1 ? tb.HeightMm : 30,
+                AnchorPageIndex = 0,
+            };
+            foreach (var tp in tb.Paragraphs)
+            {
+                if (string.IsNullOrWhiteSpace(tp.Text)) continue;
+                var para = new Core.Paragraph();
+                para.Runs.Add(new Run { Text = tp.Text.Trim() });
+                tbo.Content.Add(para);
+            }
+            section.Blocks.Add(tbo);
+        }
+
+        // ── Images ─────────────────────────────────────────────────────────
+        foreach (var img in body.Images)
+        {
+            byte[]? imgData = null;
+
+            // Try the declared BinDataId first, then scan BIN0001 onwards
+            if (img.BinDataId > 0)
+                imgData = ReadBinData(root, img.BinDataId);
+
+            if (imgData == null)
+            {
+                // Fallback: try adjacent IDs (±2 from declared)
+                for (int bid = 1; bid <= 16 && imgData == null; bid++)
+                    imgData = ReadBinData(root, bid);
+            }
+
+            if (imgData == null || imgData.Length == 0) continue;
+
+            var ib = new ImageBlock
+            {
+                Data      = imgData,
+                MediaType = DetectMediaType(imgData),
+                WrapMode  = ImageWrapMode.InFrontOfText,
+                WidthMm   = img.WidthMm  > 1 ? img.WidthMm  : 80,
+                HeightMm  = img.HeightMm > 1 ? img.HeightMm : 60,
+                OverlayXMm      = img.XMm,
+                OverlayYMm      = img.YMm,
+                AnchorPageIndex = 0,
+            };
+            section.Blocks.Add(ib);
+        }
+
+        // ── Shapes ─────────────────────────────────────────────────────────
+        foreach (var sh in body.Shapes)
+        {
+            var so = new ShapeObject
+            {
+                Kind         = MapShapeKind(sh.Kind),
+                WrapMode     = ImageWrapMode.InFrontOfText,
+                OverlayXMm   = sh.XMm,
+                OverlayYMm   = sh.YMm,
+                WidthMm      = sh.WidthMm  > 1 ? sh.WidthMm  : 40,
+                HeightMm     = sh.HeightMm > 1 ? sh.HeightMm : 20,
+                AnchorPageIndex = 0,
+                StrokeColor  = "#000000",
+                StrokeThicknessPt = 1.0,
+            };
+            section.Blocks.Add(so);
+        }
+
+        return doc;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private static PaperSizeKind MatchPaperSize(double wMm, double hMm)
+    {
+        // Match within ±3 mm tolerance
+        foreach (PaperSizeKind kind in Enum.GetValues<PaperSizeKind>())
+        {
+            var dim = PageSettings.GetStandardDimensions(kind);
+            if (dim is not { } d) continue;
+            if (Math.Abs(d.W - wMm) < 3 && Math.Abs(d.H - hMm) < 3)
+                return kind;
+        }
+        return PaperSizeKind.Custom;
+    }
+
+    private static ShapeKind MapShapeKind(HwpShapeKind k) => k switch
+    {
+        HwpShapeKind.Line      => ShapeKind.Line,
+        HwpShapeKind.Ellipse   => ShapeKind.Ellipse,
+        HwpShapeKind.Polygon   => ShapeKind.Polygon,
+        HwpShapeKind.Curve     => ShapeKind.Spline,
+        HwpShapeKind.Arc       => ShapeKind.HalfCircle,
+        _                      => ShapeKind.Rectangle,
+    };
+
+    // ── 레코드 수집 ─────────────────────────────────────────────────────────
+
+    private static List<HwpRecord> CollectRecords(byte[] data)
+    {
+        var list = new List<HwpRecord>();
+        ForEachRecord(data, (tagId, level, payload) =>
+            list.Add(new HwpRecord(tagId, level, payload)));
+        return list;
+    }
 
     /// <summary>
     /// HWP 레코드 스트림 순회.
@@ -202,9 +670,9 @@ public sealed class HwpReader : IDocumentReader
             uint dword = BitConverter.ToUInt32(data, offset);
             offset += 4;
 
-            uint tagId = dword & 0x3FFu;           // bit  9~ 0
-            uint level = (dword >> 10) & 0x3FFu;  // bit 19~10
-            uint size  = dword >> 20;              // bit 31~20
+            uint tagId = dword & 0x3FFu;
+            uint level = (dword >> 10) & 0x3FFu;
+            uint size  = dword >> 20;
 
             if (size == 0xFFFu)
             {
@@ -221,34 +689,6 @@ public sealed class HwpReader : IDocumentReader
 
             callback(tagId, level, payload);
         }
-    }
-
-    // ── 문서 모델 구성 ──────────────────────────────────────────────────────
-
-    private static PolyDonkyument BuildDocument(HwpDocInfo docInfo, HwpBodyText body)
-    {
-        var doc     = new PolyDonkyument();
-        var section = new Section();
-        doc.Sections.Add(section);
-
-        foreach (var hwpPara in body.Paragraphs)
-        {
-            if (string.IsNullOrWhiteSpace(hwpPara.Text)) continue;
-
-            var paragraph = new Core.Paragraph();
-            // HWP 단락 내 0x0D(CR)는 줄바꿈 구분자
-            var lines = hwpPara.Text.Split('\r', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim('\n');
-                if (!string.IsNullOrWhiteSpace(trimmed))
-                    paragraph.Runs.Add(new Run { Text = trimmed });
-            }
-            if (paragraph.Runs.Count > 0)
-                section.Blocks.Add(paragraph);
-        }
-
-        return doc;
     }
 
     // ── 유틸리티 ────────────────────────────────────────────────────────────
@@ -269,7 +709,7 @@ public sealed class HwpReader : IDocumentReader
         return output.ToArray();
     }
 
-    // ── 내부 전용 모델 (Core 모델과 이름 충돌 방지를 위해 Hwp 접두사) ──────
+    // ── 내부 전용 모델 ─────────────────────────────────────────────────────
 
     private sealed class HwpFileHeader
     {
@@ -279,16 +719,75 @@ public sealed class HwpReader : IDocumentReader
     private sealed class HwpDocInfo
     {
         public int SectionCount { get; set; }
-        public List<string> FontNames { get; } = new();
+        public List<string>     FontNames { get; } = new();
+        public List<HwpBinInfo> BinInfos  { get; } = new();
+    }
+
+    private sealed class HwpBinInfo
+    {
+        public int    Id         { get; set; }
+        public bool   IsEmbedded { get; set; }
+        public string Format     { get; set; } = "";
+        public string LinkPath   { get; set; } = "";
     }
 
     private sealed class HwpBodyText
     {
-        public List<HwpParagraph> Paragraphs { get; } = new();
+        public HwpPageDef?        PageDef   { get; set; }
+        public List<HwpParagraph> Paragraphs{ get; } = new();
+        public List<HwpTextBox>   TextBoxes { get; } = new();
+        public List<HwpImage>     Images    { get; } = new();
+        public List<HwpShape>     Shapes    { get; } = new();
+    }
+
+    private sealed class HwpPageDef
+    {
+        public double PaperWidthMm   { get; set; }
+        public double PaperHeightMm  { get; set; }
+        public double MarginLeftMm   { get; set; }
+        public double MarginRightMm  { get; set; }
+        public double MarginTopMm    { get; set; }
+        public double MarginBottomMm { get; set; }
+        public double MarginHeaderMm { get; set; }
+        public double MarginFooterMm { get; set; }
     }
 
     private sealed class HwpParagraph
     {
         public string Text { get; set; } = "";
+    }
+
+    private sealed class HwpTextBox
+    {
+        public double XMm { get; set; }
+        public double YMm { get; set; }
+        public double WidthMm  { get; set; }
+        public double HeightMm { get; set; }
+        public List<HwpParagraph> Paragraphs { get; set; } = new();
+    }
+
+    private sealed class HwpImage
+    {
+        public double XMm       { get; set; }
+        public double YMm       { get; set; }
+        public double WidthMm   { get; set; }
+        public double HeightMm  { get; set; }
+        public int    BinDataId { get; set; }
+    }
+
+    private sealed class HwpShape
+    {
+        public double       XMm       { get; set; }
+        public double       YMm       { get; set; }
+        public double       WidthMm   { get; set; }
+        public double       HeightMm  { get; set; }
+        public HwpShapeKind Kind      { get; set; }
+    }
+
+    private record struct HwpRecord(uint TagId, uint Level, byte[] Payload);
+
+    private enum HwpShapeKind
+    {
+        Rectangle, Line, Ellipse, Arc, Polygon, Curve, Ole, Picture, Container, TextBox
     }
 }
