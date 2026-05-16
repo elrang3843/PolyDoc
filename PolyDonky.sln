@@ -61,6 +61,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolyDonky.Convert.Common", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolyDonky.Convert.Hwp", "tools\PolyDonky.Convert.Hwp\PolyDonky.Convert.Hwp.csproj", "{3F536BED-ECDD-4AB4-8979-47BBACE193AA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolyDonky.Codecs.Hwp", "src\PolyDonky.Codecs.Hwp\PolyDonky.Codecs.Hwp.csproj", "{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -383,6 +385,18 @@ Global
 		{3F536BED-ECDD-4AB4-8979-47BBACE193AA}.Release|x64.Build.0 = Release|Any CPU
 		{3F536BED-ECDD-4AB4-8979-47BBACE193AA}.Release|x86.ActiveCfg = Release|Any CPU
 		{3F536BED-ECDD-4AB4-8979-47BBACE193AA}.Release|x86.Build.0 = Release|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Debug|x64.Build.0 = Debug|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Debug|x86.Build.0 = Debug|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Release|x64.ActiveCfg = Release|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Release|x64.Build.0 = Release|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Release|x86.ActiveCfg = Release|Any CPU
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -414,5 +428,6 @@ Global
 		{9B5FAB26-7744-41AA-901B-74FDFD85356B} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{E309AB2F-913D-4703-8826-DB3E01505F69} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{3F536BED-ECDD-4AB4-8979-47BBACE193AA} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{2C36A416-A9AE-4C97-8BFA-A3F8A9D637FF} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

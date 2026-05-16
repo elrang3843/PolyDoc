@@ -70,6 +70,14 @@ respective standards bodies or companies.
       개발하였습니다.
       Used for: HWP 5.x binary ingest (reference only; no binary reproduction).
 
+  * "한/글 문서 파일 형식 : HWP 포맷 구조 살펴보기"
+      글쓴이: 정우진 / 한컴테크
+      게재일: 2025년 02월 24일
+      출처: https://tech.hancom.com/
+      HWP 레코드 구조(DWORD 헤더 bit 배치), CFB 스트림 목록, 압축 방식,
+      HWPTAG_DOCUMENT_PROPERTIES 바이트 레이아웃 등을 구현 과정에서 참고하였으며,
+      정확한 스펙 이해에 큰 도움을 주신 정우진 님께 감사드립니다.
+
 ================================================================================
 Trademarks
 ================================================================================
