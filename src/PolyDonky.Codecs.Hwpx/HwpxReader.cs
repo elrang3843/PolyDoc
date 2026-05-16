@@ -352,6 +352,21 @@ public sealed class HwpxReader : IDocumentReader
             ApplySecPr(secPrElem, section);
         }
 
+        // ── 머리말/꼬리말 ─────────────────────────────────────────────────────
+        // <hp:header> / <hp:footer> 요소들을 찾아 section.Page에 저장하고,
+        // 그 안의 모든 자손 요소들을 insideHeaderFooter로 마킹해 본문 순회에서 제외.
+        var insideHeaderFooter = new HashSet<XElement>();
+        foreach (var hdrElem in doc.Root.Descendants().Where(e => e.Name.LocalName == "header"))
+        {
+            foreach (var d in hdrElem.DescendantsAndSelf()) insideHeaderFooter.Add(d);
+            ReadHeaderOrFooter(hdrElem, section.Page.Header, ctx);
+        }
+        foreach (var ftrElem in doc.Root.Descendants().Where(e => e.Name.LocalName == "footer"))
+        {
+            foreach (var d in ftrElem.DescendantsAndSelf()) insideHeaderFooter.Add(d);
+            ReadHeaderOrFooter(ftrElem, section.Page.Footer, ctx);
+        }
+
         // 한컴 hwpx 는 root 안에 wrapper 를 둘 수도 있고 표 안에 셀 paragraph 가 중첩되므로
         // 1) 모든 hp:tbl 안의 paragraph/pic 을 마킹해 평탄 순회에서 제외하고
         // 2) descendants 평탄 순회로 hp:p / hp:tbl / hp:pic 을 본문 block 으로 추출.
@@ -369,6 +384,7 @@ public sealed class HwpxReader : IDocumentReader
         var seenShapes  = new HashSet<XElement>();
         foreach (var elem in doc.Root.Descendants())
         {
+            if (insideHeaderFooter.Contains(elem)) continue;
             if (insideTable.Contains(elem))
             {
                 continue;
@@ -383,15 +399,16 @@ public sealed class HwpxReader : IDocumentReader
                     // BuildImageHostingParagraph 가 만든 빈 단락이거나 한컴이 생성한
                     // 앵커 단락이다. 이런 빈 단락을 그대로 추가하면 실제 본문이 아래로 밀린다.
                     var embeddedShapes = elem.Descendants()
-                        .Where(d => s_shapeLocalNames.Contains(d.Name.LocalName))
+                        .Where(d => s_shapeLocalNames.Contains(d.Name.LocalName) && !insideHeaderFooter.Contains(d))
                         .ToList();
                     var embeddedPics = elem.Descendants()
-                        .Where(d => d.Name.LocalName == "pic")
+                        .Where(d => d.Name.LocalName == "pic" && !insideHeaderFooter.Contains(d))
                         .ToList();
                     bool hasRealText = elem.Descendants().Any(d =>
+                        !insideHeaderFooter.Contains(d) && (
                         (d.Name.LocalName == "t"        && !string.IsNullOrWhiteSpace(d.Value))
                      || d.Name.LocalName == "tab"
-                     || d.Name.LocalName == "lineBreak");
+                     || d.Name.LocalName == "lineBreak"));
                     bool isHostingParagraph = (embeddedShapes.Count > 0 || embeddedPics.Count > 0)
                                              && !hasRealText;
                     if (!isHostingParagraph)
@@ -426,6 +443,62 @@ public sealed class HwpxReader : IDocumentReader
             }
         }
         return section;
+    }
+
+    /// <summary>
+    /// hp:header 또는 hp:footer 의 subList 단락들을 HeaderFooterContent 의 Left/Center/Right 슬롯으로 파싱.
+    ///
+    /// 지원 구조:
+    ///  • 1행 3열 표 (HwpxWriter 가 2개 이상 슬롯 시 생성) → 각 셀 → Left/Center/Right
+    ///  • 단락들 (정렬로 슬롯 구분: LEFT→Left, CENTER→Center, RIGHT→Right)
+    /// </summary>
+    private static void ReadHeaderOrFooter(XElement hdrElem, HeaderFooterContent content, ReadContext ctx)
+    {
+        var subList = hdrElem.Elements().FirstOrDefault(e => e.Name.LocalName == "subList");
+        if (subList is null) return;
+
+        // 1×3 표로 저장된 경우 — HwpxWriter 의 BuildHeaderFooterTablePara 구조
+        var tbl = subList.Descendants().FirstOrDefault(e => e.Name.LocalName == "tbl");
+        if (tbl is not null)
+        {
+            var cells = tbl.Descendants().Where(e => e.Name.LocalName == "tc").ToList();
+            if (cells.Count >= 3)
+            {
+                ReadHeaderFooterSlotFromCell(cells[0], content.Left,   ctx);
+                ReadHeaderFooterSlotFromCell(cells[1], content.Center, ctx);
+                ReadHeaderFooterSlotFromCell(cells[2], content.Right,  ctx);
+                return;
+            }
+        }
+
+        // 단락들로 저장된 경우 — 정렬로 슬롯 구분
+        foreach (var p in subList.Elements().Where(e => e.Name.LocalName == "p"))
+        {
+            var para = ReadParagraph(p, ctx);
+            if (para.Runs.Count == 0 || (para.Runs.Count == 1 && string.IsNullOrEmpty(para.Runs[0].Text)))
+                continue;
+
+            var slot = para.Style.Alignment switch
+            {
+                Alignment.Right  => content.Right,
+                Alignment.Center => content.Center,
+                _                => content.Left,
+            };
+            slot.Paragraphs.Add(para);
+        }
+    }
+
+    private static void ReadHeaderFooterSlotFromCell(XElement cell, HeaderFooterSlot slot, ReadContext ctx)
+    {
+        var subList = cell.Descendants().FirstOrDefault(e => e.Name.LocalName == "subList");
+        if (subList is null) return;
+        foreach (var p in subList.Elements().Where(e => e.Name.LocalName == "p"))
+        {
+            var para = ReadParagraph(p, ctx);
+            if (para.Runs.Count == 0 || (para.Runs.Count == 1 && string.IsNullOrEmpty(para.Runs[0].Text)))
+                continue;
+            slot.Paragraphs.Add(para);
+        }
     }
 
     private static void ApplySecPr(XElement secPr, Section section)
@@ -782,8 +855,15 @@ public sealed class HwpxReader : IDocumentReader
 
         // <hp:p> 는 직속 자식으로 <hp:run> 들을 갖는 것이 표준이지만, 한컴 변종에선
         // 중간 wrapper(예: <hp:linesegarray> 다음 위치 등) 를 둘 수 있어 descendants 로 안전 매칭.
+        // 단, hp:header/footer 서브리스트 안의 run/ctrl 은 이미 ReadHeaderOrFooter 가 처리했으므로
+        // 여기서는 제외해야 한다.
+        var hfDescInPara = new HashSet<XElement>();
+        foreach (var hf in wp.Descendants().Where(e => e.Name.LocalName is "header" or "footer"))
+            foreach (var d in hf.DescendantsAndSelf()) hfDescInPara.Add(d);
+
         foreach (var elem in wp.Descendants())
         {
+            if (hfDescInPara.Contains(elem)) continue;
             switch (elem.Name.LocalName)
             {
                 case "run":
@@ -903,9 +983,19 @@ public sealed class HwpxReader : IDocumentReader
 
         // <hp:t> 는 보통 직속 자식이지만, 한컴 변종에선 <hp:t> 가 더 깊은 위치에 있을 수도 있고
         // <hp:tab>·<hp:lineBreak> 같은 형제와 섞일 수도 있어 descendants 로 텍스트 노드만 모음.
+        // 단, run 안에 hp:header/footer/secPr/colPr 같은 특수 메타 ctrl 이 중첩된 경우
+        // 그 안의 텍스트는 이미 ReadHeaderOrFooter 가 처리했으므로 제외.
+        var skipDescendants = new HashSet<XElement>();
+        foreach (var skip in run.Descendants()
+            .Where(e => e.Name.LocalName is "header" or "footer" or "secPr" or "colPr"))
+        {
+            foreach (var d in skip.DescendantsAndSelf()) skipDescendants.Add(d);
+        }
+
         var sb = new StringBuilder();
         foreach (var elem in run.Descendants())
         {
+            if (skipDescendants.Contains(elem)) continue;
             switch (elem.Name.LocalName)
             {
                 case "t":
