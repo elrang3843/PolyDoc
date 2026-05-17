@@ -961,6 +961,7 @@ public sealed class HwpReader : IDocumentReader
                         if (curCell != null && curPara != null)
                         {
                             curCell.Paragraphs.Add(curPara);
+                            curCell.Blocks.Add(curPara);
                             curPara = null;
                         }
                         if (curCell != null)
@@ -1496,8 +1497,22 @@ public sealed class HwpReader : IDocumentReader
                 char c = (char)BitConverter.ToUInt16(payload, i);
 
                 bool isValid = false;
-                if (c >= 0xAC00 && c <= 0xD7AF) isValid = true;  // Korean
-                else if (c >= 0x0020 && c < 0x0080) isValid = true;  // ASCII printable (but not extended ASCII or Unicode)
+                if (c >= 0xAC00 && c <= 0xD7AF) isValid = true;       // Korean syllables
+                else if (c >= 0x0020 && c < 0x0080) isValid = true;   // ASCII printable
+                else if (c >= 0x00A0 && c <= 0x00FF) isValid = true;  // Latin-1 supplement (©, °, ±, ÷, ×, etc.)
+                else if (c >= 0x2010 && c <= 0x206F) isValid = true;  // General punctuation (bullets •, en/em dashes, quotes)
+                else if (c >= 0x2070 && c <= 0x209F) isValid = true;  // Super/Subscript
+                else if (c >= 0x20A0 && c <= 0x20CF) isValid = true;  // Currency symbols (₩, $, €)
+                else if (c >= 0x2100 && c <= 0x214F) isValid = true;  // Letter-like symbols (™, ©, ®)
+                else if (c >= 0x2150 && c <= 0x218F) isValid = true;  // Number forms (Roman numerals ⅰ ⅱ)
+                else if (c >= 0x2190 && c <= 0x21FF) isValid = true;  // Arrows (→ ← ↑ ↓)
+                else if (c >= 0x2200 && c <= 0x22FF) isValid = true;  // Mathematical operators
+                else if (c >= 0x2500 && c <= 0x257F) isValid = true;  // Box drawing
+                else if (c >= 0x25A0 && c <= 0x25FF) isValid = true;  // Geometric shapes (■ □ ▶ ●)
+                else if (c >= 0x2600 && c <= 0x26FF) isValid = true;  // Misc symbols (★ ☆ ♥)
+                else if (c >= 0x3000 && c <= 0x303F) isValid = true;  // CJK symbols/punctuation (、。「」『』)
+                else if (c >= 0x3130 && c <= 0x318F) isValid = true;  // Hangul compatibility jamo (ㄱ ㄴ ㅏ)
+                else if (c >= 0xFF00 && c <= 0xFFEF) isValid = true;  // Halfwidth/fullwidth forms (ABC numbers)
 
                 if (isValid)
                 {
