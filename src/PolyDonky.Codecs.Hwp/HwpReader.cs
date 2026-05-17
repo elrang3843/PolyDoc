@@ -1338,19 +1338,26 @@ public sealed class HwpReader : IDocumentReader
         // soft line break 단위로 분리. 첫 줄에만 PageBreakBefore 적용.
         var lines = fullText.Split('\n');
         bool isFirstLine = true;
+        bool isLastLine = lines.Length <= 1;
+        int lineIndex = 0;
+
         foreach (var line in lines)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
+            isLastLine = (lineIndex == lines.Length - 1);
+
             var hpLine = new HwpParagraph
             {
                 Text            = line,
                 ParaShapeId     = hp.ParaShapeId,
                 CharShapeId     = hp.CharShapeId,
                 PageBreakBefore = isFirstLine && hp.PageBreakBefore,
+                IsIntermediateLine = !isLastLine,  // 중간 줄 표시 (SpaceAfter 제거용)
             };
             var p = ConvertHwpParagraph(hpLine, docInfo);
             if (p != null) yield return p;
             isFirstLine = false;
+            lineIndex++;
         }
     }
 
@@ -1380,7 +1387,8 @@ public sealed class HwpReader : IDocumentReader
                 paragraph.Style.IndentRightMm    = ps.IndentRightMm;
                 paragraph.Style.LineHeightFactor = ps.LineHeightFactor;
                 paragraph.Style.SpaceBeforePt    = ps.SpaceBeforePt;
-                paragraph.Style.SpaceAfterPt     = ps.SpaceAfterPt;
+                // soft line break 분할 시 중간 줄들은 SpaceAfterPt 을 0 으로 설정해 누적 간격 방지
+                paragraph.Style.SpaceAfterPt     = hp.IsIntermediateLine ? 0 : ps.SpaceAfterPt;
             }
 
             // 글자 속성 적용
@@ -1769,6 +1777,7 @@ public sealed class HwpReader : IDocumentReader
         public int    ParaShapeId { get; set; } = -1;
         public int    CharShapeId { get; set; } = -1;
         public bool   PageBreakBefore { get; set; } = false;
+        public bool   IsIntermediateLine { get; set; } = false;  // soft line break 분할 시 중간 줄 표시
     }
 
     private sealed class HwpTextBox
