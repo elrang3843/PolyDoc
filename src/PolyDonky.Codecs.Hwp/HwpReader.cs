@@ -1194,19 +1194,15 @@ public sealed class HwpReader : IDocumentReader
         {
             var slot = section.Page.Header.Center;
             foreach (var hp in body.Headers[0].Paragraphs)
-            {
-                var para = ConvertHwpParagraph(hp, docInfo);
-                if (para != null) slot.Paragraphs.Add(para);
-            }
+                foreach (var p in ConvertHwpParagraphMulti(hp, docInfo))
+                    slot.Paragraphs.Add(p);
         }
         if (body.Footers.Count > 0)
         {
             var slot = section.Page.Footer.Center;
             foreach (var fp in body.Footers[0].Paragraphs)
-            {
-                var para = ConvertHwpParagraph(fp, docInfo);
-                if (para != null) slot.Paragraphs.Add(para);
-            }
+                foreach (var p in ConvertHwpParagraphMulti(fp, docInfo))
+                    slot.Paragraphs.Add(p);
         }
 
         // ── Body blocks (paragraphs + tables in order) ─────────────────────
@@ -1215,8 +1211,8 @@ public sealed class HwpReader : IDocumentReader
             switch (block)
             {
                 case HwpParagraphBlock pb:
-                    var para = ConvertHwpParagraph(pb.Paragraph, docInfo);
-                    if (para != null) section.Blocks.Add(para);
+                    foreach (var para in ConvertHwpParagraphMulti(pb.Paragraph, docInfo))
+                        section.Blocks.Add(para);
                     break;
                 case HwpTableBlock tb:
                     var table = ConvertHwpTable(tb, docInfo);
@@ -1238,10 +1234,8 @@ public sealed class HwpReader : IDocumentReader
                 AnchorPageIndex = tb.AnchorPageIndex,
             };
             foreach (var tp in tb.Paragraphs)
-            {
-                var para = ConvertHwpParagraph(tp, docInfo);
-                if (para != null) tbo.Content.Add(para);
-            }
+                foreach (var para in ConvertHwpParagraphMulti(tp, docInfo))
+                    tbo.Content.Add(para);
             section.Blocks.Add(tbo);
         }
 
@@ -1330,6 +1324,36 @@ public sealed class HwpReader : IDocumentReader
     /// HWP 줄바꿈 문자(\r)는 별도 Run 으로 처리하지 않고 하나의 단락으로 합침.
     /// docInfo 가 제공되면 ParaShapeId/CharShapeId 로 정렬/들여쓰기/폰트 등 속성을 적용.
     /// </summary>
+    /// <summary>
+    /// HwpParagraph → Core.Paragraph 다중 분할 변환.
+    /// PARA_TEXT 안에 soft line break(0x000A)가 있으면 별도 단락으로 분리한다.
+    /// </summary>
+    private static IEnumerable<Core.Paragraph> ConvertHwpParagraphMulti(HwpParagraph hp, HwpDocInfo? docInfo = null)
+    {
+        if (string.IsNullOrWhiteSpace(hp.Text)) yield break;
+
+        var fullText = hp.Text.Replace("\r", "");
+        if (string.IsNullOrWhiteSpace(fullText)) yield break;
+
+        // soft line break 단위로 분리. 첫 줄에만 PageBreakBefore 적용.
+        var lines = fullText.Split('\n');
+        bool isFirstLine = true;
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var hpLine = new HwpParagraph
+            {
+                Text            = line,
+                ParaShapeId     = hp.ParaShapeId,
+                CharShapeId     = hp.CharShapeId,
+                PageBreakBefore = isFirstLine && hp.PageBreakBefore,
+            };
+            var p = ConvertHwpParagraph(hpLine, docInfo);
+            if (p != null) yield return p;
+            isFirstLine = false;
+        }
+    }
+
     private static Core.Paragraph? ConvertHwpParagraph(HwpParagraph hp, HwpDocInfo? docInfo = null)
     {
         if (string.IsNullOrWhiteSpace(hp.Text)) return null;
@@ -1423,8 +1447,8 @@ public sealed class HwpReader : IDocumentReader
                     {
                         if (block is HwpParagraph hp)
                         {
-                            var para = ConvertHwpParagraph(hp, docInfo);
-                            if (para != null) tableCell.Blocks.Add(para);
+                            foreach (var para in ConvertHwpParagraphMulti(hp, docInfo))
+                                tableCell.Blocks.Add(para);
                         }
                         else if (block is HwpTableBlock htb)
                         {
@@ -1498,6 +1522,7 @@ public sealed class HwpReader : IDocumentReader
 
                 bool isValid = false;
                 if (c >= 0xAC00 && c <= 0xD7AF) isValid = true;       // Korean syllables
+                else if (c == 0x000A) isValid = true;                 // Soft line break (preserved as \n)
                 else if (c >= 0x0020 && c < 0x0080) isValid = true;   // ASCII printable
                 else if (c >= 0x00A0 && c <= 0x00FF) isValid = true;  // Latin-1 supplement (©, °, ±, ÷, ×, etc.)
                 else if (c >= 0x2010 && c <= 0x206F) isValid = true;  // General punctuation (bullets •, en/em dashes, quotes)
