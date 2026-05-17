@@ -1386,8 +1386,8 @@ public sealed class HwpReader : IDocumentReader
                 paragraph.Style.IndentLeftMm     = ps.IndentLeftMm;
                 paragraph.Style.IndentRightMm    = ps.IndentRightMm;
                 paragraph.Style.LineHeightFactor = ps.LineHeightFactor;
-                paragraph.Style.SpaceBeforePt    = ps.SpaceBeforePt;
-                // soft line break 분할 시 중간 줄들은 SpaceAfterPt 을 0 으로 설정해 누적 간격 방지
+                // soft line break 분할 시 중간 줄들은 SpaceBeforePt/SpaceAfterPt 을 0 으로 설정해 누적 간격 방지
+                paragraph.Style.SpaceBeforePt    = hp.IsIntermediateLine ? 0 : ps.SpaceBeforePt;
                 paragraph.Style.SpaceAfterPt     = hp.IsIntermediateLine ? 0 : ps.SpaceAfterPt;
             }
 
